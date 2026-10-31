@@ -1284,7 +1284,7 @@ func (c *conv) freshLaunch(now time.Time) {
 		c.change(ch, now)
 	}
 	c.input(agentstate.Input{K: agentstate.LaunchRequested}, now)
-	req := LaunchRequest{ID: c.rec.ID, Cwd: c.rec.Cwd, Provider: c.rec.Provider, Model: c.rec.Model}
+	req := LaunchRequest{ID: c.rec.ID, Cwd: c.rec.Cwd, Provider: c.rec.Provider, Model: c.rec.Model, Apps: c.rec.Apps}
 	if head := c.box.Head(); head != "" {
 		ch, carried := c.box.Carry(head, now)
 		c.change(ch, now)

@@ -1,0 +1,238 @@
+/* The video guest, written by WP4 only: hx-vg classes. */
+.hx-guest .hx-main:has(.hx-vg) {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+.hx-vg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  overflow: hidden auto;
+  background: var(--hx-bg-rail);
+  font-family: var(--hx-font-ui);
+  color: var(--hx-fg-1);
+}
+.hx-vg__empty {
+  margin: auto;
+  color: var(--hx-fg-3);
+}
+.hx-vg__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  min-height: 56px;
+  padding: 0 20px;
+}
+.hx-vg__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--hx-text-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-vg__formats {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--hx-bg-hover);
+}
+.hx-vg__format {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--hx-fg-2);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  cursor: pointer;
+}
+.hx-vg__format[data-on='1'] {
+  background: var(--hx-accent-soft);
+  color: var(--hx-accent);
+}
+.hx-vg__body {
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  min-height: 0;
+  padding: 0 20px 20px;
+}
+.hx-vg__main {
+  display: flex;
+  flex: 1.6;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.hx-vg__stage {
+  display: flex;
+  justify-content: center;
+  border-radius: 12px;
+  background: #000;
+  box-shadow: var(--hx-shadow-md);
+  overflow: hidden;
+}
+.hx-vg__stage video {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 220px);
+  aspect-ratio: 16 / 9;
+}
+.hx-vg[data-format='portrait'] .hx-vg__stage video {
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+}
+.hx-vg__strip {
+  position: relative;
+  flex: none;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--hx-bg-hover);
+  touch-action: none;
+  user-select: none;
+}
+.hx-vg__strip[data-edit='1'] {
+  cursor: crosshair;
+}
+.hx-vg__cut,
+.hx-vg__head,
+.hx-vg__mark,
+.hx-vg__pick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--hx-vg-from, 0);
+}
+.hx-vg__cut {
+  width: 1px;
+  background: var(--hx-border);
+}
+.hx-vg__head {
+  width: 2px;
+  background: var(--hx-fg-1);
+  pointer-events: none;
+}
+.hx-vg__pick {
+  min-width: 2px;
+  width: var(--hx-vg-size, 0);
+  background: var(--hx-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--hx-accent);
+  pointer-events: none;
+}
+.hx-vg__mark {
+  min-width: 8px;
+  width: var(--hx-vg-size, 0);
+  top: 6px;
+  bottom: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--hx-accent);
+  cursor: pointer;
+}
+.hx-vg__compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--hx-bg-hover);
+}
+.hx-vg__at {
+  font-size: var(--hx-text-sm);
+  font-weight: 600;
+}
+.hx-vg__at small,
+.hx-vg__chap small,
+.hx-vg__note small {
+  margin-left: 8px;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  font-weight: 400;
+}
+.hx-vg__text {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: 8px;
+  background: var(--hx-bg-rail);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+.hx-vg__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.hx-vg__side {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-y: auto;
+}
+.hx-vg__h {
+  margin: 8px 0;
+  color: var(--hx-fg-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.hx-vg__chap,
+.hx-vg__note {
+  display: flex;
+  gap: 4px;
+  flex-direction: column;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.hx-vg__chap:hover,
+.hx-vg__note:hover {
+  background: var(--hx-bg-hover);
+}
+.hx-vg__chap[data-on='1'] {
+  background: var(--hx-accent-soft);
+}
+.hx-vg__chap small,
+.hx-vg__note small {
+  margin-left: 0;
+}
+
+@media (max-width: 960px) {
+  .hx-vg__body {
+    flex-direction: column;
+  }
+  .hx-vg__main,
+  .hx-vg__side {
+    flex: none;
+  }
+}
+@media (max-width: 560px) {
+  .hx-vg__bar,
+  .hx-vg__body {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}

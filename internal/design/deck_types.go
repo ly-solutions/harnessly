@@ -158,6 +158,16 @@ type DeckComment struct {
 	Resolved   bool       `json:"resolved"`
 	ResolvedBy *string    `json:"resolvedBy"`
 	ResolvedAt *string    `json:"resolvedAt"`
+	// A video's comment on a moment or a stretch; all absent on a deck's comment. View is DeckCommentVideo.
+	// T0 and T1 are ms from the start of the scene (Page); T1 absent: a moment. Format is the format it was made in,
+	// Block the data-block it points at ("" none), Frame the cached frame's path under the project (".media/video/
+	// frames/<key>.jpg", "" none). X and Y stay the point on the frame; 0 when the comment has none.
+	View   string      `json:"view,omitempty"`
+	T0     *int64      `json:"t0,omitempty"`
+	T1     *int64      `json:"t1,omitempty"`
+	Format VideoFormat `json:"format,omitempty"`
+	Block  string      `json:"block,omitempty"`
+	Frame  string      `json:"frame,omitempty"`
 }
 
 // DeckGuestResolution is meta/comments/g-<gatewayId>.json: a guest comment (kept by the gateway) marked resolved here.

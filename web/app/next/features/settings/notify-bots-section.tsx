@@ -17,6 +17,9 @@ import '@/next/styles/notify-bots.css';
 const LEAVE_MS = 280;
 /** «Точно удалить?» waits this long for the second press. */
 const SURE_MS = 4000;
+/** The list's stand-in while the bots are on their way: one array, so the leaving list sees no change. */
+const NO_BOTS: readonly INotifyBot[] = [];
+
 /** «Отправлено» stays this long under the buttons. */
 const SENT_MS = 4000;
 const BOTFATHER = 'https://t.me/BotFather';
@@ -439,7 +442,7 @@ const AddBot = ({ onAdd }: { onAdd: INotifyBotsActions['onAdd'] }) => {
 };
 
 const NotifyBotsSection = ({ bots, failed = null, open, onOpen, ...actions }: INotifyBotsSectionProps) => {
-  const rows = useLeavingList(bots ?? [], (bot) => bot.id, LEAVE_MS);
+  const rows = useLeavingList(bots ?? NO_BOTS, (bot) => bot.id, LEAVE_MS);
   return (
     <Group title={t('next.notifyBots.title')} foot={t('next.notifyBots.foot')}>
       {bots === null && failed === null && <div className="hx-set__empty">{t('next.settings.loading')}</div>}

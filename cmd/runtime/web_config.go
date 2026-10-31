@@ -22,6 +22,7 @@ type pageConfig struct {
 	StandDomain        *string           `json:"standDomain"`
 	StandSignInHosts   []string          `json:"standSignInHosts"`
 	PaneHosts          []string          `json:"paneHosts"`
+	DefaultPins        []pagePin         `json:"defaultPins"`
 	People             map[string]string `json:"people"`
 	TrackerIssueURL    *string           `json:"trackerIssueUrl"`
 	TrackerHosts       []string          `json:"trackerHosts"`
@@ -38,6 +39,24 @@ type pageConfig struct {
 	// HubURL is the public address of the hub this machine is connected to (RUNTIME_HUB_URL), without a trailing slash;
 	// null for a runtime no hub carries. The page links back to the hub and signs out there.
 	HubURL *string `json:"hubUrl"`
+}
+
+// pagePin is a page every person finds pinned in the browser tab until they change their pins.
+type pagePin struct {
+	Text string `json:"text"`
+	Name string `json:"name,omitempty"`
+}
+
+// defaultPins reads RUNTIME_DEFAULT_PINS: comma separated `address` or `address=Name`.
+func defaultPins(v string) []pagePin {
+	out := []pagePin{}
+	for _, item := range splitList(v) {
+		text, name, _ := strings.Cut(item, "=")
+		if text = strings.TrimSpace(text); text != "" {
+			out = append(out, pagePin{Text: text, Name: strings.TrimSpace(name)})
+		}
+	}
+	return out
 }
 
 // list is never null in the JSON: the page reads these as arrays.
@@ -84,6 +103,7 @@ func pageConfigFromEnv() pageConfig {
 		StandDomain:       optional(os.Getenv("RUNTIME_STAND_DOMAIN")),
 		StandSignInHosts:  list(splitList(os.Getenv("RUNTIME_PREVIEW_SIGN_IN_HOSTS"))),
 		PaneHosts:         list(splitList(os.Getenv("RUNTIME_PANE_HOSTS"))),
+		DefaultPins:       defaultPins(os.Getenv("RUNTIME_DEFAULT_PINS")),
 		People:            people(os.Getenv("RUNTIME_PEOPLE")),
 		TrackerHosts:      list(splitList(os.Getenv("RUNTIME_TRACKER_HOSTS"))),
 		GitlabHosts:       list(splitList(env("RUNTIME_GITLAB_HOSTS", "gitlab.com"))),

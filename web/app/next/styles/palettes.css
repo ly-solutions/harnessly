@@ -1,0 +1,306 @@
+/* The palettes over the light and the dark look (platform/theme.tsx sets html[data-palette]): each one tints the
+   surfaces, the lines and the secondary text with its own hue and brings its accent; the text and the states stay as
+   the base. Graphite is the base itself (tokens.css), «Контраст» is black and white with a deep blue. The same rules dress a preview
+   card (.hx-look[data-mode][data-palette]) so a palette is seen before it is picked.
+   A change made from a click spreads from it as a circle (html[data-look='spread'], a view transition). */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html[data-look='spread']::view-transition-new(root) {
+  animation: hx-look-in 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes hx-look-in {
+  from {
+    clip-path: circle(0 at var(--hx-look-x) var(--hx-look-y));
+  }
+  to {
+    clip-path: circle(var(--hx-look-r) at var(--hx-look-x) var(--hx-look-y));
+  }
+}
+
+/* midnight */
+html[data-theme='light'][data-palette='midnight'],
+.hx-look[data-mode='light'][data-palette='midnight'] {
+  --hx-bg-app: oklch(0.995 0.0055 262);
+  --hx-bg-rail: oklch(0.972 0.022 262);
+  --hx-bg-stage: oklch(0.985 0.011 262);
+  --hx-bg-raised: oklch(0.998 0.0044 262);
+  --hx-bg-bubble: oklch(0.952 0.0264 262);
+  --hx-bg-hover: oklch(0.35 0.066 262 / 0.05);
+  --hx-bg-active: oklch(0.35 0.066 262 / 0.085);
+  --hx-fg-2: oklch(0.5 0.0352 262);
+  --hx-fg-3: oklch(0.64 0.0308 262);
+  --hx-border: oklch(0.925 0.0264 262);
+  --hx-border-strong: oklch(0.875 0.0308 262);
+  --hx-accent: oklch(0.55 0.19 262);
+  --hx-accent-soft: oklch(0.55 0.19 262 / 0.12);
+  --hx-focus: oklch(0.55 0.19 262 / 0.35);
+  --hx-shell: linear-gradient(180deg, oklch(0.97 0.0242 262) 0%, oklch(0.94 0.0352 262) 100%);
+  --hx-shell-hover: oklch(0.35 0.066 262 / 0.05);
+  --hx-shell-active: oklch(0.998 0.0044 262);
+  --hx-bg-window: oklch(0.997 0.0044 262);
+  --hx-bg-canvas: oklch(0.94 0.0264 262);
+}
+html[data-theme='dark'][data-palette='midnight'],
+.hx-look[data-mode='dark'][data-palette='midnight'] {
+  --hx-bg-backdrop: oklch(0.11 0.022 262);
+  --hx-bg-app: oklch(0.165 0.022 262);
+  --hx-bg-rail: oklch(0.14 0.022 262);
+  --hx-bg-stage: oklch(0.165 0.022 262);
+  --hx-bg-raised: oklch(0.2 0.0242 262);
+  --hx-bg-bubble: oklch(0.23 0.0264 262);
+  --hx-bg-hover: oklch(0.9 0.044 262 / 0.055);
+  --hx-bg-active: oklch(0.9 0.044 262 / 0.095);
+  --hx-fg-2: oklch(0.7 0.0264 262);
+  --hx-fg-3: oklch(0.53 0.0264 262);
+  --hx-border: oklch(0.85 0.044 262 / 0.09);
+  --hx-border-strong: oklch(0.85 0.044 262 / 0.15);
+  --hx-accent: oklch(0.74 0.14 258);
+  --hx-accent-soft: oklch(0.59 0.18 258 / 0.18);
+  --hx-focus: oklch(0.74 0.14 258 / 0.6);
+  --hx-shell: oklch(0.14 0.022 262);
+  --hx-shell-hover: oklch(0.9 0.044 262 / 0.055);
+  --hx-shell-active: oklch(0.9 0.044 262 / 0.085);
+  --hx-bg-window: oklch(0.165 0.022 262);
+  --hx-bg-canvas: oklch(0.125 0.022 262);
+}
+
+/* forest */
+html[data-theme='light'][data-palette='forest'],
+.hx-look[data-mode='light'][data-palette='forest'] {
+  --hx-bg-app: oklch(0.995 0.0045 158);
+  --hx-bg-rail: oklch(0.972 0.018 158);
+  --hx-bg-stage: oklch(0.985 0.009 158);
+  --hx-bg-raised: oklch(0.998 0.0036 158);
+  --hx-bg-bubble: oklch(0.952 0.0216 158);
+  --hx-bg-hover: oklch(0.35 0.054 158 / 0.05);
+  --hx-bg-active: oklch(0.35 0.054 158 / 0.085);
+  --hx-fg-2: oklch(0.5 0.0288 158);
+  --hx-fg-3: oklch(0.64 0.0252 158);
+  --hx-border: oklch(0.925 0.0216 158);
+  --hx-border-strong: oklch(0.875 0.0252 158);
+  --hx-accent: oklch(0.53 0.12 158);
+  --hx-accent-soft: oklch(0.53 0.12 158 / 0.12);
+  --hx-focus: oklch(0.53 0.12 158 / 0.35);
+  --hx-shell: linear-gradient(180deg, oklch(0.97 0.0198 158) 0%, oklch(0.94 0.0288 158) 100%);
+  --hx-shell-hover: oklch(0.35 0.054 158 / 0.05);
+  --hx-shell-active: oklch(0.998 0.0036 158);
+  --hx-bg-window: oklch(0.997 0.0036 158);
+  --hx-bg-canvas: oklch(0.94 0.0216 158);
+}
+html[data-theme='dark'][data-palette='forest'],
+.hx-look[data-mode='dark'][data-palette='forest'] {
+  --hx-bg-backdrop: oklch(0.11 0.018 158);
+  --hx-bg-app: oklch(0.165 0.018 158);
+  --hx-bg-rail: oklch(0.14 0.018 158);
+  --hx-bg-stage: oklch(0.165 0.018 158);
+  --hx-bg-raised: oklch(0.2 0.0198 158);
+  --hx-bg-bubble: oklch(0.23 0.0216 158);
+  --hx-bg-hover: oklch(0.9 0.036 158 / 0.055);
+  --hx-bg-active: oklch(0.9 0.036 158 / 0.095);
+  --hx-fg-2: oklch(0.7 0.0216 158);
+  --hx-fg-3: oklch(0.53 0.0216 158);
+  --hx-border: oklch(0.85 0.036 158 / 0.09);
+  --hx-border-strong: oklch(0.85 0.036 158 / 0.15);
+  --hx-accent: oklch(0.76 0.14 156);
+  --hx-accent-soft: oklch(0.61 0.18 156 / 0.18);
+  --hx-focus: oklch(0.76 0.14 156 / 0.6);
+  --hx-shell: oklch(0.14 0.018 158);
+  --hx-shell-hover: oklch(0.9 0.036 158 / 0.055);
+  --hx-shell-active: oklch(0.9 0.036 158 / 0.085);
+  --hx-bg-window: oklch(0.165 0.018 158);
+  --hx-bg-canvas: oklch(0.125 0.018 158);
+}
+
+/* sand */
+html[data-theme='light'][data-palette='sand'],
+.hx-look[data-mode='light'][data-palette='sand'] {
+  --hx-bg-app: oklch(0.995 0.004 70);
+  --hx-bg-rail: oklch(0.972 0.016 70);
+  --hx-bg-stage: oklch(0.985 0.008 70);
+  --hx-bg-raised: oklch(0.998 0.0032 70);
+  --hx-bg-bubble: oklch(0.952 0.0192 70);
+  --hx-bg-hover: oklch(0.35 0.048 70 / 0.05);
+  --hx-bg-active: oklch(0.35 0.048 70 / 0.085);
+  --hx-fg-2: oklch(0.5 0.0256 70);
+  --hx-fg-3: oklch(0.64 0.0224 70);
+  --hx-border: oklch(0.925 0.0192 70);
+  --hx-border-strong: oklch(0.875 0.0224 70);
+  --hx-accent: oklch(0.6 0.14 48);
+  --hx-accent-soft: oklch(0.6 0.14 48 / 0.12);
+  --hx-focus: oklch(0.6 0.14 48 / 0.35);
+  --hx-shell: linear-gradient(180deg, oklch(0.97 0.0176 70) 0%, oklch(0.94 0.0256 70) 100%);
+  --hx-shell-hover: oklch(0.35 0.048 70 / 0.05);
+  --hx-shell-active: oklch(0.998 0.0032 70);
+  --hx-bg-window: oklch(0.997 0.0032 70);
+  --hx-bg-canvas: oklch(0.94 0.0192 70);
+}
+html[data-theme='dark'][data-palette='sand'],
+.hx-look[data-mode='dark'][data-palette='sand'] {
+  --hx-bg-backdrop: oklch(0.11 0.016 70);
+  --hx-bg-app: oklch(0.165 0.016 70);
+  --hx-bg-rail: oklch(0.14 0.016 70);
+  --hx-bg-stage: oklch(0.165 0.016 70);
+  --hx-bg-raised: oklch(0.2 0.0176 70);
+  --hx-bg-bubble: oklch(0.23 0.0192 70);
+  --hx-bg-hover: oklch(0.9 0.032 70 / 0.055);
+  --hx-bg-active: oklch(0.9 0.032 70 / 0.095);
+  --hx-fg-2: oklch(0.7 0.0192 70);
+  --hx-fg-3: oklch(0.53 0.0192 70);
+  --hx-border: oklch(0.85 0.032 70 / 0.09);
+  --hx-border-strong: oklch(0.85 0.032 70 / 0.15);
+  --hx-accent: oklch(0.76 0.13 58);
+  --hx-accent-soft: oklch(0.61 0.17 58 / 0.18);
+  --hx-focus: oklch(0.76 0.13 58 / 0.6);
+  --hx-shell: oklch(0.14 0.016 70);
+  --hx-shell-hover: oklch(0.9 0.032 70 / 0.055);
+  --hx-shell-active: oklch(0.9 0.032 70 / 0.085);
+  --hx-bg-window: oklch(0.165 0.016 70);
+  --hx-bg-canvas: oklch(0.125 0.016 70);
+}
+
+/* rose */
+html[data-theme='light'][data-palette='rose'],
+.hx-look[data-mode='light'][data-palette='rose'] {
+  --hx-bg-app: oklch(0.995 0.0045 350);
+  --hx-bg-rail: oklch(0.972 0.018 350);
+  --hx-bg-stage: oklch(0.985 0.009 350);
+  --hx-bg-raised: oklch(0.998 0.0036 350);
+  --hx-bg-bubble: oklch(0.952 0.0216 350);
+  --hx-bg-hover: oklch(0.35 0.054 350 / 0.05);
+  --hx-bg-active: oklch(0.35 0.054 350 / 0.085);
+  --hx-fg-2: oklch(0.5 0.0288 350);
+  --hx-fg-3: oklch(0.64 0.0252 350);
+  --hx-border: oklch(0.925 0.0216 350);
+  --hx-border-strong: oklch(0.875 0.0252 350);
+  --hx-accent: oklch(0.58 0.2 358);
+  --hx-accent-soft: oklch(0.58 0.2 358 / 0.12);
+  --hx-focus: oklch(0.58 0.2 358 / 0.35);
+  --hx-shell: linear-gradient(180deg, oklch(0.97 0.0198 350) 0%, oklch(0.94 0.0288 350) 100%);
+  --hx-shell-hover: oklch(0.35 0.054 350 / 0.05);
+  --hx-shell-active: oklch(0.998 0.0036 350);
+  --hx-bg-window: oklch(0.997 0.0036 350);
+  --hx-bg-canvas: oklch(0.94 0.0216 350);
+}
+html[data-theme='dark'][data-palette='rose'],
+.hx-look[data-mode='dark'][data-palette='rose'] {
+  --hx-bg-backdrop: oklch(0.11 0.018 350);
+  --hx-bg-app: oklch(0.165 0.018 350);
+  --hx-bg-rail: oklch(0.14 0.018 350);
+  --hx-bg-stage: oklch(0.165 0.018 350);
+  --hx-bg-raised: oklch(0.2 0.0198 350);
+  --hx-bg-bubble: oklch(0.23 0.0216 350);
+  --hx-bg-hover: oklch(0.9 0.036 350 / 0.055);
+  --hx-bg-active: oklch(0.9 0.036 350 / 0.095);
+  --hx-fg-2: oklch(0.7 0.0216 350);
+  --hx-fg-3: oklch(0.53 0.0216 350);
+  --hx-border: oklch(0.85 0.036 350 / 0.09);
+  --hx-border-strong: oklch(0.85 0.036 350 / 0.15);
+  --hx-accent: oklch(0.76 0.14 358);
+  --hx-accent-soft: oklch(0.61 0.18 358 / 0.18);
+  --hx-focus: oklch(0.76 0.14 358 / 0.6);
+  --hx-shell: oklch(0.14 0.018 350);
+  --hx-shell-hover: oklch(0.9 0.036 350 / 0.055);
+  --hx-shell-active: oklch(0.9 0.036 350 / 0.085);
+  --hx-bg-window: oklch(0.165 0.018 350);
+  --hx-bg-canvas: oklch(0.125 0.018 350);
+}
+
+/* lagoon */
+html[data-theme='light'][data-palette='lagoon'],
+.hx-look[data-mode='light'][data-palette='lagoon'] {
+  --hx-bg-app: oklch(0.995 0.0055 205);
+  --hx-bg-rail: oklch(0.972 0.022 205);
+  --hx-bg-stage: oklch(0.985 0.011 205);
+  --hx-bg-raised: oklch(0.998 0.0044 205);
+  --hx-bg-bubble: oklch(0.952 0.0264 205);
+  --hx-bg-hover: oklch(0.35 0.066 205 / 0.05);
+  --hx-bg-active: oklch(0.35 0.066 205 / 0.085);
+  --hx-fg-2: oklch(0.5 0.0352 205);
+  --hx-fg-3: oklch(0.64 0.0308 205);
+  --hx-border: oklch(0.925 0.0264 205);
+  --hx-border-strong: oklch(0.875 0.0308 205);
+  --hx-accent: oklch(0.56 0.12 212);
+  --hx-accent-soft: oklch(0.56 0.12 212 / 0.12);
+  --hx-focus: oklch(0.56 0.12 212 / 0.35);
+  --hx-shell: linear-gradient(180deg, oklch(0.97 0.0242 205) 0%, oklch(0.94 0.0352 205) 100%);
+  --hx-shell-hover: oklch(0.35 0.066 205 / 0.05);
+  --hx-shell-active: oklch(0.998 0.0044 205);
+  --hx-bg-window: oklch(0.997 0.0044 205);
+  --hx-bg-canvas: oklch(0.94 0.0264 205);
+}
+html[data-theme='dark'][data-palette='lagoon'],
+.hx-look[data-mode='dark'][data-palette='lagoon'] {
+  --hx-bg-backdrop: oklch(0.11 0.022 205);
+  --hx-bg-app: oklch(0.165 0.022 205);
+  --hx-bg-rail: oklch(0.14 0.022 205);
+  --hx-bg-stage: oklch(0.165 0.022 205);
+  --hx-bg-raised: oklch(0.2 0.0242 205);
+  --hx-bg-bubble: oklch(0.23 0.0264 205);
+  --hx-bg-hover: oklch(0.9 0.044 205 / 0.055);
+  --hx-bg-active: oklch(0.9 0.044 205 / 0.095);
+  --hx-fg-2: oklch(0.7 0.0264 205);
+  --hx-fg-3: oklch(0.53 0.0264 205);
+  --hx-border: oklch(0.85 0.044 205 / 0.09);
+  --hx-border-strong: oklch(0.85 0.044 205 / 0.15);
+  --hx-accent: oklch(0.78 0.12 200);
+  --hx-accent-soft: oklch(0.63 0.16 200 / 0.18);
+  --hx-focus: oklch(0.78 0.12 200 / 0.6);
+  --hx-shell: oklch(0.14 0.022 205);
+  --hx-shell-hover: oklch(0.9 0.044 205 / 0.055);
+  --hx-shell-active: oklch(0.9 0.044 205 / 0.085);
+  --hx-bg-window: oklch(0.165 0.022 205);
+  --hx-bg-canvas: oklch(0.125 0.022 205);
+}
+
+/* contrast: black and white surfaces, strong lines and text, a deep blue accent that white text still reads on */
+html[data-theme='light'][data-palette='contrast'],
+.hx-look[data-mode='light'][data-palette='contrast'] {
+  --hx-bg-app: #ffffff;
+  --hx-bg-rail: #ffffff;
+  --hx-bg-stage: #ffffff;
+  --hx-bg-raised: #ffffff;
+  --hx-bg-bubble: oklch(0.94 0 0);
+  --hx-bg-hover: oklch(0 0 0 / 0.06);
+  --hx-bg-active: oklch(0 0 0 / 0.11);
+  --hx-fg-1: oklch(0.1 0 0);
+  --hx-fg-2: oklch(0.35 0 0);
+  --hx-fg-3: oklch(0.48 0 0);
+  --hx-border: oklch(0.82 0 0);
+  --hx-border-strong: oklch(0.6 0 0);
+  --hx-accent: oklch(0.48 0.22 264);
+  --hx-accent-soft: oklch(0.48 0.22 264 / 0.12);
+  --hx-focus: oklch(0.48 0.22 264 / 0.5);
+  --hx-shell: #ffffff;
+  --hx-shell-hover: oklch(0 0 0 / 0.06);
+  --hx-shell-active: oklch(0.94 0 0);
+  --hx-bg-window: #ffffff;
+  --hx-bg-canvas: oklch(0.92 0 0);
+}
+html[data-theme='dark'][data-palette='contrast'],
+.hx-look[data-mode='dark'][data-palette='contrast'] {
+  --hx-bg-backdrop: #000000;
+  --hx-bg-app: #000000;
+  --hx-bg-rail: #000000;
+  --hx-bg-stage: #000000;
+  --hx-bg-raised: oklch(0.16 0 0);
+  --hx-bg-bubble: oklch(0.2 0 0);
+  --hx-bg-hover: oklch(1 0 0 / 0.08);
+  --hx-bg-active: oklch(1 0 0 / 0.14);
+  --hx-fg-1: #ffffff;
+  --hx-fg-2: oklch(0.8 0 0);
+  --hx-fg-3: oklch(0.64 0 0);
+  --hx-border: oklch(1 0 0 / 0.2);
+  --hx-border-strong: oklch(1 0 0 / 0.36);
+  --hx-accent: oklch(0.66 0.2 258);
+  --hx-accent-soft: oklch(0.6 0.22 258 / 0.22);
+  --hx-focus: oklch(0.66 0.2 258 / 0.7);
+  --hx-shell: #000000;
+  --hx-shell-hover: oklch(1 0 0 / 0.08);
+  --hx-shell-active: oklch(1 0 0 / 0.12);
+  --hx-bg-window: #000000;
+  --hx-bg-canvas: oklch(0.08 0 0);
+}

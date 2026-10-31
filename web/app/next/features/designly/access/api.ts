@@ -5,6 +5,7 @@ import { gatewayPath, platformPath } from '@/next/core/net/machine';
 import { postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { t } from '@/next/i18n';
 import type { MachineId } from '@/next/protocol/v2';
+import type { IVideoLinkView } from '@/next/features/designly/video/share-view';
 
 export const ROLE = {
   owner: 'owner',
@@ -137,8 +138,8 @@ export interface IGuestLinkInput {
   title: string;
   rights: TGuestRights;
   ttl: TTtlValue;
-  /** The owner's remembered look (a design) or the deck's flags; absent when there is none. */
-  view?: IGuestView | IGuestDeckView;
+  /** The owner's remembered look (a design), the deck's or the video's flags; absent when there is none. */
+  view?: IGuestView | IGuestDeckView | IVideoLinkView;
   version?: TGuestVersion;
   /** Board paths; null is all of the pages. */
   pages?: string[] | null;
@@ -325,6 +326,8 @@ export interface IGuestCommentOwned {
   at: string;
   /** What the guest picked: the block's label ('' when there was none). */
   label: string;
+  /** The anchor's page state as the guest page sent it (a video's moment); any shape, checked by its reader. */
+  state?: unknown;
 }
 
 const fraction = (v: unknown): number | null => (typeof v === 'number' && v >= 0 && v <= 1 ? v : null);
@@ -346,6 +349,7 @@ const guestCommentOf = (v: unknown): IGuestCommentOwned | null => {
     name: typeof c.name === 'string' ? c.name : '',
     at: typeof c.at === 'string' ? c.at : '',
     label: typeof anchor.label === 'string' ? anchor.label : '',
+    state: anchor.state,
   };
 };
 

@@ -24,7 +24,11 @@ func (l LegacyTab) Validate() error {
 		needPtr("agentSessionId", l.AgentSessionID))
 }
 
-// legacy serves GET /api/v2/conversations/{id}/legacy; a conversation without a tmux session yet is not found.
+// ErrNoTab is what Server.Legacy answers for a conversation that has no tmux session yet: it is there, its tab is not.
+var ErrNoTab = errors.New("no legacy tab yet")
+
+// legacy serves GET /api/v2/conversations/{id}/legacy; a conversation without a tmux session yet
+// answers 200 {"tab":null}, an unknown one is not found.
 func (s *Server) legacy(ctx context.Context, w http.ResponseWriter, r *http.Request, conv string) {
 	if s.Legacy == nil {
 		refuse(w, RefuseNotFound)
@@ -32,6 +36,8 @@ func (s *Server) legacy(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	}
 	tab, err := s.Legacy(ctx, conv)
 	switch {
+	case errors.Is(err, ErrNoTab):
+		writeJSON(w, http.StatusOK, map[string]any{"tab": nil})
 	case err != nil && s.NotFound != nil && s.NotFound(err):
 		refuse(w, RefuseNotFound)
 	case err != nil:

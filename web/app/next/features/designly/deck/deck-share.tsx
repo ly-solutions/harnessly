@@ -5,6 +5,8 @@
 // a deck mode; the flags are in that `view` (deck/deck-link-view.ts). The link never waits for the PDF: it is made or
 // changed at once, and a PDF it offers is kept by the runtime (POST /design/deck/pdf), which builds it in the background,
 // again whenever the deck changes, and publishes each build for the guests. One quiet line says how the PDF is doing.
+// A video's share (`video`) is the same popover with the video's link (video/share-view.ts): no «Как откроется» and no
+// PDF, the format the link opens in instead.
 import { useEffect, useRef, useState } from 'react';
 import {
   GUEST_VERSION,
@@ -52,6 +54,9 @@ import { t } from '@/next/i18n';
 import { formatAgoFull } from '@/next/i18n/format';
 import type { MachineId } from '@/next/protocol/v2';
 import { changeDeck, useDeck } from '@/next/stores/deck';
+import { useVideo } from '@/next/stores/video';
+import { readVideoLinkView, videoLinkOf, videoViewOf } from '@/next/features/designly/video/share-view';
+import type { TVideoFormat } from '@/next/features/designly/video/types';
 import { useMe } from '@/next/stores/me';
 import '@/next/styles/design-access.css';
 
@@ -65,6 +70,8 @@ export interface IDeckShareProps {
   closing: boolean;
   /** «Посмотреть как гость»: the host turns to the link scene with the flags as they are. */
   onAsGuest: (flags: IDeckLinkFlags) => void;
+  /** A video's share: the formats it is made in (one or two), the first is the link's when it says none. */
+  video?: { formats: readonly [TVideoFormat, ...TVideoFormat[]] };
 }
 
 const AUDIENCES: readonly TDeckAudience[] = [DECK_AUDIENCE.team, DECK_AUDIENCE.link, DECK_AUDIENCE.me];
@@ -107,34 +114,47 @@ const pdfText = (line: TPdfLine, now: number): string => {
   }
 };
 
-const DeckShare = ({ machine, project, title, closing, onAsGuest }: IDeckShareProps) => {
+const DeckShare = ({ machine, project, title, closing, onAsGuest, video }: IDeckShareProps) => {
   const deck = useDeck(project);
+  const videoState = useVideo(project);
   const access = useProjectAccess(project);
   const guests = useGuestLinks(project);
   const action = useAction();
   const me = useMe();
   // What the toggles say while there is no link yet: they become the link's when it is made.
-  const [draft, setDraft] = useState<IDeckLinkFlags & { comments: boolean }>({
+  const [draft, setDraft] = useState<IDeckLinkFlags & { comments: boolean; format: TVideoFormat | null }>({
     ...DECK_LINK_DEFAULT,
+    pdf: video === undefined,
     comments: true,
+    format: null,
   });
   const [now] = useState(() => Date.now());
 
   const links = guests.state.k === 'ready' ? guests.state.links : [];
   const live = liveLinks(links, now);
-  const link = deckLinkOf(live);
-  const others = otherLinks(live);
+  const link = video ? videoLinkOf(live) : deckLinkOf(live);
+  const others = video ? live.filter((l) => l !== link) : otherLinks(live);
   const team = access.state.k === ACCESS.ready ? access.state.access.team : null;
-  const ready = guests.state.k === 'ready' && access.state.k === ACCESS.ready && deck !== undefined;
+  const loaded = video ? videoState !== undefined : deck !== undefined;
+  const ready = guests.state.k === 'ready' && access.state.k === ACCESS.ready && loaded;
   // The PDF is built by a headless Chrome: without one there is nothing to publish, so a new link carries no PDF.
-  const canPdf = deck?.chrome === true;
+  const canPdf = video === undefined && deck?.chrome === true;
 
-  const flags: IDeckLinkFlags = (link && readDeckLinkView(link.view)) || {
-    ...draft,
-    pdf: draft.pdf && canPdf,
-  };
-  // «Видео» opens the published recording; until there is one guests get the slides, and the popover says so.
-  const noVideo = flags.opens === DECK_OPENS.video && deck !== undefined && !deck.published.video;
+  const videoLink = video && link ? readVideoLinkView(link.view) : null;
+  const deckFlags = !video && link ? readDeckLinkView(link.view) : null;
+  const flags: IDeckLinkFlags = videoLink
+    ? { opens: DECK_OPENS.video, pdf: false, stats: videoLink.stats }
+    : deckFlags || { ...draft, pdf: draft.pdf && canPdf };
+  const format: TVideoFormat | null = video ? (videoLink?.format ?? draft.format ?? video.formats[0]) : null;
+  /** The link's `view` for these flags: a video's carries its format. */
+  const viewOf = (next: IDeckLinkFlags, at: TVideoFormat | null) =>
+    at === null ? deckViewOf(next) : videoViewOf({ stats: next.stats, format: at });
+  // «Видео» opens the published recording; until there is one guests get the slides (a video's guests a placeholder),
+  // and the popover says so.
+  const noDeckVideo =
+    !video && flags.opens === DECK_OPENS.video && deck !== undefined && !deck.published.video;
+  const noVideoMp4 =
+    video !== undefined && videoState !== undefined && !videoState.renders.some((r) => r.published);
   const comments = link ? link.rights === 'comment' : draft.comments;
   // Any live link opens the deck, so the audience is «Все по ссылке» while one is there, whatever it was made for.
   const audience: TDeckAudience =
@@ -173,7 +193,7 @@ const DeckShare = ({ machine, project, title, closing, onAsGuest }: IDeckSharePr
             ttl: null,
             version: GUEST_VERSION.latest,
             pages: null,
-            view: deckViewOf(flags),
+            view: viewOf(flags, format),
           }),
         );
         if (flags.pdf) await keepPdf(true);
@@ -196,8 +216,11 @@ const DeckShare = ({ machine, project, title, closing, onAsGuest }: IDeckSharePr
     void action.run(`team:${next}`, async () => takeAccess(await putTeam(project, next)));
   };
 
-  const change = (key: string, next: Partial<IDeckLinkFlags & { comments: boolean }>) => {
-    const merged = { ...flags, comments, ...next };
+  const change = (
+    key: string,
+    next: Partial<IDeckLinkFlags & { comments: boolean; format: TVideoFormat }>,
+  ) => {
+    const merged = { ...flags, comments, format, ...next };
     if (!link) {
       setDraft(merged);
       return;
@@ -206,7 +229,7 @@ const DeckShare = ({ machine, project, title, closing, onAsGuest }: IDeckSharePr
       putLink(
         await changeGuestLink(project, link.id, {
           rights: rightsOf(merged.comments),
-          view: deckViewOf(merged),
+          view: viewOf(merged, merged.format),
         }),
       );
       if (merged.pdf !== flags.pdf) await keepPdf(merged.pdf);
@@ -288,23 +311,52 @@ const DeckShare = ({ machine, project, title, closing, onAsGuest }: IDeckSharePr
           )}
         </div>
       )}
-      <div className="hx-deck-share__h">{t('next.deck.share.how')}</div>
-      <div className="hx-deck-share__seg" role="radiogroup" aria-label={t('next.deck.share.how')}>
-        {OPENS.map((o) => (
-          <button
-            key={o}
-            type="button"
-            role="radio"
-            aria-checked={flags.opens === o}
-            data-on={flags.opens === o ? '1' : '0'}
-            disabled={!ready || !idle}
-            onClick={() => change('opens', { opens: o })}
+      {!video && (
+        <>
+          <div className="hx-deck-share__h">{t('next.deck.share.how')}</div>
+          <div className="hx-deck-share__seg" role="radiogroup" aria-label={t('next.deck.share.how')}>
+            {OPENS.map((o) => (
+              <button
+                key={o}
+                type="button"
+                role="radio"
+                aria-checked={flags.opens === o}
+                data-on={flags.opens === o ? '1' : '0'}
+                disabled={!ready || !idle}
+                onClick={() => change('opens', { opens: o })}
+              >
+                {t(OPENS_KEY[o])}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {video && video.formats.length > 1 && (
+        <>
+          <div className="hx-deck-share__h">{t('next.video.shell.shareFormat')}</div>
+          <div
+            className="hx-deck-share__seg"
+            role="radiogroup"
+            aria-label={t('next.video.shell.shareFormat')}
           >
-            {t(OPENS_KEY[o])}
-          </button>
-        ))}
-      </div>
-      {noVideo && <p className="hx-deck-share__note">{t('next.deck.share.noVideo')}</p>}
+            {video.formats.map((f) => (
+              <button
+                key={f}
+                type="button"
+                role="radio"
+                aria-checked={format === f}
+                data-on={format === f ? '1' : '0'}
+                disabled={!ready || !idle}
+                onClick={() => change('format', { format: f })}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {noDeckVideo && <p className="hx-deck-share__note">{t('next.deck.share.noVideo')}</p>}
+      {noVideoMp4 && <p className="hx-deck-share__note">{t('next.video.shell.shareNoMp4')}</p>}
       <div className="hx-deck-share__opts">
         <div className="hx-deck-share__opt">
           <span>{t('next.deck.share.guestComments')}</span>
@@ -315,15 +367,17 @@ const DeckShare = ({ machine, project, title, closing, onAsGuest }: IDeckSharePr
             onChange={(on) => change('comments', { comments: on })}
           />
         </div>
-        <div className="hx-deck-share__opt">
-          <span>{t('next.deck.share.pdf')}</span>
-          <Switch
-            label={t('next.deck.share.pdfLabel')}
-            checked={flags.pdf}
-            disabled={!ready || !idle || (!canPdf && !flags.pdf)}
-            onChange={(on) => change('pdf', { pdf: on })}
-          />
-        </div>
+        {!video && (
+          <div className="hx-deck-share__opt">
+            <span>{t('next.deck.share.pdf')}</span>
+            <Switch
+              label={t('next.deck.share.pdfLabel')}
+              checked={flags.pdf}
+              disabled={!ready || !idle || (!canPdf && !flags.pdf)}
+              onChange={(on) => change('pdf', { pdf: on })}
+            />
+          </div>
+        )}
         {pdfLine !== null && (
           <p className="hx-deck-share__note" data-pdf={pdfLine.k} role="status">
             {pdfText(pdfLine, now)}

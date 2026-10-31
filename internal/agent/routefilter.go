@@ -36,7 +36,7 @@ const maxFilterBody = 1 << 20
 // terminalRoutes are the prefixes of what is a shell on the machine: the page's terminal socket (the older one and the
 // chat page's), and the console a hub-carried runtime opens for an agent's login, its page and its API. Denying a prefix
 // covers its sub-routes too.
-var terminalRoutes = []string{"/api/terminal", "/api/v2/terminal", "/console/", "/api/console/"}
+var terminalRoutes = []string{"/api/terminal", "/api/v2/terminal", "/api/browser/", "/console/", "/api/console/"}
 
 // isOwnTerminals: the chat page's own shells of a conversation, `/api/v2/conversations/<id>/terminals…`.
 func isOwnTerminals(p string) bool {

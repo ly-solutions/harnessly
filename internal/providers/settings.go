@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // OAuthStub is the Claude Code OAuth token of a profile's chat. Claude Code takes the key of apiKeyHelper before an
@@ -26,12 +28,17 @@ var (
 	slugRe = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
-// ClaudeEnv is the environment block of a profile's Claude Code settings for a chat on model. Every variable that could
-// carry an Anthropic credential to the vendor is blanked or stubbed; the vendor's key is not here, it is read from a
-// file by apiKeyHelper.
-func (p Preset) ClaudeEnv(model Model) map[string]string {
+// ProxyToken is the token Claude Code sends the local proxy of a Proxied profile: Claude Code wants one, and the proxy
+// reads none (it holds the vendor's sign-in itself, and takes no credential from a client). What keeps the chat from
+// another listener is that its address is that of the runtime's own proxy (Proxy.Ensure).
+const ProxyToken = "unused"
+
+// ClaudeEnv is the environment block of a profile's Claude Code settings for a chat on model, its requests going to
+// base. Every variable that could carry an Anthropic credential to the vendor is blanked or stubbed; the vendor's key is
+// not here, it is read from a file by apiKeyHelper. A Proxied profile has no key: its token is ProxyToken.
+func (p Preset) ClaudeEnv(model Model, base string) map[string]string {
 	env := map[string]string{
-		"ANTHROPIC_BASE_URL":                       strings.TrimRight(p.BaseURL, "/"),
+		"ANTHROPIC_BASE_URL":                       strings.TrimRight(base, "/"),
 		"ANTHROPIC_MODEL":                          model.ID,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":             model.ID,
 		"ANTHROPIC_DEFAULT_SONNET_MODEL":           model.ID,
@@ -43,6 +50,9 @@ func (p Preset) ClaudeEnv(model Model) map[string]string {
 		"ANTHROPIC_API_KEY":                        "",
 		"CLAUDE_CODE_OAUTH_TOKEN":                  OAuthStub,
 	}
+	if p.Proxied {
+		env["ANTHROPIC_AUTH_TOKEN"] = ProxyToken
+	}
 	for k, v := range p.Env {
 		env[k] = v
 	}
@@ -51,9 +61,10 @@ func (p Preset) ClaudeEnv(model Model) map[string]string {
 
 // SettingsFile writes (rewritten only when its content changes) the `--settings` file of a Claude Code chat on a
 // profile and a model, and gives its path. It is a copy of the hooks settings file (hooksPath) with the profile's
-// environment and an apiKeyHelper that reads the key from its file; a variable the hooks file already had in `env` is
-// kept unless the profile sets it. The key itself is never written here. The file is named after the profile and the
-// model, because the context window is the model's.
+// environment and an apiKeyHelper that reads the key from its file (none for a Proxied profile, which has no key); a
+// variable the hooks file already had in `env` is kept unless the profile sets it. The key itself is never written here. The file is named after the profile and the
+// model, because the context window is the model's. A Proxied profile's proxy is started first (Proxy.Ensure): the
+// address in the file is its own.
 func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 	p, ok := Find(id)
 	if !ok {
@@ -65,6 +76,18 @@ func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 	m, ok := p.ModelOf(model)
 	if !ok {
 		return "", ErrUnknownModel
+	}
+	base := p.BaseURL
+	if p.Proxied {
+		if s.Proxy == nil {
+			return "", ErrProxyMissing
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), ProxyStartTimeout+5*time.Second)
+		defer cancel()
+		var err error
+		if base, err = s.Proxy.Ensure(ctx); err != nil {
+			return "", err
+		}
 	}
 	raw, err := os.ReadFile(hooksPath)
 	if err != nil {
@@ -80,11 +103,15 @@ func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 			env[k] = v
 		}
 	}
-	for k, v := range p.ClaudeEnv(m) {
+	for k, v := range p.ClaudeEnv(m, base) {
 		env[k] = v
 	}
 	settings["env"] = env
-	settings["apiKeyHelper"] = "cat " + shellQuote(s.KeyFile(id))
+	if p.Proxied {
+		delete(settings, "apiKeyHelper")
+	} else {
+		settings["apiKeyHelper"] = "cat " + shellQuote(s.KeyFile(id))
+	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return "", err

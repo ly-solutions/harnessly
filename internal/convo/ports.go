@@ -77,6 +77,8 @@ type LaunchRequest struct {
 	// First is the text the agent starts with as its first prompt (a message the conversation carries by the launch,
 	// never typed); "" for none.
 	First string
+	// Apps are the apps on in the conversation, which its agent starts with (internal/apps); Claude Code only.
+	Apps []string
 }
 
 // AgentSession is a session an agent CLI kept on the machine.
@@ -254,4 +256,8 @@ type Deps struct {
 	// message that would start Claude's bash mode ("!…") is refused{forbidden}, and one queued earlier is not typed
 	// (see internal/chatguard, which also guards the pane the typist writes to).
 	TerminalOff func() bool
+
+	// AppsOK checks the apps a conversation is asked to turn on: each installed on this machine and working in a chat.
+	// It answers the id of the first that is not, or "". nil: no app can be turned on (refused{unsupported}).
+	AppsOK func(ids []string) string
 }

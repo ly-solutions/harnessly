@@ -31,6 +31,11 @@ describe('usePresence', () => {
 });
 
 describe('useLeavingList', () => {
+  it('takes a new empty array on every render as no change', () => {
+    const { result } = renderHook(() => useLeavingList([] as { id: string }[], (item) => item.id, 220));
+    expect(result.current).toEqual([]);
+  });
+
   it('keeps a removed item in its place while it leaves', () => {
     const a = { id: 'a' };
     const b = { id: 'b' };

@@ -29,10 +29,28 @@ All notable changes to this project are documented here. The format follows
   sight, nothing lost. The start page picks the machine of a new chat (the default one is the machine picked in the
   sidebar). Projects of two machines with the same id no longer take each other's place on the page.
 
+- Video: the model behind the «Видео» type — state with scenes on a time line (moments read from `data-tk-at` / `data-tk-out` /
+  `data-build-in`, automatic length), settings, a scene's length and transition, comments on a moment or a stretch.
+- Video: rendering to MP4 — scenes become cached clips (ffmpeg, one tab pair, paused under load), joined without re-encoding, subtitles burned in on a second pass, published as `video.mp4` / `video-9x16.mp4` with `chapters.json` and `video.json`.
+- Design video: `harnessly design video get|scene|frame|check|render|comments` for agents, the «Video (kind video)» section of the library guide (v9) and the first-message lines of a new video.
+- Design, Video: the live player — two scene frames swapped at scene boundaries, play/pause, ±5/10 s, frame step, scene and tenth jumps, I/O range, live or MP4 source, subtitle overlay.
+- Design: the Video shell and create screen — bar, stage and timeline slots, a panel with the chat and comments, style, render of MP4 per format with a current/outdated mark and download, and a create screen with formats, length and subtitles.
+- Video: a guest link to a video plays the published MP4 in 16:9 or 9:16 with chapters, a comment strip and range select; the link index says `deck.type: video` with its formats and length.
 - Releases: a `vX.Y.Z` tag publishes archives for linux and macOS (amd64, arm64) with `checksums.txt` signed keyless with cosign
   (`checksums.txt.sigstore.json`) and a build provenance attestation, and a multi-arch container image
   `ghcr.io/ly-solutions/harnessly` (`X.Y.Z`, `X.Y`, `latest`, and `-with-agents`), signed and attested. `docs/deploy.md` starts
   with a quick start (Docker, release binary, source), how to verify and how to update.
+- Design: the contracts of videos (projects of the kind `video`, a deck folder with `meta/video.json`): the video's
+  JSON shapes and files (`meta/video.json`, `meta/scenes`, `.media/video`, the time fields of a comment), the
+  `/design/video/*` and `/api/cli/design/video/*` routes (answering 501 until their parts land), `video` settings in
+  `POST /api/v2/designly/create`, the Video tile and its create route, and the page's video readers, calls, scene
+  messages, store and texts. A video still opens in the site view.
+- Design: the video's engine. A video's board gets `/__lib/video-runtime.js` before its engine: the scene runs on its own
+  clock (build-ins by `data-tk-at`, the board's animations seeked, a seeded `Math.random`), talks to the player by
+  `tk:video-*` messages and to headless Chrome by `window.tkVideo`. `GET /design/video/frame` and `design video frame`
+  draw a cached JPEG of a scene at a time (draft or full size), `design video check` lints the boards' scripts and finds
+  moments past a scene's end, text that overflows, blocks off screen, small text in 9:16 and frames that do not repeat
+ .
 - Presentations: sharing a deck never waits for its PDF. The link is made and can be copied at once; the runtime keeps
   the guests' PDF (`POST /design/deck/pdf`, a marker in `.media/pdf-auto`), builds it in the background, again a few
   seconds after the deck stops changing, and publishes each build the usual way. The share sheet says how the PDF is

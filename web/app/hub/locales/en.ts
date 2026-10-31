@@ -65,6 +65,10 @@ export const en: Record<Key, Entry> = {
   'notFound.text': 'Check the address or go back to the start.',
   'session.failed': 'Could not reach the hub',
 
+  // ---- remote browser
+  'browser.connecting': 'Connecting to the browser…',
+  'browser.failed': 'Could not connect to the browser.',
+
   // ---- formats
   'fmt.gb': '{n} GB',
   'fmt.mb': '{n} MB',

@@ -28,6 +28,8 @@ import Switch from '@/next/ui/switch';
 import { usePresentFlag } from '@/next/ui/presence';
 import type { IMachineChoice } from '@/next/features/sidebar/types';
 import { t } from '@/next/i18n';
+// The trigger's own look (.hx-model) is the composer's: a picker outside the field brings it along.
+import '@/next/styles/composer.css';
 import '@/next/styles/picker.css';
 
 const EXIT_MS = 240;

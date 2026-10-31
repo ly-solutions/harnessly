@@ -3,6 +3,7 @@
 // them by when a module first asks for them, which differs from the order they had as separate files. This module is
 // the first thing the interface imports, so this list is the cascade: the base first, the features after it.
 import '@/next/styles/tokens.css';
+import '@/next/styles/palettes.css';
 import '@/next/styles/base.css';
 import '@/next/styles/icons.css';
 import '@/next/styles/ui.css';
@@ -37,6 +38,10 @@ import '@/next/styles/site-pane.css';
 import '@/next/styles/deck.css';
 import '@/next/styles/deck-media.css';
 import '@/next/styles/deck-share.css';
+import '@/next/styles/video-player.css';
+import '@/next/styles/video-timeline.css';
+import '@/next/styles/video-shell.css';
+import '@/next/styles/video-guest.css';
 import '@/next/styles/connection.css';
 import '@/next/styles/design-access.css';
 import '@/next/styles/side-chat.css';

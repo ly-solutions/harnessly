@@ -91,10 +91,12 @@ var LoginReasons = []LoginReason{LoginNotInstalled, LoginStartFailed, LoginCodeR
 
 // LoginFlow is one sign-in. `url` is the vendor's link to open; `userCode` is the one-time code to type there (device
 // mode only, it is no secret: it opens nothing without the person's own sign-in). `expiresAt` is when the runtime gives
-// the flow up.
+// the flow up. Profile is set on the sign-in of a profile's proxy (ProfileLoginSource): Provider is then the CLI the
+// profile runs through and the flow is a device flow.
 type LoginFlow struct {
 	ID        string       `json:"id"`
 	Provider  Provider     `json:"provider"`
+	Profile   string       `json:"profile,omitempty"`
 	Mode      LoginMode    `json:"mode"`
 	State     LoginState   `json:"state"`
 	Input     LoginInput   `json:"input"`
@@ -113,7 +115,13 @@ func (f LoginFlow) Validate() error {
 	if !loginID.MatchString(f.ID) {
 		errs = append(errs, errors.New("id: not a flow id"))
 	}
-	if !slices.Contains(LoginModesOf(f.Provider), f.Mode) {
+	switch {
+	case f.Profile != "":
+		errs = append(errs, profileIDErr(f.Profile))
+		if f.Mode != LoginDevice {
+			errs = append(errs, errors.New("mode: a profile's proxy signs in with a device code"))
+		}
+	case !slices.Contains(LoginModesOf(f.Provider), f.Mode):
 		errs = append(errs, errors.New("mode: the CLI does not take it"))
 	}
 	if f.URL != nil && !strings.HasPrefix(*f.URL, "https://") {

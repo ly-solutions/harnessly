@@ -23,6 +23,8 @@ type Store struct {
 	// Logins are the vendor CLIs' own sign-ins a profile runs on when no key is saved for it, by profile id (the Grok
 	// CLI's for xai); nil for none.
 	Logins map[string]Login
+	// Proxy is the local proxy the Proxied presets run through; nil when the machine has none to start.
+	Proxy *Proxy
 
 	mu sync.Mutex
 	// masks are the keys the feed hides, each with the form it has in a JSON string; read on every frame, so kept here
@@ -40,8 +42,13 @@ func (s *Store) KeyFile(id string) string { return filepath.Join(s.Dir, id+".key
 
 // Set saves the key of a profile, replacing a saved one, and answers what the page may know of it.
 func (s *Store) Set(id, key string) (wire.ProfileKey, error) {
-	if _, ok := Find(id); !ok {
+	p, ok := Find(id)
+	if !ok {
 		return wire.ProfileKey{}, wire.ErrProfileUnknown
+	}
+	if p.Proxied {
+		// Its proxy holds the sign-in: a key here would be read by nothing.
+		return wire.ProfileKey{}, wire.ErrProfileNoKey
 	}
 	if err := (wire.ProfileKeyEdit{Key: key}).Validate(); err != nil {
 		return wire.ProfileKey{}, err

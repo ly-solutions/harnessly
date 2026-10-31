@@ -27,7 +27,7 @@ export const DEFAULT_CREATE_SETTINGS: IDeckCreateSettings = {
   minutes: null,
   slides: null,
   tone: 'talk',
-  script: true,
+  script: false,
   useStyle: true,
 };
 

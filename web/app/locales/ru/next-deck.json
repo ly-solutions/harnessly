@@ -59,6 +59,7 @@
   "next.deck.create.previewFonts": "{head} · {body}",
   "next.deck.create.previewHead": "Заголовок слайда",
   "next.deck.create.script": "Текст для суфлёра",
+  "next.deck.create.scriptShort": "Суфлёр",
   "next.deck.create.settingsChip": "Настройки",
   "next.deck.create.styleBody": {
     "one": "Цвета, шрифт, логотип и {n} макет слайдов — презентация соберётся из них",

@@ -27,15 +27,16 @@ import { plural, t } from '@/next/i18n';
 import { formatAgoFull } from '@/next/i18n/format';
 import '@/next/styles/designly.css';
 
-export const DESIGN_KIND = { site: 'site', slides: 'slides', ds: 'ds' } as const;
+export const DESIGN_KIND = { site: 'site', slides: 'slides', video: 'video', ds: 'ds' } as const;
 export type TDesignKind = (typeof DESIGN_KIND)[keyof typeof DESIGN_KIND];
 
 const KIND_ICON: Record<TDesignKind, string> = {
   [DESIGN_KIND.site]: 'app-window',
   [DESIGN_KIND.slides]: 'presentation',
+  [DESIGN_KIND.video]: 'clapperboard',
   [DESIGN_KIND.ds]: 'palette',
 };
-const KINDS = [DESIGN_KIND.site, DESIGN_KIND.slides, DESIGN_KIND.ds] as const;
+const KINDS = [DESIGN_KIND.site, DESIGN_KIND.slides, DESIGN_KIND.video, DESIGN_KIND.ds] as const;
 
 export interface IDesignCard {
   id: string;
@@ -69,6 +70,8 @@ export interface IDesignlyCompose {
   voice: IDesignlyVoice;
   /** The Presentation tile: a deck is made on its own create screen, with the brief typed so far. */
   onDeck?: () => void;
+  /** The Video tile: a video is made on its own create screen, with the brief typed so far. */
+  onVideo?: () => void;
 }
 
 export interface IDesignlyHomeProps {
@@ -221,7 +224,17 @@ interface IHeroProps extends IDesignlyCompose {
 }
 
 /** «Что нарисуем?»: the field with its model, design system and microphone, and the kinds under it. */
-const Hero = ({ systems, onCreate, brief, onBrief, picker, voice, onDeck, inputRef }: IHeroProps) => {
+const Hero = ({
+  systems,
+  onCreate,
+  brief,
+  onBrief,
+  picker,
+  voice,
+  onDeck,
+  onVideo,
+  inputRef,
+}: IHeroProps) => {
   const [kind, setKind] = useState<TDesignKind>(DESIGN_KIND.site);
   const [ds, setDs] = useState<string | null>(null);
   const { value: bar, state: barState } = usePresence(voice.recording, REC_EXIT_MS);
@@ -356,6 +369,10 @@ const Hero = ({ systems, onCreate, brief, onBrief, picker, voice, onDeck, inputR
               onClick={() => {
                 if (k === DESIGN_KIND.slides && onDeck) {
                   onDeck();
+                  return;
+                }
+                if (k === DESIGN_KIND.video && onVideo) {
+                  onVideo();
                   return;
                 }
                 setKind(k);

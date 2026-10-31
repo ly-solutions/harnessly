@@ -10,6 +10,8 @@ export interface IDeckChatContext {
   text: string;
   /** A block is selected (the field asks what to do with it). */
   selected: boolean;
+  /** `text` is a whole `<annotation>` block already (a video's stretch): it goes as it is, numbered in the message. */
+  block?: boolean;
 }
 
 const oneLine = (text: string) =>
@@ -23,6 +25,14 @@ const oneLine = (text: string) =>
 /** The block as the agent reads it; read back by features/designly/annotation.ts as a note with the element line. */
 export const formatDeckContext = (n: number, text: string): string =>
   [`<annotation n="${n}" kind="deck">`, `element: ${oneLine(text)}`, '</annotation>'].join('\n');
+
+const BLOCK_HEAD = /^<annotation n="\d+"/;
+
+/** The context as the message carries it: a ready block takes the message's number, anything else is the deck's. */
+export const formatChatContext = (n: number, ctx: IDeckChatContext): string =>
+  ctx.block === true && BLOCK_HEAD.test(ctx.text)
+    ? ctx.text.replace(BLOCK_HEAD, `<annotation n="${n}"`)
+    : formatDeckContext(n, ctx.text);
 
 /** The chip of the composer. */
 export const deckContextQuote = (ctx: IDeckChatContext) => ({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DAY_GROUP, childrenOf, dayGroupOf, sectionsOf } from '@/next/features/sidebar/group';
+import { DAY_GROUP, childrenOf, dayGroupOf, folderRows, sectionsOf } from '@/next/features/sidebar/group';
 import { CHAT_STATUS, type ISidebarChat } from '@/next/features/sidebar/types';
 
 const NOW = new Date(2026, 9, 22, 15, 0).getTime();
@@ -116,5 +116,25 @@ describe('sectionsOf', () => {
     const { pinned, projects: inProjects } = sectionsOf(chats, projects, NOW);
     expect(inProjects[0]?.chats.map((c) => c.id)).toEqual(['p-new', 'p-old']);
     expect(pinned.map((c) => c.id)).toEqual(['f-new', 'f-old']);
+  });
+});
+
+describe('folderRows', () => {
+  const rows = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => ({ id }));
+
+  it('keeps a short folder whole', () => {
+    expect(folderRows(rows.slice(0, 5), null)).toEqual({ shown: rows.slice(0, 5), hidden: 0 });
+  });
+
+  it('shows five and counts the rest behind «Дальше»', () => {
+    const { shown, hidden } = folderRows(rows, null);
+    expect(shown.map((r) => r.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(hidden).toBe(2);
+  });
+
+  it('never hides the open chat', () => {
+    const { shown, hidden } = folderRows(rows, 'g');
+    expect(shown.map((r) => r.id)).toEqual(['a', 'b', 'c', 'd', 'e', 'g']);
+    expect(hidden).toBe(1);
   });
 });

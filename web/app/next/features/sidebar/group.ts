@@ -43,6 +43,23 @@ const NO_CHILDREN: readonly ISidebarChat[] = [];
 export const childrenOf = (sections: ISidebarSections, id: string): readonly ISidebarChat[] =>
   sections.children.get(id) ?? NO_CHILDREN;
 
+/** How many chats a folder shows before «Дальше». */
+export const FOLDER_ROWS = 5;
+
+/**
+ * A folder's first rows, and how many wait behind «Дальше». The open chat is never hidden: past the first rows it is
+ * shown after them, in its place in the order.
+ */
+export const folderRows = <T extends { id: string }>(
+  list: readonly T[],
+  currentId: string | null,
+  max: number = FOLDER_ROWS,
+): { shown: readonly T[]; hidden: number } => {
+  if (list.length <= max) return { shown: list, hidden: 0 };
+  const shown = list.filter((row, i) => i < max || row.id === currentId);
+  return { shown, hidden: list.length - shown.length };
+};
+
 /** Newest message of the person first; chats written at the same moment stay in the order of their creation. */
 export const byPrompt = (a: ISidebarChat, b: ISidebarChat) =>
   b.lastPromptAt - a.lastPromptAt || b.createdAt - a.createdAt;

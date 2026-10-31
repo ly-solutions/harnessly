@@ -113,3 +113,36 @@ const LazyView = <P extends object>({
 };
 
 export default LazyView;
+
+export interface IGuardedProps {
+  /** What the failure is called. */
+  title: string;
+  size?: TLoadFailedSize;
+  /** What shows while what is inside is on its way. */
+  fallback: ReactNode;
+  /** Asks again for what failed; one that cannot be asked again by a lazy component reloads the page. */
+  onRetry: () => void;
+  children: ReactNode;
+}
+
+/**
+ * Content that arrives in chunks it does not own (a Legacy tool's contents, lazy inside): the fallback stands while it
+ * comes and a failure is said with a retry, never a blank where the tool should be.
+ */
+export const Guarded = ({ title, size = 'pane', fallback, onRetry, children }: IGuardedProps) => {
+  const [round, setRound] = useState(0);
+  return (
+    <Boundary
+      key={round}
+      title={title}
+      size={size}
+      below={null}
+      onRetry={() => {
+        onRetry();
+        setRound((n) => n + 1);
+      }}
+    >
+      <Suspense fallback={fallback}>{children}</Suspense>
+    </Boundary>
+  );
+};

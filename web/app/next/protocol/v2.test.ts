@@ -82,6 +82,7 @@ describe('v2 closed lists', () => {
     FileOp: v2.FILE_OPS,
     OutputKind: v2.OUTPUT_KINDS,
     OutputOp: v2.OUTPUT_OPS,
+    MadeKind: v2.MADE_KINDS,
     EntryKind: v2.ENTRY_KINDS,
     SubagentStatus: v2.SUBAGENT_STATUSES,
     NoticeLevel: v2.NOTICE_LEVELS,
@@ -120,6 +121,7 @@ describe('v2 closed lists', () => {
     RetryableRefuseCode: v2.RETRYABLE_REFUSE_CODES,
     DesignKind: v2.DESIGN_KINDS,
     DesignDeckTone: v2.DESIGN_DECK_TONES,
+    DesignVideoFormat: v2.DESIGN_VIDEO_FORMATS,
     DesignRole: v2.DESIGN_ROLES,
     FileKind: v2.FILE_KINDS,
     AppID: v2.APP_IDS,
@@ -563,5 +565,31 @@ describe('handoff history protocol', () => {
         artifactId: '0123456789abcdef0123456789abcdef',
       }),
     ).toThrow(ProtocolError);
+  });
+
+  it('reads a made list with tasks, and leaves out a kind it does not know instead of refusing the list', () => {
+    const base = { title: '', op: 'created', at: 1, cover: null, designKind: null };
+    const made = parsePage.made({
+      items: [
+        {
+          ...base,
+          kind: 'task',
+          ref: 'https://t/issue/E-1',
+          task: {
+            key: 'E-1',
+            type: 'Epic',
+            state: '',
+            resolved: false,
+            parent: null,
+            children: [{ key: 'E-2', title: 'x', url: 'https://t/issue/E-2', state: '', resolved: true }],
+          },
+        },
+        { ...base, kind: 'hologram', ref: 'x' },
+        { ...base, kind: 'doc', ref: 'https://d/a/spec' },
+      ],
+      complete: true,
+    });
+    expect(made.items.map((x) => x.kind)).toEqual(['task', 'doc']);
+    expect(made.items[0].task?.children[0].resolved).toBe(true);
   });
 });

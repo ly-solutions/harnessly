@@ -8,6 +8,7 @@ import { designKey } from '@/next/features/designly/design-conv';
 import DeckCreate, { type IDeckCreateInput } from '@/next/features/designly/deck/deck-create';
 import { useStartChoice } from '@/next/bindings/use-start-choice';
 import { rememberChoice } from '@/next/features/composer/start-choice';
+import type { IModelPickerProps } from '@/next/features/composer/model-picker';
 import type { MachineId } from '@/next/protocol/v2';
 import { goTo, ROUTE } from '@/next/routes/routes';
 import { toast } from '@/next/ui/toast';
@@ -15,11 +16,13 @@ import { t } from '@/next/i18n';
 
 interface IDeckCreateViewProps {
   machine: MachineId;
+  /** The machines a design can be made on, for a person with several; picking one makes it the open machine. */
+  machines?: IModelPickerProps['machine'];
 }
 
-const DeckCreateView = ({ machine }: IDeckCreateViewProps) => {
+const DeckCreateView = ({ machine, machines = null }: IDeckCreateViewProps) => {
   // The same start as a new chat: the CLI settings file's model and effort, else the last pick, else the first model.
-  const { choice } = useStartChoice(machine, true);
+  const { choice, agents, onPick } = useStartChoice(machine, true);
   const [systems, setSystems] = useState<IDesignSystem[]>([]);
   useEffect(() => {
     const abort = new AbortController();
@@ -55,6 +58,16 @@ const DeckCreateView = ({ machine }: IDeckCreateViewProps) => {
   return (
     <DeckCreate
       machine={machine}
+      model={
+        choice && {
+          value: choice,
+          agents,
+          locked: false,
+          offersUltracode: false,
+          onChange: onPick,
+          machine: machines,
+        }
+      }
       onBack={() => goTo({ kind: ROUTE.designly })}
       systems={systems}
       onCreate={onCreate}

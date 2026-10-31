@@ -34,6 +34,7 @@ export const FEATURES = [
   'fork',
   'handoff',
   'auto-continue',
+  'made',
 ] as const;
 export type Feature = (typeof FEATURES)[number];
 export const REACHES = ['online', 'unreachable', 'unknown'] as const;
@@ -309,6 +310,7 @@ export const OPS = [
   'conversation.create',
   'conversation.rename',
   'conversation.pin',
+  'conversation.apps',
   'conversation.move',
   'conversation.delete',
   'conversation.restore',
@@ -425,7 +427,7 @@ export interface MachineAgent {
 }
 /** A profile id: lower case, `^[a-z][a-z0-9-]{0,31}$`. The runtime owns the list (`kimi`, `glm`, `xai`…). */
 export type ProfileId = string;
-export const PROFILE_VENDORS = ['kimi', 'glm', 'grok'] as const;
+export const PROFILE_VENDORS = ['kimi', 'glm', 'grok', 'chatgpt'] as const;
 export type ProfileVendor = (typeof PROFILE_VENDORS)[number];
 /** A backend profile a machine can start a conversation on: another vendor's models behind this CLI. */
 export interface ProfileOffer {
@@ -457,10 +459,17 @@ export interface ProfileInfo {
   /** The vendor CLI's own sign-in on the machine (a subscription) the profile runs on when no key is saved; absent
    *  when there is none. */
   login?: ProfileLogin;
+  /** The program on the machine the profile runs through (claude-code-proxy for ChatGPT); absent for one that goes to
+   *  the vendor itself. Such a profile takes no key: it signs the program in (POST /api/v2/providers/{id}/login). */
+  proxy?: ProfileProxy;
 }
 /** A sign-in of the vendor's CLI: whom it is of (an email). */
 export interface ProfileLogin {
   account: string;
+}
+/** The local program a profile runs through: whether it is installed. */
+export interface ProfileProxy {
+  installed: boolean;
 }
 export interface ProfileList {
   profiles: ProfileInfo[];
@@ -514,6 +523,8 @@ export type LoginReason = (typeof LOGIN_REASONS)[number];
 export interface LoginFlow {
   id: string;
   provider: Provider;
+  /** Set on the sign-in of a profile's proxy: `provider` is then the CLI the profile runs through, the mode `device`. */
+  profile?: ProfileId;
   mode: LoginMode;
   state: LoginState;
   input: LoginInput;
@@ -617,8 +628,48 @@ export interface Terminal {
   id: string;
   createdAt: Ms;
 }
-export type DesignKind = 'site' | 'slides' | 'ds';
-export const DESIGN_KINDS: readonly DesignKind[] = ['site', 'slides', 'ds'];
+/** `video` is a deck folder with meta/video.json: scenes on a time line rendered to MP4. */
+export type DesignKind = 'site' | 'slides' | 'ds' | 'video';
+export const DESIGN_KINDS: readonly DesignKind[] = ['site', 'slides', 'ds', 'video'];
+
+/** What a chat made, opened or changed that the tools home lists: a document, a board, a design, a tracker task. */
+export const MADE_KINDS = ['doc', 'board', 'design', 'task'] as const;
+export type MadeKind = (typeof MADE_KINDS)[number];
+/** A task named by another: its epic, or a subtask of an epic. */
+export interface MadeTaskRef {
+  key: string;
+  title: string;
+  url: string;
+  state: string;
+  resolved: boolean;
+}
+/** What the tracker says of a task the chat touched; type is «Epic» for an epic, whose subtasks are children. */
+export interface MadeTaskInfo {
+  key: string;
+  type: string;
+  state: string;
+  resolved: boolean;
+  parent: MadeTaskRef | null;
+  children: MadeTaskRef[];
+}
+/** ref is the link of a document, a board or a task (a board's ?k= stays: it opens it) or a design's id; title is empty when
+ *  the runtime does not know it. cover and designKind belong to a design. */
+export interface MadeItem {
+  kind: MadeKind;
+  ref: string;
+  title: string;
+  op: OutputOp;
+  at: Ms;
+  cover: string | null;
+  designKind: DesignKind | null;
+  /** A task's place in the tracker; absent for the rest and for a task the tracker did not answer for. */
+  task?: MadeTaskInfo;
+}
+/** GET /api/v2/conversations/{id}/made, newest first; `complete` is false while the runtime still reads the transcript. */
+export interface ChatMade {
+  items: MadeItem[];
+  complete: boolean;
+}
 /** What a person may do in a project, weakest first. Absent from a runtime that does not restrict access. */
 export type DesignRole = 'view' | 'comment' | 'edit' | 'manage' | 'owner';
 export const DESIGN_ROLES: readonly DesignRole[] = ['view', 'comment', 'edit', 'manage', 'owner'];
@@ -640,6 +691,15 @@ export interface DesignlyDeck {
   script: boolean;
   style: DesignlyDeckStyle | null;
 }
+/** A video's aspect. */
+export type DesignVideoFormat = '16:9' | '9:16';
+export const DESIGN_VIDEO_FORMATS: readonly DesignVideoFormat[] = ['16:9', '9:16'];
+/** What a new video is asked to be: one or both formats, seconds 15..300 or null (the agent decides), subtitles. */
+export interface DesignlyVideo {
+  formats: DesignVideoFormat[];
+  seconds: number | null;
+  subs: boolean;
+}
 /** The body of POST /api/v2/designly/create. */
 export interface DesignlyCreate {
   title: string;
@@ -651,6 +711,8 @@ export interface DesignlyCreate {
   designSystem: string | null;
   /** Only for the kind `slides`; an older runtime refuses the field, so it is sent only for a deck. */
   deck?: DesignlyDeck;
+  /** Only for the kind `video`; an older runtime refuses the field, so it is sent only for a video. */
+  video?: DesignlyVideo;
   /** Uploads (POST /api/v2/upload) the first message carries, at most 20. */
   attachmentIds?: string[];
 }
@@ -1198,6 +1260,7 @@ export interface Conversation {
   gate: { kind: GateKind; id: string } | null; // the open gate; its details are in the conv channel
   goal?: Goal; // the agent's /goal; absent when it has none
   launch?: Launch; // set on a chat started with others by one prompt on several models
+  apps?: string[]; // the installed apps turned on in this chat; absent when none is on
   recap?: Recap; // Claude's latest recap; absent when it has none
   bgAgents?: number; // background work it waits for, all kinds together (subagents, commands, monitors, a wakeup); absent when none — the chat is at work, not done
   bgWait?: BgWait; // what bgAgents is made of; absent when it waits for nothing
@@ -1782,6 +1845,7 @@ export interface CommandBodies {
   'conversation.rename': OpBody & { id: ConvId; title: string };
   'conversation.retitle': OpBody & { id: ConvId };
   'conversation.pin': OpBody & { id: ConvId; pinned: boolean };
+  'conversation.apps': OpBody & { id: ConvId; apps: string[] };
   'conversation.move': OpBody & { id: ConvId; projectId: string | null };
   'conversation.delete': OpBody & { id: ConvId; force?: boolean };
   'conversation.restore': OpBody & { id: ConvId };
@@ -2142,7 +2206,7 @@ const profileList: Decoder<ProfileList> = object({
         key: profileKey,
         models: array(agentModel),
       },
-      { login: object({ account: str }) },
+      { login: object({ account: str }), proxy: object({ installed: bool }) },
     ),
   ),
 });
@@ -2152,18 +2216,21 @@ const profileTest: Decoder<ProfileTest> = object({
   status: nullable(int),
   ms: int,
 });
-const loginFlow: Decoder<LoginFlow> = object({
-  id: str,
-  provider,
-  mode: oneOf(LOGIN_MODES),
-  state: oneOf(LOGIN_STATES),
-  input: oneOf(LOGIN_INPUTS),
-  url: nullable(str),
-  userCode: nullable(str),
-  startedAt: ms,
-  expiresAt: ms,
-  reason: nullable(oneOf(LOGIN_REASONS)),
-});
+const loginFlow: Decoder<LoginFlow> = object(
+  {
+    id: str,
+    provider,
+    mode: oneOf(LOGIN_MODES),
+    state: oneOf(LOGIN_STATES),
+    input: oneOf(LOGIN_INPUTS),
+    url: nullable(str),
+    userCode: nullable(str),
+    startedAt: ms,
+    expiresAt: ms,
+    reason: nullable(oneOf(LOGIN_REASONS)),
+  },
+  { profile: profileId },
+);
 const loginStatus: Decoder<LoginStatus> = object({ flow: nullable(loginFlow) });
 const loginOK: Decoder<LoginOK> = object({ ok: bool });
 const machineLoad: Decoder<MachineLoad> = object({
@@ -2330,6 +2397,47 @@ const designArtifact: Decoder<DesignArtifact> = object(
   },
   { touchedBy: array(convId), owner: designOwner, role: designRole },
 );
+const madeTaskRef: Decoder<MadeTaskRef> = object({
+  key: id,
+  title: str,
+  url: str,
+  state: str,
+  resolved: bool,
+});
+const madeTaskInfo: Decoder<MadeTaskInfo> = object({
+  key: id,
+  type: str,
+  state: str,
+  resolved: bool,
+  parent: nullable(madeTaskRef),
+  children: array(madeTaskRef),
+});
+const madeItem: Decoder<MadeItem> = object(
+  {
+    kind: oneOf(MADE_KINDS),
+    ref: id,
+    title: str,
+    op: oneOf(OUTPUT_OPS),
+    at: ms,
+    cover: nullable(id),
+    designKind: nullable(designKind),
+  },
+  { task: madeTaskInfo },
+);
+// A kind of thing this page does not know (a runtime newer than it) is left out of the list, not a reason to refuse it.
+const madeItems: Decoder<MadeItem[]> = (v, p) => {
+  if (!Array.isArray(v)) return fail(p, 'not an array');
+  const out: MadeItem[] = [];
+  v.forEach((x, i) => {
+    try {
+      out.push(madeItem(x, `${p}[${i}]`));
+    } catch (e) {
+      if (!(e instanceof ProtocolError)) throw e;
+    }
+  });
+  return out;
+};
+const chatMade: Decoder<ChatMade> = object({ items: madeItems, complete: bool });
 const designSystemInfo: Decoder<DesignSystemInfo> = object({ id, label: id, desc: str });
 const designlyPin: Decoder<DesignlyPin> = object({ id, pinned: bool });
 
@@ -2628,6 +2736,7 @@ const conversation: Decoder<Conversation> = object(
   {
     goal,
     launch,
+    apps: array(id),
     recap,
     pendingModel,
     modelLog: array(modelSwitch),
@@ -3072,6 +3181,7 @@ const commandBodies: { [K in Op]: Decoder<CommandBodies[K]> } = {
   'conversation.rename': object({ opId: id, id: convId, title: str }),
   'conversation.retitle': object({ opId: id, id: convId }),
   'conversation.pin': object({ opId: id, id: convId, pinned: bool }),
+  'conversation.apps': object({ opId: id, id: convId, apps: array(id) }),
   'conversation.move': object({ opId: id, id: convId, projectId: nullable(id) }),
   'conversation.delete': object({ opId: id, id: convId }, { force: bool }),
   'conversation.restore': object({ opId: id, id: convId }),
@@ -3240,9 +3350,14 @@ export const parsePage = {
     object({ path: str, entries: array(fileEntry), truncated: bool })(v, '$'),
   file: (v: unknown): FileContent => object({ path: id, content: str, revision: id, bytes: int })(v, '$'),
   tasks: (v: unknown): Task[] => array(task)(v, '$'),
-  legacy: (v: unknown): LegacyTab => legacyTab(v, '$'),
+  legacy: (v: unknown): LegacyTab | null => {
+    // A conversation without a tmux session yet answers {"tab":null}.
+    if (typeof v === 'object' && v !== null && 'tab' in v && v.tab === null) return null;
+    return legacyTab(v, '$');
+  },
   open: (v: unknown): OpenTarget => openTarget(v, '$'),
   openRefs: (v: unknown): OpenedRefs => openedRefs(v, '$'),
+  made: (v: unknown): ChatMade => chatMade(v, '$'),
   messageStatus: (v: unknown): MessageStatuses => object({ messages: array(messageStatus) })(v, '$'),
   context: (v: unknown): ConvContext => convContext(v, '$'),
   search: (v: unknown): MessageSearch => messageSearch(v, '$'),

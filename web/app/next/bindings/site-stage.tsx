@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { interrupt, sendMessage } from '@/next/commands';
 import { uploadSrc } from '@/next/commands/uploads';
 import ChatView from '@/next/bindings/chat-view';
+import { keepLayout, keptLayout } from '@/next/features/designly/site-layout';
 import type { IDockExtra } from '@/next/bindings/chat-dock';
 import { outgoingItem, useFeedItems } from '@/next/bindings/feed-items';
 import { useAgentLimits } from '@/next/bindings/use-limits';
@@ -47,7 +48,7 @@ import { formatAnnotation, withAnnotations } from '@/next/features/designly/anno
 import {
   DECK_CTX_ID,
   deckContextQuote,
-  formatDeckContext,
+  formatChatContext,
   type IDeckChatContext,
 } from '@/next/features/designly/deck/chat-context';
 import { anchorItems } from '@/next/features/designly/note-anchor';
@@ -341,6 +342,8 @@ export interface IStageOptions {
   /** The library server's port; null while the library loads. */
   port: number | null;
   onOpenDrawer: () => void;
+  /** The design's own page keeps where its chat stands; the right pane's copy has its own choice (pane-chat.ts). */
+  keep?: boolean;
 }
 
 /** Everything the site view needs to show the chat beside it and the field over it. */
@@ -354,6 +357,7 @@ export const useSiteStage = ({
   pageUrl,
   port,
   onOpenDrawer,
+  keep = false,
 }: IStageOptions): ISiteStage => {
   const key = designKey(machine, design);
   const current = useDesignConv(machine, design, fromChat);
@@ -377,14 +381,19 @@ export const useSiteStage = ({
     if (creating?.conv && creating.conv === convId && feed?.loaded) settleDesignCreating(key);
   }, [creating?.conv, convId, feed?.loaded, key]);
 
-  const [mode, setMode] = useState<TSiteMode>('island');
-  const [min, setMin] = useState(true);
-  const [float, setFloat] = useState<IFloat | null>(null);
-  const [dock, setDock] = useState<TDock>('left');
-  const [chatW, setChatW] = useState(CHAT_WIDTH);
+  // Where the chat stands comes back as the person left it on this design (site-layout.ts).
+  const [kept] = useState(() => (keep ? keptLayout(key) : null));
+  const [mode, setMode] = useState<TSiteMode>(kept?.mode ?? 'island');
+  const [min, setMin] = useState(kept?.min ?? true);
+  const [float, setFloat] = useState<IFloat | null>(kept?.float ?? null);
+  const [dock, setDock] = useState<TDock>(kept?.dock ?? 'left');
+  const [chatW, setChatW] = useState(kept?.chatW ?? CHAT_WIDTH);
   const [sview, setSview] = useState(false);
   // Where the chat stood open last: the folded one opens there again.
-  const [opened, setOpened] = useState<TSiteMode>('chat');
+  const [opened, setOpened] = useState<TSiteMode>(kept?.opened ?? 'chat');
+  useEffect(() => {
+    if (keep) keepLayout(key, { mode, min, dock, chatW, float, opened });
+  }, [keep, key, mode, min, dock, chatW, float, opened]);
 
   // One draft for the folded field and the open one: the chat's, or the design's own before it has a chat.
   const designDraft: DraftKey = `design:${key}`;
@@ -428,7 +437,7 @@ export const useSiteStage = ({
           port: port ?? 0,
         }),
       ),
-      ...(deckCtx ? [formatDeckContext(notes.length + 1, deckCtx.text)] : []),
+      ...(deckCtx ? [formatChatContext(notes.length + 1, deckCtx)] : []),
     ]);
   const afterSend = () => {
     setSawRun(false);
@@ -670,7 +679,10 @@ export const useSiteStage = ({
     chatW,
     context: (ctx) =>
       setDeckCtx((have) =>
-        have?.label === ctx?.label && have?.text === ctx?.text && have?.selected === ctx?.selected
+        have?.label === ctx?.label &&
+        have?.text === ctx?.text &&
+        have?.selected === ctx?.selected &&
+        have?.block === ctx?.block
           ? have
           : ctx && { ...ctx, selected: ctx.selected === true },
       ),

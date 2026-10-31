@@ -13,6 +13,7 @@ import { AccessScreen } from './screens/access';
 import { AccountScreen } from './screens/account';
 import { AgentsScreen } from './screens/agents';
 import { AuthScreen } from './screens/auth';
+import { BrowserScreen } from './screens/browser';
 import { DoneScreen } from './screens/done';
 import { HomeScreen } from './screens/home';
 import { InviteScreen } from './screens/invite';
@@ -30,6 +31,7 @@ const ROUTES = [
   '/invite/:token',
   '/new',
   '/settings',
+  '/browser/:machineId',
   '/s/:slug',
   '/s/:slug/settings',
   '/s/:slug/setup/:step',
@@ -173,6 +175,7 @@ const Routes = () => {
   if (!me) return <Redirect to={`/signin?next=${encodeURIComponent(path + search)}`} />;
   if (route === '/new') return <NewSpaceScreen />;
   if (route === '/settings') return <AccountScreen />;
+  if (route === '/browser/:machineId') return <BrowserScreen machineId={params.machineId ?? ''} />;
   const slug = params.slug ?? '';
   const SUB = {
     '/s/:slug': 'home',

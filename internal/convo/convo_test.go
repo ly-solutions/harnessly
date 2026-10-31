@@ -3,6 +3,7 @@ package convo
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1494,5 +1495,48 @@ func TestCreateUnderAParent(t *testing.T) {
 	}
 	if got := r.do(wire.ConversationCreateCmd{OpID: "x", Cwd: "/w", Provider: wire.ProviderClaude, ParentID: "tab-nope"}); got.R != wire.ResultRefused || got.Code != wire.RefuseNotFound {
 		t.Fatalf("unknown parent: %+v", got)
+	}
+}
+
+// conversation.apps: the list goes on the record when every app is one the machine has for a chat; one it has not is
+// refused and leaves the list; a runtime without apps refuses any.
+func TestAppsCommand(t *testing.T) {
+	r := newRig(t)
+	r.deps = func(d *Deps) {
+		d.AppsOK = func(ids []string) string {
+			for _, id := range ids {
+				if id != "acme.cashback" && id != "acme.mr-review" {
+					return id
+				}
+			}
+			return ""
+		}
+	}
+	r.rt = r.runtime()
+	r.open()
+	record := func() wire.Conversation {
+		cs, _ := r.rt.Conversations(context.Background())
+		return cs.Conversations[0]
+	}
+	if res := r.do(wire.ConversationAppsCmd{OpID: "a1", ID: r.id, Apps: []string{"acme.cashback", "acme.mr-review"}}); res.R != wire.ResultAccepted {
+		t.Fatalf("apps: %+v", res)
+	}
+	if got := record().Apps; !slices.Equal(got, []string{"acme.cashback", "acme.mr-review"}) {
+		t.Fatalf("record: %v", got)
+	}
+	if res := r.do(wire.ConversationAppsCmd{OpID: "a2", ID: r.id, Apps: []string{"acme.nope"}}); res.Code != wire.RefuseNotFound {
+		t.Fatalf("unknown app: %+v", res)
+	}
+	if got := record().Apps; len(got) != 2 {
+		t.Fatalf("a refused change touched the record: %v", got)
+	}
+	if res := r.do(wire.ConversationAppsCmd{OpID: "a3", ID: r.id, Apps: []string{}}); res.R != wire.ResultAccepted || record().Apps != nil {
+		t.Fatalf("all off: %+v %v", res, record().Apps)
+	}
+
+	bare := newRig(t)
+	bare.open()
+	if res := bare.do(wire.ConversationAppsCmd{OpID: "b1", ID: bare.id, Apps: []string{"acme.cashback"}}); res.Code != wire.RefuseUnsupported {
+		t.Fatalf("no apps on the runtime: %+v", res)
 	}
 }

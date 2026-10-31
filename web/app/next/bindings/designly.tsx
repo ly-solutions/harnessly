@@ -25,8 +25,10 @@ import { goTo, ROUTE } from '@/next/routes/routes';
 import { toast } from '@/next/ui/toast';
 import { useStartChoice } from '@/next/bindings/use-start-choice';
 import { rememberChoice } from '@/next/features/composer/start-choice';
+import type { IModelPickerProps } from '@/next/features/composer/model-picker';
 import { useVoice } from '@/next/bindings/use-voice';
 import { DECK_NEW_DRAFT } from '@/next/features/designly/deck/deck-create';
+import { VIDEO_NEW_DRAFT } from '@/next/features/designly/video/video-create';
 import { setDraftText } from '@/next/stores/drafts';
 import { t } from '@/next/i18n';
 
@@ -206,9 +208,11 @@ export const DesignlyLibrary = ({ machine, onOpen }: IDesignlyLibraryProps) => {
 
 interface IDesignlyViewProps {
   machine: MachineId;
+  /** The machines a design can be made on, for a person with several; picking one makes it the open machine. */
+  machines?: IModelPickerProps['machine'];
 }
 
-const DesignlyView = ({ machine }: IDesignlyViewProps) => {
+const DesignlyView = ({ machine, machines = null }: IDesignlyViewProps) => {
   const { cards, error, now, load, onPin, onDelete, onRetry } = useDesignLibrary(machine);
   const notice = noticeOf(useDesignEngine(machine));
   const [systems, setSystems] = useState<IDesignSystem[] | null>(null);
@@ -275,12 +279,19 @@ const DesignlyView = ({ machine }: IDesignlyViewProps) => {
           locked: false,
           offersUltracode: false,
           onChange: onPick,
+          machine: machines,
         },
         onDeck: () => {
           // The brief typed so far goes with the person to the deck's create screen.
           if (brief.trim()) setDraftText(DECK_NEW_DRAFT, brief);
           setBrief('');
           goTo({ kind: ROUTE.designlyNew });
+        },
+        onVideo: () => {
+          // The brief typed so far goes with the person to the video's create screen.
+          if (brief.trim()) setDraftText(VIDEO_NEW_DRAFT, brief);
+          setBrief('');
+          goTo({ kind: ROUTE.videoNew });
         },
         voice: {
           recording: voice.recording,

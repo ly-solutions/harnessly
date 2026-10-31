@@ -170,6 +170,15 @@ func TestAnswersAsTheOldRuntime(t *testing.T) {
 			lastEtag = e
 		}
 		got := strings.ReplaceAll(string(body), root, "$ROOT")
+		// The one deliberate departure from the old runtime: no transcript is an empty answer, not a 404.
+		if c.Status == http.StatusNotFound && c.Answer == `{"error":"Transcript not found"}` {
+			c.Status, c.Answer = http.StatusOK, `{"links":[],"workPaths":[],"complete":false}`
+			hs := map[string]string{"etag": nodejson.ETag(body), "cache-control": "no-store"}
+			if ct, ok := c.AnswerHeaders["content-type"]; ok {
+				hs["content-type"] = ct
+			}
+			c.AnswerHeaders = hs
+		}
 		if res.StatusCode != c.Status || got != c.Answer {
 			t.Fatalf("%s\n got %d %s\nwant %d %s", where, res.StatusCode, around(got, c.Answer), c.Status, around(c.Answer, got))
 		}

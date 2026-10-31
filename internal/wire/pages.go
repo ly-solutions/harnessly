@@ -259,6 +259,9 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request, parts []string) {
 	case len(parts) == 2 && parts[1] == "open":
 		s.open(ctx, w, r, id)
 		return
+	case len(parts) == 2 && parts[1] == "made":
+		s.made(ctx, w, r, id)
+		return
 	case len(parts) == 2 && parts[1] == "open-refs":
 		s.openRefs(ctx, w, r, id)
 		return

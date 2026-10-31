@@ -277,6 +277,9 @@ func (l *Library) serveLibrary(w http.ResponseWriter, r *http.Request, port int)
 	case scriptPath:
 		send(w, 200, "text/javascript; charset=utf-8", []byte(l.clientScript()), head, "Cache-Control", "public, max-age=300")
 		return
+	case videoRuntimePath:
+		send(w, 200, "text/javascript; charset=utf-8", []byte(l.text("video-runtime.js")), head, "Cache-Control", "public, max-age=300")
+		return
 	case versionPath:
 		if !IsLibraryID(id) || l.ReadArtifact(id) == nil {
 			send(w, 404, "application/json", notFoundJSON, head)
@@ -433,8 +436,15 @@ func (l *Library) boardsForBar(a *Artifact) []barBoard {
 
 var headTag = regexp.MustCompile(`(?i)<head(?:\s[^>]*)?>`)
 
-func withClient(source, id string) string {
+func withClient(source, id string) string { return withClientOf(source, id, false) }
+
+// withClientOf is withClient that, for a board of a video project, also puts the scene's runtime in, before the board's
+// engine: the runtime replaces the clock before any script of the board runs.
+func withClientOf(source, id string, video bool) string {
 	tag := resourcesScript() + `<script data-artifact="` + id + `" src="` + scriptPath + `"></script>`
+	if video {
+		tag += `<script src="` + videoRuntimePath + `"></script>`
+	}
 	if m := headTag.FindString(source); m != "" {
 		return strings.Replace(source, m, m+tag, 1)
 	}
@@ -639,7 +649,7 @@ func (l *Library) serveFile(w http.ResponseWriter, r *http.Request, q url.Values
 			sendHTML(w, 404, l.notFoundPage(), head)
 			return
 		}
-		send(w, 200, typ, []byte(withClient(withAssetVersions(jscompat.DecodeUTF8(src), filepath.Dir(file), root, l.engineSwap(id), l.hashed), id)), head)
+		send(w, 200, typ, []byte(withClientOf(withAssetVersions(jscompat.DecodeUTF8(src), filepath.Dir(file), root, l.engineSwap(id), l.hashed), id, l.IsVideo(id))), head)
 		return
 	}
 	st, err := os.Stat(file)

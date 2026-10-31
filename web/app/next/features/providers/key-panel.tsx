@@ -24,7 +24,7 @@ const TEST_TEXT = {
   page: 'next.providers.test.page',
 } as const satisfies Record<TestFailure, string>;
 
-const testLine = (test: TestState): string | null => {
+export const testLine = (test: TestState): string | null => {
   if (test.k === 'ok') return t('next.providers.testOk');
   return test.k === 'failed' ? t(TEST_TEXT[test.reason]) : null;
 };

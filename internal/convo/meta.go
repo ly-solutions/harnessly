@@ -31,7 +31,7 @@ func (c *conv) watchMeta(now time.Time) {
 			out.info = meta.Read(path)
 		}
 		if pics != nil {
-			out.shots = pics.Read(path)
+			out.shots = servable(pics.Read(path))
 		}
 		return out
 	}, func(r any) {
@@ -43,6 +43,21 @@ func (c *conv) watchMeta(now time.Time) {
 		}
 		c.shotsApply(got.shots)
 	})
+}
+
+// servable keeps the pictures whose file can still be handed over: a gone or unreadable one would only make the
+// page ask for it and fail.
+func servable(list []shots.Shot) []shots.Shot {
+	out := make([]shots.Shot, 0, len(list))
+	for _, s := range list {
+		f, err := shots.Open(s.Path)
+		if err != nil {
+			continue
+		}
+		f.Body.Close()
+		out = append(out, s)
+	}
+	return out
 }
 
 // metaRead is what one look at the transcripts found.

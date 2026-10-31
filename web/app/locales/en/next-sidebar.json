@@ -6,5 +6,8 @@
   "next.sidebar.pinned": "Pinned",
   "next.sidebar.projects": "Projects",
   "next.sidebar.projectEmpty": "Nothing here yet",
+  "next.sidebar.folderMore": "More",
+  "next.sidebar.foldList": "Fold the list",
+  "next.sidebar.unfoldList": "Unfold the list",
   "next.sidebar.favorites": "Favorites"
 }

@@ -5,9 +5,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func execed(pid int) bool {
+	args, ok := ProcessArgs(pid)
+	return ok && strings.HasPrefix(args, "sleep ")
+}
 
 func TestChildPIDs(t *testing.T) {
 	sh := exec.Command("sh", "-c", "sleep 30 & sleep 31 & wait")
@@ -15,10 +21,14 @@ func TestChildPIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = sh.Process.Kill(); _ = sh.Wait() }()
+	// A child is listed as soon as it forks, still as a copy of the shell; wait until both have exec-ed sleep.
 	var kids []int
-	for i := 0; i < 50 && len(kids) < 2; i++ {
+	for i := 0; i < 250; i++ {
 		time.Sleep(20 * time.Millisecond)
 		kids = ChildPIDs(sh.Process.Pid)
+		if len(kids) == 2 && execed(kids[0]) && execed(kids[1]) {
+			break
+		}
 	}
 	if len(kids) != 2 || kids[0] >= kids[1] {
 		t.Fatalf("children %v", kids)

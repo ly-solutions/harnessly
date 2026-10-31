@@ -100,6 +100,14 @@ func (f *fixture) runtime() http.Handler {
 			}
 		}
 	})
+	mux.HandleFunc("/api/browser/ws", func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		_ = c.Write(r.Context(), websocket.MessageText, []byte("browser"))
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = io.WriteString(w, "<h1>runtime "+r.URL.Path+"</h1>")
@@ -499,6 +507,40 @@ func TestWebSocketThroughTheTunnel(t *testing.T) {
 	_, res, err := websocket.Dial(ctx, "ws://"+u.Host+"/m/"+f.id+"/ws", nil)
 	if err == nil || res == nil || (res.StatusCode != 302 && res.StatusCode != 401) {
 		t.Errorf("anonymous upgrade: %v %v", res, err)
+	}
+}
+
+func TestBrowserWebSocketUsesTheHubSessionInBothModes(t *testing.T) {
+	for _, mode := range []string{"path", "subdomain"} {
+		t.Run(mode, func(t *testing.T) {
+			var f *fixture
+			if mode == "subdomain" {
+				f = setup(t, hubtest.Env("HUB_RUNTIME_DOMAIN", runtimeDomain))
+			} else {
+				f = setup(t)
+			}
+			u, _ := url.Parse(f.s.URL)
+			var cookie []string
+			for _, c := range f.owner.Client.Jar.Cookies(u) {
+				cookie = append(cookie, c.Name+"="+c.Value)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			address := "ws://" + u.Host + "/api/machines/" + f.id + "/browser/ws"
+			c, _, err := websocket.Dial(ctx, address, &websocket.DialOptions{HTTPHeader: http.Header{"Cookie": {strings.Join(cookie, "; ")}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.CloseNow()
+			_, got, err := c.Read(ctx)
+			if err != nil || string(got) != "browser" {
+				t.Fatalf("response %q, %v", got, err)
+			}
+			_, res, err := websocket.Dial(ctx, address, nil)
+			if err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
+				t.Errorf("anonymous upgrade: %v %v", res, err)
+			}
+		})
 	}
 }
 

@@ -26,7 +26,34 @@ type Launch struct {
 	// is set when the conversation starts and stays on the tab, so every later launch of it (resume, fork, rewind)
 	// goes to the same vendor. Empty: the CLI's own account.
 	Profile string `json:"profile,omitempty"`
+	// Apps are the installed apps on in the conversation (internal/apps): the launch gives the agent their plugins,
+	// instructions and tool policy. They stay on the tab and change when the person turns one on or off; the agent
+	// takes the change when it starts next.
+	Apps []string `json:"apps,omitempty"`
 }
+
+// AppIDRe: an app id goes into file names and the launch line, so it stays this strict (internal/apps checks the same).
+var AppIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}\.[a-z0-9][a-z0-9-]{0,39}$`)
+
+// AppLauncher gives a launch with apps what it needs of them. Nil on a machine without apps: such a launch fails.
+type AppLauncher interface {
+	// Claude is what a Claude Code chat with the apps adds: settingsPath is the `--settings` file the launch would use
+	// without them, which the apps' file extends.
+	Claude(ids []string, settingsPath string) (ClaudeApps, error)
+}
+
+// ClaudeApps is what the apps of a Claude Code chat add to its launch.
+type ClaudeApps struct {
+	// Settings replaces the --settings file: the one the launch had, with the app-guard hook.
+	Settings string
+	// PluginDirs are the apps' packages, each loaded with --plugin-dir (skills, commands, .mcp.json).
+	PluginDirs []string
+	// PromptFile is the apps' instructions joined, appended to the system prompt; "" for none.
+	PromptFile string
+}
+
+// ErrNoApps: a launch names apps and this machine has none.
+var ErrNoApps = errors.New("Apps are not available on this machine")
 
 // ProfileLauncher gives a launch on a backend profile what it needs of the profile: the Claude Code settings file that
 // points the CLI at the vendor, or the arguments that point Codex at it. It never gives a key: the CLI reads it from a
@@ -63,6 +90,7 @@ var (
 	ErrLaunchModel   = errors.New("Invalid launch model")
 	ErrLaunchEffort  = errors.New("Invalid launch effort")
 	ErrLaunchProfile = errors.New("Invalid launch profile")
+	ErrLaunchApps    = errors.New("Invalid launch apps")
 )
 
 // ProfileIDRe: a profile id is typed into a shell too.
@@ -78,6 +106,11 @@ func CheckLaunch(l *Launch) error {
 	}
 	if l.Effort != nil && !IsKnownEffort(*l.Effort) {
 		return ErrLaunchEffort
+	}
+	for _, id := range l.Apps {
+		if !AppIDRe.MatchString(id) {
+			return ErrLaunchApps
+		}
 	}
 	if l.Profile != "" {
 		// A profile needs a model and takes no ultracode. Its launcher checks the effort against this model's own list.

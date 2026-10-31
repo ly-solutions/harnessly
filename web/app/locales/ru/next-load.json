@@ -21,5 +21,6 @@
   "next.load.devtools": "Запись страницы не загрузилась",
   "next.load.openRef": "Не удалось открыть",
   "next.load.terminals": "Терминалы чата не загрузились",
-  "next.load.editor": "Редактор не загрузился"
+  "next.load.editor": "Редактор не загрузился",
+  "next.load.tool": "Инструмент не открылся"
 }

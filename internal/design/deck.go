@@ -584,6 +584,11 @@ type DeckCommentSpec struct {
 	X, Y  float64
 	Label string
 	Text  string
+	// A video's comment: T0 set makes it one. T0 and T1 are ms from the scene's start (T1 nil: a moment),
+	// Format the one it was made in, Block the data-block it points at.
+	T0, T1 *int64
+	Format VideoFormat
+	Block  string
 }
 
 func cleanCommentText(s string) string {
@@ -638,6 +643,10 @@ func (l *Library) AddDeckComment(id string, spec DeckCommentSpec) (DeckComment, 
 		return DeckComment{}, deckErr(http400, "x and y are percents from 0 to 100", "x и y — проценты от 0 до 100")
 	}
 	label, _ := CleanText(spec.Label, 80)
+	at, err := l.videoCommentAt(id, p, spec)
+	if err != nil {
+		return DeckComment{}, err
+	}
 	if existing, _ := l.ReadDeckComments(id); len(existing) >= maxDeckComments {
 		return DeckComment{}, deckErr(http409, "Too many comments on the deck", "Слишком много комментариев к презентации")
 	}
@@ -647,6 +656,9 @@ func (l *Library) AddDeckComment(id string, spec DeckCommentSpec) (DeckComment, 
 	}
 	c := DeckComment{ID: NewPageID(), Page: p.ID, X: math.Round(spec.X*100) / 100, Y: math.Round(spec.Y*100) / 100, Label: label,
 		Text: text, By: by, At: l.clock().UTC().Format(time.RFC3339)}
+	if at != nil {
+		c.View, c.T0, c.T1, c.Format, c.Block = DeckCommentVideo, at.t0, at.t1, at.format, at.block
+	}
 	if err := l.writeCommentFile(id, c.ID, c); err != nil {
 		return DeckComment{}, err
 	}

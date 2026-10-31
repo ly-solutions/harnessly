@@ -89,3 +89,28 @@ func TestADeckOfAnotherRuntimeIsADeck(t *testing.T) {
 		t.Fatalf("the state's own kind: %q", got)
 	}
 }
+
+// a video is a deck folder with meta/video.json; it is a video, whatever the state file says.
+func TestAVideoIsToldBeforeADeck(t *testing.T) {
+	root, data := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "teaser", "meta"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{design.DeckSettingsFile, design.VideoSettingsFile} {
+		if err := os.WriteFile(filepath.Join(root, "teaser", filepath.FromSlash(f)), []byte(`{"v":1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lib := design.New(design.Config{LibraryDir: root, DataDir: data, Texts: design.Texts{Tag: "test-design", CLI: "acme"}})
+	t.Cleanup(lib.StopWatching)
+	st := designlyState{Kinds: map[string]wire.DesignKind{"teaser": wire.DesignSlides}}
+	if got := kindOf(st, lib, "teaser"); got != wire.DesignVideo {
+		t.Fatalf("a video: %q", got)
+	}
+	if err := os.Remove(filepath.Join(root, "teaser", filepath.FromSlash(design.VideoSettingsFile))); err != nil {
+		t.Fatal(err)
+	}
+	if got := kindOf(st, lib, "teaser"); got != wire.DesignSlides {
+		t.Fatalf("a deck without video.json: %q", got)
+	}
+}

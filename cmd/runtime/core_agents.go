@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"github.com/ly-solutions/harnessly/internal/apps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -97,7 +98,8 @@ func skipPermissions(configFile string) func() bool {
 }
 
 func newCoreAgents(c coreAgentsConfig) *coreAgents {
-	profiles := &providers.Store{Dir: filepath.Join(c.DataDir, "providers"), Logins: profileLogins(c.Home)}
+	checker := preflight.New(c.Home)
+	profiles := profileStore(c.DataDir, c.Home, cachedPath(checker.ShellPath))
 	launcher := providers.Launcher{Store: profiles, Relay: codexRelay(c)}
 	editor := func() (string, error) {
 		script := c.EditorScript
@@ -114,7 +116,7 @@ func newCoreAgents(c coreAgentsConfig) *coreAgents {
 	shared := notifySharedFor(c.DataDir)
 	return &coreAgents{
 		profiles: profiles,
-		checker:  preflight.New(c.Home),
+		checker:  checker,
 		envDir:   c.EnvDir,
 		options:  catalog.LaunchConfig{ClaudeDir: c.ClaudeDir, CodexDir: c.CodexDir, RuntimeConfig: c.ConfigFile, DefaultsKey: c.DefaultsKey},
 		claude: claude.LaunchConfig{
@@ -129,6 +131,7 @@ func newCoreAgents(c coreAgentsConfig) *coreAgents {
 			EditorScript:    editor,
 			HumanEditorVar:  c.HumanEditorVar,
 			Profiles:        launcher,
+			Apps:            &apps.Launcher{Registry: apps.Open(c.DataDir), GuardCommand: appGuardCommand()},
 		},
 		codexLauncher:  filepath.Join(c.DataDir, "codex-launcher.js"),
 		launcherScript: launcherScriptConfig(c),
@@ -169,12 +172,27 @@ func codexMCP(c coreAgentsConfig) codex.MCP {
 	return m
 }
 
-// profileLogins are the vendor CLIs' sign-ins of the person a profile can run on: the Grok CLI's for xai.
+// profileLogins are the vendor CLIs' sign-ins of the person a profile can run on: the Grok CLI's for xai, and
+// claude-code-proxy's of ChatGPT for chatgpt.
 func profileLogins(home string) map[string]providers.Login {
 	if home == "" {
 		return nil
 	}
-	return map[string]providers.Login{"xai": &providers.GrokLogin{Path: filepath.Join(providers.GrokHome(home), "auth.json")}}
+	return map[string]providers.Login{
+		"xai":     &providers.GrokLogin{Path: filepath.Join(providers.GrokHome(home), "auth.json")},
+		"chatgpt": &providers.ChatGPTLogin{Path: providers.ChatGPTAuthFile(home, os.Getenv)},
+	}
+}
+
+// profileStore is the store of the profiles: their keys in <DataDir>/providers, the vendor CLIs' sign-ins and the
+// proxy the ChatGPT profile runs through. path is the PATH the person's login shell builds.
+func profileStore(dataDir, home string, path func() string) *providers.Store {
+	return &providers.Store{Dir: filepath.Join(dataDir, "providers"), Logins: profileLogins(home), Proxy: &providers.Proxy{
+		Bin:   func() (string, error) { return providers.FindProxy(path(), home) },
+		Env:   func() []string { return personEnv(home, path(), proxyEnvNames) },
+		Log:   filepath.Join(dataDir, "providers", providers.ProxyName+".log"),
+		State: filepath.Join(dataDir, "providers", providers.ProxyName+".json"),
+	}}
 }
 
 // codexRelay is the runtime's relay as Codex is told about it: on the runtime's port, behind the CLI token Codex

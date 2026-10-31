@@ -38,6 +38,7 @@ const FIXED: Record<Exclude<TRoute['kind'], 'chat' | 'site'>, { icon: string; ti
   [ROUTE.home]: { icon: 'house', title: () => t('next.tabs.home') },
   [ROUTE.designly]: { icon: 'palette', title: () => t('next.tabs.designly') },
   [ROUTE.designlyNew]: { icon: 'presentation', title: () => t('next.deck.create.title') },
+  [ROUTE.videoNew]: { icon: 'clapperboard', title: () => t('next.video.create.title') },
   [ROUTE.invite]: { icon: 'palette', title: () => t('next.tabs.designly') },
   [ROUTE.apps]: { icon: 'app-window', title: () => t('next.sidebar.apps') },
   [ROUTE.settings]: { icon: 'settings', title: () => t('next.shell.settings') },

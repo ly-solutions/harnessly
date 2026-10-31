@@ -34,9 +34,10 @@ func TestTheLegacyTabOfAConversation(t *testing.T) {
 	if old, err := legacyTabOf(record, parse, "tab-olden1"); err != nil || old.TabID != "tab-olden1" || old.WorkspaceID != "" {
 		t.Fatalf("taken over: %+v %v", old, err)
 	}
-	for _, id := range []string{"tab-fresh1", "tab-absent"} {
-		if _, err := legacyTabOf(record, parse, id); !errors.Is(err, convo.ErrNotFound) {
-			t.Fatalf("%s: %v", id, err)
-		}
+	if _, err := legacyTabOf(record, parse, "tab-fresh1"); !errors.Is(err, wire.ErrNoTab) {
+		t.Fatalf("no session yet: %v", err)
+	}
+	if _, err := legacyTabOf(record, parse, "tab-absent"); !errors.Is(err, convo.ErrNotFound) {
+		t.Fatalf("unknown: %v", err)
 	}
 }

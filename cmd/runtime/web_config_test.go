@@ -27,6 +27,7 @@ func TestPageConfigFromEnv(t *testing.T) {
 		"RUNTIME_LAUNCH_DEFAULTS_KEY": "",
 		"RUNTIME_DESIGN_NAME":         "",
 		"RUNTIME_HUB_URL":             "",
+		"RUNTIME_DEFAULT_PINS":        "admin.example.com=Admin (test), shop.example.com",
 	} {
 		t.Setenv(k, v)
 	}
@@ -48,6 +49,10 @@ func TestPageConfigFromEnv(t *testing.T) {
 	}
 	if c.People["ada"] != "Ada" || len(c.GitlabHosts) != 2 || c.SpeedPosthogHost != nil {
 		t.Fatalf("%+v", c)
+	}
+	if len(c.DefaultPins) != 2 || c.DefaultPins[0] != (pagePin{Text: "admin.example.com", Name: "Admin (test)"}) ||
+		c.DefaultPins[1] != (pagePin{Text: "shop.example.com"}) {
+		t.Fatalf("default pins %+v", c.DefaultPins)
 	}
 	var back map[string]any
 	if err := json.Unmarshal([]byte(html.UnescapeString(pageConfigMeta(c))), &back); err != nil || back["productName"] != "Acme" {

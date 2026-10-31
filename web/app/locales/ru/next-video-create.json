@@ -1,0 +1,19 @@
+{
+  "next.video.create.anyLength": "Не важно",
+  "next.video.create.attach": "Прикрепить файлы",
+  "next.video.create.both": "Оба",
+  "next.video.create.brief": "О чём видео",
+  "next.video.create.dsChip": "Дизайн-система",
+  "next.video.create.formats": "Формат",
+  "next.video.create.length": "Длина",
+  "next.video.create.noSubs": "Без субтитров",
+  "next.video.create.placeholder": "О чём видео? Вставьте тезисы или прикрепите файлы — агент соберёт сцены",
+  "next.video.create.sec15": "15 с",
+  "next.video.create.sec180": "3 мин",
+  "next.video.create.sec30": "30 с",
+  "next.video.create.sec60": "1 мин",
+  "next.video.create.settings": "Настройки",
+  "next.video.create.submit": "Создать",
+  "next.video.create.subs": "Субтитры",
+  "next.video.create.title": "Новое видео"
+}

@@ -1,0 +1,11 @@
+{
+  "next.video.guest.cancel": "Отмена",
+  "next.video.guest.chapters": "Главы · {len}",
+  "next.video.guest.comment": "Комментарий",
+  "next.video.guest.comments": "Комментарии",
+  "next.video.guest.format": "Формат",
+  "next.video.guest.noVideo": "Видео ещё не собрано",
+  "next.video.guest.placeholder": "Ваш комментарий",
+  "next.video.guest.send": "Отправить",
+  "next.video.guest.strip": "Комментарии на шкале"
+}

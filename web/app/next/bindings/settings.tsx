@@ -1,4 +1,4 @@
-// The Settings screen (the design's «Настройки»): the person's and the machine's settings in eight sections. Each page
+// The Settings screen (the design's «Настройки»): the person's and the machine's settings in three groups of sections. Each page
 // works on what is really there — the person's settings record, the CLIs' own files on the machine, the fleet's list,
 // the apps the machine reads — and says plainly what it cannot change from here.
 import { useEffect, useState } from 'react';
@@ -9,7 +9,13 @@ import {
   SkillsPage,
   useAgentPages,
 } from '@/next/bindings/settings-agents';
-import { AppsPage, BetaPage, GeneralPage, MachinesPage } from '@/next/bindings/settings-general';
+import {
+  AppearancePage,
+  AppsPage,
+  BetaPage,
+  GeneralPage,
+  MachinesPage,
+} from '@/next/bindings/settings-general';
 import { VoicePage } from '@/next/bindings/settings-voice';
 import { NoticesPage } from '@/next/bindings/settings-notices';
 import { AsksSettingsPage } from '@/next/bindings/settings-asks';
@@ -71,6 +77,7 @@ const SettingsScreen = ({ machine, section, name, onOpenDrawer }: ISettingsScree
 
   let body = null;
   if (active === 'general') body = <GeneralPage machine={machine} name={name} pending={pending} />;
+  else if (active === 'appearance') body = <AppearancePage pending={pending} />;
   else if (active === 'voice') body = <VoicePage machine={machine} />;
   else if (active === 'notifications')
     body = (

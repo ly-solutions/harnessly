@@ -97,6 +97,9 @@ type Server struct {
 	// OpenAll is Open for many refs at once (GET .../open-refs), one answer per ref, nil for what opens nothing; nil:
 	// the refs are asked of Open one by one. Both nil: .../open-refs is a 404.
 	OpenAll func(ctx context.Context, conv string, refs []string) ([]*OpenTarget, error)
+	// Made is what a chat made, opened or changed (GET .../made); nil: it is a 404. A runtime that sets it announces
+	// FeatureMade.
+	Made func(ctx context.Context, conv string) (ChatMade, error)
 	// Apps serves the Apps screen: GET /api/v2/apps; nil: it is a 404.
 	Apps AppsSource
 	// AgentSettings serves the Settings screen: GET and PATCH /api/v2/agent-settings/<provider>; nil: both are 404s.
@@ -107,6 +110,9 @@ type Server struct {
 	// Logins signs the agents in and out: GET/POST/DELETE /api/v2/agents/<provider>/login, POST .../login/code, PUT
 	// .../key, POST .../logout; nil: no such routes.
 	Logins LoginSource
+	// ProfileLogins signs a profile's proxy in and out: GET/POST/DELETE /api/v2/providers/<id>/login, POST .../logout;
+	// nil: those routes are 404s.
+	ProfileLogins ProfileLoginSource
 	// RuntimeSettings are the runtime's own settings: GET and PUT /api/v2/runtime-settings; nil: both are 404s.
 	RuntimeSettings RuntimeSettingsStore
 	// Me is the person of a runtime on its own; nil: /api/v2/me is a 404 (the cluster's gateway answers it itself).

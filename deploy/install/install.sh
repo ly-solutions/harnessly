@@ -694,11 +694,11 @@ done_message() {
 		"Управление: harnessly-agent status | off | on. Удалить: curl -fsSL $HUB_URL/install | $_sh -s -- --uninstall --profile $PROFILE"
 }
 
-# --- design tools (optional) --------------------------------------------------------------------------------------
-# The design library's checks, pictures and PDF exports drive a headless Chromium; video exports use ffmpeg. Profile dir
-# installs them (best effort: a failure is a warning, the machine works without them); the other profiles only say
-# what is missing. HARNESSLY_DESIGN_TOOLS=0 skips both. The board engine itself is never installed from here: the
-# owner fetches it with their own account (harnessly design engine fetch).
+# --- browser and design tools (optional) ----------------------------------------------------------------------------
+# The design library drives a headless Chromium; video exports use ffmpeg. The fullscreen remote browser uses the same
+# Chrome plus Xvfb, x11vnc and websockify. Profile dir installs them (best effort: a failure is a warning); the other
+# profiles only say what is missing. HARNESSLY_DESIGN_TOOLS=0 skips both. The board engine itself is never installed
+# from here: the owner fetches it with their own account (harnessly design engine fetch).
 
 has_chrome() {
 	for _c in chromium chromium-browser google-chrome google-chrome-stable; do
@@ -712,14 +712,17 @@ design_tools() {
 	_want=
 	has_chrome || _want="$_want chromium"
 	command -v ffmpeg >/dev/null 2>&1 || _want="$_want ffmpeg"
+	command -v Xvfb >/dev/null 2>&1 || _want="$_want xvfb"
+	command -v x11vnc >/dev/null 2>&1 || _want="$_want x11vnc"
+	command -v websockify >/dev/null 2>&1 || _want="$_want websockify"
 	[ -n "$_want" ] || return 0
 	_want=${_want# }
 	if [ "$PROFILE" != dir ]; then
-		say "For designs (checks, pictures, video exports) install: $_want" \
-			"Для макетов (проверки, картинки, экспорт видео) поставьте: $_want"
+		say "For designs and the remote browser install: $_want" \
+			"Для макетов и удалённого браузера поставьте: $_want"
 		return 0
 	fi
-	say "Installing for designs: $_want (HARNESSLY_DESIGN_TOOLS=0 skips)" "Ставим для макетов: $_want (HARNESSLY_DESIGN_TOOLS=0 — пропустить)"
+	say "Installing for designs and the remote browser: $_want (HARNESSLY_DESIGN_TOOLS=0 skips)" "Ставим для макетов и удалённого браузера: $_want (HARNESSLY_DESIGN_TOOLS=0 — пропустить)"
 	if command -v apt-get >/dev/null 2>&1; then
 		# shellcheck disable=SC2086 # the names are words
 		{ X apt-get update && X env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $_want; } ||

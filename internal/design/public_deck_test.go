@@ -11,8 +11,11 @@ import (
 type deckIndex struct {
 	Kind *string `json:"kind"`
 	Deck *struct {
+		Type  string `json:"type"`
 		Video *struct {
 			Chapters []DeckChapter `json:"chapters"`
+			Formats  []VideoFormat `json:"formats"`
+			DurMs    *int64        `json:"durMs"`
 		} `json:"video"`
 		PDF bool `json:"pdf"`
 	} `json:"deck"`
@@ -108,5 +111,84 @@ func TestPublicDeckMediaHonoursTheScope(t *testing.T) {
 	}
 	if w := publicGet(a, "GET", "p1/__media/video.mp4", "forged.token.x"); w.Code != 401 {
 		t.Errorf("forged: %d", w.Code)
+	}
+}
+
+func videoProject(t *testing.T, root string) {
+	t.Helper()
+	writeFile(t, filepath.Join(root, "p1", DeckSettingsFile), `{"v":1}`)
+	writeFile(t, filepath.Join(root, "p1", VideoSettingsFile), `{"v":1,"formats":["16:9","9:16"],"fps":30,"seconds":null,"voice":"none","subs":true}`)
+}
+
+func TestPublicVideoIndexAndMedia(t *testing.T) {
+	a, root := scopeAPI(t)
+	videoProject(t, root)
+	token := scopeToken(t, nil)
+
+	got := readDeckIndex(t, a, token)
+	if got.Kind == nil || *got.Kind != "slides" || got.Deck == nil || got.Deck.Type != "video" || got.Deck.Video != nil {
+		t.Fatalf("nothing published yet: %+v", got.Deck)
+	}
+
+	writeFile(t, filepath.Join(root, "p1", DeckPublishedDir, "video-9x16.mp4"), "0123456789")
+	writeFile(t, filepath.Join(root, "p1", DeckPublishedDir, "chapters.json"), `[{"page":"A","title":"One","t":0}]`)
+	writeFile(t, filepath.Join(root, "p1", VideoPublishedFile), `{"formats":{"16:9":{"key":"k","durMs":9000,"at":"x"},"9:16":{"key":"k","durMs":8000,"at":"x"}}}`)
+	got = readDeckIndex(t, a, token)
+	v := got.Deck.Video
+	if v == nil || len(v.Formats) != 1 || v.Formats[0] != VideoPortrait || v.DurMs == nil || *v.DurMs != 8000 || len(v.Chapters) != 1 {
+		t.Fatalf("only 9:16 published: %+v", v)
+	}
+
+	writeFile(t, filepath.Join(root, "p1", DeckPublishedDir, "video.mp4"), "abcdefghij")
+	v = readDeckIndex(t, a, token).Deck.Video
+	if len(v.Formats) != 2 || v.Formats[0] != VideoLandscape || v.Formats[1] != VideoPortrait || *v.DurMs != 9000 {
+		t.Fatalf("both published: %+v", v)
+	}
+
+	w := publicRequest(a, "GET", "p1/__media/video-9x16.mp4", token, http.Header{"Range": {"bytes=2-5"}})
+	if w.Code != 206 || w.Body.String() != "2345" || w.Header().Get("Content-Range") != "bytes 2-5/10" || w.Header().Get("Content-Type") != "video/mp4" {
+		t.Fatalf("range: %d %q %v", w.Code, w.Body.String(), w.Header())
+	}
+	if w := publicGet(a, "GET", "p1/__media/video-16x9.mp4", token); w.Code != 404 {
+		t.Errorf("unknown name: %d", w.Code)
+	}
+}
+
+func TestPublicVideoBrokenMetaIsANullLength(t *testing.T) {
+	a, root := scopeAPI(t)
+	videoProject(t, root)
+	writeFile(t, filepath.Join(root, "p1", DeckPublishedDir, "video.mp4"), "0123456789")
+	writeFile(t, filepath.Join(root, "p1", VideoPublishedFile), `{nope`)
+	v := readDeckIndex(t, a, scopeToken(t, nil)).Deck.Video
+	if v == nil || v.DurMs != nil || len(v.Formats) != 1 || v.Chapters == nil {
+		t.Fatalf("%+v", v)
+	}
+}
+
+func TestPublicVideoHonoursTheScope(t *testing.T) {
+	a, root := scopeAPI(t)
+	videoProject(t, root)
+	writeFile(t, filepath.Join(root, "p1", DeckPublishedDir, "video-9x16.mp4"), "0123456789")
+	for name, claims := range map[string]map[string]any{
+		"some pages": {"pages": []any{"One.dc.html"}},
+		"no pages":   {"pages": []any{}},
+	} {
+		token := scopeToken(t, claims)
+		if got := readDeckIndex(t, a, token); got.Deck != nil {
+			t.Errorf("%s: deck %+v", name, got.Deck)
+		}
+		if w := publicGet(a, "GET", "p1/__media/video-9x16.mp4", token); w.Code != 404 {
+			t.Errorf("%s: media %d", name, w.Code)
+		}
+	}
+}
+
+func TestPublicDeckIndexSaysItsType(t *testing.T) {
+	a, root := scopeAPI(t)
+	writeFile(t, filepath.Join(root, "p1", DeckSettingsFile), `{"v":1}`)
+	writeFile(t, filepath.Join(root, "p1", DeckPublishedDir, "video.mp4"), "0123456789")
+	got := readDeckIndex(t, a, scopeToken(t, nil))
+	if got.Deck.Type != "slides" || got.Deck.Video == nil || got.Deck.Video.Formats == nil || len(got.Deck.Video.Formats) != 0 || got.Deck.Video.DurMs != nil {
+		t.Fatalf("%+v", got.Deck)
 	}
 }

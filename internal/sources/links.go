@@ -169,6 +169,19 @@ func cleanURL(s string) string {
 
 func (c *Links) issueURL(key string) string { return c.TrackerURL + "/issue/" + key }
 
+// issueKeyOf is the key of a tracker task a link points at; "" for any other link.
+func (c *Links) issueKeyOf(href string) string {
+	u, ok := weburl.Parse(href)
+	if !ok {
+		return ""
+	}
+	p := c.present(href, u)
+	if p.kind != "issue" {
+		return ""
+	}
+	return p.key
+}
+
 // find is one link found in an answer; false for a local address or what is not a URL.
 func (c *Links) find(raw string, label *string) (found, bool) {
 	cleaned := cleanURL(raw)

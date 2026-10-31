@@ -17,15 +17,36 @@ export interface IPreviewSlot {
 /** A port of the machine, or a site (a stand) by its origin. */
 export type TPreviewTarget = { kind: 'port'; port: number } | { kind: 'url'; origin: string };
 
-/** Slots 1–6 take ports, 7–8 sites: the runtime refuses the other way round. */
-export const openPreview = (m: MachineId, target: TPreviewTarget, slot: number, path = '/') =>
-  runtimeJson<IPreviewSlot>(m, '/api/preview/open', postJson({ target, slot, path })).then((opened) => ({
+/**
+ * Slots 1–6 take ports, 7–8 sites: the runtime refuses the other way round. `neighbours` are the ports of the page's
+ * own other servers (an MFE's remotes): the proxy turns their localhost addresses into slot paths. Ports only.
+ */
+export const openPreview = (
+  m: MachineId,
+  target: TPreviewTarget,
+  slot: number,
+  path = '/',
+  neighbours: readonly number[] = [],
+) =>
+  runtimeJson<IPreviewSlot>(
+    m,
+    '/api/preview/open',
+    postJson({
+      target,
+      slot,
+      path,
+      ...(target.kind === 'port' && neighbours.length > 0 ? { neighbours: [...neighbours] } : {}),
+    }),
+  ).then((opened) => ({
     ...opened,
     nonce: stampSlot(slot),
   }));
 
 export interface IListeningPort {
   port: number;
+  pid: number | null;
+  /** The agent task whose folder the process runs in. */
+  owner: { repo: string; task: string } | null;
   command: string | null;
   cwd: string | null;
   /** chat: the process runs in one of the folders asked about. */
@@ -51,6 +72,8 @@ export const fetchPorts = async (m: MachineId, paths: string[], signal?: AbortSi
   );
   return raw.ports.map((p) => ({
     port: p.port,
+    pid: p.pid ?? null,
+    owner: p.owner ?? null,
     command: p.command,
     cwd: p.cwd,
     group: p.group,

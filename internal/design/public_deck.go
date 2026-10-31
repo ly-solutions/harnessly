@@ -18,23 +18,34 @@ const (
 	// PublicMediaLimit is the largest published file the public route sends.
 	PublicMediaLimit = 2 << 30
 	// publicKindSlides is what the index says of a deck.
-	publicKindSlides  = "slides"
+	publicKindSlides = "slides"
+	// publicTypeVideo is the index's `deck.type` of a video project: the kind stays `slides` until every
+	// gateway knows `video`.
+	publicTypeVideo   = "video"
 	publicChaptersMax = 64 << 10
+	publicVideoMax    = 16 << 10
 )
 
 // publicMedia is the published files a guest may read, by the name in the path, and their types.
 var publicMedia = map[string]string{
-	"video.mp4": "video/mp4",
-	"deck.pdf":  "application/pdf",
+	"video.mp4":      "video/mp4",
+	"video-9x16.mp4": "video/mp4",
+	"deck.pdf":       "application/pdf",
 }
 
 // publicVideo is the published recording as the guest page needs it.
 type publicVideo struct {
 	Chapters []DeckChapter `json:"chapters"`
+	// Formats are the published formats of a video project, in the fixed order; empty for a deck's recording.
+	Formats []VideoFormat `json:"formats"`
+	// DurMs is the length of a video project's MP4 (16:9 when published, else the first format); null for a deck.
+	DurMs *int64 `json:"durMs"`
 }
 
 // publicDeck is the published part of a deck: the recording (null when there is none) and whether a PDF is there.
 type publicDeck struct {
+	// Type is `slides` for a deck and `video` for a video project.
+	Type  string       `json:"type"`
 	Video *publicVideo `json:"video"`
 	PDF   bool         `json:"pdf"`
 }
@@ -42,7 +53,7 @@ type publicDeck struct {
 // publicKind is the index's `kind`: a project that keeps deck settings is a deck. Everything else is null, which the
 // guest page reads as an ordinary design.
 func (a *API) publicKind(lib *Library, project string) *string {
-	if lib.IsDeck(project) {
+	if lib.IsVideo(project) || lib.IsDeck(project) {
 		k := publicKindSlides
 		return &k
 	}
@@ -55,16 +66,64 @@ func (a *API) publicDeckOf(lib *Library, project string, scope publicScope, kind
 	if kind == nil || scope.rev != "" || scope.limited {
 		return nil
 	}
-	d := &publicDeck{}
-	if f, _, ok := a.openMedia(lib, project, "video.mp4"); ok {
+	d := &publicDeck{Type: publicKindSlides}
+	if lib.IsVideo(project) {
+		d.Type = publicTypeVideo
+		d.Video = a.publicVideoOf(lib, project)
+	} else if f, _, ok := a.openMedia(lib, project, "video.mp4"); ok {
 		f.Close()
-		d.Video = &publicVideo{Chapters: a.publicChapters(lib, project)}
+		d.Video = &publicVideo{Chapters: a.publicChapters(lib, project), Formats: []VideoFormat{}}
 	}
 	if f, _, ok := a.openMedia(lib, project, "deck.pdf"); ok {
 		f.Close()
 		d.PDF = true
 	}
 	return d
+}
+
+// publicVideoOf is the published video of a video project: the formats whose MP4 is there, with the chapters and the
+// length; nil when no format is published.
+func (a *API) publicVideoOf(lib *Library, project string) *publicVideo {
+	v := &publicVideo{Formats: []VideoFormat{}}
+	for _, f := range VideoFormats {
+		if m, _, ok := a.openMedia(lib, project, VideoPublishedName(f)); ok {
+			m.Close()
+			v.Formats = append(v.Formats, f)
+		}
+	}
+	if len(v.Formats) == 0 {
+		return nil
+	}
+	v.Chapters = a.publicChapters(lib, project)
+	v.DurMs = a.publicVideoDur(lib, project, v.Formats)
+	return v
+}
+
+// publicVideoDur reads the length from video.json; a missing or broken file is a null length.
+func (a *API) publicVideoDur(lib *Library, project string, formats []VideoFormat) *int64 {
+	f, st, ok := openRegular(filepath.Join(lib.ArtifactDir(project), filepath.FromSlash(VideoPublishedFile)))
+	if !ok {
+		return nil
+	}
+	defer f.Close()
+	if st.Size() > publicVideoMax {
+		return nil
+	}
+	raw, err := readPublicFile(f, publicVideoMax)
+	if err != nil {
+		return nil
+	}
+	var read VideoPublished
+	if json.Unmarshal(raw, &read) != nil {
+		return nil
+	}
+	for _, format := range formats {
+		if e, has := read.Formats[format]; has && e.DurMs > 0 {
+			d := e.DurMs
+			return &d
+		}
+	}
+	return nil
 }
 
 // publicChapters reads chapters.json; a missing or broken file is a video without chapters.

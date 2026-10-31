@@ -6,5 +6,8 @@
   "next.sidebar.pinned": "Закреплённые",
   "next.sidebar.projects": "Проекты",
   "next.sidebar.projectEmpty": "Пока пусто",
+  "next.sidebar.folderMore": "Дальше",
+  "next.sidebar.foldList": "Свернуть список",
+  "next.sidebar.unfoldList": "Развернуть список",
   "next.sidebar.favorites": "Избранное"
 }

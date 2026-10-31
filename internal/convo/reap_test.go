@@ -442,3 +442,31 @@ func TestStopFailureKeepsTheChatRunning(t *testing.T) {
 type failingTerms struct{ *fakeTerms }
 
 func (failingTerms) Stop(string) (int64, error) { return 0, errors.New("tmux did not answer") }
+
+// Turning an app on stops an agent at rest, so the next message resumes it with the app; one at work is left alone.
+func TestAppsChangeStopsAnAgentAtRest(t *testing.T) {
+	r := newReapRig(t)
+	r.poke(func(c *conv) { c.d.AppsOK = func([]string) string { return "" } })
+	r.hook("prompt-submit")
+	if res := r.do(wire.ConversationAppsCmd{OpID: "a1", ID: r.id, Apps: []string{"acme.review"}}); res.R != wire.ResultAccepted {
+		t.Fatalf("at work: %+v", res)
+	}
+	if len(r.terms.stopped) != 0 {
+		t.Fatalf("a working agent was stopped: %v", r.terms.stopped)
+	}
+	r.hook("stop")
+	r.settle(wire.StateReady)
+	if res := r.do(wire.ConversationAppsCmd{OpID: "a2", ID: r.id, Apps: []string{"acme.review", "acme.cashback"}}); res.R != wire.ResultAccepted {
+		t.Fatalf("at rest: %+v", res)
+	}
+	if !slices.Equal(r.terms.stopped, []string{"s1"}) || r.record().State.K != wire.StateStopped {
+		t.Fatalf("stopped %v, state %s", r.terms.stopped, r.record().State.K)
+	}
+	if res := r.do(wire.ConversationAppsCmd{OpID: "a3", ID: r.id, Apps: []string{"acme.review", "acme.cashback"}}); res.R != wire.ResultAccepted || len(r.terms.stopped) != 1 {
+		t.Fatalf("the same list again: %+v %v", res, r.terms.stopped)
+	}
+	r.poke(func(c *conv) { c.rec.Provider = wire.ProviderCodex })
+	if res := r.do(wire.ConversationAppsCmd{OpID: "a4", ID: r.id, Apps: []string{"acme.review"}}); res.Code != wire.RefuseUnsupported {
+		t.Fatalf("codex: %+v", res)
+	}
+}

@@ -83,14 +83,17 @@
 .hx-tl__search {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 8px;
   height: 38px;
   padding: 0 12px;
   border-radius: 10px;
-  background: var(--hx-bg-active);
+  /* The field's own tone is see-through (--hx-bg-active): laid over the pane's surface it is one opaque colour, so what
+     scrolls under it never shows. The band under it keeps the cards off the field's edge. */
+  background: linear-gradient(var(--hx-bg-active), var(--hx-bg-active)), var(--hx-bg-raised);
+  box-shadow: 0 8px 0 0 var(--hx-bg-raised);
   color: var(--hx-fg-3);
 }
 .hx-tl__search input {
@@ -111,7 +114,9 @@
   letter-spacing: 1px;
 }
 .hx-tl__search:focus-within {
-  box-shadow: 0 0 0 2px var(--hx-accent-soft);
+  box-shadow:
+    0 0 0 2px var(--hx-accent-soft),
+    0 8px 0 0 var(--hx-bg-raised);
 }
 .hx-tl__group {
   animation: hx-in-up var(--hx-dur-md) var(--hx-ease-out) backwards;
@@ -292,21 +297,7 @@
     align-items: center;
     gap: 6px;
     flex: none;
-    height: 34px;
-    margin-right: 4px;
-    padding: 0 12px 0 10px;
-    border: 0;
-    border-radius: var(--hx-radius-full);
-    background: var(--hx-bg-active);
-    color: var(--hx-fg-1);
-    font: inherit;
-    font-size: 14px;
-    font-weight: var(--hx-weight-medium);
     cursor: pointer;
-    transition: background 200ms ease-out;
-  }
-  .hx-tochat:active {
-    background: var(--hx-bg-hover);
   }
   .hx-pane__body {
     overscroll-behavior: contain;
@@ -520,6 +511,169 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  padding: 8px 8px 0;
+}
+.hx-tbrowser__home {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 16px 28px;
+  box-sizing: border-box;
+}
+.hx-tbrowser__home > .hx-tv__label {
+  margin-top: 12px;
+}
+.hx-tbrowser__bar .hx-head-btn[data-pinned='true'] {
+  color: var(--hx-accent);
+}
+.hx-tbrowser__offer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--hx-bg-active);
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+  animation: hx-dl-pop-in 180ms var(--hx-ease-out) backwards;
+}
+.hx-tbrowser__offer-text {
+  flex: 1;
+  min-width: 0;
+}
+.hx-tbrowser__offer-btn {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+  font: inherit;
+  cursor: pointer;
+}
+.hx-tbrowser__offer-btn[data-primary] {
+  background: var(--hx-accent);
+  color: #fff;
+}
+.hx-omni {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.hx-omni > .hx-tbrowser__url {
+  width: 100%;
+  box-sizing: border-box;
+}
+.hx-omni__list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 6px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--hx-border);
+  border-radius: 12px;
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay);
+  transform-origin: top center;
+  animation: hx-dl-pop-in 180ms var(--hx-ease-out) backwards;
+}
+.hx-omni__list[data-state='closing'] {
+  pointer-events: none;
+  animation: hx-dl-pop-out 160ms ease-out forwards;
+}
+.hx-omni__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hx-fg-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.hx-omni__row .hx-icon {
+  flex: none;
+  color: var(--hx-fg-3);
+}
+.hx-omni__row:hover,
+.hx-omni__row[data-active='true'] {
+  background: var(--hx-bg-hover);
+}
+.hx-omni__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-omni__hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  font-family: var(--hx-font-mono);
+}
+.hx-srv__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  animation: hx-in-up var(--hx-dur-md) var(--hx-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+.hx-srv__row > .hx-srv__card {
+  flex: 1;
+  min-width: 0;
+  animation: none;
+}
+.hx-srv__off {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hx-fg-3);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 140ms ease,
+    background 140ms ease;
+}
+.hx-srv__row:hover > .hx-srv__off,
+.hx-srv__off:focus-visible {
+  opacity: 1;
+}
+.hx-srv__off:hover {
+  background: var(--hx-bg-hover);
+}
+@media (hover: none) {
+  .hx-srv__off {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-omni__list,
+  .hx-omni__list[data-state='closing'] {
+    animation: none;
+  }
 }
 .hx-tbrowser__url {
   flex: 1;
@@ -538,8 +692,8 @@
 .hx-tbrowser__page {
   flex: 1;
   min-height: 420px;
-  border-radius: 10px;
-  border: 1px solid var(--hx-border);
+  border-radius: 0;
+  border: 0;
   background: var(--hx-bg-active) var(--img) center top / 100% auto no-repeat;
   animation: hx-tb-in 560ms var(--hx-ease-out) backwards;
 }
@@ -597,6 +751,10 @@ input.hx-tbrowser__url:focus {
 .hx-tv[data-tool='browser'] {
   min-height: 100%;
   box-sizing: border-box;
+  /* The browser takes the pane whole: the page is the content, not a column of text. */
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 .hx-tv[data-tool='browser'] > .hx-tbrowser {
   flex: 1;
@@ -744,49 +902,22 @@ input.hx-tbrowser__url:focus {
   flex: 1;
   min-height: 420px;
   width: 100%;
-  border: 1px solid var(--hx-border);
-  border-radius: 10px;
-  background: #fff;
+  border: 0;
+  border-radius: 0;
+  /* Transparent: the page paints its own canvas, in the theme it was told (color-scheme below), not a white frame. */
+  background: transparent;
   animation: hx-tb-in 560ms var(--hx-ease-out) backwards;
+}
+.hx-tbrowser__frame[data-theme='dark'] {
+  color-scheme: dark;
+}
+.hx-tbrowser__frame[data-theme='light'] {
+  color-scheme: light;
 }
 .hx-tbrowser__note {
   padding: 28px 12px;
   color: var(--hx-fg-3);
   text-align: center;
-}
-/* The tiles come in one after another (the design's --i, set from data-i: no inline styles). */
-.hx-tl__tile[data-i='1'] {
-  --i: 1;
-}
-.hx-tl__tile[data-i='2'] {
-  --i: 2;
-}
-.hx-tl__tile[data-i='3'] {
-  --i: 3;
-}
-.hx-tl__tile[data-i='4'] {
-  --i: 4;
-}
-.hx-tl__tile[data-i='5'] {
-  --i: 5;
-}
-.hx-tl__tile[data-i='6'] {
-  --i: 6;
-}
-.hx-tl__tile[data-i='7'] {
-  --i: 7;
-}
-.hx-tl__tile[data-i='8'] {
-  --i: 8;
-}
-.hx-tl__tile[data-i='9'] {
-  --i: 9;
-}
-.hx-tl__tile[data-i='10'] {
-  --i: 10;
-}
-.hx-tl__tile[data-i='11'] {
-  --i: 11;
 }
 /* The feed and the composer step aside for the pane. Their columns change at once and use-pane-motion.ts moves them
    from the old place to the new one with the pane's edge (the design transitions `right`, which lays the chat out
@@ -1156,6 +1287,18 @@ input.hx-tbrowser__url:focus {
 .hx-legacy {
   height: 100%;
 }
+.hx-legacy__wait {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.hx-legacy__sk {
+  height: 18px;
+}
+.hx-legacy__sk:first-child {
+  width: 60%;
+}
 /* A tab the agent opened behind the one on screen: a dot by its name until it is looked at. */
 .hx-tab[data-unread] .hx-tab__name::after {
   content: '';
@@ -1335,6 +1478,7 @@ input.hx-tbrowser__url:focus {
 }
 /* The pane is narrow: the library's search takes a row of its own, as on the phone. */
 .hx-pane__body > .hx-dl {
+  --dl-surface: var(--hx-bg-pane);
   padding-inline: var(--hx-space-4);
 }
 .hx-pane__body > .hx-dl .hx-dl__toolbar {
@@ -1451,4 +1595,281 @@ input.hx-tbrowser__url:focus {
   border: 1px solid var(--hx-border-strong);
   border-radius: var(--hx-radius-md);
   background: var(--hx-bg-window);
+}
+
+/* The tools a chat did not use, once it used others: small chips in a row after the group's tiles. */
+.hx-tl__quiet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.hx-tl__tile[data-quiet] {
+  width: auto;
+  min-height: 30px;
+  gap: 6px;
+  padding: 2px 10px 2px 4px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hx-fg-3);
+}
+.hx-tl__tile[data-quiet]:hover,
+.hx-tl__tile[data-quiet][aria-selected='true'] {
+  color: var(--hx-fg-1);
+}
+.hx-tl__tile[data-quiet] .hx-tl__ico {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+}
+.hx-tl__tile[data-quiet] .hx-tl__ico .hx-icon {
+  --hx-icon-size: 13px;
+}
+
+/* «Сделано в этом чате»: above the tools, a row of pictures and the documents, boards and designs the chat made. It
+   opens and closes by height like the screenshots strip. */
+.hx-made {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  animation: hx-in-up var(--hx-dur-md) var(--hx-ease-out) backwards;
+  transition:
+    grid-template-rows 300ms cubic-bezier(0.4, 0, 1, 1),
+    opacity 240ms cubic-bezier(0.4, 0, 1, 1);
+}
+.hx-made[data-state='closing'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+.hx-made__clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.hx-made__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+.hx-made__ttl {
+  margin: 0;
+  padding: 14px 4px 0;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  font-weight: var(--hx-weight-medium);
+  letter-spacing: 0.02em;
+}
+.hx-made__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* A row has one height whatever it holds (a bar, a title, no host), so a name arriving moves nothing. */
+.hx-made__card-sk,
+.hx-made__card {
+  height: 40px;
+}
+.hx-made__card-sk {
+  border-radius: 10px;
+}
+.hx-made__card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms var(--hx-ease-out);
+}
+.hx-made__card:hover {
+  background: var(--hx-bg-hover);
+}
+.hx-made__card:active {
+  transform: scale(0.985);
+  background: var(--hx-bg-active);
+}
+.hx-made__card:focus-visible,
+.hx-made__more:focus-visible {
+  outline: 2px solid var(--hx-accent);
+  outline-offset: -2px;
+}
+.hx-made__name-sk {
+  flex: 1;
+  max-width: 55%;
+  height: 14px;
+}
+.hx-made__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-made__about {
+  flex: 0 1 38%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+.hx-made__item {
+  display: flex;
+  flex-direction: column;
+}
+.hx-made__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.hx-made__row .hx-made__card {
+  flex: 1;
+}
+.hx-made__toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hx-fg-3);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+.hx-made__toggle:hover {
+  color: var(--hx-fg-1);
+  background: var(--hx-bg-hover);
+}
+.hx-made__toggle:focus-visible {
+  outline: 2px solid var(--hx-accent);
+  outline-offset: -2px;
+}
+.hx-made__toggle[aria-expanded='true'] .hx-made__chev {
+  transform: rotate(180deg);
+}
+/* An epic opens into its tasks by height, and closes the same way. */
+.hx-made__fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 240ms var(--hx-ease-out),
+    opacity 160ms ease;
+}
+.hx-made__item[data-open='true'] .hx-made__fold {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.hx-made__fold-in {
+  min-height: 0;
+  overflow: hidden;
+}
+.hx-made__kids {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 4px 22px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--hx-border);
+  list-style: none;
+}
+.hx-made__kid {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+.hx-made__kid:hover {
+  background: var(--hx-bg-hover);
+}
+.hx-made__kid:focus-visible {
+  outline: 2px solid var(--hx-accent);
+  outline-offset: -2px;
+}
+.hx-made__kid[data-done='true'] .hx-made__kid-name {
+  color: var(--hx-fg-3);
+}
+.hx-made__dot {
+  flex: none;
+  color: var(--hx-fg-3);
+}
+.hx-made__key {
+  flex: none;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.hx-made__kid-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-made__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hx-fg-3);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+.hx-made__more:hover {
+  color: var(--hx-fg-1);
+  background: var(--hx-bg-hover);
+}
+.hx-made__chev {
+  transition: transform 200ms var(--hx-ease-out);
+}
+.hx-made__more[aria-expanded='true'] .hx-made__chev {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-made {
+    animation: none;
+  }
+  .hx-made__fold {
+    transition: none;
+  }
 }

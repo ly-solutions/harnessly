@@ -139,8 +139,32 @@
   transition: opacity 200ms var(--hx-ease-out);
 }
 .hx-turnwrap:hover .hx-turnacts,
+.hx-msg-user:hover .hx-turnacts,
 .hx-turnacts:focus-within {
   opacity: 1;
+}
+.hx-turnacts--user {
+  justify-content: flex-end;
+}
+/* Copy and check sit on top of each other and cross-fade. */
+.hx-turnacts__swap {
+  display: grid;
+  place-items: center;
+}
+.hx-turnacts__swap > .hx-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity 180ms var(--hx-ease-out),
+    transform 180ms var(--hx-ease-out);
+}
+.hx-turnacts__swap > .hx-icon:last-child,
+.hx-turnacts__btn[data-copied] .hx-turnacts__swap > .hx-icon:first-child {
+  opacity: 0;
+  transform: scale(0.6);
+}
+.hx-turnacts__btn[data-copied] .hx-turnacts__swap > .hx-icon:last-child {
+  opacity: 1;
+  transform: none;
 }
 .hx-turnacts__btn {
   display: inline-grid;

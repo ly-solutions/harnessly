@@ -18,6 +18,8 @@ export interface IChatPane extends IPaneTabs {
   view: Readonly<Record<string, unknown>>;
   /** Asked while the chat was not on screen; placed, oldest first, when it is. */
   pending: readonly IPaneRequest[];
+  /** When the person (or the agent asking the pane) last opened each tool in this chat, by tool id. */
+  used: Readonly<Record<string, number>>;
 }
 
 export interface IKeptPane extends IChatPane {
@@ -47,6 +49,7 @@ export const EMPTY_PANE: IChatPane = Object.freeze({
   unread: [],
   view: {},
   pending: [],
+  used: {},
 });
 
 // ── Reading what was kept ──
@@ -110,6 +113,14 @@ const isRequest = (v: unknown): v is IPaneRequest =>
   (v.target === undefined || stringOrNull(v.target)) &&
   (v.k !== 'legacy' || isString(v.kind));
 
+/** The tools opened, as kept: a record of times; a value that is not a time is dropped. */
+const usedOf = (v: unknown): Record<string, number> => {
+  if (!isRecord(v)) return {};
+  const used: Record<string, number> = {};
+  for (const [id, at] of Object.entries(v)) if (typeof at === 'number' && Number.isFinite(at)) used[id] = at;
+  return used;
+};
+
 const keptOf = (raw: unknown): IKeptPane | null => {
   if (!isRecord(raw) || !Array.isArray(raw.tabs) || typeof raw.at !== 'number') return null;
   const tabs = raw.tabs.filter(isPaneTab);
@@ -128,6 +139,7 @@ const keptOf = (raw: unknown): IKeptPane | null => {
       : [],
     view: isRecord(raw.view) ? raw.view : {},
     pending: Array.isArray(raw.pending) ? raw.pending.filter(isRequest).slice(-MAX_PENDING) : [],
+    used: usedOf(raw.used),
   };
 };
 
@@ -195,6 +207,13 @@ export const queueRequest = (pane: IChatPane, request: IPaneRequest): IChatPane 
   ...pane,
   pending: [...pane.pending, request].slice(-MAX_PENDING),
 });
+
+/** The tools stamped as opened now. */
+export const markUsed = (used: Readonly<Record<string, number>>, ids: Iterable<string>, now: number) => {
+  const next = { ...used };
+  for (const id of ids) next[id] = now;
+  return next;
+};
 
 // ── The store ──
 

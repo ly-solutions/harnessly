@@ -7,6 +7,8 @@ export interface IAddress {
   path: string;
   /** As the address bar shows it: without the scheme. */
   text: string;
+  /** What the page is called, when the person chose it by name (a server, a pinned page). */
+  title?: string;
 }
 
 const LOCAL = /^(localhost|127\.0\.0\.1)$/i;
@@ -37,4 +39,38 @@ export const parseAddress = (raw: string): IAddress | null => {
     path,
     text,
   };
+};
+
+/** What the omnibox made of the text: a place to go, or words to search for. */
+export type TInput =
+  | { kind: 'empty' }
+  | { kind: 'port' | 'url'; address: IAddress }
+  | { kind: 'search'; q: string; address: IAddress };
+
+/** The search the pane opens: DuckDuckGo's plain page, which does not need scripts and is not afraid of frames. */
+export const SEARCH_ORIGIN = 'https://html.duckduckgo.com';
+
+/** The address bar shows a search as «? words», so that Enter on it asks the same again. */
+export const searchAddress = (q: string): IAddress => ({
+  target: { kind: 'url', origin: SEARCH_ORIGIN },
+  path: `/html/?q=${encodeURIComponent(q)}`,
+  text: `? ${q}`,
+});
+
+export const classifyInput = (raw: string): TInput => {
+  const typed = raw.trim();
+  if (typed === '') return { kind: 'empty' };
+  if (typed.startsWith('?')) {
+    const q = typed.slice(1).trim();
+    return q === '' ? { kind: 'empty' } : { kind: 'search', q, address: searchAddress(q) };
+  }
+  const address = parseAddress(typed);
+  if (address) return { kind: address.target.kind === 'port' ? 'port' : 'url', address };
+  return { kind: 'search', q: typed, address: searchAddress(typed) };
+};
+
+/** Where Enter goes with this text; null for nothing typed. */
+export const resolveInput = (raw: string): IAddress | null => {
+  const input = classifyInput(raw);
+  return input.kind === 'empty' ? null : input.address;
 };

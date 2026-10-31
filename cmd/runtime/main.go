@@ -18,6 +18,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/agent"
 	"github.com/ly-solutions/harnessly/internal/agents/codex"
+	"github.com/ly-solutions/harnessly/internal/browser"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/integrations"
 	"github.com/ly-solutions/harnessly/internal/limits"
@@ -111,10 +112,11 @@ func pathIs(r *http.Request, p string) bool {
 // runtimeGate is the assembled gate and what main must stop with it.
 type runtimeGate struct {
 	*gate.Gate
-	terms *terminal.Server
-	core  *coreRef
-	tmux  *tmux.Tmux
-	home  string
+	terms   *terminal.Server
+	browser *browser.Service
+	core    *coreRef
+	tmux    *tmux.Tmux
+	home    string
 	// update looks for a newer release; nil when this runtime does not.
 	update *updatecheck.Checker
 	// self keeps the programs of a machine a hub carries the hub's; nil for any other runtime.
@@ -233,6 +235,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 		return b.Session, b.Cols, b.Rows
 	}
 
+	remoteBrowser := browser.New(browser.Config{Home: home, DataDir: cfg.DataDir})
 	routes := []gate.Route{
 		{
 			Slice: "terminal",
@@ -240,6 +243,13 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 				return pathIs(r, "/api/terminal") && isUpgrade(r)
 			},
 			Handler: session(terms.Handle),
+		},
+		{
+			Slice: "terminal",
+			Match: func(r *http.Request) bool {
+				return pathIs(r, "/api/browser/ws") && isUpgrade(r)
+			},
+			Handler: session(browserSocket(remoteBrowser.Endpoint)),
 		},
 		{
 			Match: func(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/internal/terminal/") },
@@ -385,6 +395,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(notifyBotRoutes(d)...)
 	f.Add(askRoutes(d, ref.c)...)
 	f.Add(secretRoutes(d, ref.c)...)
+	f.Add(appRoutes(d, ref.c)...)
 	f.Add(v2Routes(d, ref.c)...)
 	if w := webConfigFromEnv(cfg.Standalone()); w != nil {
 		f.Add(gate.Route{Match: w.matches, Handler: w.handler()})
@@ -395,7 +406,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 		// The old runtime behind the gate does not get an install socket, or a socket of anyone without a session.
 		f.Add(upstreamGuard(func(r *http.Request) bool { return sessionOK(r) || cli.OK(r) }, previewOf(d).proxy.Matches))
 	}
-	rg := &runtimeGate{Gate: f, terms: terms, core: ref, tmux: tm, home: home, self: self}
+	rg := &runtimeGate{Gate: f, terms: terms, browser: remoteBrowser, core: ref, tmux: tm, home: home, self: self}
 	if checkOn {
 		rg.update = checker
 	}
@@ -479,6 +490,7 @@ func run(ctx context.Context, cfg gate.Config) error {
 		standaloneSlots.close()
 		return err
 	}
+	defer f.browser.Close()
 	if alone != nil {
 		f.tmux.ApplyConfig("")
 		go alone.cleanUp(f.home, env("RUNTIME_UPLOADS_DIR", filepath.Join(cfg.DataDir, "uploads")))

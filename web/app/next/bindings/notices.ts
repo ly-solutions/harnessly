@@ -23,6 +23,7 @@ import {
   dropNotices,
   notifySnapshot,
   pushNotice,
+  SAMPLE_CHAT,
   setNoticesPerson,
   useNoticeList,
   type INotice,
@@ -128,7 +129,8 @@ export const useNotices = ({ person, currentId, onOpenChat }: INoticesOptions) =
     };
   }, [currentId, notices]);
 
-  const count = notices.length;
+  // The sample of Settings → Notifications is no news of a chat.
+  const count = notices.filter((n) => n.chatId !== SAMPLE_CHAT).length;
   useEffect(() => {
     document.title = titleWithCount(document.title, count);
     setIconDot(count > 0);
@@ -153,6 +155,7 @@ export const useNotices = ({ person, currentId, onOpenChat }: INoticesOptions) =
 
   const onOpen = useCallback((notice: INotice) => {
     clearChatNotices(notice.chatId);
+    if (notice.chatId === SAMPLE_CHAT) return;
     open.current(notice.chatId);
   }, []);
 

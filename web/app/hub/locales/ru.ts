@@ -68,6 +68,10 @@ export const ru = {
   'notFound.text': 'Проверьте адрес или вернитесь на главную.',
   'session.failed': 'Не удалось связаться с hub',
 
+  // ---- remote browser
+  'browser.connecting': 'Подключаем браузер…',
+  'browser.failed': 'Не удалось подключиться к браузеру.',
+
   // ---- formats
   'fmt.gb': '{n} ГБ',
   'fmt.mb': '{n} МБ',

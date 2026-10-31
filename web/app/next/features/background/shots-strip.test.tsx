@@ -52,6 +52,12 @@ describe('ShotsStrip', () => {
     expect(container.querySelector('.hx-shots')).toBeNull();
   });
 
+  it('hides a picture that failed to load', () => {
+    const { container } = draw(shots(3));
+    fireEvent.error(container.querySelectorAll('img')[0]);
+    expect(squares(container)).toHaveLength(2);
+  });
+
   it('stands a skeleton in until the snapshot has come, and none before it is slow', () => {
     const { container } = draw(null);
     expect(container.querySelector('.hx-shots')).toBeNull();

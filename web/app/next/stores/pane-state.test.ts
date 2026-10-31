@@ -6,6 +6,7 @@ import {
   chatPanes,
   EMPTY_PANE,
   MAX_CHATS,
+  markUsed,
   MAX_PENDING,
   PANE_STATE_KEY,
   parseKept,
@@ -213,5 +214,21 @@ describe('the store', () => {
     chatPanes.prune({ listed: () => true, exists: (c) => c === 'c2' });
     expect(chatPaneOf('c1')).toBe(EMPTY_PANE);
     expect(chatPaneOf('c2').open).toBe(true);
+  });
+});
+
+describe('the tools opened in a chat', () => {
+  it('are stamped, survive a reload, and a pane kept before them reads as none', () => {
+    chatPanes.update('c1', 'm1', (p) => ({ ...p, used: markUsed(p.used, ['plan', 'L:gallery'], 50) }));
+    chatPanes.flush();
+    resetChatPanes();
+    expect(chatPaneOf('c1').used).toEqual({ plan: 50, 'L:gallery': 50 });
+    const old = JSON.stringify({ v: 1, chats: { c2: { tabs: [], at: 1 } } });
+    expect(parseKept(old).get('c2')?.used).toEqual({});
+  });
+
+  it('drops a value that is not a time', () => {
+    const raw = JSON.stringify({ v: 1, chats: { c3: { tabs: [], at: 1, used: { plan: 'x', files: 7 } } } });
+    expect(parseKept(raw).get('c3')?.used).toEqual({ files: 7 });
   });
 });

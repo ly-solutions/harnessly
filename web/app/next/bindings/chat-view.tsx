@@ -14,6 +14,7 @@ import {
   loadRewindPlan,
   loadRewound,
   resendRefused,
+  resumeQueue,
   retryMessage,
   rewind,
   sendMessage,
@@ -377,6 +378,7 @@ const ChatView = ({
                           <TerminalFailureCard
                             failure={record?.terminalFailure ?? null}
                             onChooseTarget={handoff.handoff ? () => requestContinue(conv) : null}
+                            onRetry={() => settled(resumeQueue(machine, conv))}
                           />
                           {loginLost && provider && (
                             <ChatLogin

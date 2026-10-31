@@ -239,13 +239,16 @@ func TestApprovalCommentIsNotApproval(t *testing.T) {
 
 func TestTimeoutAndCancel(t *testing.T) {
 	r := newRig(t)
+	var mu sync.Mutex
 	now := time.Now()
-	r.svc.Now = func() time.Time { return now }
+	r.svc.Now = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
 	a, err := r.svc.Create(context.Background(), Request{Question: "Still there?", TimeoutSec: 60})
 	if err != nil {
 		t.Fatal(err)
 	}
+	mu.Lock()
 	now = now.Add(2 * time.Minute)
+	mu.Unlock()
 	got, _ := r.svc.Get(a.ID)
 	if got.Status != StatusTimeout {
 		t.Fatalf("status: %s", got.Status)

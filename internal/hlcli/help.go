@@ -61,6 +61,17 @@ PUBLISH A SITE
   harnessly site list|versions|rollback    see the sites, their versions, go back to an earlier one
                                     needs --url (the hub) and a deploy token; harnessly site --help has the rest
 
+APPS (an app is a Claude Code plugin plus harnessly/app.json: instructions, skills, MCP, views; turned on per chat)
+  harnessly app new ID [--template chat|pane-chat] [--dir DIR]
+                                    write a new package that passes validate, e.g. harnessly app new acme.cashback
+  harnessly app validate [DIR] [--strict]
+                                    check the package; each problem names its field (--strict: warnings fail too)
+  harnessly app dev [DIR]           install the folder itself for development: a chat started after an edit gets it
+  harnessly app install [DIR]       install a copy of the package on this machine
+  harnessly app list | remove ID    the installed apps; uninstall one
+  harnessly app enable|disable ID
+                                    turn an app on or off in this chat (the agent gets it when it starts next)
+
 SECRETS (the safe of this machine: tokens and keys the person put in, outside the chat)
   harnessly secret list             the names in the safe and when each was put and last used (never a value)
   harnessly secret ask NAME --why "what it is for" [--replace]
@@ -108,6 +119,11 @@ DESIGN PROJECTS
   harnessly design kit list                              the installed kits
   harnessly design engine fetch     fetch the board engine with your own Claude account ("design engine --help")
   harnessly design engine status    what this machine has for designs: engine, browser, ffmpeg
+  harnessly design video get <project>        a video: scenes with start, length, transition, moments, open comments
+  harnessly design video scene add|set ...    a scene's title and length (8s, 1.5s, auto), the fade into it
+  harnessly design video frame <project> <scene> --at 2.4s | --strip 0:6:1s
+                                    jpg files of a scene at a time, to open with Read
+  harnessly design video check|render|comments ...   lint the scenes, render the mp4, read the comments ("design video --help")
   <page> is a page's id, its file or its title. project/canvas.json is built from meta/: do not edit it by hand.
 
 HTTP API
@@ -124,6 +140,7 @@ Exit codes: 0 done, 1 refused or failed (the reason is printed), 2 wrong usage.
 `
 
 var commandHelp = map[string]string{
+	"design video": videoHelp,
 	"open": `harnessly open <target>
 
 Open something in the right pane of your conversation. The request is kept with the conversation: it works while the
@@ -154,6 +171,19 @@ the icon beside it downloads the file. The right pane opens it by itself once.
 Deliver only a file the person asked to receive ("put it in a zip", "send me the docx"), not every file you wrote or
 changed: those stay in the Files tab and make no card. The file must lie inside the workspace (or /tmp).
 Run it again after you change the file, to hand over the new version.
+`,
+	"app": `harnessly app new|validate|dev|install|list|remove|enable|disable
+
+An app is a package: a Claude Code plugin (instructions.md, skills/, commands/, .mcp.json) plus the manifest
+harnessly/app.json that says where it works (targets: chat, pane, app, sinopia.<kind>), what it may do (permissions)
+and what the agent of a chat gets while it is on (agent: instructions, skills, mcp, tools).
+
+  harnessly app new acme.cashback --template pane-chat
+  harnessly app validate ./cashback --strict
+  harnessly app dev ./cashback          # the folder itself, for writing it
+  harnessly app install ./cashback      # a copy: later edits do not reach it
+  harnessly app enable acme.cashback    # in the chat this tab runs
+  harnessly app list --json
 `,
 	"secret": `harnessly secret list|ask|run|file
 
@@ -218,6 +248,14 @@ artifact.json, never a board or an asset, and gives the same ids however often i
 
   harnessly design migrate --dry-run --library /srv/design
   harnessly design migrate --library /srv/design
+
+A video (a project of the kind video) is a deck whose boards are scenes; its commands are in "harnessly design video --help":
+
+  harnessly design video get shop-video
+  harnessly design video scene set shop-video "Intro" --dur 8s
+  harnessly design video frame shop-video "Intro" --strip 0:6:1s --format 9:16
+  harnessly design video check shop-video --scene "Intro"
+  harnessly design video render shop-video --draft --wait
 `,
 	"hook": `harnessly hook design-guard | design-release
 

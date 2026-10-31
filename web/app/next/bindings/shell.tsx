@@ -2,6 +2,7 @@
 // components take props; the models in this folder turn the stores into them. A conversation is drawn from the
 // moment its id is in the address — its feed is the store's, whatever the sockets do.
 import '@/next/styles/tokens.css';
+import '@/next/styles/palettes.css';
 import '@/next/styles/motion.css';
 import '@/next/styles/base.css';
 import '@/next/styles/icons.css';
@@ -42,6 +43,7 @@ import NotificationCenter from '@/next/features/notifications/notification-cente
 import NoticeStack from '@/next/features/notifications/notice-stack';
 import { SecretAskHost } from '@/next/bindings/safe-asks';
 import { useNotices } from '@/next/bindings/notices';
+import { useNotify } from '@/next/stores/notices';
 import { CHAT_SCOPES, messageGroups, recentChats, searchChats } from '@/next/features/search/search-chats';
 import { useMessageSearch } from '@/next/bindings/use-message-search';
 import { revealMessage } from '@/next/stores/reveal';
@@ -74,7 +76,11 @@ import { goTo, HOME, ROUTE, useRoute, type TRoute } from '@/next/routes/routes';
 import AppsScreen from '@/next/bindings/apps';
 import SettingsScreen from '@/next/bindings/settings';
 import DesignlyView from '@/next/bindings/designly';
+import { useWorkingDesigns } from '@/next/bindings/working-designs';
+import { useDesignBound } from '@/next/bindings/design-conv';
+import { designKey } from '@/next/features/designly/design-conv';
 import DeckCreateView from '@/next/bindings/designly-deck-new';
+import VideoCreateView from '@/next/bindings/designly-video-new';
 import DesignlySite from '@/next/bindings/designly-site';
 import SiteWait from '@/next/features/designly/site-wait';
 import InviteAccept from '@/next/features/designly/access/invite-accept';
@@ -84,7 +90,7 @@ import { useRelease } from '@/next/bindings/use-release';
 import ReleaseNotice from '@/next/features/update/release-notice';
 import UpdateBanner from '@/next/features/update/update-banner';
 import WhatsNew from '@/next/features/whats-new/whats-new';
-import { REFS_MAX, type ConvId } from '@/next/protocol/v2';
+import { REFS_MAX, type Conversation, type ConvId } from '@/next/protocol/v2';
 import { chatRef } from '@/next/features/composer/chat-sources';
 import { addDraftRef } from '@/next/stores/drafts';
 import { isUnread, useConversation, useConvsAnswered } from '@/next/stores/conversations';
@@ -168,11 +174,23 @@ const legacyChatId = (search: string): string | null => {
 
 const isConvId = (id: string): id is ConvId => id.startsWith('tab-');
 
+/** The chat whose right pane is beside the screen: the open chat, or the open design's chat. */
+const paneConvOf = (
+  route: TRoute,
+  chat: Conversation | null,
+  design: Conversation | null,
+): Conversation | null => {
+  if (route.kind === ROUTE.chat) return chat;
+  if (route.kind === ROUTE.site) return design;
+  return null;
+};
+
 /** Which of the sidebar's screens is on: Designly and its designs, Settings, or the chats. */
 const sidebarView = (route: TRoute) => {
   if (
     route.kind === ROUTE.designly ||
     route.kind === ROUTE.designlyNew ||
+    route.kind === ROUTE.videoNew ||
     route.kind === ROUTE.site ||
     route.kind === ROUTE.invite
   )
@@ -344,6 +362,7 @@ const Shell = ({ owner }: IShellProps) => {
   }, [drawerOpen]);
 
   const notices = useNotices({ person: owner || 'local', currentId, onOpenChat: openChat });
+  const notify = useNotify();
 
   const chat = useMemo(
     () => (currentId === null ? null : (model.chats?.find((item) => item.id === currentId) ?? null)),
@@ -442,11 +461,18 @@ const Shell = ({ owner }: IShellProps) => {
         {bg.header && <BackgroundButton background={bg.header} />}
       </>
     ) : null;
+  // An open design has the right pane of its chat, as a chat has: the chat it came from, else its last one here.
+  const designBound = useDesignBound(
+    route.kind === ROUTE.site && model.active ? designKey(model.active, route.id) : null,
+  );
+  const designChat = route.kind === ROUTE.site ? (route.chat ?? designBound) : null;
+  const designRecord = useConversation(designChat && isConvId(designChat) ? designChat : null);
   const pane = useRightPane(
-    route.kind === ROUTE.chat ? (record ?? null) : null,
+    paneConvOf(route, record ?? null, designRecord ?? null),
     machineName,
     term.reveal,
     paneStrip,
+    route.kind === ROUTE.site,
   );
   const projectDialog = useProjectDialog(model.active, model.personSidebar);
   const projectSettings = useProjectSettingsDialog(model.active, model.personSidebar);
@@ -471,6 +497,26 @@ const Shell = ({ owner }: IShellProps) => {
           }
         : null,
     [startOn, model.startMachines],
+  );
+  // Sinopia Design makes a design on the open machine (its library is that machine's): picking another one in the
+  // create screen's model popover opens that machine, so the new design shows up where the person is.
+  // The designs at work under «Sinopia Design»: read again whenever the person moves between screens.
+  const workingDesigns = useWorkingDesigns(
+    noV2 ? null : model.active,
+    model.conversations,
+    route.kind === ROUTE.site ? route.id : null,
+    route.kind,
+  );
+  const designMachine = useMemo(
+    () =>
+      model.active && model.startMachines.length > 1
+        ? {
+            current: model.active,
+            choices: model.startMachines,
+            onPick: (id: string) => void pickMachine(id),
+          }
+        : null,
+    [model.active, model.startMachines, pickMachine],
   );
   // A project picked for the next chat that the list no longer has is no pick.
   const newChatInto = model.projects?.find((project) => project.id === newChatProject) ?? null;
@@ -551,6 +597,16 @@ const Shell = ({ owner }: IShellProps) => {
       onPickMachine={pickMachine}
       onManageMachines={() => openScreen({ kind: ROUTE.settings, section: 'machines' })}
       people={<PeopleBlock machine={noV2 ? null : model.active} />}
+      designs={
+        workingDesigns && {
+          rows: workingDesigns,
+          current: route.kind === ROUTE.site ? route.id : null,
+          onOpen: (id) => {
+            navigate({ kind: ROUTE.site, id });
+            setDrawerOpen(false);
+          },
+        }
+      }
       rail={
         <RailChats
           chats={noV2 ? NO_CHATS : model.chats}
@@ -654,13 +710,17 @@ const Shell = ({ owner }: IShellProps) => {
           }}
         />
       )}
-      <NoticeStack
-        notices={notices.notices}
-        now={now}
-        onOpen={notices.onOpen}
-        onDismiss={notices.onDismiss}
-        onDismissAll={notices.onDismissAll}
-      />
+      {notify.cards && (
+        <NoticeStack
+          notices={notices.notices}
+          now={now}
+          onOpen={notices.onOpen}
+          onDismiss={notices.onDismiss}
+          onDismissAll={notices.onDismissAll}
+          place={notify.place}
+          hideAfterMs={notify.hideAfter * 1000}
+        />
+      )}
       <SecretAskHost machine={boot.k === 'ready' ? model.active : null} />
       <ToastHost />
       <UpdateBanner available={update.available} onReload={update.reload} onDismiss={update.dismiss} />
@@ -690,7 +750,11 @@ const Shell = ({ owner }: IShellProps) => {
       onDrawerChange={setDrawerOpen}
       sidebar={sidebar}
       tabs={tabs.strip}
-      aside={boot.k !== 'failed' && !noV2 && route.kind === ROUTE.chat ? pane.drawer : null}
+      aside={
+        boot.k !== 'failed' && !noV2 && (route.kind === ROUTE.chat || route.kind === ROUTE.site)
+          ? pane.drawer
+          : null
+      }
       overlays={overlays}
       textSize={me.k === 'ready' ? me.me.settings.textSize : undefined}
     >
@@ -778,10 +842,13 @@ const Shell = ({ owner }: IShellProps) => {
       {boot.k !== 'failed' && !noV2 && route.kind === ROUTE.chat && term.panel}
       {boot.k !== 'failed' && !noV2 && route.kind === ROUTE.chat && pane.sideFloat}
       {boot.k !== 'failed' && !noV2 && route.kind === ROUTE.designly && model.active && (
-        <DesignlyView key={model.active} machine={model.active} />
+        <DesignlyView key={model.active} machine={model.active} machines={designMachine} />
       )}
       {boot.k !== 'failed' && !noV2 && route.kind === ROUTE.designlyNew && model.active && (
-        <DeckCreateView key={model.active} machine={model.active} />
+        <DeckCreateView key={model.active} machine={model.active} machines={designMachine} />
+      )}
+      {boot.k !== 'failed' && !noV2 && route.kind === ROUTE.videoNew && model.active && (
+        <VideoCreateView key={model.active} machine={model.active} machines={designMachine} />
       )}
       {boot.k !== 'failed' && !noV2 && route.kind === ROUTE.apps && model.active && (
         <AppsScreen key={model.active} machine={model.active} onOpenDrawer={() => setDrawerOpen(true)} />
@@ -806,6 +873,7 @@ const Shell = ({ owner }: IShellProps) => {
           id={route.id}
           chat={route.chat ?? null}
           access={route.access ?? null}
+          toolPane={pane.header}
           onToggleMax={toggleRail}
           onOpenDrawer={() => setDrawerOpen(true)}
           onMissing={() => goTo({ kind: ROUTE.designly }, { replace: true })}

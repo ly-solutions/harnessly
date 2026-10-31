@@ -98,6 +98,8 @@ const useConversationSources = (
           setFailure(key);
           return;
         }
+        // No transcript yet: nothing to remember, the timeline is all there is.
+        if (value.complete === false) return;
         remember(key, value);
         setLoaded({ key, value });
         setFailure(null);

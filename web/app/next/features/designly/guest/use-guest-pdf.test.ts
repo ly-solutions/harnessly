@@ -15,7 +15,7 @@ const config: IGuestConfig = {
   filesBase: '/s/pdf-token/f/',
   commentsUrl: '',
   kind: 'slides',
-  deck: { video: null, pdf: false },
+  deck: { type: 'slides', video: null, pdf: false },
   mediaBase: '/s/pdf-token/m/',
   seenUrl: '/s/pdf-token/seen',
 };

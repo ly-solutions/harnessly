@@ -1,5 +1,6 @@
-// The Settings screen's frame (the design's .hx-set): the sections on the left, the open one on the right. On a phone
-// the list is the screen and the open section slides over it from the right, with a way back.
+// The Settings screen's frame (the design's .hx-set): the sections on the left in three groups (the app, the agents,
+// the machine), the open one on the right. On a phone the list is the screen and the open section slides over it from
+// the right, with a way back; the sidebar opens from the list's head with the same glyph as the sidebar's own toggle.
 import '@/next/styles/settings.css';
 
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -10,6 +11,7 @@ import Icon from '@/next/ui/icon';
 /** What a section's entry in the list draws: a glyph of the icon set, or the logo of an agent. */
 const SECTION_MARK: Readonly<Record<SettingsSection, { icon: string } | { agent: 'claude' | 'codex' }>> = {
   general: { icon: 'sliders-horizontal' },
+  appearance: { icon: 'palette' },
   voice: { icon: 'mic' },
   notifications: { icon: 'bell' },
   safe: { icon: 'lock' },
@@ -22,6 +24,13 @@ const SECTION_MARK: Readonly<Record<SettingsSection, { icon: string } | { agent:
   apps: { icon: 'layout-grid' },
   beta: { icon: 'sparkles' },
 };
+
+/** The groups of the list, in the order of SETTINGS_SECTIONS. */
+const NAV_GROUPS = [
+  { id: 'app', sections: ['general', 'appearance', 'notifications', 'voice', 'takes'] },
+  { id: 'agents', sections: ['accounts', 'claude', 'codex', 'skills', 'safe'] },
+  { id: 'machine', sections: ['machines', 'apps', 'beta'] },
+] as const satisfies readonly { id: string; sections: readonly SettingsSection[] }[];
 
 interface ISettingsShellProps {
   /** The section on the page. */
@@ -60,33 +69,45 @@ const SettingsShell = ({
             aria-label={t('next.settings.menu')}
             onClick={onOpenDrawer}
           >
-            <Icon name="menu" />
+            <Icon name="panel-left" />
           </button>
           <span className="hx-set__h1">{t('next.settings.title')}</span>
         </div>
-        {SETTINGS_SECTIONS.map((id, index) => {
-          const mark = SECTION_MARK[id];
-          return (
-            <button
-              key={id}
-              type="button"
-              className="hx-set__nav-item"
-              aria-current={id === section ? true : undefined}
-              ref={(element) => element?.style.setProperty('--i', String(index))}
-              onClick={() => onPick(id)}
-            >
-              <span className="hx-set__nav-ic">
-                {'agent' in mark ? (
-                  <i className="hx-agent" data-agent={mark.agent} aria-hidden="true" />
-                ) : (
-                  <Icon name={mark.icon} size="sm" />
-                )}
-              </span>
-              <span className="hx-set__nav-label">{t(`next.settings.section.${id}`)}</span>
-              <Icon name="chevron-right" size="sm" className="hx-set__nav-chev" />
-            </button>
-          );
-        })}
+        {NAV_GROUPS.map((group) => (
+          <div
+            key={group.id}
+            className="hx-set__nav-group"
+            role="group"
+            aria-labelledby={`hx-set-nav-${group.id}`}
+          >
+            <div className="hx-set__nav-caption" id={`hx-set-nav-${group.id}`}>
+              {t(`next.settings.navGroup.${group.id}`)}
+            </div>
+            {group.sections.map((id) => {
+              const mark = SECTION_MARK[id];
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className="hx-set__nav-item"
+                  aria-current={id === section ? true : undefined}
+                  ref={(element) => element?.style.setProperty('--i', String(SETTINGS_SECTIONS.indexOf(id)))}
+                  onClick={() => onPick(id)}
+                >
+                  <span className="hx-set__nav-ic">
+                    {'agent' in mark ? (
+                      <i className="hx-agent" data-agent={mark.agent} aria-hidden="true" />
+                    ) : (
+                      <Icon name={mark.icon} size="sm" />
+                    )}
+                  </span>
+                  <span className="hx-set__nav-label">{t(`next.settings.section.${id}`)}</span>
+                  <Icon name="chevron-right" size="sm" className="hx-set__nav-chev" />
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </nav>
       <div className="hx-set__page" ref={page}>
         <div className="hx-set__page-in" data-sec={section}>

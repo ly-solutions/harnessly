@@ -1,0 +1,252 @@
+/* The video shell, written by WP3c only: hx-video-* classes. The deck's classes (hx-deck, hx-deck__bar,
+   hx-deck-panel, hx-deck-pop, hx-deck-new) carry the bar, the panel and the create screen; this file adds the main
+   column (stage and timeline), the empty and phone states, the render popover and the create screen's choices. */
+
+/* Main column: the stage over the timeline, beside the docked panel (--pw is the deck's). */
+.hx-video__main {
+  position: absolute;
+  top: 56px;
+  left: calc(10px + var(--pw));
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  transition: left 480ms var(--hx-ease-out);
+}
+.hx-video__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--hx-bg-stage);
+  box-shadow: var(--hx-shadow-md);
+  overflow: hidden;
+}
+.hx-video__stage > * {
+  min-width: 0;
+  min-height: 0;
+}
+/* The player takes the stage, and the picture is as large as the stage lets it be, by its width and by its height (the
+   controls under it keep their room); a player that only hugged its content shrank to the width of its controls. */
+.hx-video__stage {
+  container-type: size;
+}
+.hx-video__stage > .hx-video-player:not([data-full='1']) {
+  width: 100%;
+  padding: var(--hx-space-6);
+  box-sizing: border-box;
+}
+.hx-video__stage .hx-video-player:not([data-full='1']) .hx-video__slot {
+  width: min(100%, (100cqh - 2 * var(--hx-space-6) - 72px) * 16 / 9);
+}
+.hx-video__stage .hx-video-player:not([data-full='1']) .hx-video__slot[data-format='9:16'] {
+  width: min(100%, (100cqh - 2 * var(--hx-space-6) - 72px) * 9 / 16);
+}
+.hx-video__timeline {
+  flex: none;
+  border-radius: 14px;
+  background: var(--hx-bg-raised);
+  box-shadow: 0 0 0 1px var(--hx-border);
+  overflow: hidden;
+}
+
+/* Bar */
+.hx-video__seg {
+  flex: none;
+  min-width: 0;
+}
+.hx-video__seg button {
+  padding: 0 10px;
+}
+.hx-video__seg button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.hx-video__bar .hx-btn[data-mark='1'] {
+  position: relative;
+}
+.hx-video__bar .hx-btn[data-mark='1']::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 22px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hx-warning, var(--hx-accent));
+  box-shadow: 0 0 0 2px var(--hx-bg-rail);
+}
+
+/* Nothing to play yet, or the frames did not open */
+.hx-video__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-md);
+}
+.hx-video__empty p {
+  margin: 0;
+}
+.hx-video__wait {
+  width: min(280px, 70%);
+  height: 160px;
+  border-radius: 14px;
+}
+.hx-video__wait-text {
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-sm);
+}
+.hx-video__empty small {
+  color: var(--hx-fg-3);
+}
+.hx-video[data-panel='off'] > .hx-video__empty {
+  position: absolute;
+  inset: 56px 10px 10px;
+}
+
+/* Panel: the comments tab fills what the head leaves */
+.hx-video-panel__comments {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+/* Phone: the list of scenes under the player */
+.hx-video-scenes {
+  flex: none;
+  max-height: 34%;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 14px;
+  background: var(--hx-bg-raised);
+  box-shadow: 0 0 0 1px var(--hx-border);
+  overflow: auto;
+}
+.hx-video-scenes button {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.hx-video-scenes button[data-on='1'] {
+  background: var(--hx-accent-soft);
+}
+.hx-video-scenes span,
+.hx-video-scenes em {
+  color: var(--hx-fg-3);
+  font-style: normal;
+  white-space: nowrap;
+}
+.hx-video-scenes b {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Render popover */
+.hx-video-render {
+  right: 120px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hx-video-render__note {
+  margin: 8px 0 0;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-video-render__row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+}
+.hx-video-render__row + .hx-video-render__row {
+  border-top: 1px solid var(--hx-border);
+}
+.hx-video-render__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hx-video-render__badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs, 11px);
+}
+.hx-video-render__badge[data-badge='current'] {
+  background: var(--hx-accent-soft);
+  color: var(--hx-accent);
+}
+.hx-video-render__badge[data-badge='outdated'] {
+  color: var(--hx-danger);
+}
+.hx-video-render__job {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-video-render__job progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--hx-accent);
+}
+.hx-video-render__acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 960px) {
+  .hx-video-render {
+    right: 14px;
+  }
+}
+@media (max-width: 560px) {
+  .hx-video__main {
+    left: 10px;
+    bottom: 10px;
+  }
+  .hx-video-render {
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+  .hx-video__bar [data-k='format'],
+  .hx-video__bar [data-k='source'] {
+    flex: 0 1 auto;
+  }
+}

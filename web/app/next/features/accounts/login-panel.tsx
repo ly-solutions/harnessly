@@ -19,9 +19,20 @@ interface ILoginPanelProps {
   onSubmitCode: (code: string) => Promise<string | null>;
   onCancel: () => Promise<void>;
   onLogout: () => Promise<string | null>;
+  /** What the start button says where the subscription has a name of its own («Войти через ChatGPT»). */
+  startLabel?: string;
 }
 
-const LoginPanel = ({ via, account, login, onLogin, onSubmitCode, onCancel, onLogout }: ILoginPanelProps) => {
+const LoginPanel = ({
+  via,
+  account,
+  login,
+  onLogin,
+  onSubmitCode,
+  onCancel,
+  onLogout,
+  startLabel,
+}: ILoginPanelProps) => {
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +118,7 @@ const LoginPanel = ({ via, account, login, onLogin, onSubmitCode, onCancel, onLo
             <SetButton tone="primary" onClick={() => void start()}>
               {shown === 'failed'
                 ? t('next.login.again')
-                : t(via === 'console' ? 'next.login.startConsole' : 'next.login.start')}
+                : (startLabel ?? t(via === 'console' ? 'next.login.startConsole' : 'next.login.start'))}
             </SetButton>
           </div>
         </div>

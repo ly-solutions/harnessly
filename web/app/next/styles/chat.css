@@ -2052,10 +2052,11 @@ html[data-theme='dark'] .hx-ref[data-type='link'] {
 
 /* ── Going on from an earlier message (features/chat/rewind.tsx) ── */
 /* The action under the person's message: on hover of a wide window, after a long press on the phone. */
+/* The message takes the feed's width (its bubble is a share of it); only the action under it keeps to the right. A
+   wrapper as wide as its content left a short message's bubble 80% of its own text and broke it letter by letter. */
 .hx-rewindable {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
 }
 .hx-rewindable__acts {
   display: flex;

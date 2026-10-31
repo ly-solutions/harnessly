@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -110,7 +111,12 @@ func TestPicturesTheAgentLookedAtAreListed(t *testing.T) {
 	r.open()
 	r.settle(wire.StateReady)
 	r.user("look")
-	r.raw(`{"type":"assistant","timestamp":"2026-10-23T05:00:00.000Z","cwd":"/w","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"/w/shots/home.png"}}]}}`)
+	// The picture is a real file: one whose file is gone is not listed.
+	home := filepath.Join(t.TempDir(), "home.png")
+	if err := os.WriteFile(home, []byte("\x89PNG\r\n\x1a\n0000"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.raw(`{"type":"assistant","timestamp":"2026-10-23T05:00:00.000Z","cwd":"/w","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"` + home + `"}}]}}`)
 	r.raw(`{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_1","type":"tool_result","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}}]}]}}`)
 	r.tick(metaEvery)
 	snap, err := r.rt.Conversation(context.Background(), r.id)
@@ -118,13 +124,21 @@ func TestPicturesTheAgentLookedAtAreListed(t *testing.T) {
 		t.Fatalf("shots: %+v %v", snap.Shots, err)
 	}
 	path, err := r.rt.ShotPath(context.Background(), r.id, snap.Shots[0].ID)
-	if err != nil || path != "/w/shots/home.png" {
+	if err != nil || path != home {
 		t.Fatalf("path: %q %v", path, err)
 	}
-	for _, id := range []string{"", "nope", "/w/shots/home.png", "/etc/passwd"} {
+	for _, id := range []string{"", "nope", home, "/etc/passwd"} {
 		if _, err := r.rt.ShotPath(context.Background(), r.id, id); !errors.Is(err, wire.ErrNoShot) {
 			t.Fatalf("%q: %v", id, err)
 		}
+	}
+	// The file goes: the picture leaves the list instead of failing when the page asks for it.
+	if err := os.Remove(home); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(metaEvery)
+	if snap, err = r.rt.Conversation(context.Background(), r.id); err != nil || len(snap.Shots) != 0 {
+		t.Fatalf("gone: %+v %v", snap.Shots, err)
 	}
 }
 

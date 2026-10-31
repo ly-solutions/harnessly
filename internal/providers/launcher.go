@@ -29,7 +29,8 @@ func RelayPath(prefix, profile string) string { return prefix + "/" + profile + 
 
 var _ agents.ProfileLauncher = Launcher{}
 
-// ClaudeSettings is the settings file of a Claude Code chat on a profile and a model (Store.SettingsFile).
+// ClaudeSettings is the settings file of a Claude Code chat on a profile and a model (Store.SettingsFile; a Proxied
+// profile's proxy is started there, so the chat finds it listening).
 func (l Launcher) ClaudeSettings(profile, model, hooksPath string) (string, error) {
 	return l.Store.SettingsFile(profile, model, hooksPath)
 }

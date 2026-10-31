@@ -23,6 +23,8 @@ const props = (notices: readonly INotice[]) => ({
   onOpen: vi.fn(),
   onDismiss: vi.fn(),
   onDismissAll: vi.fn(),
+  place: 'top-right' as const,
+  hideAfterMs: 0,
 });
 
 describe('the pile of notices', () => {
@@ -51,5 +53,21 @@ describe('the pile of notices', () => {
     expect(container.querySelectorAll('.hx-notice-slot[data-leaving]')).toHaveLength(1);
     act(() => void vi.advanceTimersByTime(NOTICE_EXIT_MS));
     expect(container.querySelectorAll('.hx-notice-slot')).toHaveLength(1);
+  });
+
+  it('hides a card by itself when its time is out, never while the pointer holds the pile', () => {
+    const fresh = { ...notice('a'), at: Date.now() };
+    const p = { ...props([fresh]), hideAfterMs: 5000 };
+    const { container } = render(<NoticeStack {...p} />);
+    const region = container.querySelector('.hx-notices') as HTMLElement;
+    expect(region.dataset.place).toBe('top-right');
+    fireEvent.pointerEnter(region, { pointerType: 'mouse' });
+    act(() => void vi.advanceTimersByTime(8000));
+    expect(container.querySelectorAll('.hx-notice-slot:not([data-leaving])')).toHaveLength(1);
+    fireEvent.pointerLeave(region, { pointerType: 'mouse' });
+    act(() => void vi.advanceTimersByTime(1500));
+    act(() => void vi.advanceTimersByTime(NOTICE_EXIT_MS));
+    expect(container.querySelectorAll('.hx-notice-slot')).toHaveLength(0);
+    expect(p.onDismiss).not.toHaveBeenCalled();
   });
 });

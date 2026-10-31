@@ -37,6 +37,39 @@ const DeckCreateGallery = () => {
       <DeckCreate
         machine={'gallery' as MachineId}
         systems={SYSTEMS}
+        model={{
+          value: { provider: 'claude', model: 'opus', effort: 'high', ultracode: false },
+          agents: [
+            {
+              provider: 'claude',
+              name: 'Claude Code',
+              short: 'Claude',
+              canSwitch: true,
+              available: true,
+              status: 'ready',
+              models: [
+                {
+                  id: 'opus',
+                  label: 'Opus',
+                  hint: 'Самая сильная',
+                  efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+                  defaultEffort: 'high',
+                },
+              ],
+            },
+          ],
+          locked: false,
+          offersUltracode: false,
+          onChange: () => {},
+          machine: {
+            current: 'runner-2',
+            choices: [
+              { id: 'runner-2', name: 'Моя ВМ', health: 'ok', note: '', off: false },
+              { id: 'dev-department', name: 'Ромина ВМ', health: 'ok', note: '', off: false },
+            ],
+            onPick: () => {},
+          },
+        }}
         onBack={() => {}}
         onCreate={() => new Promise<void>(() => {})}
       />

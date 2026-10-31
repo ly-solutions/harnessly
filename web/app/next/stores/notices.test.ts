@@ -49,4 +49,14 @@ describe('the switches', () => {
       kinds: { ...DEFAULT_NOTIFY.kinds, done: false },
     });
   });
+
+  it('keep a place and a time to hide only from their lists', () => {
+    expect(parseNotify(JSON.stringify({ place: 'bottom-left', hideAfter: 10, cards: false }))).toEqual({
+      ...DEFAULT_NOTIFY,
+      place: 'bottom-left',
+      hideAfter: 10,
+      cards: false,
+    });
+    expect(parseNotify(JSON.stringify({ place: 'middle', hideAfter: 7 }))).toEqual(DEFAULT_NOTIFY);
+  });
 });

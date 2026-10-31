@@ -413,7 +413,35 @@ func launchJSON(l *agents.Launch) *jsvalue.Object {
 	if l.Profile != "" {
 		o.Set("profile", l.Profile)
 	}
+	if len(l.Apps) > 0 {
+		o.Set("apps", AppsJSON(l.Apps))
+	}
 	return o
+}
+
+// AppsJSON is a launch's apps as the tab meta keeps them.
+func AppsJSON(ids []string) []any {
+	out := make([]any, len(ids))
+	for i, id := range ids {
+		out[i] = id
+	}
+	return out
+}
+
+// AppsOf reads the apps a tab's launch keeps.
+func AppsOf(o *jsvalue.Object) []string {
+	if o == nil {
+		return nil
+	}
+	v, _ := o.Get("apps")
+	list, _ := v.([]any)
+	var out []string
+	for _, x := range list {
+		if s, ok := x.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // The texts Start answers people with, picked by RUNTIME_LOCALE when the answer is built; the Russian ones are the

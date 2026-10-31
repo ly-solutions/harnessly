@@ -42,6 +42,8 @@ func (c *cli) design(args []string) error {
 		return c.designTimeline(args[1:])
 	case "moment":
 		return c.designMoment(args[1:])
+	case "video":
+		return c.designVideo(args[1:])
 	}
 	return usageErr("unknown design command %q", args[0])
 }
@@ -261,8 +263,11 @@ func (c *cli) designMigrate(args []string) error {
 
 // hook runs a hook of an agent: its input on stdin, its answer on stdout.
 func (c *cli) hook(args []string) error {
+	if len(args) == 3 && args[0] == "app-guard" && args[1] == "--policy" {
+		return c.appGuard(args[2])
+	}
 	if len(args) != 1 || (args[0] != "design-guard" && args[0] != "design-release") {
-		return usageErr("hook design-guard|design-release")
+		return usageErr("hook design-guard|design-release|app-guard --policy <file>")
 	}
 	if args[0] == "design-release" {
 		c.releaseLeases()

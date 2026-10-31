@@ -24,10 +24,12 @@ const (
 	DesignSite   DesignKind = "site"
 	DesignSlides DesignKind = "slides"
 	DesignDS     DesignKind = "ds"
+	// DesignVideo is a deck folder with meta/video.json: scenes on a time line rendered to MP4.
+	DesignVideo DesignKind = "video"
 )
 
 // DesignKinds is every DesignKind, in the schema's order.
-var DesignKinds = []DesignKind{DesignSite, DesignSlides, DesignDS}
+var DesignKinds = []DesignKind{DesignSite, DesignSlides, DesignDS, DesignVideo}
 
 // The bounds of what a person writes for a new project.
 const (
@@ -113,19 +115,60 @@ func (d DesignlyDeck) Validate() error {
 	return errors.Join(errs...)
 }
 
+// DesignVideoFormat is a video's aspect.
+type DesignVideoFormat string
+
+// DesignVideoFormats is every DesignVideoFormat, in the schema's order.
+var DesignVideoFormats = []DesignVideoFormat{"16:9", "9:16"}
+
+// The bounds of a new video's settings.
+const (
+	DesignVideoSecondsMin = 15
+	DesignVideoSecondsMax = 300
+)
+
+// DesignlyVideo is what a new video (kind video) is asked to be: its formats (one or both, no repeats), its length in
+// seconds (nil: the agent decides) and whether the scene's text is burned in as subtitles.
+type DesignlyVideo struct {
+	Formats []DesignVideoFormat `json:"formats"`
+	Seconds *int                `json:"seconds"`
+	Subs    bool                `json:"subs"`
+}
+
+func (v DesignlyVideo) Validate() error {
+	errs := []error{}
+	if len(v.Formats) < 1 || len(v.Formats) > len(DesignVideoFormats) {
+		errs = append(errs, errors.New("formats: one or two"))
+	}
+	seen := map[DesignVideoFormat]bool{}
+	for _, f := range v.Formats {
+		errs = append(errs, in("formats[]", f, DesignVideoFormats))
+		if seen[f] {
+			errs = append(errs, errors.New("formats: repeated"))
+		}
+		seen[f] = true
+	}
+	if v.Seconds != nil && (*v.Seconds < DesignVideoSecondsMin || *v.Seconds > DesignVideoSecondsMax) {
+		errs = append(errs, errors.New("seconds: out of range"))
+	}
+	return errors.Join(errs...)
+}
+
 // DesignlyCreate is the body of POST /api/v2/designly/create. Model nil: the agent's default; DesignSystem nil: the
-// library's own. Deck is there only for the kind slides, and only from a page that knows decks. AttachmentIDs are
-// uploads (POST /api/v2/upload) the first message carries: the brief's files, a company template.
+// library's own. Deck is there only for the kind slides and Video only for the kind video, each only from a page that
+// knows it. AttachmentIDs are uploads (POST /api/v2/upload) the first message carries: the brief's files, a company
+// template.
 type DesignlyCreate struct {
-	Title         string        `json:"title"`
-	Brief         string        `json:"brief"`
-	Kind          DesignKind    `json:"kind"`
-	Provider      Provider      `json:"provider"`
-	Model         *string       `json:"model"`
-	Effort        *Effort       `json:"effort"`
-	DesignSystem  *string       `json:"designSystem"`
-	Deck          *DesignlyDeck `json:"deck,omitempty"`
-	AttachmentIDs []string      `json:"attachmentIds,omitempty"`
+	Title         string         `json:"title"`
+	Brief         string         `json:"brief"`
+	Kind          DesignKind     `json:"kind"`
+	Provider      Provider       `json:"provider"`
+	Model         *string        `json:"model"`
+	Effort        *Effort        `json:"effort"`
+	DesignSystem  *string        `json:"designSystem"`
+	Deck          *DesignlyDeck  `json:"deck,omitempty"`
+	Video         *DesignlyVideo `json:"video,omitempty"`
+	AttachmentIDs []string       `json:"attachmentIds,omitempty"`
 }
 
 func (c DesignlyCreate) Validate() error {
@@ -148,6 +191,12 @@ func (c DesignlyCreate) Validate() error {
 			errs = append(errs, errors.New("deck: only for kind slides"))
 		}
 		errs = append(errs, c.Deck.Validate())
+	}
+	if c.Video != nil {
+		if c.Kind != DesignVideo {
+			errs = append(errs, errors.New("video: only for kind video"))
+		}
+		errs = append(errs, c.Video.Validate())
 	}
 	if len(c.AttachmentIDs) > DesignAttachmentsMax {
 		errs = append(errs, errors.New("attachmentIds: too many"))

@@ -14,4 +14,6 @@ export interface IConversationSources {
   editedPaths: { path: string; at: number }[];
   /** Bytes of the transcript the answer covers; the client refetches when the timeline moves past it. */
   size: number;
+  /** false: the runtime has no transcript for the path yet. */
+  complete?: boolean;
 }

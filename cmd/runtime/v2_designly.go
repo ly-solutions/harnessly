@@ -108,8 +108,12 @@ func (d *v2Designly) state() designlyState {
 
 // kindOf is a project's kind. A deck says so in its own folder (meta/deck.json, which every deck has): the library is
 // shared, so a deck another runtime made is a deck here too, though this runtime's state file never heard of it
-// (a teammate's runtime listed a colleague's deck as a site and opened its slide as a plain page).
+// (a teammate's runtime listed a colleague's deck as a site and opened its slide as a plain page). A video is a
+// deck folder with meta/video.json, so it is told first.
 func kindOf(st designlyState, lib *design.Library, id string) wire.DesignKind {
+	if lib.IsVideo(id) {
+		return wire.DesignVideo
+	}
 	if lib.IsDeck(id) {
 		return wire.DesignSlides
 	}
@@ -164,6 +168,11 @@ func (d *v2Designly) Create(ctx context.Context, c wire.DesignlyCreate) (wire.De
 			return wire.DesignlyCreated{}, createFailure(deckCreateFailure(err))
 		}
 	}
+	if c.Video != nil {
+		if err := design.ValidateVideoSettings(design.BuildVideoSettings(videoInit(c.Video))); err != nil {
+			return wire.DesignlyCreated{}, createFailure(deckCreateFailure(err))
+		}
+	}
 	project, err := lib.CreateProject(c.Title)
 	if err != nil {
 		return wire.DesignlyCreated{}, createFailure(err)
@@ -184,8 +193,14 @@ func (d *v2Designly) Create(ctx context.Context, c wire.DesignlyCreate) (wire.De
 	}
 	// The settings are the deck's file before the agent starts: the page reads them, the agent is told them.
 	// Every deck has the file (the guest side tells a deck by it); a page that sends no settings gets the defaults.
-	if c.Kind == wire.DesignSlides {
+	// A video is a deck folder with its own settings beside the deck's.
+	if c.Kind == wire.DesignSlides || c.Kind == wire.DesignVideo {
 		if err := lib.InitDeck(project.ID, deckInitOf(c)); err != nil {
+			return wire.DesignlyCreated{}, notStarted(err.Error())
+		}
+	}
+	if c.Kind == wire.DesignVideo {
+		if err := lib.InitVideo(project.ID, videoInitOf(c)); err != nil {
 			return wire.DesignlyCreated{}, notStarted(err.Error())
 		}
 	}
@@ -221,6 +236,9 @@ func createTask(lib *design.Library, id, title, brief string, c wire.DesignlyCre
 	if c.Deck != nil {
 		task += "\n" + deckLine(c.Deck, lib.Config().Texts.CLI, id)
 	}
+	if c.Kind == wire.DesignVideo {
+		task += "\n" + videoLine(c.Video, lib.Config().Texts.CLI, id)
+	}
 	if systemLine != "" {
 		task += "\n" + systemLine
 		if c.Kind == wire.DesignSlides {
@@ -252,6 +270,8 @@ func kindLine(k wire.DesignKind) string {
 				"все слайды. Блоки слайда называй data-block=\"<Имя>\" (Заголовок, Текст, Схема: человек указывает на них), а то, что "+
 				"появляется по клику, помечай data-step=\"1\", \"2\" и так далее. Блок, который человек подвинул или переписал "+
 				"руками (translate: в его style или «Правка вручную» в истории), меняй только по просьбе.")
+	case wire.DesignVideo:
+		return videoKindLine()
 	case wire.DesignDS:
 		return locale.Pick("The project is a design system: the boards show its components, tokens and rules.", "Проект — дизайн-система: доски показывают её компоненты, токены и правила.")
 	}

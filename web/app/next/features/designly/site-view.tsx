@@ -175,6 +175,8 @@ export interface ISiteViewProps {
   stage?: ISiteStage;
   /** Set when the design is shown in the right pane. */
   pane?: ISitePane;
+  /** The right pane of the design's chat (browser, files, terminal), as beside a chat: its switch in the strip. */
+  toolPane?: { open: boolean; onToggle: () => void } | null;
   /** The design whose view (device, canvas, page) is kept in the browser; without it nothing is. */
   memoryKey?: string;
   /** The view a design starts with where the browser has kept none (a guest link carries the owner's). */
@@ -245,7 +247,7 @@ export interface ISiteStage {
    * A deck's context for the chat: one transient chip («Слайд 3 · Заголовок») sent with the next message as an
    * `<annotation>`; null takes it away. Absent from a stage that has no chat field.
    */
-  context?: (ctx: { label: string; text: string; selected?: boolean } | null) => void;
+  context?: (ctx: { label: string; text: string; selected?: boolean; block?: boolean } | null) => void;
   /** The chat alone, without the window it stands in (a deck's panel hosts it); absent where the stage has no chat. */
   deckChat?: ReactNode;
   /** Sends a message on the person's behalf (a deck's «Короче», a layout change, «＋ слайд»). */
@@ -327,6 +329,7 @@ const SiteView = ({
   maxed,
   stage,
   pane,
+  toolPane = null,
   access,
   publish,
   devtools,
@@ -1169,6 +1172,20 @@ const SiteView = ({
                   }}
                 >
                   <Icon name={stage.mode === 'chat' ? 'maximize-2' : 'message-square'} />
+                </button>
+              )}
+              {toolPane && !guest && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped"
+                  aria-pressed={toolPane.open}
+                  aria-label={t('next.header.pane')}
+                  onClick={toolPane.onToggle}
+                >
+                  <Icon name="panel-right" />
+                  <span className="hx-tip" data-pos="below" data-align="end">
+                    {t('next.header.pane')}
+                  </span>
                 </button>
               )}
               {!guest && (

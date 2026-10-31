@@ -1,6 +1,7 @@
-// The Settings pages that are about the person and the fleet: «General», «Machines», «Apps».
+// The Settings pages that are about the person and the fleet: «General», «Appearance», «Machines», «Apps».
 import { useAppsFeed, useSignIn } from '@/next/bindings/settings-data';
 import type { Pending } from '@/next/bindings/settings-agents';
+import AppearanceSection from '@/next/features/settings/appearance-section';
 import AppsSection from '@/next/features/settings/apps-section';
 import BetaSection from '@/next/features/settings/beta-section';
 import GeneralSection from '@/next/features/settings/general-section';
@@ -158,6 +159,28 @@ const useMachineChecks = (machine: MachineId) => {
   return { checks, fixing, fix, copy };
 };
 
+/** «Оформление»: the theme and the palette are this browser's, the text size is the person's (pessimistic). */
+export const AppearancePage = ({ pending }: { pending: Pending }) => {
+  const me = useMe();
+  const { theme, resolvedTheme, setTheme, palette, setPalette } = useTheme();
+  const settings = me.k === 'ready' ? me.me.settings : DEFAULT_SETTINGS;
+  const { run, pending: waiting } = pending;
+  return (
+    <AppearanceSection
+      theme={theme}
+      mode={resolvedTheme}
+      palette={palette}
+      textSize={settings.textSize}
+      textBusy={waiting.has('textSize')}
+      onTheme={setTheme}
+      onPalette={setPalette}
+      onTextSize={(textSize) =>
+        void run('textSize', t('next.settings.failed'), () => savePerson({ textSize }))
+      }
+    />
+  );
+};
+
 interface IGeneralPageProps {
   machine: MachineId;
   /** The name the sidebar shows for the person. */
@@ -167,7 +190,6 @@ interface IGeneralPageProps {
 
 export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
   const me = useMe();
-  const { theme, setTheme } = useTheme();
   const password = useSignIn(machine);
   const topTabs = useTopTabs();
   const paneAuto = usePaneAuto();
@@ -184,8 +206,6 @@ export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
   const hint = email ?? (password ? t('next.settings.general.byPassword') : null);
   return (
     <GeneralSection
-      theme={theme}
-      textSize={settings.textSize}
       enterSends={settings.enterSends}
       topTabs={topTabs}
       paneAuto={paneAuto}
@@ -197,8 +217,6 @@ export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
       restartContinue={runtime.value?.restartContinue ?? null}
       delegation={runtime.value ? (runtime.value.delegation ?? DEFAULT_DELEGATION) : null}
       busy={new Set(waiting.keys())}
-      onTheme={setTheme}
-      onTextSize={(textSize) => void run('textSize', failure, () => savePerson({ textSize }))}
       onEnterSends={(enterSends) => void run('enterSends', failure, () => savePerson({ enterSends }))}
       onTopTabs={setTopTabs}
       onPaneAuto={setPaneAuto}

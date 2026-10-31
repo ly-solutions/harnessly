@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAddress } from '@/next/features/pane/address';
+import { classifyInput, parseAddress, resolveInput, searchAddress } from '@/next/features/pane/address';
 
 describe('parseAddress', () => {
   it('reads a bare port as this machine', () => {
@@ -36,5 +36,40 @@ describe('parseAddress', () => {
     expect(parseAddress('localhost')).toBeNull();
     expect(parseAddress('99999')).toBeNull();
     expect(parseAddress('')).toBeNull();
+  });
+});
+
+describe('classifyInput', () => {
+  it('tells a port, a site and words apart', () => {
+    expect(classifyInput('4400').kind).toBe('port');
+    expect(classifyInput('localhost:4400/x').kind).toBe('port');
+    expect(classifyInput('example.org').kind).toBe('url');
+    expect(classifyInput('https://example.org/a b').kind).toBe('search');
+    expect(classifyInput('hello world').kind).toBe('search');
+    expect(classifyInput('hello').kind).toBe('search');
+    expect(classifyInput('   ').kind).toBe('empty');
+  });
+
+  it('opens a search in DuckDuckGo with the words encoded', () => {
+    const input = classifyInput('hello world & more');
+    expect(input).toEqual({
+      kind: 'search',
+      q: 'hello world & more',
+      address: {
+        target: { kind: 'url', origin: 'https://html.duckduckgo.com' },
+        path: '/html/?q=hello%20world%20%26%20more',
+        text: '? hello world & more',
+      },
+    });
+  });
+
+  it("reads the bar's own «? words» as the same search, and a bare ? as nothing", () => {
+    expect(resolveInput('? hello world')).toEqual(searchAddress('hello world'));
+    expect(resolveInput('?')).toBeNull();
+    expect(resolveInput('')).toBeNull();
+  });
+
+  it('resolves a port to its address', () => {
+    expect(resolveInput(':3000')?.target).toEqual({ kind: 'port', port: 3000 });
   });
 });

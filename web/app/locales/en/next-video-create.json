@@ -1,0 +1,19 @@
+{
+  "next.video.create.anyLength": "Doesn't matter",
+  "next.video.create.attach": "Attach files",
+  "next.video.create.both": "Both",
+  "next.video.create.brief": "What the video is about",
+  "next.video.create.dsChip": "Design system",
+  "next.video.create.formats": "Format",
+  "next.video.create.length": "Length",
+  "next.video.create.noSubs": "No subtitles",
+  "next.video.create.placeholder": "What is the video about? Paste the points or attach files — the agent will make the scenes",
+  "next.video.create.sec15": "15 s",
+  "next.video.create.sec180": "3 min",
+  "next.video.create.sec30": "30 s",
+  "next.video.create.sec60": "1 min",
+  "next.video.create.settings": "Settings",
+  "next.video.create.submit": "Create",
+  "next.video.create.subs": "Subtitles",
+  "next.video.create.title": "New video"
+}

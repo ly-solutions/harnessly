@@ -25,10 +25,24 @@ const setup = (state: IPresetState, over: Partial<Parameters<typeof PresetPanel>
   const onSave = vi.fn(() => Promise.resolve(null as string | null));
   const onRemove = vi.fn(() => Promise.resolve(null as string | null));
   const onTest = vi.fn(() => Promise.resolve({ k: 'ok' } as TestState));
+  const onProxyLogin = vi.fn(() => Promise.resolve(null as string | null));
+  const onProxyCancel = vi.fn(() => Promise.resolve());
+  const onProxyLogout = vi.fn(() => Promise.resolve(null as string | null));
   const view = render(
-    <PresetPanel state={state} vendor="Kimi" onSave={onSave} onRemove={onRemove} onTest={onTest} {...over} />,
+    <PresetPanel
+      state={state}
+      vendor="Kimi"
+      onSave={onSave}
+      onRemove={onRemove}
+      onTest={onTest}
+      proxyLogins={{}}
+      onProxyLogin={onProxyLogin}
+      onProxyCancel={onProxyCancel}
+      onProxyLogout={onProxyLogout}
+      {...over}
+    />,
   );
-  return { view, onSave, onRemove, onTest };
+  return { view, onSave, onRemove, onTest, onProxyLogin, onProxyLogout };
 };
 
 const field = () => screen.getByLabelText<HTMLInputElement>('Kimi API key');
@@ -156,5 +170,61 @@ describe('a CLI sign-in', () => {
     setup({ ...ON, login: { account: 'me@example.com' } });
     const line = screen.getByText(/Runs on the subscription/);
     expect(line.closest('.hx-reveal')?.getAttribute('data-open')).toBe('false');
+  });
+});
+
+const CHATGPT: IPresetState = {
+  id: 'chatgpt',
+  label: 'ChatGPT (subscription)',
+  vendor: 'chatgpt',
+  via: 'claude',
+  host: 'chatgpt.com',
+  hint: 'ChatGPT Plus or Pro',
+  key: { configured: false, tail: null },
+  models: [],
+  proxy: { installed: true },
+};
+
+describe('a preset that runs through a program on the machine', () => {
+  it('has no key field and signs the program in', () => {
+    const { onProxyLogin } = setup(CHATGPT);
+    expect(screen.queryByLabelText('Kimi API key')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in with ChatGPT' }));
+    expect(onProxyLogin).toHaveBeenCalledWith('chatgpt');
+  });
+
+  it('shows the device code of the login on', () => {
+    setup(CHATGPT, {
+      proxyLogins: {
+        chatgpt: {
+          k: 'waiting',
+          url: 'https://auth.openai.com/codex/device',
+          userCode: 'AB12-CD345',
+          asksCode: false,
+        },
+      },
+    });
+    expect(screen.getByText('AB12-CD345')).toBeTruthy();
+  });
+
+  it('gives the install line while the program is missing', () => {
+    setup({ ...CHATGPT, proxy: { installed: false } });
+    expect(screen.getByText(/raine\/claude-code-proxy/)).toBeTruthy();
+    const start = screen.getByRole('button', { name: 'Sign in with ChatGPT', hidden: true });
+    expect(start.closest('[inert]')).not.toBeNull();
+  });
+
+  it('says whose sign-in it runs on, is checked, and signs out on the second press', async () => {
+    const { onTest, onProxyLogout } = setup({ ...CHATGPT, login: { account: 'me@example.com' } });
+    expect(screen.getByText(/me@example\.com/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check connection' }));
+    });
+    expect(onTest).toHaveBeenCalledWith('chatgpt');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Sign out for sure/ }));
+    });
+    expect(onProxyLogout).toHaveBeenCalledWith('chatgpt');
   });
 });

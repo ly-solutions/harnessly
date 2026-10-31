@@ -96,7 +96,8 @@
 }
 
 :root,
-html[data-theme='light'] {
+html[data-theme='light'],
+.hx-look[data-mode='light'] {
   --hx-bg-backdrop: var(--hx-p-gray-900);
   --hx-bg-app: var(--hx-p-white);
   --hx-bg-rail: var(--hx-p-gray-50);
@@ -146,7 +147,8 @@ html[data-theme='light'] {
 }
 
 /* Dark: neutral black, as in the design */
-html[data-theme='dark'] {
+html[data-theme='dark'],
+.hx-look[data-mode='dark'] {
   --hx-bg-backdrop: oklch(0.1 0 0);
   --hx-bg-app: oklch(0.155 0 0);
   --hx-bg-rail: oklch(0.13 0 0);

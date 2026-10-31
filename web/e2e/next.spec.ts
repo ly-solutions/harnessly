@@ -2133,13 +2133,20 @@ test('12. Settings opens from the profile menu, the Apps screen and the machine 
   await expect(page.locator('.hx-header')).toHaveCount(0);
   await expect(nav).toHaveText([
     'General',
+    'Appearance',
+    'Notifications',
+    'Voice input',
+    'Recordings',
     'Models and keys',
     'Claude Code',
     'Codex',
     'Skills and MCP',
+    'Safe',
     'Machines',
     'Apps',
+    'Beta',
   ]);
+  await expect(set.locator('.hx-set__nav-caption')).toHaveText(['App', 'Agents', 'Machine']);
   await expect(set.getByRole('heading', { name: 'General' })).toBeVisible();
 
   // General: the person's own settings go to the runtime and stay across a reload.
@@ -2147,11 +2154,17 @@ test('12. Settings opens from the profile menu, the Apps screen and the machine 
   await expect(enter).toHaveAttribute('aria-checked', 'true');
   await enter.click();
   await expect(enter).toHaveAttribute('aria-checked', 'false');
+  // Appearance: the text size is the person's; the palette is this browser's and repaints the page.
+  await nav.filter({ hasText: 'Appearance' }).click();
   await set.getByRole('radio', { name: 'Larger' }).click();
+  await set.getByRole('radio', { name: /Forest/ }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-palette', 'forest');
   await expect(page.locator('.hx-root')).toHaveAttribute('data-text', 'l');
   await page.reload();
-  await expect(row('Enter sends').getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('html')).toHaveAttribute('data-palette', 'forest');
   await expect(page.locator('.hx-root')).toHaveAttribute('data-text', 'l');
+  await nav.filter({ hasText: 'General' }).click();
+  await expect(row('Enter sends').getByRole('switch')).toHaveAttribute('aria-checked', 'false');
   // Language and the editor are not the person's to change here: they say so instead of pretending.
   await expect(row('Language').getByRole('button').first()).toBeDisabled();
   await expect(row('Open files in')).toContainText('Not available yet');

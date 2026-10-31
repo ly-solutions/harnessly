@@ -14,12 +14,14 @@
     />
     <title>harnessly</title>
     <script>
-      // The stored theme before the first paint, so a dark page does not flash light.
+      // The stored theme and palette before the first paint, so a dark page does not flash light.
       try {
         var m = localStorage.getItem('hl-theme');
         var d =
           m === 'dark' || ((!m || m === 'system') && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.dataset.theme = d ? 'dark' : 'light';
+        var p = localStorage.getItem('hl-palette');
+        if (p) document.documentElement.dataset.palette = p;
       } catch (e) {}
     </script>
   </head>

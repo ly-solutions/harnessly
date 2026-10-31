@@ -882,6 +882,8 @@ func (s *Service) Do(ctx context.Context, device string, cmd wire.Command) wire.
 		return s.edit(c.ID, func(cv *conv) { cv.rec.Title, cv.rec.TitleSource = "Новое название", wire.TitleFromAgent })
 	case wire.ConversationPinCmd:
 		return s.edit(c.ID, func(cv *conv) { cv.rec.Pinned = c.Pinned })
+	case wire.ConversationAppsCmd:
+		return s.edit(c.ID, func(cv *conv) { cv.rec.Apps = append([]string(nil), c.Apps...) })
 	case wire.ConversationMoveCmd:
 		if c.ProjectID != nil && s.projects[*c.ProjectID].ID == "" {
 			return wire.Refused(wire.RefuseNotFound)

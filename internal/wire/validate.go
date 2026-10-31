@@ -1023,6 +1023,29 @@ func (c ConversationRenameCmd) Validate() error { return byID(c.OpID, c.ID) }
 func (c ConversationRetitleCmd) Validate() error { return byID(c.OpID, c.ID) }
 func (c ConversationPinCmd) Validate() error     { return byID(c.OpID, c.ID) }
 
+// MaxConversationApps is how many apps one chat may have on at once.
+const MaxConversationApps = 8
+
+func (c ConversationAppsCmd) Validate() error {
+	if err := byID(c.OpID, c.ID); err != nil {
+		return err
+	}
+	if c.Apps == nil {
+		return fmt.Errorf("apps: required")
+	}
+	if len(c.Apps) > MaxConversationApps {
+		return fmt.Errorf("apps: at most %d", MaxConversationApps)
+	}
+	seen := map[string]bool{}
+	for _, id := range c.Apps {
+		if id == "" || len(id) > 81 || seen[id] {
+			return fmt.Errorf("apps: %q is empty, too long or twice", id)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
 func (c ConversationMoveCmd) Validate() error {
 	return errors.Join(byID(c.OpID, c.ID), needPtr("projectId", c.ProjectID))
 }

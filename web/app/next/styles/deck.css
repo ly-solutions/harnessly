@@ -2496,6 +2496,10 @@
   display: block;
   width: 100%;
   min-height: 72px;
+  /* It grows with its text (use-fit-field.ts) as the chat's field does, up to 40% of the screen and 320 px. */
+  max-height: min(40dvh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 0;
   background: none;
   outline: none;
@@ -2582,6 +2586,30 @@
 .hx-deck-chip[data-on='1'] {
   background: var(--hx-accent-soft);
   color: var(--hx-accent);
+}
+/* The settings button says what differs from the start; a long say ends in an ellipsis at half the row, the row keeps
+   its place. In a narrow field the model's pill gives way first, so a plain «Настройки» is never cut. */
+.hx-deck-boxrow > .hx-deck-chip {
+  min-width: 0;
+  max-width: 50%;
+  flex: 0 0 auto;
+}
+.hx-deck-boxrow > .hx-picker-anchor {
+  flex: 0 1 auto;
+}
+.hx-deck-chip__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hx-deck-chip > .hx-icon {
+  flex: none;
+}
+/* The design system as the settings' first block: a short list, the picked one ticked. */
+.hx-deck-set__ds {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .hx-deck-found {
   width: min(640px, 100%);
@@ -3010,19 +3038,6 @@
   }
   .hx-deck-box {
     padding: 12px 12px 10px 14px;
-  }
-  .hx-deck-boxrow {
-    flex-wrap: wrap;
-  }
-  .hx-deck-boxrow__grow,
-  .hx-deck-chip[data-desk] {
-    display: none;
-  }
-  .hx-deck-boxrow > .hx-btn[data-variant='primary'] {
-    flex: 1 1 100%;
-    min-width: 0;
-    height: 44px;
-    margin-top: 6px;
   }
   .hx-deck-box textarea {
     font-size: 16px;

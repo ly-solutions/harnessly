@@ -47,6 +47,10 @@ type index struct {
 	collector Collector
 	mentions  Mentions
 	paths     Paths
+	made      Made
+	// reading: a background read of a long growth is under way; err is what it ended with.
+	reading bool
+	err     error
 }
 
 // Result is what the route answers for a transcript.
@@ -56,6 +60,8 @@ type Result struct {
 	MRs       []MRMention
 	WorkPaths []any
 	Size      int64
+	// Made are the documents, boards and designs the conversation made or touched, newest first.
+	Made []MadeLink
 }
 
 // Value is the answer as the previous runtime wrote it.
@@ -98,7 +104,8 @@ func (rt *Route) Answer(r *http.Request) (int, any, http.Header) {
 		return http.StatusInternalServerError, gate.Raw{ContentType: "text/plain", Body: []byte("Internal Server Error")}, h
 	}
 	if !found {
-		return nodejson.Answer(r, http.StatusNotFound, errorBody("Transcript not found"), h)
+		// No transcript yet (a chat that has not written its first line): nothing found, not an error.
+		return nodejson.Answer(r, http.StatusOK, jsvalue.NewObject("links", []any{}, "workPaths", []any{}, "complete", false), h)
 	}
 	return nodejson.Answer(r, http.StatusOK, res.Value(), h)
 }
@@ -119,7 +126,70 @@ func (rt *Route) Read(path, cwd string) (res Result, found, failed bool) {
 	if err := idx.advance(path, st.Size(), rt.parser(path)); err != nil {
 		return Result{}, true, true
 	}
-	return Result{Links: idx.collector.List(), MRs: idx.mentions.List(), WorkPaths: idx.paths.List(cwd), Size: idx.offset}, true, false
+	return idx.result(cwd), true, false
+}
+
+func (idx *index) result(cwd string) Result {
+	return Result{Links: idx.collector.List(), MRs: idx.mentions.List(), WorkPaths: idx.paths.List(cwd), Size: idx.offset, Made: idx.made.List()}
+}
+
+// ReadBudget is Read for a page that cannot wait for a long transcript: a growth of at most budget bytes is read now
+// and the answer is complete; a larger one is read behind (one reader a transcript, in the background) and the answer
+// is what has been read so far, not complete. Ask again for the rest.
+func (rt *Route) ReadBudget(path, cwd string, budget int64) (res Result, found, failed, complete bool) {
+	if path == "" || strings.Contains(path, "\x00") || !messagecounts.AllowedJsonl(rt.Home, path) {
+		return Result{}, false, false, false
+	}
+	st, err := os.Stat(path)
+	if err != nil || !st.Mode().IsRegular() {
+		return Result{}, false, false, false
+	}
+	idx := rt.indexFor(path, st)
+	parse := rt.parser(path)
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if idx.err != nil {
+		idx.err = nil
+		return Result{}, true, true, false
+	}
+	if st.Size()-idx.offset <= budget {
+		if idx.reading {
+			// The background reader is at the end: let it finish; what is read is what we answer.
+			return idx.result(cwd), true, false, false
+		}
+		if err := idx.advance(path, st.Size(), parse); err != nil {
+			return Result{}, true, true, false
+		}
+		return idx.result(cwd), true, false, true
+	}
+	if !idx.reading {
+		idx.reading = true
+		go idx.readBehind(path, st.Size(), parse)
+	}
+	return idx.result(cwd), true, false, false
+}
+
+// readBehind reads to size a chunk at a time, letting go of the index between chunks so answers do not wait for it.
+func (idx *index) readBehind(path string, size int64, parse parseFunc) {
+	for {
+		idx.mu.Lock()
+		if idx.offset >= size {
+			idx.reading = false
+			idx.mu.Unlock()
+			return
+		}
+		before := idx.offset
+		err := idx.advanceOne(path, size, parse)
+		if err != nil || idx.offset == before {
+			idx.reading = false
+			if err != nil {
+				idx.err = err
+			}
+			idx.mu.Unlock()
+			return
+		}
+		idx.mu.Unlock()
+	}
 }
 
 func inode(st os.FileInfo) uint64 {
@@ -146,7 +216,7 @@ func (rt *Route) indexFor(path string, st os.FileInfo) *index {
 		}
 	}
 	if idx == nil {
-		idx = &index{ino: inode(st), collector: Collector{Links: rt.Links}, mentions: Mentions{Links: rt.Links}}
+		idx = &index{ino: inode(st), collector: Collector{Links: rt.Links}, mentions: Mentions{Links: rt.Links}, made: Made{Links: rt.Links}}
 	}
 	rt.indexes[path] = idx
 	for i, k := range rt.order {
@@ -181,6 +251,20 @@ func (parseError) Error() string { return "the transcript parser threw" }
 // advance reads whole lines from the index's offset to size in bounded stretches; a line still being written is left
 // for the next request, a single line longer than a stretch is skipped.
 func (idx *index) advance(path string, size int64, parse parseFunc) error {
+	for idx.offset < size {
+		before := idx.offset
+		if err := idx.advanceOne(path, size, parse); err != nil {
+			return err
+		}
+		if idx.offset == before {
+			return nil
+		}
+	}
+	return nil
+}
+
+// advanceOne reads the next stretch; the offset does not move when only a line still being written is left.
+func (idx *index) advanceOne(path string, size int64, parse parseFunc) error {
 	if idx.offset >= size {
 		return nil
 	}
@@ -189,29 +273,28 @@ func (idx *index) advance(path string, size int64, parse parseFunc) error {
 		return err
 	}
 	defer f.Close()
-	buf := make([]byte, min(chunkBytes, size-idx.offset))
-	for idx.offset < size {
-		length := min(int64(chunkBytes), size-idx.offset)
-		n, err := f.ReadAt(buf[:length], idx.offset)
-		if err != nil && err != io.EOF {
-			return err
-		}
-		last := bytes.LastIndexByte(buf[:n], '\n')
-		if last < 0 {
-			if length < chunkBytes {
-				return nil
-			}
-			idx.offset += int64(n)
-			continue
-		}
-		entries, threw := parse(jscompat.DecodeUTF8(buf[:last+1]))
-		if threw {
-			return parseError{}
-		}
-		idx.collector.Add(entries)
-		idx.mentions.Add(entries)
-		idx.paths.Add(entries)
-		idx.offset += int64(last + 1)
+	length := min(int64(chunkBytes), size-idx.offset)
+	buf := make([]byte, length)
+	n, err := f.ReadAt(buf, idx.offset)
+	if err != nil && err != io.EOF {
+		return err
 	}
+	last := bytes.LastIndexByte(buf[:n], '\n')
+	if last < 0 {
+		if length < chunkBytes {
+			return nil
+		}
+		idx.offset += int64(n)
+		return nil
+	}
+	entries, threw := parse(jscompat.DecodeUTF8(buf[:last+1]))
+	if threw {
+		return parseError{}
+	}
+	idx.collector.Add(entries)
+	idx.mentions.Add(entries)
+	idx.paths.Add(entries)
+	idx.made.Add(entries)
+	idx.offset += int64(last + 1)
 	return nil
 }

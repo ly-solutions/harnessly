@@ -1056,6 +1056,8 @@ func convOf(cmd wire.Command) string {
 		return m.ID
 	case wire.ConversationPinCmd:
 		return m.ID
+	case wire.ConversationAppsCmd:
+		return m.ID
 	case wire.ConversationMoveCmd:
 		return m.ID
 	case wire.ConversationDeleteCmd:

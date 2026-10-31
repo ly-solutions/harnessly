@@ -23,6 +23,7 @@ import { ContextCard } from '@/next/features/chat/handoff-card';
 import { PEER_DELIVERY, PeerCard, type TPeerDelivery } from '@/next/features/chat/peer-card';
 import { PictureCards, useNamedPictures, withoutPaths } from '@/next/features/chat/pictures';
 import { attachedOf } from '@/next/features/chat/attached';
+import CopyButton from '@/next/features/chat/copy-button';
 import { RefChips } from '@/next/features/chat/ref-chips';
 
 export { splitPasted };
@@ -293,6 +294,11 @@ const UserMessage = ({
           </div>
         )}
         {notes.length > 0 && <Notes notes={notes} />}
+        {shown && phase === MESSAGE_PHASE.sent && (
+          <div className="hx-turnacts hx-turnacts--user">
+            <CopyButton text={shown} />
+          </div>
+        )}
         {outgoing && (
           <OutgoingState
             message={outgoing}

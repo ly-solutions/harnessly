@@ -11,20 +11,22 @@
     <meta name="platform-api" content="/api/platform" />
     <meta name="hl-config" content="{}" />
     <link rel="icon" href="./logo.svg" type="image/svg+xml" />
-    <link rel="manifest" href="./manifest.json" />
+    <link rel="manifest" href="./manifest.json" crossorigin="use-credentials" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="harnessly" />
     <meta name="color-scheme" content="light dark" />
     <title>harnessly</title>
     <script>
-      // The stored theme before the first paint, so a dark page does not flash light.
+      // The stored theme and palette before the first paint, so a dark page does not flash light.
       try {
         var m = localStorage.getItem('hl-theme');
         var d =
           m === 'dark' || ((!m || m === 'system') && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', d);
         document.documentElement.dataset.theme = d ? 'dark' : 'light';
+        var p = localStorage.getItem('hl-palette');
+        if (p) document.documentElement.dataset.palette = p;
       } catch (e) {}
     </script>
   </head>

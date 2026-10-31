@@ -51,6 +51,9 @@ export const useSeen = (on: boolean): boolean => {
   return seen || on;
 };
 
+const sameItems = <T>(a: readonly T[], b: readonly T[]): boolean =>
+  a === b || (a.length === b.length && a.every((item, index) => item === b[index]));
+
 /** A list whose removed items stay `exitMs` in a leaving phase, in their old place, so they can animate out. */
 export const useLeavingList = <T>(
   items: readonly T[],
@@ -59,7 +62,9 @@ export const useLeavingList = <T>(
 ): { item: T; leaving: boolean }[] => {
   const [gone, setGone] = useState<{ item: T; index: number }[]>([]);
   const [last, setLast] = useState(items);
-  if (last !== items) {
+  // The same items in a new array (a `list ?? []` of each render) are no change: taking them would render again for
+  // ever (React's «Too many re-renders»).
+  if (!sameItems(last, items)) {
     const kept = new Set(items.map(keyOf));
     const removed = last.map((item, index) => ({ item, index })).filter(({ item }) => !kept.has(keyOf(item)));
     setLast(items);

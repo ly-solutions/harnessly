@@ -54,6 +54,8 @@ describe('the meta store', () => {
     expect(asked[0]).toBe(items[0].url);
     release.splice(0).forEach((go) => go());
     await settle();
+    release.splice(0).forEach((go) => go());
+    await settle();
     expect(asked).toHaveLength(9);
     expect(asked[8]).toBe(items[8].url);
   });

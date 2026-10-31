@@ -10,6 +10,8 @@ import '@/next/styles/shell.css';
 import '@/next/styles/guest.css';
 import '@/next/styles/deck.css';
 import '@/next/styles/deck-media.css';
+import '@/next/styles/video-player.css';
+import '@/next/styles/video-guest.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

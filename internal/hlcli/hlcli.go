@@ -166,6 +166,12 @@ func (c *cli) run(args []string) error {
 	helpAsked := len(rest) > 0 && (rest[0] == "--help" || rest[0] == "-h" || rest[0] == "help")
 	switch cmd {
 	case "-h", "--help", "help":
+		if len(rest) > 1 {
+			if t, ok := commandHelp[rest[0]+" "+rest[1]]; ok {
+				fmt.Fprint(c.env.Stdout, t)
+				return errHelp
+			}
+		}
 		if len(rest) > 0 {
 			if t, ok := commandHelp[rest[0]]; ok {
 				fmt.Fprint(c.env.Stdout, t)
@@ -213,6 +219,8 @@ func (c *cli) run(args []string) error {
 		return c.secret(rest)
 	case "site", "sites":
 		return c.site(rest)
+	case "app", "apps":
+		return c.app(rest)
 	}
 	return usageErr("unknown command %q", cmd)
 }

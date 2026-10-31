@@ -17,6 +17,8 @@ import '@/next/styles/safe.css';
 const LEAVE_MS = 280;
 /** «Точно удалить?» waits this long for the second press. */
 const SURE_MS = 4000;
+/** The list's stand-in while the secrets are on their way: one array, so the leaving list sees no change. */
+const NO_SECRETS: readonly ISecret[] = [];
 
 /** What a refusal of the runtime says to the person. */
 export const safeReasonText = (code: string): string =>
@@ -289,7 +291,7 @@ const AddSecret = ({ onPut, taken }: { onPut: ISafeActions['onPut']; taken: (nam
 };
 
 const SafeSection = ({ secrets, failed = null, now, ...actions }: ISafeSectionProps) => {
-  const rows = useLeavingList(secrets ?? [], (secret) => secret.name, LEAVE_MS);
+  const rows = useLeavingList(secrets ?? NO_SECRETS, (secret) => secret.name, LEAVE_MS);
   return (
     <Group title={t('next.safe.title')} foot={t('next.safe.foot')}>
       {secrets === null && failed === null && (

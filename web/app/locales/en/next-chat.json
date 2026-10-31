@@ -456,7 +456,8 @@
   "next.limit.autoAt": "Continue {at}",
   "next.limit.failed": "It did not work. Try again",
   "next.terminalFailure.quota.title": "Provider quota exhausted",
-  "next.terminalFailure.quota.lead": "This turn stopped. Choose another available model or profile to continue manually.",
+  "next.terminalFailure.quota.lead": "This turn stopped. Retry on the current model in case the limit has reset, or choose another available model.",
+  "next.terminalFailure.retry": "Try again",
   "next.terminalFailure.choose": "Choose another model",
   "next.auto.limit.done": "Continued after the limit reset",
   "next.auto.restart.done": "Interrupted by a restart · continued by itself",
@@ -476,5 +477,7 @@
   "next.loginCard.retry": "Send again",
   "next.cleared.login": "The sign-in menu was open in the terminal — closed it to send the message",
   "next.cleared.model": "The model picker was open in the terminal — closed it to send the message",
-  "next.cleared.effort": "The effort setting was open in the terminal — closed it to send the message"
+  "next.cleared.effort": "The effort setting was open in the terminal — closed it to send the message",
+  "next.message.copy": "Copy",
+  "next.message.copied": "Copied"
 }

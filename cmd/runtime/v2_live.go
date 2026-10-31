@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/ly-solutions/harnessly/internal/apps"
 	"github.com/ly-solutions/harnessly/internal/history"
 	"net/http"
 	"os"
@@ -30,6 +31,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/providers"
 	"github.com/ly-solutions/harnessly/internal/sessionmeta"
 	"github.com/ly-solutions/harnessly/internal/shots"
+	"github.com/ly-solutions/harnessly/internal/sources"
 	"github.com/ly-solutions/harnessly/internal/state"
 	"github.com/ly-solutions/harnessly/internal/tmux"
 	"github.com/ly-solutions/harnessly/internal/voice"
@@ -109,13 +111,15 @@ func newV2Live(d deps, c *core) *v2Live {
 	}
 	// A chat held on its usage limit goes on at the reset, and one a restart cut short goes on (runtime-settings).
 	features = append(features, wire.FeatureAutoContinue)
+	// What a chat made (docs, boards, designs) is read off its transcript: GET .../made.
+	features = append(features, wire.FeatureMade)
 	// Dictation is announced when this machine is set up for it at start: ffmpeg and the recognition service's socket.
 	var dictation *voice.Server
 	if dv := newVoice(d.DataDir); dv.Available() {
 		dictation = dv
 		features = append(features, wire.FeatureVoice)
 	}
-	v.profiles = &providers.Store{Dir: filepath.Join(d.DataDir, "providers"), Logins: profileLogins(d.Home)}
+	v.profiles = profileStore(d.DataDir, d.Home, func() string { return os.Getenv("PATH") })
 	if c.agents != nil && c.agents.profiles != nil {
 		// One store for the launch lines and the pages: a key saved on a page is the one the next launch reads.
 		v.profiles = c.agents.profiles
@@ -151,6 +155,7 @@ func newV2Live(d deps, c *core) *v2Live {
 		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{}, Shots: &shots.Reader{}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir}, Titler: newV2Titler(os.Getenv("RUNTIME_SIDE_CHAT_CONFIG"), agentEnvDir(d.DataDir)).Title, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
 		Terminals: terminals, IdleStop: func() time.Duration { return runtimeSettings.RuntimeSettings().IdleStop.After() },
 		TerminalOff: chatGuard.Off,
+		AppsOK:      appsOK(apps.Open(d.DataDir)),
 		Rewinder:    v2Rewinder{c},
 		Window:      v2Window(&history.Stats{Dir: filepath.Join(d.DataDir, "session-stats")}),
 		AutoContinue: func() (bool, bool) {
@@ -194,8 +199,16 @@ func newV2Live(d deps, c *core) *v2Live {
 	v.srv.MachineTool = v2MachineTool{ref: d.MachineKit}
 	v.srv.Apps = v2Apps{d: d}
 	handlers, _ := handlersFor(d)
+	// One index of each transcript serves the merge request links of a message and what the chat made.
+	chatSources := &sources.Route{Links: sourceLinks(), Home: d.Home}
+	v.srv.Made = v2Made{record: v.rt.Record, read: chatSources.ReadBudget, designs: func() madeDesigns {
+		if v.designly == nil {
+			return nil
+		}
+		return madeLibrary{d: v.designly}
+	}, task: madeTaskOf(handlers.S)}.Made
 	checker := newMRChecker(handlers.S)
-	open := v2Open{record: v.rt.Record, targets: panelTargets(), mrLinks: transcriptMRs(d.Home), mr: checker.lookup, projects: checker.projects, state: &mrState{}}
+	open := v2Open{record: v.rt.Record, targets: panelTargets(), mrLinks: transcriptMRs(chatSources), mr: checker.lookup, projects: checker.projects, state: &mrState{}}
 	v.srv.Open = open.Open
 	v.srv.OpenAll = open.OpenAll
 	v.srv.AgentSettings = newV2AgentSettings(d)
@@ -203,11 +216,15 @@ func newV2Live(d deps, c *core) *v2Live {
 	// A key an agent printed (a `cat` of its file, an environment dump) leaves the machine masked.
 	wire.SetRedactor(v.profiles.Redact)
 	if c.agents != nil && c.agents.checker != nil {
-		v.srv.Logins = v2Logins(d.Home, cachedPath(c.agents.checker.ShellPath), func(wire.Provider) {
+		logins := v2Logins(d.Home, cachedPath(c.agents.checker.ShellPath), func(wire.Provider) {
 			// The account changed: the next look at the CLIs is a fresh one, and the page hears it.
 			c.agents.checker.Invalidate()
 			go v.machine.refresh()
+		}, func(string) {
+			// A profile's proxy signed in or out: the profile is offered, or no longer.
+			v.machine.republishProfiles()
 		})
+		v.srv.Logins, v.srv.ProfileLogins = logins, logins
 	}
 	v.srv.Context = v.rt.Context
 	v.srv.MessageStatus = v.rt.MessageStatus
@@ -453,8 +470,11 @@ func (v *v2Live) importProjects() {
 func legacyTabOf(record func(string) (wire.Conversation, bool), parse func(string) (string, string, string, bool),
 	conv string) (wire.LegacyTab, error) {
 	rec, ok := record(conv)
-	if !ok || rec.Session == "" {
+	if !ok {
 		return wire.LegacyTab{}, convo.ErrNotFound
+	}
+	if rec.Session == "" {
+		return wire.LegacyTab{}, wire.ErrNoTab
 	}
 	// A tab taken over from Legacy is the conversation itself, whatever the prefix its session was named with.
 	ws, _, tab, ok := parse(rec.Session)
@@ -601,6 +621,15 @@ func (l *v2Launcher) Launch(req convo.LaunchRequest) error {
 			chosen.Ultracode = true
 		}
 	}
+	if len(req.Apps) > 0 {
+		if req.Provider != wire.ProviderClaude {
+			return errors.New("apps run in Claude Code chats only")
+		}
+		if chosen == nil {
+			chosen = &agents.Launch{}
+		}
+		chosen.Apps = append([]string(nil), req.Apps...)
+	}
 	var files []string
 	if f, ok := l.promptFiles.Load(req.Cwd); ok {
 		files = f.([]string)
@@ -666,6 +695,10 @@ func (l *v2Launcher) Resume(conv wire.Conversation) error {
 		return errors.New("the tab does not remember the conversation's profile " + conv.Model.Profile)
 	}
 	if err := profileKeyGone(l.v.profiles, conv); err != nil {
+		return err
+	}
+	// The apps on in the chat come back with it: the tab's launch is what the resume reads (internal/apps).
+	if err := c.store.SetTabLaunchApps(conv.Session, conv.Apps); err != nil {
 		return err
 	}
 	switch got := c.resumeForQueue(tab); got {

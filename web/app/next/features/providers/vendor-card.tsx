@@ -25,6 +25,8 @@ export const vendorStatus = (vendor: Vendor, states: readonly IPresetState[]): s
     const signed = own.find((s) => s.login !== undefined);
     if (!signed?.login) return t('next.providers.off');
     const account = signed.login.account;
+    // The sign-in of a proxy may not say whose it is.
+    if (own.length === 1 && account === '') return t('next.providers.onLoginPlain');
     if (own.length === 1) return t('next.providers.onLogin', { account });
     return t('next.providers.onLoginPreset', { preset: presetName(signed), account });
   }

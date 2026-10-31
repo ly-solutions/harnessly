@@ -336,15 +336,6 @@
 .hx-shots__sq[data-state='ready'] .hx-shots__img {
   opacity: 1;
 }
-.hx-shots__sq[data-state='broken'] .hx-shots__img {
-  display: none;
-}
-.hx-shots__gone {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  color: var(--hx-fg-3);
-}
 .hx-shots__rest {
   display: grid;
   grid-template-rows: 0fr;

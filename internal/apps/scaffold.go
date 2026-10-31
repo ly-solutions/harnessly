@@ -1,0 +1,91 @@
+package apps
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// harnessly app new: a package that passes validate as it is, for the author (or the agent) to fill in.
+
+// FirstVersion is the first host version with apps: the range a new package starts with.
+const FirstVersion = "0.16.36"
+
+// Templates are the starting points of `harnessly app new --template`.
+var Templates = []string{"chat", "pane-chat"}
+
+// Scaffold writes a new package for id into dir, which must not exist or be empty.
+func Scaffold(dir, id, name, template string) error {
+	if !idRe.MatchString(id) {
+		return fmt.Errorf("%q is not <publisher>.<name> in lower case latin letters, digits and '-', e.g. acme.cashback", id)
+	}
+	if template == "" {
+		template = "chat"
+	}
+	if !contains(Templates, template) {
+		return fmt.Errorf("no template %q: %s", template, strings.Join(Templates, ", "))
+	}
+	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
+		return fmt.Errorf("%s is not empty", dir)
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if name == "" {
+		_, short, _ := strings.Cut(id, ".")
+		name = strings.ToUpper(short[:1]) + strings.ReplaceAll(short[1:], "-", " ")
+	}
+	skill := "how-to"
+
+	m := Manifest{
+		ID:          id,
+		Name:        name,
+		Description: "What " + name + " does, in one line",
+		Version:     "0.1.0",
+		Harnessly:   ">=" + FirstVersion,
+		Trust:       TrustDeclarative,
+		Targets:     []string{TargetChat},
+		Activation:  &Activation{On: []string{OnManual}},
+		Permissions: []string{},
+		Agent: &Agent{
+			Instructions: "instructions.md",
+			Skills:       []string{skill},
+			Tools:        &ToolPolicy{Deny: []string{}},
+		},
+	}
+	files := map[string]string{
+		"instructions.md": "# " + name + "\n\nWhat the agent of a chat must know and keep to while " + name +
+			" is on. It is in the context of every turn: keep it short, put the reference into skills.\n",
+		"skills/" + skill + "/SKILL.md": "---\nname: " + skill + "\ndescription: When the agent opens this skill and what it gets from it.\n---\n\n" +
+			"# " + name + "\n\nThe reference the agent reads on demand.\n",
+		"CHANGELOG.md": "# Changelog\n\n## 0.1.0\n\n- First version.\n",
+	}
+	if template == "pane-chat" {
+		m.Trust = TrustSandboxed
+		m.Targets = append(m.Targets, TargetPane, TargetApp)
+		m.Activation = &Activation{On: []string{OnManual, OnView}, OpenView: "main"}
+		m.Permissions = []string{"chat.prompt", "pane.open", "storage"}
+		m.Views = []View{{ID: "main", Title: name, Entry: "ui/index.html", Targets: []string{TargetPane, TargetApp}}}
+		files["ui/index.html"] = "<!doctype html>\n<html lang=\"ru\">\n<head>\n<meta charset=\"utf-8\">\n" +
+			"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + name + "</title>\n</head>\n" +
+			"<body>\n<main>\n<h1>" + name + "</h1>\n</main>\n</body>\n</html>\n"
+	}
+	raw, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	files[ManifestPath] = string(raw) + "\n"
+	for rel, body := range files {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			return err
+		}
+	}
+	return writePluginManifest(dir, &m)
+}

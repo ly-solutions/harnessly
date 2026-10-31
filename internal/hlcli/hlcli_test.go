@@ -353,6 +353,9 @@ func TestHelp(t *testing.T) {
 	if r := runWith(t, t.TempDir(), nil, "", "open", "--help"); r.code != 0 || !strings.Contains(r.out, "right pane") {
 		t.Errorf("open --help: %+v", r)
 	}
+	if r := runWith(t, t.TempDir(), nil, "", "help", "design", "video"); r.code != 0 || r.out != videoHelp {
+		t.Errorf("help design video: %+v", r)
+	}
 	if r := runWith(t, t.TempDir(), nil, "", "bogus"); r.code != 2 || !strings.Contains(r.errs, "unknown command") {
 		t.Errorf("bogus: %+v", r)
 	}

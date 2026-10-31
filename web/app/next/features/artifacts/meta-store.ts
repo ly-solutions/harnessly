@@ -18,12 +18,12 @@ import {
 import type { MachineId } from '@/next/protocol/v2';
 
 /** How many links are read at once. */
-export const PARALLEL = 6;
+export const PARALLEL = 4;
 /** An answer younger than this is not read again. */
 export const FRESH_MS = 120_000;
 /** A link the runtime knows nothing of is not asked again for this long. */
 export const NONE_FRESH_MS = 60_000;
-export const REQUEST_MS = 12_000;
+export const REQUEST_MS = 6_000;
 /** A failed read is tried once more by itself after this. */
 export const AGAIN_MS = 1_500;
 const KEEP = 300;

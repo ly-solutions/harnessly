@@ -22,6 +22,9 @@ import {
   type TPaneTabKind,
 } from '@/lib/hl-pane-tabs';
 import type { ITab } from '@/types/terminal';
+import { Guarded } from '@/next/ui/lazy-view';
+import { Skeleton } from '@/next/ui/skeleton';
+import { t } from '@/next/i18n';
 import { loadLegacyTab } from '@/next/commands/pages';
 import ArtifactsView from '@/next/features/artifacts/artifacts-view';
 import { changeLookOf } from '@/next/legacy/change-tab';
@@ -156,7 +159,7 @@ const useLegacyTab = (conv: Conversation | null): ITab | null => {
     if (!convId || !machineId || settled) return;
     let live = true;
     void loadLegacyTab(machineId, convId).then((res) => {
-      if (live && 'ok' in res) setGot({ conv: convId, legacy: res.value });
+      if (live && 'ok' in res && res.value) setGot({ conv: convId, legacy: res.value });
     });
     return () => {
       live = false;
@@ -169,7 +172,14 @@ const useLegacyTab = (conv: Conversation | null): ITab | null => {
 // with them waits for them, so it never shows unstyled.
 let legacyStyles: Promise<unknown> | null = null;
 const LegacyStyles = ({ need, children }: { need: boolean; children: ReactNode }) => {
-  if (need) use((legacyStyles ??= import('@/styles/legacy')));
+  // A failed import is forgotten: the next try asks for it again.
+  if (need)
+    use(
+      (legacyStyles ??= import('@/styles/legacy').catch((failure: unknown) => {
+        legacyStyles = null;
+        throw failure;
+      })),
+    );
   return children;
 };
 
@@ -313,7 +323,17 @@ export const useLegacyPane = (conv: Conversation | null, options: ILegacyPaneOpt
         );
       return (
         x && (
-          <Suspense key={`${x.id}#${reloads[x.id] ?? 0}`} fallback={null}>
+          <Guarded
+            key={`${x.id}#${reloads[x.id] ?? 0}`}
+            title={t('next.load.tool')}
+            fallback={
+              <div className="hx-legacy__wait" aria-busy="true">
+                <Skeleton className="hx-legacy__sk" />
+                <Skeleton className="hx-legacy__sk" />
+              </div>
+            }
+            onRetry={() => window.location.reload()}
+          >
             <LegacyStyles need>
               <div className={`hx-legacy tw-rpane-panel tw-rpane-panel-${x.kind}`} data-kind={x.kind}>
                 <PaneSurfaceShownContext.Provider value>
@@ -321,7 +341,7 @@ export const useLegacyPane = (conv: Conversation | null, options: ILegacyPaneOpt
                 </PaneSurfaceShownContext.Provider>
               </div>
             </LegacyStyles>
-          </Suspense>
+          </Guarded>
         )
       );
     },

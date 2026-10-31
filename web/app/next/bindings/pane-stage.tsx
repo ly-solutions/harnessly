@@ -170,7 +170,7 @@ export interface IStageWithChat {
 
 /** The design's own page: its stage, no choice of the chat's place. */
 export const useSiteOnlyStage = (options: IStageOptions): IStageWithChat => ({
-  stage: useSiteStage(options),
+  stage: useSiteStage({ ...options, keep: true }),
   chat: null,
 });
 

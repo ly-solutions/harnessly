@@ -20,6 +20,12 @@
         "hint": "", "key": {"configured": false, "tail": null},
         "models": [{"id": "grok-build-0.1", "label": "Grok Build 0.1", "hint": "", "efforts": [], "defaultEffort": null}],
         "login": {"account": "me@example.com"}
+      },
+      {
+        "id": "chatgpt", "label": "ChatGPT · подписка", "vendor": "chatgpt", "via": "claude", "host": "127.0.0.1:18765",
+        "hint": "", "key": {"configured": false, "tail": null},
+        "models": [{"id": "gpt-6-sol", "label": "GPT-6 Sol", "hint": "", "efforts": [], "defaultEffort": null}],
+        "proxy": {"installed": true}
       }
     ]
   }

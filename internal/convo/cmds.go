@@ -88,6 +88,8 @@ func (c *conv) do(device string, cmd wire.Command, now time.Time) wire.CmdResult
 	case wire.ConversationPinCmd:
 		c.rec.Pinned = m.Pinned
 		return c.recResult(now)
+	case wire.ConversationAppsCmd:
+		return c.setApps(m.Apps, now)
 	case wire.ConversationMoveCmd:
 		c.rec.ProjectID = m.ProjectID
 		return c.recResult(now)
@@ -165,6 +167,30 @@ func (c *conv) recResult(now time.Time) wire.CmdResult {
 	r := wire.Accepted(wire.ChannelConvs, c.convsSeq())
 	r.Rev = &rev
 	return r
+}
+
+// setApps turns on the apps of the list and off the others. The agent takes the change when it starts next (see
+// internal/apps), so an agent at rest is stopped at once and the next message brings it back with them; one at work
+// keeps the apps it had until its terminal stops. The record carries the list to the page and to the launch.
+func (c *conv) setApps(ids []string, now time.Time) wire.CmdResult {
+	if len(ids) > 0 {
+		if c.d.AppsOK == nil || c.rec.Provider != wire.ProviderClaude {
+			return wire.Refused(wire.RefuseUnsupported)
+		}
+		if bad := c.d.AppsOK(ids); bad != "" {
+			return wire.Refused(wire.RefuseNotFound)
+		}
+	}
+	changed := !slices.Equal(c.rec.Apps, ids)
+	c.rec.Apps = nil
+	if len(ids) > 0 {
+		c.rec.Apps = append([]string(nil), ids...)
+	}
+	res := c.recResult(now)
+	if changed && c.stoppable(false) == "" {
+		c.stopTerminal(wire.TerminalStopPerson, 0, false, func(wire.CmdResult) {})
+	}
+	return res
 }
 
 func (c *conv) restore(_ wire.ConversationRestoreCmd, now time.Time) wire.CmdResult {

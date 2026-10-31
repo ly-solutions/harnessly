@@ -1,0 +1,11 @@
+{
+  "next.video.guest.cancel": "Cancel",
+  "next.video.guest.chapters": "Chapters · {len}",
+  "next.video.guest.comment": "Comment",
+  "next.video.guest.comments": "Comments",
+  "next.video.guest.format": "Format",
+  "next.video.guest.noVideo": "The video is not rendered yet",
+  "next.video.guest.placeholder": "Your comment",
+  "next.video.guest.send": "Send",
+  "next.video.guest.strip": "Comments on the timeline"
+}

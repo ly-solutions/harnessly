@@ -318,6 +318,38 @@ func (p Provider) WriteSessionID(tab *jsvalue.Object, sessionID any) {
 	p.write(tab, "sessionId", sessionID)
 }
 
+// SetTabLaunchApps writes the apps a tab's next launch turns on (launch.apps of its metadata), keeping the rest of the
+// launch; an empty list removes them. A tab with no launch choice gets one of no model and no effort.
+func (s *Store) SetTabLaunchApps(sessionName string, ids []string) error {
+	return s.mutateTab(sessionName, func(tab *jsvalue.Object) bool {
+		meta := tab.Object(s.cfg.MetaKey)
+		var launch *jsvalue.Object
+		if meta != nil && meta.Object("launch") != nil {
+			launch = jsvalue.Clone(meta.Object("launch")).(*jsvalue.Object)
+		} else {
+			launch = jsvalue.NewObject("model", nil, "effort", nil)
+		}
+		if len(ids) == 0 {
+			if !launch.Has("apps") {
+				return false
+			}
+			launch.Delete("apps")
+		} else {
+			list := make([]any, len(ids))
+			for i, id := range ids {
+				list[i] = id
+			}
+			launch.Set("apps", list)
+		}
+		next, changed := MergeMeta(meta, jsvalue.NewObject("launch", launch))
+		if !changed {
+			return false
+		}
+		tab.Set(s.cfg.MetaKey, next)
+		return true
+	})
+}
+
 // TabLaunch is the launch choice a tab's metadata remembers: an object of a nullable-string model and effort (and the
 // backend profile's id, when the chat runs on one), nil for none (or a malformed one).
 func (s *Store) TabLaunch(tab *jsvalue.Object) *jsvalue.Object {
@@ -336,6 +368,11 @@ func (s *Store) TabLaunch(tab *jsvalue.Object) *jsvalue.Object {
 	if p, ok := l.Get("profile"); ok {
 		if name, isStr := p.(string); isStr && name != "" {
 			out.Set("profile", name)
+		}
+	}
+	if a, ok := l.Get("apps"); ok {
+		if list, isList := a.([]any); isList && len(list) > 0 {
+			out.Set("apps", list)
 		}
 	}
 	return out

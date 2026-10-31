@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ly-solutions/harnessly/internal/jsvalue"
+	"github.com/ly-solutions/harnessly/internal/outputs"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
@@ -524,7 +525,7 @@ func (b *builder) touch(o *jsvalue.Object, tool string) {
 		return
 	}
 	if op != wire.FileRead {
-		if out, made := wrote(p, op == wire.FileCreated); made {
+		if out, made := outputs.Wrote(p, op == wire.FileCreated); made {
 			addOutput(cur, out)
 		}
 	}
@@ -542,7 +543,13 @@ func (b *builder) touch(o *jsvalue.Object, tool string) {
 
 func (b *builder) question(s *step, o *jsvalue.Object, id string, at wire.Ms, offset int64) {
 	use := str(o, "toolUseId")
-	q := wire.Question{ID: wire.QuestionID(use), ConversationID: b.conv, TurnID: b.openID(), AskedAt: at,
+	// The question belongs to the turn its line lands in: the open one, or the one ended on silence (the model thought
+	// long, its spinner unread) that this line opens again. Only the open turn here lost the question and its card.
+	turnID := ""
+	if cur := b.cur(); cur != nil {
+		turnID = cur.rec.ID
+	}
+	q := wire.Question{ID: wire.QuestionID(use), ConversationID: b.conv, TurnID: turnID, AskedAt: at,
 		Items: questionItems(o), State: wire.GateState{K: wire.GateStateOpen}}
 	summary := ""
 	if len(q.Items) > 0 {

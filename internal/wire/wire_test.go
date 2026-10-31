@@ -94,7 +94,7 @@ func roundTrip(b []byte) ([]byte, error) {
 }
 
 // httpKinds is the answers of the v2 HTTP pages a fixture can hold.
-var httpKinds = []string{"hello", "turns", "entries", "output", "upload", "dirs", "sessions", "terminals", "terminal", "voice", "designlyCreate", "designlyLibrary", "designlySystems", "designlyPin", "files", "file", "tasks", "legacy", "open", "openRefs", "messageStatus", "context", "search", "digest", "machineStats", "machineStop", "apps", "agentSettings", "runtimeSettings", "rewindPlan", "handoffDraft", "profiles", "profileKey", "profileTest", "login", "loginOK"}
+var httpKinds = []string{"hello", "turns", "entries", "output", "upload", "dirs", "sessions", "terminals", "terminal", "voice", "designlyCreate", "designlyLibrary", "designlySystems", "designlyPin", "files", "file", "tasks", "legacy", "open", "openRefs", "made", "messageStatus", "context", "search", "digest", "machineStats", "machineStop", "apps", "agentSettings", "runtimeSettings", "rewindPlan", "handoffDraft", "profiles", "profileKey", "profileTest", "login", "loginOK"}
 
 func decodePage(kind string, b []byte) (interface{ Validate() error }, error) {
 	var v interface{ Validate() error }
@@ -166,6 +166,8 @@ func decodePage(kind string, b []byte) (interface{ Validate() error }, error) {
 		v = &AppsFeed{}
 	case "open":
 		v = &OpenTarget{}
+	case "made":
+		v = &ChatMade{}
 	case "openRefs":
 		v = &OpenedRefs{}
 	case "agentSettings":
@@ -318,7 +320,7 @@ func TestClosedListsMatchTheSchema(t *testing.T) {
 		"AgentInstallStatus": strs(AgentInstallStatuses), "Effort": strs(Efforts),
 		"TitleSource": strs(TitleSources), "GoalStatus": strs(GoalStatuses), "AgentStateKind": strs(AgentStateKinds), "LaunchStep": strs(LaunchSteps),
 		"LaunchFailure": strs(LaunchFailures), "GoneReason": strs(GoneReasons), "TurnStatus": strs(TurnStatuses),
-		"TurnFailureCode": strs(TurnFailureCodes), "FileOp": strs(FileOps), "OutputKind": strs(OutputKinds), "OutputOp": strs(OutputOps), "EntryKind": strs(EntryKinds),
+		"TurnFailureCode": strs(TurnFailureCodes), "FileOp": strs(FileOps), "OutputKind": strs(OutputKinds), "OutputOp": strs(OutputOps), "MadeKind": strs(MadeKinds), "EntryKind": strs(EntryKinds),
 		"SubagentStatus": strs(SubagentStatuses), "NoticeLevel": strs(NoticeLevels), "PeerNoteKind": strs(PeerNoteKinds),
 		"AttachmentKind": strs(AttachmentKinds), "RefKind": strs(RefKinds), "MessageMode": strs(MessageModes),
 		"MessageKind": strs(MessageKinds), "MessageStateKind": strs(MessageStateKinds),
@@ -331,7 +333,7 @@ func TestClosedListsMatchTheSchema(t *testing.T) {
 		"ServerFrameKind": strs(ServerFrameKinds), "MachineEventType": strs(MachineEventTypes),
 		"ConvsEventType": strs(ConvsEventTypes), "ConvEventType": strs(ConvEventTypes),
 		"CompactionPhase": strs(CompactionPhases), "Op": strs(Ops), "PromoteTo": strs(PromoteTos),
-		"DesignKind": strs(DesignKinds), "DesignDeckTone": strs(DesignDeckTones), "DesignRole": strs(DesignRoles), "FileKind": strs(FileKinds), "AppID": strs(AppIDs), "OpenTab": strs(OpenTabs), "AppState": strs(AppStates), "AppReason": strs(AppReasons), "AppSectionID": strs(AppSectionIDs), "AppFlag": strs(AppFlags), "AppTone": strs(AppTones), "AppRole": strs(AppRoles), "AppPipeline": strs(AppPipelines), "AgentOptionKey": strs(AgentOptionKeys), "AgentMcpKind": strs(AgentMcpKinds), "AgentAccountMethod": strs(AgentAccountMethods), "DiskPartID": strs(DiskPartIDs), "MachineProcKind": strs(MachineProcKinds), "MachineStopReason": strs(MachineStopReasons), "TaskStatus": strs(TaskStatuses), "ResultKind": strs(ResultKinds), "RefuseCode": strs(RefuseCodes), "RetryableRefuseCode": strs(RetryableRefuseCodes), "HttpKind": httpKinds, "TerminalStopBy": strs(TerminalStopBys), "IdleStop": strs(IdleStops), "FileChange": strs(FileChanges), "OriginKind": strs(OriginKinds), "OriginVia": strs(OriginVias), "HandoffMode": strs(HandoffModes), "DraftMode": strs(DraftModes), "OnOff": strs(OnOffs), "LimitWindow": strs(LimitWindows), "LimitAction": strs(LimitActions), "AutoContinueWhy": strs(AutoContinueWhys), "TerminalAside": strs(TerminalAsides), "ProfileVendor": strs(ProfileVendors), "ProfileTestReason": strs(ProfileTestReasons), "LoginMode": strs(LoginModes), "LoginState": strs(LoginStates), "MessageRole": strs(MessageRoles), "LoginInput": strs(LoginInputs), "LoginReason": strs(LoginReasons), "MessageStatusKind": strs(MessageStatusKinds), "HandedWhere": strs(HandedWheres),
+		"DesignKind": strs(DesignKinds), "DesignDeckTone": strs(DesignDeckTones), "DesignVideoFormat": strs(DesignVideoFormats), "DesignRole": strs(DesignRoles), "FileKind": strs(FileKinds), "AppID": strs(AppIDs), "OpenTab": strs(OpenTabs), "AppState": strs(AppStates), "AppReason": strs(AppReasons), "AppSectionID": strs(AppSectionIDs), "AppFlag": strs(AppFlags), "AppTone": strs(AppTones), "AppRole": strs(AppRoles), "AppPipeline": strs(AppPipelines), "AgentOptionKey": strs(AgentOptionKeys), "AgentMcpKind": strs(AgentMcpKinds), "AgentAccountMethod": strs(AgentAccountMethods), "DiskPartID": strs(DiskPartIDs), "MachineProcKind": strs(MachineProcKinds), "MachineStopReason": strs(MachineStopReasons), "TaskStatus": strs(TaskStatuses), "ResultKind": strs(ResultKinds), "RefuseCode": strs(RefuseCodes), "RetryableRefuseCode": strs(RetryableRefuseCodes), "HttpKind": httpKinds, "TerminalStopBy": strs(TerminalStopBys), "IdleStop": strs(IdleStops), "FileChange": strs(FileChanges), "OriginKind": strs(OriginKinds), "OriginVia": strs(OriginVias), "HandoffMode": strs(HandoffModes), "DraftMode": strs(DraftModes), "OnOff": strs(OnOffs), "LimitWindow": strs(LimitWindows), "LimitAction": strs(LimitActions), "AutoContinueWhy": strs(AutoContinueWhys), "TerminalAside": strs(TerminalAsides), "ProfileVendor": strs(ProfileVendors), "ProfileTestReason": strs(ProfileTestReasons), "LoginMode": strs(LoginModes), "LoginState": strs(LoginStates), "MessageRole": strs(MessageRoles), "LoginInput": strs(LoginInputs), "LoginReason": strs(LoginReasons), "MessageStatusKind": strs(MessageStatusKinds), "HandedWhere": strs(HandedWheres),
 	}
 	for name, def := range sc.defs {
 		if _, isEnum := def.(map[string]any)["enum"]; isEnum {

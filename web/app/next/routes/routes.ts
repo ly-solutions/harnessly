@@ -7,6 +7,7 @@ export const ROUTE = {
   chat: 'chat',
   designly: 'designly',
   designlyNew: 'designlyNew',
+  videoNew: 'videoNew',
   site: 'site',
   invite: 'invite',
   stats: 'stats',
@@ -18,14 +19,15 @@ export const ROUTE = {
 /** The sections of the Settings screen, in the order of its list. */
 export const SETTINGS_SECTIONS = [
   'general',
-  'voice',
+  'appearance',
   'notifications',
-  'safe',
+  'voice',
   'takes',
   'accounts',
   'claude',
   'codex',
   'skills',
+  'safe',
   'machines',
   'apps',
   'beta',
@@ -42,6 +44,8 @@ export type TRoute =
   | { kind: typeof ROUTE.designly }
   /** The create screen of a presentation: `/designly/new/slides` (the Presentation tile of Designly's start). */
   | { kind: typeof ROUTE.designlyNew }
+  /** The create screen of a video: `/designly/new/video` (the Video tile of Designly's start). */
+  | { kind: typeof ROUTE.videoNew }
   /** A design of the library opened: `/designly/:id`, `?chat=` the chat it was opened from (its column shows it). */
   | { kind: typeof ROUTE.site; id: string; chat?: string; access?: TAccessFocus }
   /** A link-invitation to a design, `/designly/invite/:token` (a push or a letter says `/design/invite/:token`). */
@@ -58,6 +62,7 @@ export const HOME: TRoute = { kind: ROUTE.home };
 const CHAT_RE = /^\/c\/([^/]+)\/?$/;
 const DESIGNLY_RE = /^\/designly\/?$/;
 const DESIGNLY_NEW_RE = /^\/designly\/new\/slides\/?$/;
+const VIDEO_NEW_RE = /^\/designly\/new\/video\/?$/;
 const SITE_RE = /^\/design(?:ly)?\/([a-z0-9][a-z0-9-]{0,62})\/?$/;
 const INVITE_RE = /^\/design(?:ly)?\/invite\/([A-Za-z0-9_-]{8,200})\/?$/;
 const STATS_RE = /^\/stats\/?$/;
@@ -81,6 +86,7 @@ export const parseRoute = (path: string): TRoute => {
   const pathname = path.split(/[?#]/)[0] ?? '/';
   if (DESIGNLY_RE.test(pathname)) return { kind: ROUTE.designly };
   if (DESIGNLY_NEW_RE.test(pathname)) return { kind: ROUTE.designlyNew };
+  if (VIDEO_NEW_RE.test(pathname)) return { kind: ROUTE.videoNew };
   if (STATS_RE.test(pathname)) return { kind: ROUTE.stats };
   if (EFFICIENCY_RE.test(pathname)) return { kind: ROUTE.efficiency };
   if (APPS_RE.test(pathname)) return { kind: ROUTE.apps };
@@ -124,6 +130,8 @@ export const routePath = (route: TRoute): string => {
       return '/designly';
     case ROUTE.designlyNew:
       return '/designly/new/slides';
+    case ROUTE.videoNew:
+      return '/designly/new/video';
     case ROUTE.site: {
       const query = new URLSearchParams();
       if (route.chat) query.set('chat', route.chat);

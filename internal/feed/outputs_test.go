@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ly-solutions/harnessly/internal/delivery"
+	"github.com/ly-solutions/harnessly/internal/outputs"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
@@ -81,7 +82,7 @@ func TestCatalogueAndStandsAreTheDeploymentsHosts(t *testing.T) {
 		"https://other.example.com/a/plan":    false,
 		"https://claude.ai/code/artifact/abc": true,
 	} {
-		if artifactLink(link) != want {
+		if outputs.ArtifactLink(outputs.FromEnv(), link) != want {
 			t.Errorf("artifact %s: want %v", link, want)
 		}
 	}
@@ -92,16 +93,16 @@ func TestCatalogueAndStandsAreTheDeploymentsHosts(t *testing.T) {
 		"https://a.b.preview.example.com/":           false,
 		"https://abc-1.preview.example.com.evil.io/": false,
 	} {
-		if standLink(link) != want {
+		if outputs.StandLink(outputs.FromEnv(), link) != want {
 			t.Errorf("stand %s: want %v", link, want)
 		}
 	}
 	t.Setenv("RUNTIME_DOCS_HOST", "")
 	t.Setenv("RUNTIME_STAND_DOMAIN", "")
-	if artifactLink("https://docs.example.com/a/plan") || standLink("https://abc-1.preview.example.com/") {
+	if outputs.ArtifactLink(outputs.FromEnv(), "https://docs.example.com/a/plan") || outputs.StandLink(outputs.FromEnv(), "https://abc-1.preview.example.com/") {
 		t.Fatal("no hosts set, yet a page or a stand")
 	}
-	if !artifactLink("https://claude.ai/artifact/abc") {
+	if !outputs.ArtifactLink(outputs.FromEnv(), "https://claude.ai/artifact/abc") {
 		t.Fatal("a claude.ai artifact needs no host")
 	}
 }

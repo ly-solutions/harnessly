@@ -212,7 +212,10 @@ func (l *Library) launchBrowser(bin string) (*browser, error) {
 		return nil, err
 	}
 	args := []string{"--headless=new", "--remote-debugging-pipe", "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check",
-		"--disable-dev-shm-usage", "--hide-scrollbars", "--mute-audio", "--lang=ru-RU"}
+		"--disable-dev-shm-usage", "--hide-scrollbars", "--mute-audio", "--lang=ru-RU",
+		// every tab draws: a video render shoots several at once, and a tab in the background would stop drawing and
+		// leave its screenshot waiting
+		"--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"}
 	// RUNTIME_DESIGN_CHROME_ARGS adds the browser's switches a machine needs, such as --no-sandbox in a container
 	// that gives no user namespaces to an unprivileged user (the image sets it).
 	args = append(append(args, strings.Fields(os.Getenv("RUNTIME_DESIGN_CHROME_ARGS"))...), "about:blank")

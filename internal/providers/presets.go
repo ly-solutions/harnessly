@@ -1,7 +1,8 @@
-// Package providers holds the backend profiles: another vendor's models (Kimi, GLM, Grok) behind an agent CLI the
-// machine already runs. A profile is no Provider: Kimi and GLM run through Claude Code on a settings file of their own,
-// Grok through Codex with an `xai` provider. The presets here are data; the person picks one and gives a key, and never
-// types an address, so a key cannot be pointed at a host the runtime does not know.
+// Package providers holds the backend profiles: another vendor's models (Kimi, GLM, Grok, ChatGPT) behind an agent CLI
+// the machine already runs. A profile is no Provider: Kimi and GLM run through Claude Code on a settings file of their
+// own, Grok through Codex with an `xai` provider, ChatGPT through Claude Code and claude-code-proxy on this machine. The
+// presets here are data; the person picks one and gives a key (or signs the proxy in), and never types an address, so a
+// key cannot be pointed at a host the runtime does not know.
 package providers
 
 import "github.com/ly-solutions/harnessly/internal/wire"
@@ -46,9 +47,16 @@ type Preset struct {
 	// Relayed: Codex reaches the vendor through the runtime's Relay, which holds the credential and turns Codex's
 	// requests into what the vendor takes. Without a relay on the launcher it goes straight to BaseURL with the key.
 	Relayed bool
+	// Proxied: Claude Code reaches the vendor through the runtime's own proxy on this machine (Store.Proxy), which holds
+	// the person's sign-in of the vendor. BaseURL is empty: the address is the proxy's, known once it runs. The preset
+	// takes no key; Host is where the proxy sends the requests.
+	Proxied bool
 }
 
 const million = 1 << 20
+
+// chatgptWindow is the context of a ChatGPT subscription's models, whatever the model's own: OpenAI caps it at 272K.
+const chatgptWindow = 272_000
 
 var (
 	lowHighMax  = []wire.Effort{wire.EffortLow, wire.EffortHigh, wire.EffortMax}
@@ -109,6 +117,27 @@ var presets = []Preset{
 		},
 		Small: "grok-build-0.1", Test: "grok-build-0.1",
 		KeyEnv: "XAI_API_KEY", Relayed: true,
+	},
+	{
+		ID: "chatgpt", Label: "ChatGPT (подписка)", Vendor: wire.VendorChatGPT, Via: wire.ProviderClaude,
+		Host: "chatgpt.com",
+		Hint: "Подписка ChatGPT Plus или Pro. Неофициальный клиент: OpenAI может ограничить аккаунт",
+		Models: []Model{
+			{ID: "gpt-6-sol", Label: "GPT-6 Sol", Window: chatgptWindow},
+			{ID: "gpt-6.1-sol", Label: "GPT-6.1 Sol", Window: chatgptWindow},
+			{ID: "gpt-6-astra", Label: "GPT-6 Astra", Window: chatgptWindow},
+			{ID: "gpt-6-luna", Label: "GPT-6 Luna", Hint: "Быстрая и экономная", Window: chatgptWindow},
+			{ID: "gpt-5.5", Label: "GPT-5.5", Window: chatgptWindow},
+		},
+		Small: "gpt-6-luna", Test: "gpt-6-luna",
+		// What the proxy's author sets for Claude Code: the small model under its old name too, compaction before
+		// OpenAI's limit, and no retry of a broken stream as a whole request (it would run its tools twice).
+		Env: map[string]string{
+			"ANTHROPIC_SMALL_FAST_MODEL":                "gpt-6-luna",
+			"CLAUDE_CODE_AUTO_COMPACT_WINDOW":           "272000",
+			"CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1",
+		},
+		Proxied: true,
 	},
 }
 

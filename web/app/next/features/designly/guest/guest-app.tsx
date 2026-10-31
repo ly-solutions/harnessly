@@ -17,7 +17,12 @@ import {
   type INote,
 } from '@/next/features/designly/site-notes';
 import type { TTweakValue } from '@/next/features/designly/page-bridge';
-import { boardUrl, sharedView, type IGuestConfig } from '@/next/features/designly/guest/guest-config';
+import {
+  boardUrl,
+  GUEST_DECK_TYPE,
+  sharedView,
+  type IGuestConfig,
+} from '@/next/features/designly/guest/guest-config';
 import {
   anchorFor,
   cleanState,
@@ -29,6 +34,7 @@ import {
 } from '@/next/features/designly/guest/guest-comments';
 import { useComments } from '@/next/features/designly/guest/use-guest-comments';
 import GuestDeck from '@/next/features/designly/guest/guest-deck';
+import GuestVideo from '@/next/features/designly/guest/guest-video';
 import GuestNameDialog from '@/next/features/designly/guest/guest-name-dialog';
 import GuestFull, { useTouch } from '@/next/features/designly/guest/guest-full';
 import type { IPicked } from '@/next/features/designly/page-bridge';
@@ -381,6 +387,22 @@ const GuestBody = ({
   );
 };
 
+/** A deck opens as slides, a video (a deck folder the index marks `type: video`) in its player, the rest as a site. */
+const GuestKind = ({
+  config,
+  full,
+  onFull,
+}: {
+  config: IGuestConfig;
+  full: TFull;
+  onFull: (full: TFull) => void;
+}) => {
+  if (config.kind === 'slides' && config.deck?.type === GUEST_DECK_TYPE.video)
+    return <GuestVideo config={config} />;
+  if (config.kind === 'slides') return <GuestDeck config={config} />;
+  return <GuestBody config={config} full={full} onFull={onFull} />;
+};
+
 const GuestApp = ({ config }: { config: IGuestConfig | null }) => {
   const portal = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState<TFull>(FULL.off);
@@ -392,11 +414,7 @@ const GuestApp = ({ config }: { config: IGuestConfig | null }) => {
       <div className="hx-root hx-guest" data-full={full}>
         {config ? (
           <main className="hx-main">
-            {config.kind === 'slides' ? (
-              <GuestDeck config={config} />
-            ) : (
-              <GuestBody config={config} full={full} onFull={setFull} />
-            )}
+            <GuestKind config={config} full={full} onFull={setFull} />
           </main>
         ) : (
           <p className="hx-guest__empty">{t('next.guest.noLink')}</p>

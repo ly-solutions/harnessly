@@ -1,0 +1,11 @@
+{
+  "http": "made",
+  "response": {
+    "items": [
+      {"kind": "board", "ref": "https://docs.example.com/b/flow?k=KEY1", "title": "Flow", "op": "created", "at": 1761640000000, "cover": null, "designKind": null},
+      {"kind": "design", "ref": "d-landing", "title": "Landing", "op": "changed", "at": 1761639000000, "cover": "/design-artifacts/d-landing/cover.png", "designKind": "site"},
+      {"kind": "doc", "ref": "https://docs.example.com/a/spec", "title": "", "op": "changed", "at": 1761638000000, "cover": null, "designKind": null}
+    ],
+    "complete": false
+  }
+}

@@ -94,6 +94,37 @@ a.hx-brand__name:hover {
 .hx-nav__group[aria-expanded='true'] .hx-nav__chev {
   transform: rotate(90deg);
 }
+/* A list's own chevron (the designs under «Sinopia Design»): beside the item, it folds the list; the item goes. */
+.hx-nav__group:has(> .hx-nav__fold) {
+  position: relative;
+}
+.hx-nav__group:has(> .hx-nav__fold) > .hx-nav__item {
+  padding-right: 34px;
+}
+.hx-nav__fold {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--hx-dur-sm);
+}
+.hx-nav__fold:hover {
+  background: var(--hx-shell-hover);
+}
+.hx-nav__fold:hover .hx-nav__chev,
+.hx-nav__fold:focus-visible .hx-nav__chev,
+.hx-nav__group:hover > .hx-nav__fold .hx-nav__chev,
+.hx-nav__fold[aria-expanded='false'] .hx-nav__chev {
+  opacity: 1;
+}
 .hx-nav__add {
   width: 22px;
   height: 22px;
@@ -130,6 +161,28 @@ a.hx-brand__name:hover {
 }
 .hx-nav__group[aria-expanded='true'] .hx-nav__kids {
   grid-template-rows: 1fr;
+}
+/* «Дальше» under a folder's first chats: a quiet row of its own, the rest of the folder behind it. */
+.hx-folder-more {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 var(--hx-space-2);
+  border: 0;
+  border-radius: var(--hx-radius-sm);
+  background: none;
+  color: var(--hx-fg-3);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--hx-dur-sm),
+    color var(--hx-dur-sm);
+}
+.hx-folder-more:hover {
+  background: var(--hx-shell-hover);
+  color: var(--hx-fg-1);
 }
 .hx-nav__kid {
   display: flex;
@@ -1790,4 +1843,10 @@ button.hx-project__add {
 }
 .hx-item[data-launch] {
   margin-left: 10px;
+}
+
+/* The design on screen among the designs at work under «Sinopia Design». */
+.hx-nav__kid[aria-current='page'] {
+  background: var(--hx-shell-active);
+  color: var(--hx-fg-1);
 }

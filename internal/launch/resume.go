@@ -160,6 +160,7 @@ func tabLaunch(o *jsvalue.Object) *agents.Launch {
 	if p, ok := o.Get("profile"); ok {
 		l.Profile, _ = p.(string)
 	}
+	l.Apps = AppsOf(o)
 	return l
 }
 

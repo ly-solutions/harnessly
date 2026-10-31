@@ -189,6 +189,8 @@ const PANE_GROUPS = [
 const PANE_PORTS = [
   {
     port: 9150,
+    pid: null,
+    owner: null,
     command: 'python3',
     cwd: null,
     group: 'other',
@@ -200,6 +202,8 @@ const PANE_PORTS = [
   },
   {
     port: 5173,
+    pid: null,
+    owner: null,
     command: 'node',
     cwd: null,
     group: 'chat',
@@ -211,6 +215,8 @@ const PANE_PORTS = [
   },
   {
     port: 3000,
+    pid: null,
+    owner: null,
     command: 'node',
     cwd: null,
     group: 'other',
@@ -312,6 +318,17 @@ const GalleryPane = ({
           portsError={null}
           onRetryPorts={() => {}}
           reloadKey={0}
+          onFrameLoad={() => {}}
+          signIn="none"
+          onSignIn={() => {}}
+          onSignInRefresh={() => {}}
+          theme="light"
+          title={null}
+          pins={[{ text: 'admin.example.com', name: 'Admin (test)' }]}
+          visits={[]}
+          onPin={() => {}}
+          onUnpin={() => {}}
+          onWantPorts={() => {}}
           onGo={() => {}}
           onHistory={() => {}}
           onReload={() => {}}
@@ -429,6 +446,11 @@ const seedChats = (now: number): ISidebarChat[] => {
       projectId: 'p-harnessly',
       parentId: 'c-sidebar',
     }),
+    // Past the folder's first five: «Дальше» under them.
+    chat('c-hub', 'Хаб: вход по ссылке', 3 * HOUR, { projectId: 'p-harnessly' }),
+    chat('c-voice', 'Голос в поле', 5 * HOUR, { projectId: 'p-harnessly' }),
+    chat('c-pane', 'Правая панель: вкладки', DAY, { projectId: 'p-harnessly' }),
+    chat('c-oss', 'Экспорт на GitHub', 2 * DAY, { projectId: 'p-harnessly' }),
     chat('c-images', 'Пропажа картинок S3', 25 * MIN, { status: CHAT_STATUS.done }),
     chat('c-images-logs', 'Логи S3 за неделю', 20 * MIN, { status: CHAT_STATUS.done, parentId: 'c-images' }),
     chat('c-deploy', 'Выкат на прод упал на миграции', 70 * MIN, {
@@ -791,6 +813,19 @@ const Gallery = () => {
         setSearchOpen(true);
       }}
       onDesignly={() => toast('Designly — отдельная фича', { tone: 'info' })}
+      designs={{
+        rows: [
+          { id: 'ostrovok', title: 'Досье отеля — хакатон Островка', kind: 'site' },
+          { id: 'q3', title: 'Три месяца, которые изменили Acme', kind: 'slides' },
+          { id: 'promo', title: 'Ролик к запуску', kind: 'video' },
+          { id: 'admin', title: 'Acme Admin — страницы', kind: 'site' },
+          { id: 'ds', title: 'Acme DS', kind: 'ds' },
+          { id: 'pitch', title: 'Питч-дек', kind: 'slides' },
+          { id: 'landing', title: 'Лендинг организатора', kind: 'site' },
+        ],
+        current: null,
+        onOpen: (id) => toast(`Открыть дизайн ${id}`, { tone: 'info' }),
+      }}
       onNotifications={(anchor) => setNotif((current) => (current ? null : { anchor, side: 'right' }))}
       onToggleRail={() => setRail((current) => !current)}
       onCloseDrawer={() => setDrawerOpen(false)}

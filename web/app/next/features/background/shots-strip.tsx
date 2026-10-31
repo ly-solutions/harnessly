@@ -29,6 +29,8 @@ const who = (shot: Shot): string => shot.agent ?? t('next.shots.byAgent');
 
 const Square = ({ shot, src, now, onOpen }: { shot: Shot; src: string; now: number; onOpen: () => void }) => {
   const [state, setState] = useState<'loading' | 'ready' | 'broken'>('loading');
+  // A picture that failed to load is hidden, not asked for again.
+  if (state === 'broken') return null;
   return (
     <button
       type="button"
@@ -47,7 +49,6 @@ const Square = ({ shot, src, now, onOpen }: { shot: Shot; src: string; now: numb
         onLoad={() => setState('ready')}
         onError={() => setState('broken')}
       />
-      {state === 'broken' && <Icon name="image" className="hx-shots__gone" />}
     </button>
   );
 };

@@ -90,11 +90,12 @@ RUN apt-get update \
 ARG DESIGN_TOOLS=1
 RUN if [ "$DESIGN_TOOLS" = 1 ]; then \
       apt-get update \
-   && apt-get install -y --no-install-recommends chromium ffmpeg fonts-liberation fonts-noto-color-emoji \
+   && apt-get install -y --no-install-recommends chromium ffmpeg xvfb x11vnc websockify fonts-liberation fonts-noto-color-emoji \
    && rm -rf /var/lib/apt/lists/*; \
     fi
 # A container gives an unprivileged user no namespaces for Chromium's own sandbox: the container is the boundary.
-ENV RUNTIME_DESIGN_CHROME_ARGS=--no-sandbox
+ENV RUNTIME_DESIGN_CHROME_ARGS=--no-sandbox \
+    RUNTIME_BROWSER_CHROME_ARGS=--no-sandbox
 # --- end of design tools ---------------------------------------------------------------------------------------------
 COPY --from=build /out/runtime /out/agent /out/harnessly /usr/local/bin/
 # Voice input: ffmpeg decodes what the browser records, whisper-server recognizes it. The speech model itself is

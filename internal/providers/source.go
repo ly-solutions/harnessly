@@ -40,6 +40,9 @@ func (s *Source) Profiles(context.Context) (wire.ProfileList, error) {
 		if account, ok := s.Store.LoginOf(p.ID); ok {
 			info.Login = &wire.ProfileLogin{Account: account}
 		}
+		if p.Proxied {
+			info.Proxy = &wire.ProfileProxy{Installed: s.Store.Proxy != nil && s.Store.Proxy.Installed()}
+		}
 		out = append(out, info)
 	}
 	return wire.ProfileList{Profiles: out}, nil
@@ -70,9 +73,10 @@ func (s *Source) client() *http.Client {
 	return &http.Client{Timeout: TestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
-// TestProfile makes one minimal request to the vendor with the saved key (else the vendor CLI's sign-in): a message of a token for the Anthropic-
-// compatible vendors, a response of a few tokens for xAI. The answer says how it went and holds neither the key nor
-// the vendor's body.
+// TestProfile makes one minimal request to the vendor with the saved key (else the vendor CLI's sign-in): a message of a
+// token for the Anthropic-compatible vendors, a response of a few tokens for xAI. A Proxied profile is tested through
+// its proxy, started first; a proxy that is not installed is `unreachable`. The answer says how it went and holds
+// neither the key nor the vendor's body.
 func (s *Source) TestProfile(ctx context.Context, id string) (wire.ProfileTest, error) {
 	p, ok := Find(id)
 	if !ok {
@@ -87,6 +91,21 @@ func (s *Source) TestProfile(ctx context.Context, id string) (wire.ProfileTest, 
 		return wire.ProfileTest{}, err
 	}
 	base := p.BaseURL
+	if p.Proxied {
+		if s.Store.Proxy == nil {
+			r := wire.TestUnreachable
+			return wire.ProfileTest{Reason: &r}, nil
+		}
+		proxied, err := s.Store.Proxy.Ensure(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return wire.ProfileTest{}, ctx.Err()
+			}
+			r := wire.TestUnreachable
+			return wire.ProfileTest{Reason: &r}, nil
+		}
+		base = proxied
+	}
 	if s.BaseURL != nil {
 		base = s.BaseURL(p)
 	}

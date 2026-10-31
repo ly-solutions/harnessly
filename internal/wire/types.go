@@ -180,6 +180,9 @@ type Conversation struct {
 	Gate           *GateRef     `json:"gate"`             // the open gate; its details are in the conv channel
 	Goal           *Goal        `json:"goal,omitempty"`   // the agent's /goal; absent when it has none
 	Launch         *Launch      `json:"launch,omitempty"` // set on a conversation started with others by one prompt
+	// Apps are the ids of the installed apps turned on in this chat (internal/apps): the agent of the chat gets their
+	// profiles. Absent when none is on.
+	Apps []string `json:"apps,omitempty"`
 	// PendingModel is a change of model or effort the person asked for that the agent has not taken yet: the runtime
 	// holds it and applies it at the first moment the agent can (see PendingModel). Absent when none waits.
 	PendingModel *PendingModel `json:"pendingModel,omitempty"`
@@ -1748,6 +1751,14 @@ type ConversationPinCmd struct {
 	Pinned bool   `json:"pinned"`
 }
 
+// ConversationAppsCmd sets the apps turned on in a conversation: the whole list, in the order the person turned them
+// on. An empty list turns them all off.
+type ConversationAppsCmd struct {
+	OpID string   `json:"opId"`
+	ID   string   `json:"id"`
+	Apps []string `json:"apps"`
+}
+
 // ConversationMoveCmd moves a conversation to a project, or out of any (nil).
 type ConversationMoveCmd struct {
 	OpID      string  `json:"opId"`
@@ -1958,6 +1969,7 @@ func (SeenCmd) Op() Op                { return OpSeen }
 func (ConversationCreateCmd) Op() Op  { return OpConversationCreate }
 func (ConversationRenameCmd) Op() Op  { return OpConversationRename }
 func (ConversationPinCmd) Op() Op     { return OpConversationPin }
+func (ConversationAppsCmd) Op() Op    { return OpConversationApps }
 func (ConversationRetitleCmd) Op() Op { return OpConversationRetitle }
 func (ConversationMoveCmd) Op() Op    { return OpConversationMove }
 func (ConversationDeleteCmd) Op() Op  { return OpConversationDelete }
@@ -1995,6 +2007,7 @@ func (c SeenCmd) OpKey() string                { return c.OpID }
 func (c ConversationCreateCmd) OpKey() string  { return c.OpID }
 func (c ConversationRenameCmd) OpKey() string  { return c.OpID }
 func (c ConversationPinCmd) OpKey() string     { return c.OpID }
+func (c ConversationAppsCmd) OpKey() string    { return c.OpID }
 func (c ConversationRetitleCmd) OpKey() string { return c.OpID }
 func (c ConversationMoveCmd) OpKey() string    { return c.OpID }
 func (c ConversationDeleteCmd) OpKey() string  { return c.OpID }
@@ -2093,10 +2106,12 @@ const (
 	// moves or cancels that, and a turn a restart cut short goes on by itself (runtime settings limitContinue,
 	// restartContinue).
 	FeatureAutoContinue Feature = "auto-continue"
+	// FeatureMade: GET /api/v2/conversations/{id}/made lists what the chat made, opened or changed (docs, boards, designs).
+	FeatureMade Feature = "made"
 )
 
 // Features is every Feature, in the schema's order.
-var Features = []Feature{FeatureQueue, FeatureSteer, FeatureQuestions, FeaturePermissions, FeatureBackground, FeatureModel, FeatureVoice, FeatureFiles, FeatureCheckpoints, FeatureDesignly, FeatureSearch, FeatureVault, FeaturePush, FeatureTerminal, FeatureMachine, FeatureApps, FeatureSettings, FeatureDrafts, FeatureQueueMove, FeatureAppsHub, FeatureTerminalStop, FeatureRewind, FeatureFork, FeatureHandoff, FeatureAutoContinue}
+var Features = []Feature{FeatureQueue, FeatureSteer, FeatureQuestions, FeaturePermissions, FeatureBackground, FeatureModel, FeatureVoice, FeatureFiles, FeatureCheckpoints, FeatureDesignly, FeatureSearch, FeatureVault, FeaturePush, FeatureTerminal, FeatureMachine, FeatureApps, FeatureSettings, FeatureDrafts, FeatureQueueMove, FeatureAppsHub, FeatureTerminalStop, FeatureRewind, FeatureFork, FeatureHandoff, FeatureAutoContinue, FeatureMade}
 
 // Reach is whether the cluster hears a machine; standalone it is always online.
 type Reach string
@@ -2712,6 +2727,7 @@ const (
 	OpConversationCreate  Op = "conversation.create"
 	OpConversationRename  Op = "conversation.rename"
 	OpConversationPin     Op = "conversation.pin"
+	OpConversationApps    Op = "conversation.apps"
 	OpConversationRetitle Op = "conversation.retitle"
 	OpConversationMove    Op = "conversation.move"
 	OpConversationDelete  Op = "conversation.delete"
@@ -2739,7 +2755,7 @@ const (
 )
 
 // Ops is every Op, in the schema's order.
-var Ops = []Op{OpSend, OpCancel, OpRetry, OpPromote, OpAnswer, OpDecide, OpInterrupt, OpQueueResume, OpSeen, OpConversationCreate, OpConversationRename, OpConversationPin, OpConversationMove, OpConversationDelete, OpConversationRestore, OpConversationResume, OpModel, OpBgStop, OpProjectCreate, OpProjectUpdate, OpFavGroupCreate, OpFavGroupRename, OpFavGroupDelete, OpFavGroupMove, OpFavPlace, OpGoal, OpConversationRetitle, OpDraftSet, OpQueueMove, OpTerminalStop, OpRewind, OpRewindUndo, OpConversationFork, OpConversationHandoff, OpConversationMerge, OpLimit}
+var Ops = []Op{OpSend, OpCancel, OpRetry, OpPromote, OpAnswer, OpDecide, OpInterrupt, OpQueueResume, OpSeen, OpConversationCreate, OpConversationRename, OpConversationPin, OpConversationApps, OpConversationMove, OpConversationDelete, OpConversationRestore, OpConversationResume, OpModel, OpBgStop, OpProjectCreate, OpProjectUpdate, OpFavGroupCreate, OpFavGroupRename, OpFavGroupDelete, OpFavGroupMove, OpFavPlace, OpGoal, OpConversationRetitle, OpDraftSet, OpQueueMove, OpTerminalStop, OpRewind, OpRewindUndo, OpConversationFork, OpConversationHandoff, OpConversationMerge, OpLimit}
 
 // PromoteTo is where promote moves a queued message.
 type PromoteTo string

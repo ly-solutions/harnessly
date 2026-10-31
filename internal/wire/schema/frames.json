@@ -15,7 +15,7 @@
       "enum": [
         "queue", "steer", "questions", "permissions", "background", "model", "voice", "files", "checkpoints",
         "designly", "search", "vault", "push", "terminal", "machine", "apps", "settings", "drafts", "queue-move", "apps-hub", "terminal-stop", "rewind", "fork", "handoff",
-        "auto-continue"
+        "auto-continue", "made"
       ]
     },
     "Reach": {"enum": ["online", "unreachable", "unknown"]},
@@ -285,7 +285,7 @@
     "Op": {
       "enum": [
         "send", "cancel", "retry", "promote", "answer", "decide", "interrupt", "queue.resume", "seen",
-        "conversation.create", "conversation.rename", "conversation.pin", "conversation.move",
+        "conversation.create", "conversation.rename", "conversation.pin", "conversation.apps", "conversation.move",
         "conversation.delete", "conversation.restore", "conversation.resume", "model", "bg.stop",
         "project.create", "project.update", "favorites.group.create", "favorites.group.rename", "favorites.group.delete",
         "favorites.group.move", "favorites.place", "goal", "conversation.retitle", "draft.set", "queue.move", "terminal.stop", "rewind", "rewind.undo",
@@ -304,7 +304,7 @@
       ]
     },
     "RetryableRefuseCode": {"enum": ["machine-offline", "rate-limited", "internal", "timeout"]},
-    "HttpKind": {"enum": ["hello", "turns", "entries", "output", "upload", "dirs", "sessions", "terminals", "terminal", "voice", "designlyCreate", "designlyLibrary", "designlySystems", "designlyPin", "files", "file", "tasks", "legacy", "open", "openRefs", "messageStatus", "context", "search", "digest", "machineStats", "machineStop", "apps", "agentSettings", "runtimeSettings", "rewindPlan", "handoffDraft", "profiles", "profileKey", "profileTest", "login", "loginOK"]},
+    "HttpKind": {"enum": ["hello", "turns", "entries", "output", "upload", "dirs", "sessions", "terminals", "terminal", "voice", "designlyCreate", "designlyLibrary", "designlySystems", "designlyPin", "files", "file", "tasks", "legacy", "open", "openRefs", "made", "messageStatus", "context", "search", "digest", "machineStats", "machineStop", "apps", "agentSettings", "runtimeSettings", "rewindPlan", "handoffDraft", "profiles", "profileKey", "profileTest", "login", "loginOK"]},
     "Channel": {"type": "string", "pattern": "^(machine|convs|conv:tab-[A-Za-z0-9_-]+)$"},
     "EntryId": {"type": "string", "pattern": "^((c:[0-9a-f-]+|x:[0-9]+)#[0-9]+|live:(c:[0-9a-f-]+|x:[0-9]+)#[0-9]+)$"},
     "TurnId": {"type": "string", "pattern": "^(c:[0-9a-f-]+|x:[0-9]+)#[0-9]+$"},
@@ -385,7 +385,7 @@
       }
     },
     "ProfileId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
-    "ProfileVendor": {"enum": ["kimi", "glm", "grok"]},
+    "ProfileVendor": {"enum": ["kimi", "glm", "grok", "chatgpt"]},
     "ProfileTestReason": {"enum": ["no-key", "unauthorized", "forbidden", "rate-limited", "unreachable", "timeout", "rejected"]},
     "ProfileOffer": {
       "type": "object",
@@ -421,7 +421,8 @@
         "hint": {"type": "string"},
         "key": {"$ref": "#/$defs/ProfileKey"},
         "models": {"type": "array", "items": {"$ref": "#/$defs/AgentModel"}},
-        "login": {"$ref": "#/$defs/ProfileLogin"}
+        "login": {"$ref": "#/$defs/ProfileLogin"},
+        "proxy": {"$ref": "#/$defs/ProfileProxy"}
       }
     },
     "ProfileLogin": {
@@ -429,6 +430,12 @@
       "required": ["account"],
       "additionalProperties": false,
       "properties": {"account": {"type": "string"}}
+    },
+    "ProfileProxy": {
+      "type": "object",
+      "required": ["installed"],
+      "additionalProperties": false,
+      "properties": {"installed": {"type": "boolean"}}
     },
     "ProfileList": {
       "type": "object",
@@ -453,6 +460,7 @@
       "properties": {
         "id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
         "provider": {"$ref": "#/$defs/Provider"},
+        "profile": {"$ref": "#/$defs/ProfileId"},
         "mode": {"$ref": "#/$defs/LoginMode"},
         "state": {"$ref": "#/$defs/LoginState"},
         "input": {"$ref": "#/$defs/LoginInput"},
@@ -536,7 +544,7 @@
         "createdAt": {"type": "integer", "minimum": 0}
       }
     },
-    "DesignKind": {"enum": ["site", "slides", "ds"]},
+    "DesignKind": {"enum": ["site", "slides", "ds", "video"]},
     "DesignlyCreate": {
       "type": "object",
       "required": ["title", "brief", "kind", "provider", "model", "effort", "designSystem"],
@@ -550,6 +558,7 @@
         "effort": {"oneOf": [{"$ref": "#/$defs/Effort"}, {"type": "null"}]},
         "designSystem": {"oneOf": [{"type": "string", "minLength": 1, "maxLength": 200}, {"type": "null"}]},
         "deck": {"$ref": "#/$defs/DesignlyDeck"},
+        "video": {"$ref": "#/$defs/DesignlyVideo"},
         "attachmentIds": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1}}
       }
     },
@@ -564,6 +573,17 @@
         "tone": {"$ref": "#/$defs/DesignDeckTone"},
         "script": {"type": "boolean"},
         "style": {"oneOf": [{"$ref": "#/$defs/DesignlyDeckStyle"}, {"type": "null"}]}
+      }
+    },
+    "DesignVideoFormat": {"enum": ["16:9", "9:16"]},
+    "DesignlyVideo": {
+      "type": "object",
+      "required": ["formats", "seconds", "subs"],
+      "additionalProperties": false,
+      "properties": {
+        "formats": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"$ref": "#/$defs/DesignVideoFormat"}},
+        "seconds": {"oneOf": [{"type": "integer", "minimum": 15, "maximum": 300}, {"type": "null"}]},
+        "subs": {"type": "boolean"}
       }
     },
     "DesignlyDeckStyle": {
@@ -1143,6 +1163,56 @@
         }
       }
     },
+    "MadeKind": {"enum": ["doc", "board", "design", "task"]},
+    "MadeTaskRef": {
+      "type": "object",
+      "required": ["key", "title", "url", "state", "resolved"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
+        "url": {"type": "string"},
+        "state": {"type": "string"},
+        "resolved": {"type": "boolean"}
+      }
+    },
+    "MadeTaskInfo": {
+      "type": "object",
+      "required": ["key", "type", "state", "resolved", "parent", "children"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "type": {"type": "string"},
+        "state": {"type": "string"},
+        "resolved": {"type": "boolean"},
+        "parent": {"oneOf": [{"$ref": "#/$defs/MadeTaskRef"}, {"type": "null"}]},
+        "children": {"type": "array", "maxItems": 50, "items": {"$ref": "#/$defs/MadeTaskRef"}}
+      }
+    },
+    "MadeItem": {
+      "type": "object",
+      "required": ["kind", "ref", "title", "op", "at", "cover", "designKind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"$ref": "#/$defs/MadeKind"},
+        "ref": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
+        "op": {"$ref": "#/$defs/OutputOp"},
+        "at": {"type": "integer", "minimum": 0},
+        "cover": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "designKind": {"oneOf": [{"$ref": "#/$defs/DesignKind"}, {"type": "null"}]},
+        "task": {"oneOf": [{"$ref": "#/$defs/MadeTaskInfo"}, {"type": "null"}]}
+      }
+    },
+    "ChatMade": {
+      "type": "object",
+      "required": ["items", "complete"],
+      "additionalProperties": false,
+      "properties": {
+        "items": {"type": "array", "maxItems": 60, "items": {"$ref": "#/$defs/MadeItem"}},
+        "complete": {"type": "boolean"}
+      }
+    },
     "FileKind": {"enum": ["file", "directory"]},
     "FileEntry": {
       "type": "object",
@@ -1455,6 +1525,7 @@
         "gate": {"oneOf": [{"$ref": "#/$defs/GateRef"}, {"type": "null"}]},
         "goal": {"$ref": "#/$defs/Goal"},
         "launch": {"$ref": "#/$defs/Launch"},
+        "apps": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 8},
         "recap": {"$ref": "#/$defs/Recap"},
         "pendingModel": {"$ref": "#/$defs/PendingModel"},
         "modelLog": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/ModelSwitch"}},
@@ -2697,6 +2768,16 @@
         "id": {"$ref": "#/$defs/ConvId"}
       }
     },
+    "Cmd_conversation_apps": {
+      "type": "object",
+      "required": ["opId", "id", "apps"],
+      "additionalProperties": false,
+      "properties": {
+        "opId": {"type": "string", "minLength": 1},
+        "id": {"$ref": "#/$defs/ConvId"},
+        "apps": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 8}
+      }
+    },
     "Cmd_conversation_pin": {
       "type": "object",
       "required": ["opId", "id", "pinned"],
@@ -3052,6 +3133,12 @@
           "type": "object",
           "required": ["op", "body"],
           "additionalProperties": false,
+          "properties": {"op": {"const": "conversation.apps"}, "body": {"$ref": "#/$defs/Cmd_conversation_apps"}}
+        },
+        {
+          "type": "object",
+          "required": ["op", "body"],
+          "additionalProperties": false,
           "properties": {"op": {"const": "conversation.move"}, "body": {"$ref": "#/$defs/Cmd_conversation_move"}}
         },
         {
@@ -3335,6 +3422,16 @@
           "properties": {
             "op": {"const": "conversation.pin"},
             "body": {"$ref": "#/$defs/Cmd_conversation_pin"},
+            "result": {"$ref": "#/$defs/CmdResult"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "body", "result"],
+          "additionalProperties": false,
+          "properties": {
+            "op": {"const": "conversation.apps"},
+            "body": {"$ref": "#/$defs/Cmd_conversation_apps"},
             "result": {"$ref": "#/$defs/CmdResult"}
           }
         },
@@ -3798,6 +3895,15 @@
           "properties": {
             "http": {"const": "openRefs"},
             "response": {"oneOf": [{"$ref": "#/$defs/OpenedRefs"}, {"$ref": "#/$defs/Refusal"}]}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["http", "response"],
+          "additionalProperties": false,
+          "properties": {
+            "http": {"const": "made"},
+            "response": {"oneOf": [{"$ref": "#/$defs/ChatMade"}, {"$ref": "#/$defs/Refusal"}]}
           }
         },
         {

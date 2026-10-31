@@ -145,6 +145,17 @@ const PRESETS: readonly IPresetState[] = [
     key: { configured: false, tail: null },
     models: [model('grok-build-0.1', 'Grok Build')],
   },
+  {
+    id: 'chatgpt',
+    label: 'ChatGPT (подписка)',
+    vendor: 'chatgpt',
+    via: 'claude',
+    host: 'chatgpt.com',
+    hint: 'Подписка ChatGPT Plus или Pro. Неофициальный клиент: OpenAI может ограничить аккаунт',
+    key: { configured: false, tail: null },
+    models: [model('gpt-6-sol', 'GPT-6 Sol'), model('gpt-6-luna', 'GPT-6 Luna')],
+    proxy: { installed: true },
+  },
 ];
 
 const startStates = (state: string | undefined): IPresetState[] =>
@@ -186,6 +197,7 @@ const SettingsScene = ({ state, check, login }: { state?: string; check?: string
   const [open, setOpen] = useState<string | null>(state === 'empty' ? 'claude' : 'kimi');
   const [loginState, setLoginState] = useState<LoginState>(LOGINS[login ?? 'idle'] ?? LOGINS.idle);
   const [codexKey, setCodexKey] = useState({ configured: login === 'key', tail: null });
+  const [proxyLogin, setProxyLogin] = useState<LoginState>(LOGINS.idle);
   const change = (id: PresetId, patch: Partial<IPresetState>) =>
     setStates((have) => have.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const result = (): TestState => {
@@ -243,6 +255,19 @@ const SettingsScene = ({ state, check, login }: { state?: string; check?: string
               return null;
             },
             onTest: async () => later(result(), 900),
+            proxyLogins: { chatgpt: proxyLogin },
+            onProxyLogin: async () => {
+              setProxyLogin({ k: 'starting' });
+              await later(null, 900);
+              setProxyLogin(LOGINS.device);
+              return null;
+            },
+            onProxyCancel: async () => setProxyLogin(LOGINS.idle),
+            onProxyLogout: async () => {
+              await later(null, 400);
+              change('chatgpt', { login: undefined });
+              return null;
+            },
           }}
           open={open}
           busy={new Set()}

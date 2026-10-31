@@ -345,7 +345,11 @@ func (s *Service) close(id string, change func(*Ask)) Ask {
 		return after
 	}
 	s.changed(&before, after)
-	go s.editClosed(after)
+	s.running.Add(1)
+	go func() {
+		defer s.running.Done()
+		s.editClosed(after)
+	}()
 	return after
 }
 

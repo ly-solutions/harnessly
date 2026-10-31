@@ -2,6 +2,8 @@
 // peeking from under it; a pointer over the pile, a focus in it or a tap on it spreads them into a list, with
 // «Скрыть все» under it. A notice comes down from the top, the pile closes up as one leaves, a swipe sideways or ×
 // takes one away. One implementation for every width: on the phone it is as wide as the screen, under the safe area.
+// The person picks the corner it stands in and whether a card hides by itself after a while (only from the pile: its
+// chat keeps its dot and the tab its count); a pile under the pointer or spread by a tap waits.
 import '@/next/styles/notices.css';
 
 import {
@@ -18,7 +20,7 @@ import { t } from '@/next/i18n';
 import { formatAgo } from '@/next/i18n/format';
 import Icon from '@/next/ui/icon';
 import { useLeavingList } from '@/next/ui/presence';
-import { NOTICE_KIND, type INotice, type TNoticeKind } from '@/next/stores/notices';
+import { NOTICE_KIND, type INotice, type TNoticeKind, type TNoticePlace } from '@/next/stores/notices';
 
 /** How long a notice takes to leave, ms (styles/notices.css has the same). */
 export const NOTICE_EXIT_MS = 320;
@@ -33,6 +35,9 @@ const SCALE_STEP = 0.05;
 const SWIPE_PX = 80;
 const SWIPE_VELOCITY = 0.45;
 const DRAG_START_PX = 6;
+/** A card whose time ran out under the pointer still stands this long after the pointer leaves. */
+const HIDE_GRACE_MS = 1500;
+const NO_KEYS: ReadonlySet<string> = new Set();
 
 const TONE: Record<TNoticeKind, string> = {
   [NOTICE_KIND.waiting]: 'warn',
@@ -48,6 +53,9 @@ export interface INoticeStackProps {
   onOpen: (notice: INotice) => void;
   onDismiss: (key: string) => void;
   onDismissAll: () => void;
+  place: TNoticePlace;
+  /** A card hides from the pile this long after it came; 0: it stays. */
+  hideAfterMs: number;
 }
 
 /** Places the cards: folded, each under the front one, as tall as it and a little smaller; spread, one under another. */
@@ -76,13 +84,53 @@ const layout = (list: HTMLOListElement | null, spread: boolean) => {
   list.parentElement?.style.setProperty('--hx-n-stack', `${height}px`);
 };
 
-const NoticeStack = ({ notices, now, onOpen, onDismiss, onDismissAll }: INoticeStackProps) => {
+const NoticeStack = ({
+  notices,
+  now,
+  onOpen,
+  onDismiss,
+  onDismissAll,
+  place,
+  hideAfterMs,
+}: INoticeStackProps) => {
+  const [hidden, setHidden] = useState(NO_KEYS);
   // The same array while the list is the same: the leaving list tells a change by it.
-  const shown = useMemo(() => notices.slice(0, MAX_SHOWN), [notices]);
+  const shown = useMemo(
+    () => notices.filter((n) => !hidden.has(n.key)).slice(0, MAX_SHOWN),
+    [notices, hidden],
+  );
   const rows = useLeavingList(shown, (n) => n.key, NOTICE_EXIT_MS);
   const [hover, setHover] = useState(false);
   const [tapped, setTapped] = useState(false);
   const spread = (hover || tapped) && shown.length > 1;
+  const held = hover || tapped;
+  // When the pointer last let the pile go; 0: it never held it, a card past its time leaves at once.
+  const released = useRef(0);
+  const wasHeld = useRef(false);
+
+  // The cards whose time is out leave the pile, the next one when its own time comes; a held pile waits.
+  useEffect(() => {
+    if (wasHeld.current && !held) released.current = Date.now();
+    wasHeld.current = held;
+  }, [held]);
+  useEffect(() => {
+    if (hideAfterMs === 0 || held || shown.length === 0) return;
+    const due = (n: INotice) => Math.max(n.at + hideAfterMs, released.current + HIDE_GRACE_MS);
+    const next = Math.min(...shown.map(due));
+    const timer = window.setTimeout(
+      () => {
+        const at = Date.now();
+        const live = new Set(notices.map((n) => n.key));
+        setHidden((current) => {
+          const out = new Set([...current].filter((key) => live.has(key)));
+          for (const n of shown) if (due(n) <= at) out.add(n.key);
+          return out;
+        });
+      },
+      Math.max(0, next - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [notices, shown, hideAfterMs, held]);
   const listRef = useRef<HTMLOListElement>(null);
   const drag = useRef<{ key: string; x: number; y: number; t: number; dx: number; moving: boolean } | null>(
     null,
@@ -178,6 +226,7 @@ const NoticeStack = ({ notices, now, onOpen, onDismiss, onDismissAll }: INoticeS
     <section
       className="hx-notices"
       aria-label={t('next.notices.region')}
+      data-place={place}
       data-spread={spread || undefined}
       data-empty={rows.length === 0 || undefined}
       onPointerEnter={(event) => {

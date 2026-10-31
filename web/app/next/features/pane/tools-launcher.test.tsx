@@ -73,4 +73,41 @@ describe('ToolsLauncher', () => {
     fireEvent.keyDown(input, { key: 'Escape' });
     expect((input as HTMLInputElement).value).toBe('');
   });
+
+  it('puts the quiet tools after the tiles of their group, in a row, and keeps them to the end of the arrows', () => {
+    const tools = [{ ...TOOLS[0], quiet: true }, TOOLS[1], TOOLS[2]];
+    const onOpen = vi.fn();
+    const { container } = render(
+      <ToolsLauncher tools={tools} groups={GROUPS} onOpen={onOpen} onAddress={vi.fn()} />,
+    );
+    expect(container.querySelectorAll('.hx-tl__quiet [data-quiet]')).toHaveLength(1);
+    const input = screen.getByRole('combobox');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onOpen).toHaveBeenCalledWith('plan');
+  });
+
+  it('fixes the quiet set when the signals are ready, and shows all at full size while searching', () => {
+    const tools = [{ ...TOOLS[0], quiet: true }, TOOLS[1], TOOLS[2]];
+    const props = { groups: GROUPS, onOpen: vi.fn(), onAddress: vi.fn() };
+    const { container, rerender } = render(<ToolsLauncher tools={TOOLS} ready={false} {...props} />);
+    expect(container.querySelectorAll('[data-quiet]')).toHaveLength(0);
+    rerender(<ToolsLauncher tools={tools} ready {...props} />);
+    expect(container.querySelectorAll('[data-quiet]')).toHaveLength(1);
+    // Later marks do not move a tile.
+    rerender(<ToolsLauncher tools={TOOLS} ready {...props} />);
+    expect(container.querySelectorAll('[data-quiet]')).toHaveLength(1);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'пл' } });
+    expect(container.querySelectorAll('[data-quiet]')).toHaveLength(0);
+  });
+
+  it('shows the head above the tools and hides it while the search has words', () => {
+    render(
+      <ToolsLauncher tools={TOOLS} groups={GROUPS} onOpen={vi.fn()} onAddress={vi.fn()} head={<p>Made</p>} />,
+    );
+    expect(screen.getByText('Made')).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'пл' } });
+    expect(screen.queryByText('Made')).toBeNull();
+  });
 });

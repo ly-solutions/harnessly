@@ -110,8 +110,32 @@ func New(d Deps) *Service {
 }
 
 // Mount registers the hub-origin side: /m/<id>/… (path mode runs it, subdomain mode sends people to the machine's own
-// origin).
-func (s *Service) Mount(mux *http.ServeMux) { mux.Handle("/m/", s) }
+// origin), plus the fullscreen browser's socket, which always stays on the hub's origin.
+func (s *Service) Mount(mux *http.ServeMux) {
+	mux.Handle("/m/", s)
+	mux.Handle("GET /api/machines/{machineId}/browser/ws", s.auth.Require(s.browserWS))
+}
+
+func (s *Service) browserWS(w http.ResponseWriter, r *http.Request, p *auth.Principal) error {
+	if refuseCrossSite(w, r) {
+		return nil
+	}
+	id := r.PathValue("machineId")
+	if !machineID.MatchString(id) {
+		return httpx.ErrNotFound
+	}
+	m, err := s.admit(r.Context(), p.User.ID, id)
+	if err != nil {
+		return err
+	}
+	clone := r.Clone(r.Context())
+	u := *r.URL
+	u.Path = "/api/browser/ws"
+	u.RawPath = ""
+	clone.URL = &u
+	s.forward(w, clone, p.User, m)
+	return nil
+}
 
 var (
 	errOffline = errors.New("machine offline")

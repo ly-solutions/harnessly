@@ -17,6 +17,8 @@ export interface IAppConfig {
   standSignInHosts: string[];
   /** Hosts whose pages may open in the pane's browser tab, besides the configured services. */
   paneHosts: string[];
+  /** The pages a person finds pinned in the browser tab until they change their pins (RUNTIME_DEFAULT_PINS). */
+  defaultPins: { text: string; name?: string }[];
   /** Issue link of the tracker with `{key}` in it, e.g. `https://tracker.example.com/issue/{key}` (RUNTIME_TRACKER_URL). */
   trackerIssueUrl: string | null;
   /** Hosts whose `/issue/<KEY>` links are tasks of the tracker. */
@@ -65,6 +67,7 @@ const DEFAULTS: IAppConfig = {
   standDomain: null,
   standSignInHosts: [],
   paneHosts: [],
+  defaultPins: [],
   people: {},
   features: { chats: false, efficiency: false, vault: false, design: false },
   locale: 'en',

@@ -77,3 +77,38 @@ func TestALongSilenceEndsATurnPastTheHold(t *testing.T) {
 		t.Fatalf("past the hold: %s", k)
 	}
 }
+
+// A turn ended on silence (the model thought long, the spinner unread) and then the agent asks: the question opens its
+// card in that turn, opened again, and the chat waits for the answer instead of looking at work.
+func TestQuestionAfterAQuietTurnOpensItsCard(t *testing.T) {
+	r := newRig(t)
+	r.user("think, then ask me")
+	r.busy()
+	r.open()
+	r.settle(wire.StateWorking)
+
+	r.done()
+	for range 20 {
+		r.tick(time.Second)
+	}
+	if k := r.state().K; k != wire.StateIdle {
+		t.Fatalf("after the silence: %s", k)
+	}
+
+	r.ask("toolu_q1")
+	r.pane.screen = tui(t, "claude-ask-preview-question.txt")
+	r.tick(time.Second)
+	if st := r.state(); st.K != wire.StateWaitingQuestion || st.QuestionID != "q:toolu_q1" {
+		t.Fatalf("state: %+v", st)
+	}
+	snap := r.snap()
+	if len(snap.Questions) != 1 || snap.Questions[0].State.K != wire.GateStateOpen {
+		t.Fatalf("questions: %+v", snap.Questions)
+	}
+	if snap.Questions[0].TurnID != snap.Turns[0].ID || snap.Turns[0].Status != wire.TurnLive {
+		t.Fatalf("the question's turn: %q, turns %+v", snap.Questions[0].TurnID, snap.Turns)
+	}
+	if n := len(r.events(wire.EvQuestionAsked)); n != 1 {
+		t.Fatalf("%d question_asked", n)
+	}
+}

@@ -17,6 +17,7 @@ import {
   type Dir,
   type LegacyTab,
   type OpenTarget,
+  type ChatMade,
   type ConvContext,
   type HandoffDraft,
   type HandoffDraftRequest,
@@ -172,8 +173,16 @@ export const loadOpenTarget = (m: MachineId, conv: ConvId, ref: string): Promise
     limitsOf(m).cmdTimeoutMs,
   );
 
-/** The Legacy tab the conversation runs in; not found until its agent has a tmux session. */
-export const loadLegacyTab = (m: MachineId, conv: ConvId): Promise<PageOutcome<LegacyTab>> =>
+/** What the chat made, opened or changed (documents, boards, designs, tracker tasks), newest first. */
+export const loadMade = (m: MachineId, conv: ConvId): Promise<PageOutcome<ChatMade>> =>
+  getPage(
+    machineApi(m).http(`/conversations/${enc(conv)}/made?tasks=1`),
+    parsePage.made,
+    limitsOf(m).cmdTimeoutMs,
+  );
+
+/** The Legacy tab the conversation runs in; null until its agent has a tmux session. */
+export const loadLegacyTab = (m: MachineId, conv: ConvId): Promise<PageOutcome<LegacyTab | null>> =>
   getPage(
     machineApi(m).http(`/conversations/${enc(conv)}/legacy`),
     parsePage.legacy,

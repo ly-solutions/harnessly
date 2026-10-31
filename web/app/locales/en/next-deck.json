@@ -57,6 +57,7 @@
   "next.deck.create.previewFonts": "{head} · {body}",
   "next.deck.create.previewHead": "Slide title",
   "next.deck.create.script": "Prompter text",
+  "next.deck.create.scriptShort": "Prompter",
   "next.deck.create.settingsChip": "Settings",
   "next.deck.create.styleBody": {
     "one": "Colours, font, logo and {n} slide layout: the presentation is built from them",

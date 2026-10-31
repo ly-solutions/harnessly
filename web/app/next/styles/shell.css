@@ -50,7 +50,8 @@ html:has(.hx-app) body {
 .hx-agent[data-agent='codex'],
 .hx-agent[data-agent='grok'],
 .hx-agent[data-agent='kimi'],
-.hx-agent[data-agent='glm'] {
+.hx-agent[data-agent='glm'],
+.hx-agent[data-agent='chatgpt'] {
   background-color: currentColor;
   -webkit-mask: var(--hx-a) center / contain no-repeat;
   mask: var(--hx-a) center / contain no-repeat;
@@ -67,6 +68,10 @@ html:has(.hx-app) body {
 }
 .hx-agent[data-agent='glm'] {
   --hx-a: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222.2%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M5 5h14L5 19h14%22/%3E%3C/svg%3E');
+}
+/* ChatGPT: a hexagon around a ring, of the same stroke. */
+.hx-agent[data-agent='chatgpt'] {
+  --hx-a: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z%22/%3E%3Ccircle cx=%2212%22 cy=%2212%22 r=%223.2%22/%3E%3C/svg%3E');
 }
 .hx-spacer {
   flex: 1 1 auto;
@@ -172,6 +177,7 @@ html:has(.hx-app) body {
     .hx-user__theme,
     .hx-brand__close,
     .hx-nav__chev,
+    .hx-nav__fold,
     .hx-item__end,
     .hx-nav__add
   ) {

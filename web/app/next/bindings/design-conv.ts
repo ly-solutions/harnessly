@@ -74,6 +74,12 @@ export const bindDesignConv = (key: string, binding: IDesignBinding | null): voi
   keep();
 };
 
+/** The design's last chat as this browser keeps it; null without one (or without a design). */
+export const useDesignBound = (key: string | null): string | null => {
+  restore();
+  return useKey(designBindingStore, key ?? '')?.id ?? null;
+};
+
 export const useDesignSeen = (key: string): readonly string[] => {
   restore();
   return useKey(designSeenStore, key) ?? NO_SEEN;

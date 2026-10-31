@@ -57,7 +57,7 @@ export interface IAgentCredentials extends ICredentialActions {
   seen: readonly string[] | undefined;
 }
 
-/** The vendors' cards (Kimi, GLM, Grok): the presets as the runtime lists them, or why it has none to show. */
+/** The vendors' cards (Kimi, GLM, Grok, ChatGPT): the presets as the runtime lists them, or why it has none to show. */
 export type VendorCards =
   | { k: 'loading' }
   | { k: 'failed'; text: string; onRetry: () => void }
@@ -351,6 +351,10 @@ const AccountsSection = ({
           onSave={vendors.onSave}
           onRemove={vendors.onRemove}
           onTest={vendors.onTest}
+          proxyLogins={vendors.proxyLogins}
+          onProxyLogin={vendors.onProxyLogin}
+          onProxyCancel={vendors.onProxyCancel}
+          onProxyLogout={vendors.onProxyLogout}
         />
       ))}
     {vendors.k === 'loading' && <Skeleton className="hx-set__sk" />}

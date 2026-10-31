@@ -1,6 +1,8 @@
 /* Designly — the design's .hx-dl: «Что нарисуем?» with the field and the kinds, then the library of the machine's designs. */
 .hx-dl {
   --dl-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* The tone the library stands on: its sticky row is painted with it, so the row is no plate of another colour. */
+  --dl-surface: var(--hx-bg-window);
   position: relative;
   flex: 1;
   min-height: 0;
@@ -82,7 +84,7 @@
   max-width: 1120px;
   margin: 0 auto;
   padding: var(--hx-space-3) 0;
-  background: var(--hx-bg-window);
+  background: var(--dl-surface);
 }
 .hx-dl__toolbar::after {
   content: '';

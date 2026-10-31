@@ -1,9 +1,9 @@
-// The create screen of a presentation (board scene «Создание»): the brief, files that come along, the settings chip,
-// the design system chip (a system of the machine, a company template from a .pptx, or none), the prompter switch,
-// «Создать», and the card of a company template when a .pptx is attached. The length and the slide count are optional:
-// the settings chip says only what was set. The settings open as a popover under the composer or, on a phone, a
-// sheet (deck-settings.tsx). A template is read by the runtime (pptx-style) for its colours,
-// fonts and layouts; the file also goes with the brief as an attachment. A brief sent waits for the runtime.
+// The create screen of a presentation (board scene «Создание»), a field as the chat's: the brief growing with its text,
+// the files that come along; under it the clip and one «Настройки» button on the left, the model and the round send on
+// the right, and the card of a company template when a .pptx is attached. Everything else is in the settings (the
+// design system or the template, the length, the slides, the tone, the prompter, deck-settings.tsx); the button says
+// only what differs from the start. A template is read by the runtime (pptx-style) for its colours, fonts and layouts;
+// the file also goes with the brief as an attachment. A brief sent waits for the runtime.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useUploads } from '@/next/bindings/use-uploads';
 import { readPptxStyle } from '@/next/features/designly/deck/api';
@@ -14,7 +14,7 @@ import {
   toWireDeck,
   type IDeckCreateSettings,
 } from '@/next/features/designly/deck/create-settings';
-import DsPicker from '@/next/features/designly/ds-picker';
+import ModelPicker, { type IModelPickerProps } from '@/next/features/composer/model-picker';
 import type { IDesignSystem } from '@/next/features/designly/api';
 import DeckSettings from '@/next/features/designly/deck/deck-settings';
 import type { IDeckPptxStyle } from '@/next/features/designly/deck/types';
@@ -22,6 +22,8 @@ import type { DesignlyDeck, MachineId } from '@/next/protocol/v2';
 import { clearDraft, setDraftText, useDraft, type DesignDraftKey } from '@/next/stores/drafts';
 import Icon from '@/next/ui/icon';
 import Popover from '@/next/ui/popover';
+import { RoundButton } from '@/next/ui/button';
+import { useFitField } from '@/next/ui/use-fit-field';
 import { toast } from '@/next/ui/toast';
 import { plural, t } from '@/next/i18n';
 
@@ -42,6 +44,8 @@ interface IDeckCreateProps {
   /** The design systems the machine has (the same offer as a site's start). */
   systems: readonly IDesignSystem[];
   onBack: () => void;
+  /** The agent that draws and the machine it runs on, as a new chat picks them; null until the machine's agents are read. */
+  model?: IModelPickerProps | null;
   /** Sends the brief; resolves once the runtime made the project, rejects when it did not (the screen stays). */
   onCreate: (input: IDeckCreateInput) => Promise<void>;
 }
@@ -90,15 +94,22 @@ const StylePreview = ({ style }: { style: IDeckPptxStyle }) => {
   );
 };
 
-/** What the settings chip says: «Настройки» alone while nothing is set, else only what was set. */
-const chipLabel = ({ minutes, slides }: IDeckCreateSettings): string => {
-  if (minutes !== null && slides !== null) return t('next.deck.create.chipBoth', { m: minutes, s: slides });
-  if (minutes !== null) return t('next.deck.create.chipMinutes', { m: minutes });
-  if (slides !== null) return plural(slides, 'next.deck.create.chipSlides', { n: slides });
-  return t('next.deck.create.settingsChip');
+/** What the settings button says: «Настройки» alone while all is as it starts, else what differs, joined by « · ». */
+const settingsLabel = (s: IDeckCreateSettings, look: string | null): string => {
+  const parts: string[] = [];
+  if (look !== null) parts.push(look);
+  if (s.minutes !== null && s.slides !== null)
+    parts.push(t('next.deck.create.chipBoth', { m: s.minutes, s: s.slides }));
+  else if (s.minutes !== null) parts.push(t('next.deck.create.chipMinutes', { m: s.minutes }));
+  else if (s.slides !== null) parts.push(plural(s.slides, 'next.deck.create.chipSlides', { n: s.slides }));
+  if (s.tone !== DEFAULT_CREATE_SETTINGS.tone) parts.push(t(`next.deck.settings.${TONE_KEY[s.tone]}`));
+  if (s.script) parts.push(t('next.deck.create.scriptShort'));
+  return parts.length > 0 ? parts.join(' · ') : t('next.deck.create.settingsChip');
 };
 
-const DeckCreate = ({ machine, systems, onBack, onCreate }: IDeckCreateProps) => {
+const TONE_KEY = { talk: 'toneTalk', biz: 'toneBiz', short: 'toneShort' } as const;
+
+const DeckCreate = ({ machine, systems, model = null, onBack, onCreate }: IDeckCreateProps) => {
   const draft = useDraft(DECK_NEW_DRAFT);
   const brief = draft?.text ?? '';
   const uploads = useUploads(machine, DECK_NEW_DRAFT, draft?.attachments ?? []);
@@ -112,6 +123,7 @@ const DeckCreate = ({ machine, systems, onBack, onCreate }: IDeckCreateProps) =>
   const field = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const templatePicker = useRef<HTMLInputElement>(null);
+  useFitField(field, brief);
 
   const style = reads.find((r) => r.state === 'ok')?.style ?? null;
   const reading = reads.some((r) => r.state === 'reading');
@@ -205,6 +217,9 @@ const DeckCreate = ({ machine, systems, onBack, onCreate }: IDeckCreateProps) =>
   };
 
   const busy = sending || uploads.uploading || reading;
+  const look = systems.find((x) => x.id === ds)?.label ?? (styled && style ? style.name : null);
+  const label = settingsLabel(settings, look);
+  const changed = label !== t('next.deck.create.settingsChip');
   return (
     <section className="hx-deck-new" data-screen="create">
       <header className="hx-deck-new__bar">
@@ -311,55 +326,28 @@ const DeckCreate = ({ machine, systems, onBack, onCreate }: IDeckCreateProps) =>
             >
               <Icon name="paperclip" />
             </button>
-            <DsPicker
-              systems={systems}
-              value={ds}
-              shown
-              variant="chip"
-              emptyLabel={t('next.deck.create.dsChip')}
-              onChange={chooseSystem}
-              extra={{
-                label: t('next.deck.create.dsTemplate'),
-                desc: t('next.deck.create.dsTemplateDesc'),
-                active: styled,
-                name: style?.name ?? '',
-                onPick: chooseTemplate,
-              }}
-            />
             <button
               type="button"
               className="hx-deck-chip"
-              data-on={open ? '1' : '0'}
+              data-on={open || changed ? '1' : '0'}
               aria-expanded={open}
               aria-haspopup="dialog"
               onClick={() => setOpen(true)}
             >
               <Icon name="sliders-horizontal" size="sm" />
-              {chipLabel(settings)}
-            </button>
-            <button
-              type="button"
-              className="hx-deck-chip"
-              data-desk="true"
-              data-on={settings.script ? '1' : '0'}
-              aria-pressed={settings.script}
-              onClick={() => setSettings({ ...settings, script: !settings.script })}
-            >
-              {t('next.deck.create.script')}
+              <span className="hx-deck-chip__text">{label}</span>
             </button>
             <span className="hx-deck-boxrow__grow" />
-            <button
-              type="button"
-              className="hx-btn"
-              data-variant="primary"
-              data-size="sm"
-              data-busy={busy || undefined}
-              aria-busy={busy || undefined}
+            {model && <ModelPicker {...model} />}
+            <RoundButton
+              icon="arrow-up"
+              variant="accent"
+              label={t('next.deck.create.submit')}
+              keys={['↵']}
+              busy={busy}
               disabled={busy}
               onClick={send}
-            >
-              {t('next.deck.create.submit')}
-            </button>
+            />
           </div>
         </div>
 
@@ -400,6 +388,15 @@ const DeckCreate = ({ machine, systems, onBack, onCreate }: IDeckCreateProps) =>
         onChange={changeSettings}
         styleName={style?.name ?? null}
         anchor={box}
+        systems={systems}
+        ds={ds}
+        onDs={chooseSystem}
+        template={{
+          label: t('next.deck.create.dsTemplate'),
+          desc: style?.name ?? t('next.deck.create.dsTemplateDesc'),
+          active: styled,
+          onPick: chooseTemplate,
+        }}
       />
     </section>
   );

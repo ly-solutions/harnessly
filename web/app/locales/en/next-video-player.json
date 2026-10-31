@@ -1,0 +1,13 @@
+{
+  "next.video.player.back5": "Back 5 seconds",
+  "next.video.player.comment": "Comment",
+  "next.video.player.enterFull": "Full screen",
+  "next.video.player.exitFull": "Exit full screen",
+  "next.video.player.forward5": "Forward 5 seconds",
+  "next.video.player.nextScene": "Next scene",
+  "next.video.player.pause": "Pause",
+  "next.video.player.play": "Play",
+  "next.video.player.prevScene": "Previous scene",
+  "next.video.player.scene": "Scene {n}",
+  "next.video.player.sceneFailed": "The scene did not play"
+}

@@ -1398,7 +1398,7 @@ func TestInstallDesignToolsWhereItCan(t *testing.T) {
 	if r := e.run(nil, "--token", "hx_a", "--profile", "dir", "--wait", "2"); r.code != 0 {
 		t.Fatalf("%s\n%s", r.out, r.err)
 	}
-	mustContain(t, "calls", e.calledWith(), "apt-get install -y --no-install-recommends chromium ffmpeg\n")
+	mustContain(t, "calls", e.calledWith(), "apt-get install -y --no-install-recommends chromium ffmpeg xvfb x11vnc websockify\n")
 	// Asked not to, it installs nothing for designs.
 	e2 := newEnv(t)
 	if r := e2.run([]string{"HARNESSLY_DESIGN_TOOLS=0"}, "--token", "hx_a", "--profile", "dir", "--wait", "2"); r.code != 0 {

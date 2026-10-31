@@ -1,0 +1,22 @@
+{
+  "id": "harnessly.mr-review",
+  "name": "Ревью MR",
+  "description": "Ревью мерж-реквеста в чате: читает дифф, ничего не правит и не пушит",
+  "version": "0.1.0",
+  "harnessly": ">=0.16.36",
+  "trust": "declarative",
+  "targets": ["chat"],
+  "activation": { "on": ["manual", "command:/review"] },
+  "permissions": [],
+  "agent": {
+    "instructions": "instructions.md",
+    "skills": ["review-checklist"],
+    "tools": {
+      "deny": ["Edit", "Write", "NotebookEdit", "Bash(git push*)", "Bash(git commit*)", "Bash(git reset*)"],
+      "confirm": ["Bash(glab mr note*)", "Bash(gh pr review*)"]
+    }
+  },
+  "chat": {
+    "commands": ["/review"]
+  }
+}

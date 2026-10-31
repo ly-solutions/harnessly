@@ -582,6 +582,10 @@
   var paint = function () {};
   // The panel puts the error in the composer by itself: the person presses send, the agent fixes the board.
   var sentErrors = {};
+  // A board that throws on every render reports the same error again and again: the card is drawn once for it, or a
+  // press on a button meets a new button on its release and clicks nothing. Hidden stays hidden for that error.
+  var drawn = '';
+  var dismissed = {};
   function sendToChat(error) {
     if (window.parent === window) return false;
     try { window.parent.postMessage({ type: 'tk:board-error', url: location.href, message: error.message, stack: error.stack }, '*'); } catch (e) { return false; }
@@ -593,6 +597,10 @@
     var key = location.pathname + location.search + '\n' + first.message;
     if (!sentErrors[key]) sentErrors[key] = sendToChat(first) ? 'sent' : 'local';
     var inChat = sentErrors[key] === 'sent';
+    if (dismissed[key]) { card.hidden = true; return; }
+    var shape = key + '\n' + inChat + '\n' + (boards.length > 1);
+    if (shape === drawn && !card.hidden) return;
+    drawn = shape;
     card.textContent = '';
     card.appendChild(make('h2', {}, 'The board did not render'));
     card.appendChild(make('p', {}, inChat
@@ -611,7 +619,7 @@
       if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { copy.textContent = 'Copied'; }, function () {});
     });
     var hide = make('button', { type: 'button' }, 'Hide');
-    hide.addEventListener('click', function () { card.hidden = true; });
+    hide.addEventListener('click', function () { dismissed[key] = true; drawn = ''; card.hidden = true; });
     actions.appendChild(copy);
     if (boards.length > 1) {
       var skip = make('button', { type: 'button' }, 'Next board');

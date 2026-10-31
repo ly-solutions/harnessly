@@ -9,8 +9,9 @@ export const PEEK_GRACE_MS = 240;
 /** The fold back to the rail, as long as its clip's animation in tabs.css (hx-peek-out). */
 export const PEEK_EXIT_MS = 220;
 
-/** Something of the sidebar is open in the portal (a row's menu, the profile's): the peek holds while it is. */
+/** Something is open in the portal (a row's menu, the profile's): the peek holds while it is, if the sidebar opened it. */
 const HELD = '.hx-portal [role="menu"], .hx-portal [role="dialog"]';
+const PORTAL = '.hx-portal';
 
 export type TPeek = TPresenceState | null;
 
@@ -31,8 +32,16 @@ const useRailPeek = (app: RefObject<HTMLElement | null>, rail: boolean): TPeek =
       if (timer.current !== null) clearTimeout(timer.current);
       timer.current = null;
     };
+    // Whether the person's last press was on the sidebar (or in a popup over it): only then is a popup in the portal
+    // the sidebar's. A menu or a dialog of the screen beside it (an open design has its own) does not hold the peek.
+    let pressedSide = false;
+    const onPress = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest(PORTAL)) return;
+      pressedSide = target !== null && sidebar.contains(target);
+    };
     const held = () =>
-      document.querySelector(HELD) !== null ||
+      (pressedSide && document.querySelector(HELD) !== null) ||
       (sidebar.contains(document.activeElement) &&
         document.activeElement?.matches('input, textarea') === true);
     const fold = () => {
@@ -60,11 +69,13 @@ const useRailPeek = (app: RefObject<HTMLElement | null>, rail: boolean): TPeek =
       clear();
       setOpen(false);
     };
+    document.addEventListener('pointerdown', onPress, true);
     sidebar.addEventListener('pointerenter', onEnter);
     sidebar.addEventListener('pointerleave', onLeave);
     document.addEventListener('keydown', onKey);
     return () => {
       clear();
+      document.removeEventListener('pointerdown', onPress, true);
       sidebar.removeEventListener('pointerenter', onEnter);
       sidebar.removeEventListener('pointerleave', onLeave);
       document.removeEventListener('keydown', onKey);

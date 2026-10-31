@@ -1,6 +1,7 @@
 // What the gateway's page for a guest link tells the guest app: the link, the design and the view its owner shared.
 // It is inline JSON in <script id="guest-config" type="application/json"> (the contract is in the gateway's shell).
 import { parseView, type IViewMemory } from '@/next/features/designly/view-memory';
+import type { DesignVideoFormat } from '@/next/protocol/v2';
 
 export interface IGuestBoard {
   id: string;
@@ -11,10 +12,24 @@ export interface IGuestBoard {
   h: number | null;
 }
 
+/** What the index's deck is: a deck's slides, or a video (a deck folder with meta/video.json). */
+export const GUEST_DECK_TYPE = { slides: 'slides', video: 'video' } as const;
+export type TGuestDeckType = (typeof GUEST_DECK_TYPE)[keyof typeof GUEST_DECK_TYPE];
+
 /** What the owner published of a deck (the runtime's index, passed through by the gateway). */
 export interface IGuestDeck {
-  /** The recording with its chapters (`page` is a board's id, `t` ms); null where there is none. */
-  video: { chapters: { page: string; title: string; t: number }[] } | null;
+  /** `slides` from a runtime that does not say. */
+  type: TGuestDeckType;
+  /**
+   * The published video with its chapters (`page` is a board's id, `t` ms); null where there is none. For a video,
+   * `formats` are the formats published (16:9 is `video.mp4`, 9:16 `video-9x16.mp4`) and `durMs` its length; a deck's
+   * recording has no formats and a null length.
+   */
+  video: {
+    chapters: { page: string; title: string; t: number }[];
+    formats: DesignVideoFormat[];
+    durMs: number | null;
+  } | null;
   /** A PDF is published. */
   pdf: boolean;
 }
@@ -48,12 +63,14 @@ const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : 
 const size = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 const KINDS: readonly string[] = ['site', 'slides', 'ds'];
+const VIDEO_FORMATS: readonly DesignVideoFormat[] = ['16:9', '9:16'];
 
 const readDeck = (v: unknown): IGuestDeck | null => {
   if (!isRecord(v)) return null;
   let video: IGuestDeck['video'] = null;
   if (isRecord(v.video)) {
     const list = Array.isArray(v.video.chapters) ? v.video.chapters : [];
+    const listed: unknown[] = Array.isArray(v.video.formats) ? v.video.formats : [];
     video = {
       chapters: list.filter(isRecord).flatMap((c) => {
         const at = size(c.t);
@@ -61,9 +78,15 @@ const readDeck = (v: unknown): IGuestDeck | null => {
           ? [{ page: c.page, title: str(c.title), t: at }]
           : [];
       }),
+      formats: VIDEO_FORMATS.filter((f) => listed.includes(f)),
+      durMs: size(v.video.durMs),
     };
   }
-  return { video, pdf: v.pdf === true };
+  return {
+    type: v.type === GUEST_DECK_TYPE.video ? GUEST_DECK_TYPE.video : GUEST_DECK_TYPE.slides,
+    video,
+    pdf: v.pdf === true,
+  };
 };
 
 /** The sibling of the files' address that holds the published media (`/s/<token>/f/` → `/s/<token>/m/`). */

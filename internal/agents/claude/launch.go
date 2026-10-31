@@ -41,6 +41,8 @@ type LaunchConfig struct {
 	HumanEditorVar string
 	// Profiles gives a launch on a backend profile its settings file; nil refuses such a launch.
 	Profiles agents.ProfileLauncher
+	// Apps gives a launch with apps their plugins, instructions and guard; nil refuses such a launch.
+	Apps agents.AppLauncher
 }
 
 // ErrNoProfiles: a launch names a backend profile and this deployment has none.
@@ -173,6 +175,8 @@ func (c LaunchConfig) promptFileFlags(workspaceID string, extra []string) ([]str
 // effort.
 func (c LaunchConfig) Flags(workspaceID string, launch *agents.Launch, promptFiles []string) (string, error) {
 	settings := c.HooksPath
+	// settingsFile is the same file unquoted, for the apps' file to extend.
+	settingsFile := c.HooksPath
 	if launch != nil && launch.Profile != "" {
 		// The profile's settings file is the hooks file plus the vendor's address, models and key helper. Claude Code
 		// reads one --settings (the last one given), so it replaces the hooks file here, and the model goes in the file's
@@ -193,20 +197,41 @@ func (c LaunchConfig) Flags(workspaceID string, launch *agents.Launch, promptFil
 		if err != nil {
 			return "", err
 		}
-		settings = agents.ShellQuote(path)
+		settings, settingsFile = agents.ShellQuote(path), path
 	} else if launch != nil && launch.Ultracode {
 		// Claude Code reads one --settings (the last one given): the mode goes into a copy of the hooks settings.
 		path, err := UltracodeSettings(c.HooksPath)
 		if err != nil {
 			return "", err
 		}
-		settings = path
+		settings, settingsFile = path, path
+	}
+	var apps agents.ClaudeApps
+	if launch != nil && len(launch.Apps) > 0 {
+		// The apps' settings file is the one chosen above plus the app-guard hook: Claude reads one --settings.
+		if c.Apps == nil {
+			return "", agents.ErrNoApps
+		}
+		if err := agents.CheckLaunch(launch); err != nil {
+			return "", err
+		}
+		var err error
+		if apps, err = c.Apps.Claude(launch.Apps, settingsFile); err != nil {
+			return "", err
+		}
+		settings = agents.ShellQuote(apps.Settings)
 	}
 	parts := []string{"--settings " + settings, "--mcp-config " + c.MCPConfigPath}
 	if c.PluginDir != nil {
 		if dir := c.PluginDir(); dir != "" {
 			parts = append(parts, "--plugin-dir "+agents.ShellQuote(dir))
 		}
+	}
+	for _, dir := range apps.PluginDirs {
+		parts = append(parts, "--plugin-dir "+agents.ShellQuote(dir))
+	}
+	if apps.PromptFile != "" {
+		promptFiles = append(slices.Clone(promptFiles), apps.PromptFile)
 	}
 	prompts, err := c.promptFileFlags(workspaceID, promptFiles)
 	if err != nil {

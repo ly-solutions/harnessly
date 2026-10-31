@@ -44,9 +44,32 @@ describe('guest config of a deck', () => {
       },
     });
     expect(c?.kind).toBe('slides');
-    expect(c?.deck).toEqual({ video: { chapters: [{ page: 'A', title: 'One', t: 0 }] }, pdf: true });
+    expect(c?.deck).toEqual({
+      type: 'slides',
+      video: { chapters: [{ page: 'A', title: 'One', t: 0 }], formats: [], durMs: null },
+      pdf: true,
+    });
     expect(c?.mediaBase).toBe('/s/tok/m/');
     expect(c?.seenUrl).toBe('/s/tok/seen');
+  });
+  it('reads a video: its type, published formats and length', () => {
+    const c = config({
+      kind: 'slides',
+      deck: {
+        type: 'video',
+        video: {
+          chapters: [{ page: 'A', title: 'One', t: 0 }],
+          formats: ['9:16', '4:3', '16:9'],
+          durMs: 30000,
+        },
+        pdf: false,
+      },
+    });
+    expect(c?.deck).toEqual({
+      type: 'video',
+      video: { chapters: [{ page: 'A', title: 'One', t: 0 }], formats: ['16:9', '9:16'], durMs: 30000 },
+      pdf: false,
+    });
   });
   it('takes missing or null fields as no deck', () => {
     expect(config({})?.kind).toBeNull();

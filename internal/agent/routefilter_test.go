@@ -37,6 +37,8 @@ func TestRouteFilterDecisions(t *testing.T) {
 	}{
 		{"the default lets everything", DefaultPolicy(), "GET", "/m/abc/api/terminal", "", false, ""},
 		{"terminal socket", noTerminal, "GET", "/m/abc/api/terminal", "", true, ""},
+		{"interactive browser socket", noTerminal, "GET", "/m/abc/api/browser/ws", "", true, ""},
+		{"interactive browser socket with terminal on", DefaultPolicy(), "GET", "/m/abc/api/browser/ws", "", false, ""},
 		{"terminal socket without the base", noTerminal, "GET", "/api/terminal", "", true, ""},
 		{"terminal socket under /agents", noTerminal, "GET", "/agents/api/terminal", "", true, ""},
 		{"terminal socket under base and /agents", noTerminal, "GET", "/m/abc/agents/api/terminal", "", true, ""},

@@ -195,3 +195,48 @@ func TestPluginDirFlag(t *testing.T) {
 		t.Fatalf("empty: %q", got)
 	}
 }
+
+type fakeApps struct {
+	ids      []string
+	settings string
+	prompt   string
+}
+
+func (f *fakeApps) Claude(ids []string, settingsPath string) (agents.ClaudeApps, error) {
+	f.ids, f.settings = ids, settingsPath
+	return agents.ClaudeApps{Settings: "/data/apps/launch/settings-1.json", PluginDirs: []string{"/data/apps/a", "/dev/b"},
+		PromptFile: f.prompt}, nil
+}
+
+// The apps of a chat replace --settings with the copy that carries the guard, add their plugins and their instructions.
+func TestAppsFlags(t *testing.T) {
+	c := testConfig(t)
+	c.WorkspacePrompt = nil
+	l := launch("opus", "")
+	l.Apps = []string{"acme.a", "acme.b"}
+	if _, err := c.Flags("", l, nil); !errors.Is(err, agents.ErrNoApps) {
+		t.Fatalf("no app launcher: %v", err)
+	}
+	f := &fakeApps{prompt: filepath.Join(t.TempDir(), "prompt-1.md")}
+	_ = os.WriteFile(f.prompt, []byte("# Apps\n"), 0o600)
+	c.Apps = f
+	got, err := c.Flags("", l, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(f.ids, l.Apps) || f.settings != "/tmp/hooks.json" {
+		t.Fatalf("asked %v over %q", f.ids, f.settings)
+	}
+	want := "--settings '/data/apps/launch/settings-1.json' --mcp-config /tmp/preview-mcp.json --plugin-dir '/data/apps/a' --plugin-dir '/dev/b' --append-system-prompt-file "
+	if !strings.HasPrefix(got, want) || strings.Contains(got, "/tmp/hooks.json") {
+		t.Fatalf("%q", got)
+	}
+	joined := regexp.MustCompile(`--append-system-prompt-file '([^']+)'`).FindStringSubmatch(got)
+	if raw, _ := os.ReadFile(joined[1]); string(raw) != "# Apps\n" {
+		t.Fatalf("the apps' instructions: %q", raw)
+	}
+	l.Apps = []string{"Not An Id"}
+	if _, err := c.Flags("", l, nil); err == nil {
+		t.Fatal("a bad app id launched")
+	}
+}

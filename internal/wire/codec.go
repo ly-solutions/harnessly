@@ -625,6 +625,7 @@ var commands = map[Op]func([]byte) (Command, error){
 	OpConversationRename:  as[ConversationRenameCmd, Command],
 	OpConversationRetitle: as[ConversationRetitleCmd, Command],
 	OpConversationPin:     as[ConversationPinCmd, Command],
+	OpConversationApps:    as[ConversationAppsCmd, Command],
 	OpConversationMove:    as[ConversationMoveCmd, Command],
 	OpConversationDelete:  as[ConversationDeleteCmd, Command],
 	OpConversationRestore: as[ConversationRestoreCmd, Command],

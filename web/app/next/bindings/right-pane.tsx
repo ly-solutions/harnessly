@@ -15,7 +15,10 @@ import { isShareable } from '@/next/features/filedoc/api';
 import { FileShareButton } from '@/next/features/filedoc/file-share';
 import ToolPane, { TOOLS_TAB, type IPaneTab } from '@/next/features/pane/tool-pane';
 import ToolsLauncher, { type ITool, type IToolGroup } from '@/next/features/pane/tools-launcher';
-import BrowserView from '@/next/features/pane/browser-view';
+import MadeBlock from '@/next/features/pane/made-block';
+import { heldTools, quietTools, toolOfRequest } from '@/next/features/pane/tools-order';
+import { useChatMade } from '@/next/bindings/chat-made';
+import BrowserTab from '@/next/bindings/browser-tab';
 import { deliveredViewOf } from '@/next/features/pane/delivered-kind';
 import SideChat from '@/next/features/pane/side-chat';
 import { SideFloat } from '@/next/features/pane/side-float';
@@ -23,7 +26,8 @@ import { onOpenSubagent, openSubagent } from '@/next/features/subagents/open';
 import { workflowsOf } from '@/next/features/workflows/run';
 import { onOpenNotePage } from '@/next/features/designly/open-note';
 import { onOpenAttached } from '@/next/features/pane/open-attached';
-import type { MessageRef } from '@/next/protocol/v2';
+import type { MadeItem, MessageRef } from '@/next/protocol/v2';
+import { goTo, ROUTE } from '@/next/routes/routes';
 import { useSubagents } from '@/next/bindings/subagents';
 import { setPaneOpen } from '@/next/bindings/pane-open';
 import LazyFileEditor from '@/next/features/pane/editor/lazy';
@@ -39,7 +43,6 @@ import { CLIENT_ID } from '@/next/bindings/agent-terminal';
 import { pageText } from '@/next/bindings/outcome';
 import { closeTerminal, loadOpenTarget, loadTasks, loadTerminals, openTerminal } from '@/next/commands/pages';
 import { machineApi } from '@/next/core/net/machine';
-import { fetchPorts, openPreview, type IListeningPort } from '@/next/core/net/preview';
 import { useLinkRestored } from '@/next/stores/connection';
 import { useBackground } from '@/next/stores/conversation';
 import { hasFeature, useMachines } from '@/next/stores/machines';
@@ -60,7 +63,7 @@ import { browserAt, placeRequest, type IPaneTabs, type TTab } from '@/next/featu
 import { requestOf, type IPaneIntent, type IPaneRequest } from '@/next/features/pane/intents';
 import { usePaneIntents } from '@/next/bindings/pane-intents';
 import { usePhone } from '@/next/ui/use-media';
-import { chatPaneOf, chatPanes, useChatPane, type IChatPane } from '@/next/stores/pane-state';
+import { chatPaneOf, chatPanes, markUsed, useChatPane, type IChatPane } from '@/next/stores/pane-state';
 import { conversationsStore, convsLoadedStore } from '@/next/stores/conversations';
 
 // The views a tab shows come in their own chunk the first time that tab opens, not with the page (a shell is xterm).
@@ -99,10 +102,6 @@ const rankOf = (id: string): number => {
   const at = (TOOL_ORDER as readonly string[]).indexOf(id);
   return at < 0 ? TOOL_ORDER.length : at;
 };
-
-/** Browser tabs take these slots: ports one, sites another (the runtime keeps 1–6 for ports, 7–8 for sites). */
-const PORT_SLOT = 3;
-const SITE_SLOT = 7;
 
 /** The side chat's window: its exit, and the pause between the tab going and the window coming. */
 const FLOAT_OUT_MS = 200;
@@ -160,103 +159,9 @@ const tabInfo = (tab: TTab, machine: string, chat: string): IPaneTab & { sub: st
   return {
     id: tab.id,
     icon: 'globe',
-    name: at ? at.text.split('/')[0] : t('next.pane.newTab'),
+    name: at ? (at.title ?? at.text.split('/')[0]) : t('next.pane.newTab'),
     sub: at ? at.text : t('next.pane.browser'),
   };
-};
-
-interface IBrowserTabProps {
-  conv: Conversation;
-  tab: Extract<TTab, { kind: 'browser' }>;
-  onChange: (tab: Extract<TTab, { kind: 'browser' }>) => void;
-  onNewTab: () => void;
-}
-
-/** One browser tab: the page in its slot, asked for again on every address and reload. */
-const BrowserTab = ({ conv, tab, onChange, onNewTab }: IBrowserTabProps) => {
-  const [reloadKey, setReloadKey] = useState(0);
-  // A reload asked from outside the tab (the agent published the page again) is one more press of «Обновить».
-  const asked = tab.reload ?? 0;
-  const [heard, setHeard] = useState(asked);
-  if (asked !== heard) {
-    setHeard(asked);
-    setReloadKey((n) => n + 1);
-  }
-  const [slot, setSlot] = useState<{ key: string; src: string | null; error: string | null } | null>(null);
-  const [ports, setPorts] = useState<IListeningPort[] | null>(null);
-  const [portsError, setPortsError] = useState<string | null>(null);
-  const [portsAttempt, setPortsAttempt] = useState(0);
-  const restored = useLinkRestored(conv.machineId);
-  const at = tab.hist[tab.hi] ?? null;
-  const key = at ? `${at.text}|${reloadKey}` : '';
-
-  useEffect(() => {
-    if (!at) return;
-    let live = true;
-    const slotNo = at.target.kind === 'port' ? PORT_SLOT : SITE_SLOT;
-    const asked = `${at.text}|${reloadKey}`;
-    const { target } = at;
-    // A port nobody listens on gets words, not the browser's broken page in the frame.
-    const down =
-      target.kind === 'port'
-        ? fetchPorts(conv.machineId, []).then(
-            (list) => !list.some((p) => p.port === target.port),
-            () => false,
-          )
-        : Promise.resolve(false);
-    Promise.all([openPreview(conv.machineId, target, slotNo, at.path), down]).then(
-      ([opened, isDown]) => {
-        if (!live) return;
-        if (isDown && target.kind === 'port')
-          setSlot({ key: asked, src: null, error: t('next.pane.portDown', { port: target.port }) });
-        else setSlot({ key: asked, src: opened.enterUrl, error: null });
-      },
-      (failure: Error) => live && setSlot({ key: asked, src: null, error: failure.message }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [conv.machineId, at, reloadKey]);
-
-  const empty = at === null;
-  useEffect(() => {
-    if (!empty) return;
-    const abort = new AbortController();
-    fetchPorts(conv.machineId, [conv.cwd], abort.signal).then(
-      (list) => {
-        const shown = list.filter((p) => p.responding && p.kind === 'site');
-        setPorts([...shown.filter((p) => p.group === 'chat'), ...shown.filter((p) => p.group !== 'chat')]);
-        setPortsError(null);
-      },
-      (failure: Error) => {
-        if (!abort.signal.aborted) setPortsError(failure.message);
-      },
-    );
-    return () => abort.abort();
-  }, [conv.machineId, conv.cwd, empty, portsAttempt, restored]);
-
-  return (
-    <BrowserView
-      address={at?.text ?? ''}
-      canBack={tab.hi > 0}
-      canForward={tab.hi < tab.hist.length - 1}
-      src={slot?.key === key ? slot.src : null}
-      error={slot?.key === key ? slot.error : null}
-      ports={ports}
-      portsError={ports === null ? portsError : null}
-      onRetryPorts={() => {
-        setPortsError(null);
-        setPortsAttempt((n) => n + 1);
-      }}
-      reloadKey={reloadKey}
-      onGo={(next) => onChange({ ...tab, hist: [...tab.hist.slice(0, tab.hi + 1), next], hi: tab.hi + 1 })}
-      onHistory={(step) =>
-        onChange({ ...tab, hi: Math.max(0, Math.min(tab.hist.length - 1, tab.hi + step)) })
-      }
-      onReload={() => setReloadKey((n) => n + 1)}
-      onNewTab={onNewTab}
-    />
-  );
 };
 
 /** How long the plan waits after the agent's state moved before it asks again (there is no event for the plan). */
@@ -448,13 +353,23 @@ interface IPaneBodyProps {
   guard: (tabs: readonly string[], run: () => void) => void;
   /** The header's buttons that stand in the strip while the pane is open. */
   strip: ReactNode;
+  /** When each tool was last opened in this chat. */
+  used: Readonly<Record<string, number>>;
+  /** Tools were opened in this chat now. */
+  onUsed: (ids: readonly string[]) => void;
+  /** A thing the chat made is picked in the tools home. */
+  onOpenMade: (item: Pick<MadeItem, 'kind' | 'ref'>) => void;
+  /** The pane stands beside an open design: its Designly tab and tool are left out (the design is the screen). */
+  besideDesign: boolean;
 }
 
 const PaneBody = (props: IPaneBodyProps) => {
-  const { conv, machineName, tabs, setTabs, active, setActive, edits, guard } = props;
+  const { conv, machineName, setTabs, active, setActive, edits, guard } = props;
+  const tabs = props.besideDesign ? props.tabs.filter((x) => x.kind !== 'designly') : props.tabs;
   const [opening, setOpening] = useState(false);
+  const subagents = useSubagents(conv.id);
   const running =
-    useSubagents(conv.id).filter((x) => x.status === 'running').length +
+    subagents.filter((x) => x.status === 'running').length +
     useBackground(conv.id).filter((x) => x.kind === 'workflow' && x.status === 'running').length;
   const shells = hasFeature(conv.machineId, 'terminal');
   const machineTool = hasFeature(conv.machineId, 'machine');
@@ -464,6 +379,8 @@ const PaneBody = (props: IPaneBodyProps) => {
   const tab = legacyTab ? undefined : tabs.find((x) => x.id === active);
   // A kept Legacy tab in front waits for Legacy's pane to come, rather than the tools showing for a moment.
   const launcher = !legacyTab && !tab && !(isLegacyTab(active) && !legacy.on);
+
+  const made = useChatMade(conv, launcher);
 
   const groups: IToolGroup[] = [
     { id: 'chat', label: t('next.pane.chatGroup') },
@@ -544,16 +461,31 @@ const PaneBody = (props: IPaneBodyProps) => {
       live: running > 0 ? plural(running, 'next.bg.agentsRun') : undefined,
     },
     ...legacy.tools.map((x) => ({ ...x, hint: LEGACY_HINTS[x.id] ? t(LEGACY_HINTS[x.id]) : '' })),
-    {
-      id: 'designly',
-      group: 'links',
-      icon: 'palette',
-      name: t('next.pane.designly'),
-      hint: t('next.pane.designlyHint'),
-    },
+    ...(props.besideDesign
+      ? []
+      : [
+          {
+            id: 'designly',
+            group: 'links',
+            icon: 'palette',
+            name: t('next.pane.designly'),
+            hint: t('next.pane.designlyHint'),
+          },
+        ]),
   ];
   // The design's order inside a group: what the chat did first, then what it made, then what it cost.
   tools.sort((a, b) => rankOf(a.id) - rankOf(b.id));
+  // A chat that used some tools keeps the others in a quiet row: what it opened, and what it holds content for.
+  const held = heldTools({
+    subagents: subagents.length > 0,
+    side: props.side.messages.length > 0,
+    tabKinds: tabs.map((x) => x.kind),
+    pictures: made.holds?.pictures ?? false,
+    documents: made.holds?.documents ?? false,
+    designs: made.holds?.designs ?? false,
+  });
+  const quiet = quietTools(tools, new Set([...held, ...Object.keys(props.used)]));
+  const marked = tools.map((x) => (quiet.has(x.id) ? { ...x, quiet: true } : x));
 
   /** What was picked in the tools opens as a tab beside them, which the tools stay. */
   const add = (next: TTab) => {
@@ -562,6 +494,7 @@ const PaneBody = (props: IPaneBodyProps) => {
   };
 
   const openTool = (id: string) => {
+    props.onUsed([id]);
     if (isLegacyTab(id)) {
       setActive(legacy.open(id));
       return;
@@ -729,7 +662,12 @@ const PaneBody = (props: IPaneBodyProps) => {
         setActive(id);
       }}
       onCloseTab={closeTab}
-      onToggleMax={props.onToggleMax}
+      onToggleMax={() => {
+        // A design opened beside the chat goes full screen as Sinopia Design, with this chat as its chat.
+        if (tab?.kind === 'designly' && tab.design !== null && !props.maxed)
+          goTo({ kind: ROUTE.site, id: tab.design, chat: conv.id });
+        else props.onToggleMax();
+      }}
       onClose={() =>
         guard(
           tabs.map((x) => x.id),
@@ -742,8 +680,18 @@ const PaneBody = (props: IPaneBodyProps) => {
       {legacyTab && legacy.render(legacyTab.id)}
       {launcher && (
         <ToolsLauncher
-          tools={tools}
+          tools={marked}
           groups={groups}
+          ready={made.holds !== null}
+          head={
+            <MadeBlock
+              cards={made.cards}
+              onOpen={(card) => {
+                const item = made.open(card);
+                if (item) props.onOpenMade(item);
+              }}
+            />
+          }
           onOpen={openTool}
           onAddress={(address) => {
             // An address already open in a tab is that tab, not a second one.
@@ -824,6 +772,8 @@ export const useRightPane = (
   machineName: string,
   revealAgentTerminal: (() => void) | null,
   strip: ReactNode = null,
+  /** The pane stands beside an open design, not a chat. */
+  besideDesign = false,
 ) => {
   useMachines();
   const side = useSideChat(conv?.machineId ?? null, conv?.id ?? null);
@@ -1081,9 +1031,11 @@ export const useRightPane = (
       }
     }
     const active = front ?? tabs.active;
+    const opened = requests.flatMap((request) => toolOfRequest(request) ?? []);
     setState((s) => ({
       ...s,
       tabs: tabs.tabs,
+      used: opened.length > 0 ? markUsed(s.used, opened, Date.now()) : s.used,
       active,
       unread: tabs.unread.filter((x) => x !== active),
     }));
@@ -1220,6 +1172,12 @@ export const useRightPane = (
     else openRef(output.ref);
   };
 
+  // A thing the chat made opens where its kind lives: a design in Designly, a document or a board where the runtime says.
+  const openMade = (item: Pick<MadeItem, 'kind' | 'ref'>) => {
+    if (item.kind === 'design') openDesign(item.ref);
+    else openRef(item.ref);
+  };
+
   // A place attached to a message (its chip in the field or the feed, a design as it is attached) opens where its kind
   // lives: a design in Designly, a file or a document of the project in the Files, the rest where the runtime says.
   const showAttached = useEffectEvent((ref: Pick<MessageRef, 'kind' | 'id'>) => {
@@ -1264,6 +1222,10 @@ export const useRightPane = (
         edits={edits}
         guard={guard}
         strip={strip}
+        used={state.used}
+        onUsed={(ids) => setState((s) => ({ ...s, used: markUsed(s.used, ids, Date.now()) }))}
+        onOpenMade={openMade}
+        besideDesign={besideDesign}
       />
       {legacy.extras}
     </PaneDrawer>

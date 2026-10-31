@@ -14,6 +14,11 @@
         "id": "pitch-q4", "title": "Питч Q4", "updatedAt": 1790010000000, "kind": "slides", "pinned": false,
         "cover": null, "projectPath": "/srv/design-library/pitch-q4/project", "boards": [], "convs": [],
         "owner": {"name": "Олег", "me": false}
+      },
+      {
+        "id": "tizer-oplaty", "title": "Тизер оплаты", "updatedAt": 1790020000000, "kind": "video", "pinned": false,
+        "cover": null, "projectPath": "/srv/design-library/tizer-oplaty/project",
+        "boards": [{"title": "Сцена 1", "path": "Сцена 1.dc.html"}], "convs": [], "owner": {"name": "Пётр", "me": true}
       }
     ]
   }

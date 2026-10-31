@@ -3129,19 +3129,15 @@
   margin-left: auto;
 }
 
-/* The pane's strip on the phone: every tab is a chip with its icon and its name, never an icon alone, and
-   the strip scrolls sideways under the finger with its edges faded (use-h-scroll.ts). The open tab is the only one
-   with its close button; «Чат» on the left takes the person back, so the pane's own close and «во всю ширину» go. */
+/* The pane's strip on the phone: one row of equal chips — «Чат», the tools (the grid, its icon alone) and the open tabs —
+   all of one height, radius and size of type, quiet until they are the open one, which takes the strip's tone. The row
+   scrolls sideways under the finger with its edges faded (use-h-scroll.ts); the open tab alone has its close button, as
+   tall as a chip. «Чат» takes the person back, so the pane's own close and «во всю ширину» go. */
 @media (max-width: 900px) {
   .hx-toolpane .hx-strip {
     gap: 4px;
     height: 56px;
-    padding: 0 calc(6px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));
-  }
-  .hx-toolpane .hx-tochat {
-    height: 44px;
-    padding: 0 14px 0 12px;
-    font-size: var(--hx-text-md);
+    padding: 0 calc(8px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));
   }
   .hx-toolpane .hx-strip__nav {
     flex: 1 1 auto;
@@ -3159,22 +3155,51 @@
     overscroll-behavior-x: contain;
     touch-action: pan-x;
   }
+  .hx-toolpane .hx-tochat,
   .hx-toolpane .hx-strip .hx-tab,
   .hx-toolpane .hx-strip .hx-tab[aria-selected='true'],
   .hx-toolpane .hx-strip .hx-tab:not([aria-selected='true']) {
     flex: none;
     display: flex;
-    min-width: 44px;
+    align-items: center;
+    min-width: 40px;
     max-width: 168px;
-    height: 44px;
+    height: 40px;
+    margin: 0;
     gap: 7px;
     padding: 0 12px;
-    border-radius: 12px;
+    border: 0;
+    border-radius: var(--hx-radius-md);
+    background: none;
+    color: var(--hx-fg-3);
+    font: inherit;
     font-size: var(--hx-text-md);
+    font-weight: var(--hx-weight-regular);
     animation: none;
+    transition:
+      background 160ms ease,
+      color 160ms ease;
+  }
+  .hx-toolpane .hx-tochat {
+    color: var(--hx-fg-2);
+  }
+  .hx-toolpane .hx-tochat:active,
+  .hx-toolpane .hx-strip .hx-tab:not([aria-selected='true']):active {
+    background: var(--hx-bg-hover);
   }
   .hx-toolpane .hx-strip .hx-tab[aria-selected='true'] {
-    padding-right: 2px;
+    background: var(--hx-bg-active);
+    color: var(--hx-fg-1);
+    padding-right: 4px;
+  }
+  .hx-toolpane .hx-strip .hx-tab[aria-selected='true'] .hx-tab__ic {
+    color: var(--hx-fg-1);
+  }
+  /* The tools tab is its icon alone: a square chip. */
+  .hx-toolpane .hx-strip .hx-tab[data-home] {
+    width: 40px;
+    justify-content: center;
+    padding: 0;
   }
   .hx-toolpane .hx-strip .hx-tab .hx-tab__name,
   .hx-toolpane .hx-strip .hx-tab[aria-selected] .hx-tab__name {
@@ -3182,16 +3207,18 @@
     flex: 0 1 auto;
     min-width: 0;
     max-width: none;
+    font-weight: var(--hx-weight-regular);
   }
   .hx-toolpane .hx-strip .hx-tab:not([aria-selected='true']) .hx-tab__x {
     display: none;
   }
   .hx-toolpane .hx-strip .hx-tab[aria-selected='true'] .hx-tab__x,
   .hx-toolpane .hx-strip .hx-tab[aria-selected='true']:not(:hover, :focus-within) .hx-tab__x {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    margin-left: -4px;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    margin-left: 0;
+    border-radius: 10px;
     opacity: 1;
   }
   .hx-toolpane .hx-strip__max,
@@ -3265,5 +3292,13 @@
 @keyframes hx-site-wait-in {
   from {
     opacity: 0;
+  }
+}
+
+/* An open design with its chat's right pane beside it (as a chat has it): the design gives the pane its column. */
+@media (min-width: 901px) {
+  .hx-main__body:has(> .hx-pane:not([data-state='closing'])) .hx-site[data-variant='site'],
+  .hx-main__body:has(> .hx-pane:not([data-state='closing'])) .hx-deck[data-embed='0'] {
+    padding-right: calc(var(--pane-w) + 24px);
   }
 }

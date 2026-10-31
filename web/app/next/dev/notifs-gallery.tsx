@@ -143,6 +143,8 @@ const Gallery = () => {
         }}
         onDismiss={dismissNotice}
         onDismissAll={dismissAllNotices}
+        place="top-right"
+        hideAfterMs={0}
       />
       <ToastHost />
     </div>

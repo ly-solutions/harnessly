@@ -1,6 +1,6 @@
-// «General»: how the app looks and how the field sends, and the account. The theme lives only here (the sidebar has no
-// switch of its own) and is this browser's; the text size and
-// the Enter key are the person's settings and follow them to every device.
+// «General»: the window, how the field sends, the work of the machine, and the account. The look (theme, palette, text
+// size) is «Оформление» (appearance-section.tsx); the Enter key is the person's setting and follows them to every
+// device.
 import { useEffect, useState, type ReactNode } from 'react';
 import { Group, LinkRow, MenuRow, SegRow, SwitchRow } from '@/next/features/settings/rows';
 import { t } from '@/next/i18n';
@@ -26,18 +26,12 @@ export const FEED_ROWS = [
 
 export const THEMES = ['light', 'dark', 'system'] as const;
 export type ThemeChoice = (typeof THEMES)[number];
-const THEME_ICON = { light: 'sun', dark: 'moon', system: 'monitor' } as const satisfies Record<
-  ThemeChoice,
-  string
->;
 export const TEXT_SIZES = ['s', 'm', 'l'] as const satisfies readonly PersonSettings['textSize'][];
 
 /** «Really sign out?» stands this long, then goes back to the plain link. */
 const ASK_MS = 3000;
 
 export interface IGeneralSectionProps {
-  theme: ThemeChoice;
-  textSize: PersonSettings['textSize'];
   enterSends: boolean;
   /** The tabs over the window are on (this browser's, as the theme). */
   topTabs: boolean;
@@ -64,8 +58,6 @@ export interface IGeneralSectionProps {
   delegation: DelegationSettings | null;
   /** The keys of the rows waiting for the machine. */
   busy: ReadonlySet<string>;
-  onTheme: (theme: ThemeChoice) => void;
-  onTextSize: (size: PersonSettings['textSize']) => void;
   onEnterSends: (on: boolean) => void;
   onTopTabs: (on: boolean) => void;
   onPaneAuto: (on: boolean) => void;
@@ -108,8 +100,6 @@ const SignOutRow = ({ account, onSignOut }: Pick<IGeneralSectionProps, 'account'
 };
 
 const GeneralSection = ({
-  theme,
-  textSize,
   enterSends,
   topTabs,
   paneAuto,
@@ -120,8 +110,6 @@ const GeneralSection = ({
   limitContinue,
   restartContinue,
   busy,
-  onTheme,
-  onTextSize,
   onEnterSends,
   onTopTabs,
   onPaneAuto,
@@ -138,25 +126,6 @@ const GeneralSection = ({
   <>
     {checks}
     <Group title={t('next.settings.general.look')}>
-      <SegRow
-        label={t('next.settings.general.theme')}
-        hint={t('next.settings.general.theme.hint')}
-        value={theme}
-        choices={THEMES.map((value) => ({
-          value,
-          label: t(`next.settings.general.theme.${value}`),
-          icon: THEME_ICON[value],
-        }))}
-        onPick={onTheme}
-      />
-      <SegRow
-        label={t('next.settings.general.textSize')}
-        hint={t('next.settings.general.textSize.hint')}
-        value={textSize}
-        choices={TEXT_SIZES.map((value) => ({ value, label: t(`next.settings.general.textSize.${value}`) }))}
-        busy={busy.has('textSize')}
-        onPick={onTextSize}
-      />
       <SwitchRow
         label={t('next.settings.general.topTabs')}
         hint={t('next.settings.general.topTabs.hint')}

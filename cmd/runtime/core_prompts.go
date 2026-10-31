@@ -1,6 +1,7 @@
 package main
 
 import (
+	launchpkg "github.com/ly-solutions/harnessly/internal/launch"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,6 +156,10 @@ func (w *promptWiring) LaunchChosen(session string, applied prompts.Applied) {
 	if current.Profile != "" {
 		launch.Set("profile", current.Profile)
 	}
+	// So do the apps on in it.
+	if len(current.Apps) > 0 {
+		launch.Set("apps", launchpkg.AppsJSON(current.Apps))
+	}
 	patch := jsvalue.NewObject()
 	patch.Set("launch", launch)
 	if _, err := w.c.store.UpdateTabMeta(session, patch); err != nil {
@@ -273,5 +278,6 @@ func (c *core) tabLaunch(session string) agents.Launch {
 	if p := str("profile"); p != nil {
 		launched.Profile = *p
 	}
+	launched.Apps = launchpkg.AppsOf(l)
 	return launched
 }

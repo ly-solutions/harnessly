@@ -32,6 +32,9 @@ export interface INotice {
   at: number;
 }
 
+/** The chat of the sample notice Settings → Notifications shows: it has no chat to open. */
+export const SAMPLE_CHAT = 'notice-sample';
+
 /** More than this is not a pile to read any more: the oldest leave (the notification centre still lists them). */
 export const MAX_NOTICES = 20;
 const LIST_PREFIX = 'hx-notices:';
@@ -143,6 +146,20 @@ export const useNoticeList = (): readonly INotice[] =>
 
 // ---- the switches
 
+/** The corner (or the middle of the edge) of the window the cards stand in. */
+export const NOTICE_PLACES = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+] as const;
+export type TNoticePlace = (typeof NOTICE_PLACES)[number];
+/** How long a card stays before it hides by itself, s; 0: until the person takes it away or opens its chat. */
+export const NOTICE_HIDE_AFTER = [0, 5, 10, 30, 60] as const;
+export type TNoticeHideAfter = (typeof NOTICE_HIDE_AFTER)[number];
+
 export interface INotifySettings {
   /** Which events make a notice. */
   kinds: Readonly<Record<TNoticeKind, boolean>>;
@@ -150,12 +167,19 @@ export interface INotifySettings {
   sound: boolean;
   /** A notification of the system while the app's tab is in the background (the browser's permission asked once). */
   system: boolean;
+  /** The cards in the window; off, a notice only counts in the tab's title and chimes. */
+  cards: boolean;
+  place: TNoticePlace;
+  hideAfter: TNoticeHideAfter;
 }
 
 export const DEFAULT_NOTIFY: INotifySettings = {
   kinds: { waiting: true, done: true, failed: true, limit: true },
   sound: true,
   system: false,
+  cards: true,
+  place: 'top-right',
+  hideAfter: 0,
 } as const;
 
 /** The saved switches over the defaults: what this browser never saved is its default. */
@@ -175,6 +199,9 @@ export const parseNotify = (raw: string | null): INotifySettings => {
       kinds,
       sound: typeof s.sound === 'boolean' ? s.sound : DEFAULT_NOTIFY.sound,
       system: typeof s.system === 'boolean' ? s.system : DEFAULT_NOTIFY.system,
+      cards: typeof s.cards === 'boolean' ? s.cards : DEFAULT_NOTIFY.cards,
+      place: NOTICE_PLACES.find((place) => place === s.place) ?? DEFAULT_NOTIFY.place,
+      hideAfter: NOTICE_HIDE_AFTER.find((after) => after === s.hideAfter) ?? DEFAULT_NOTIFY.hideAfter,
     };
   } catch {
     return DEFAULT_NOTIFY;

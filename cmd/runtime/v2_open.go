@@ -432,8 +432,7 @@ func recentFirst(found []mrFound) []mrFound {
 
 // transcriptMRs reads the merge request links of the texts of a transcript: the agent's answers and the person's
 // messages, not what the tools printed, and only links to the deployment's GitLabs.
-func transcriptMRs(home string) func(string) []sources.MRMention {
-	rt := &sources.Route{Links: sourceLinks(), Home: home}
+func transcriptMRs(rt *sources.Route) func(string) []sources.MRMention {
 	return func(path string) []sources.MRMention {
 		res, found, failed := rt.Read(path, "")
 		if !found || failed {

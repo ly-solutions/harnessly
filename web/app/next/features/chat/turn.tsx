@@ -9,6 +9,7 @@ import NowBlock from '@/next/features/chat/now';
 import Steps, { isWorkflowCall } from '@/next/features/chat/steps';
 import WorkflowCard from '@/next/features/workflows/workflow-card';
 import SubsBlock from '@/next/features/subagents/subs-block';
+import CopyButton from '@/next/features/chat/copy-button';
 import UserMessage from '@/next/features/chat/user-message';
 import Outputs from '@/next/features/chat/outputs';
 import DelegationCards from '@/next/features/chat/delegation-card';
@@ -44,29 +45,34 @@ export interface ITurnHandlers {
   onForkTurn?: (turnId: string) => Promise<unknown>;
 }
 
-/** Under a finished answer: «Ответвить отсюда», a new chat with the history up to here. */
+/** Under a finished answer: «Копировать» and «Ответвить отсюда» (a new chat with the history up to here). */
 const TurnActions = ({
   turnId,
+  md,
   onFork,
 }: {
   turnId: string;
-  onFork: (turnId: string) => Promise<unknown>;
+  md: string;
+  onFork?: (turnId: string) => Promise<unknown>;
 }) => {
   const action = usePending<'fork'>();
   const busy = isBusy(action.phase);
   return (
     <div className="hx-turnacts">
-      <button
-        type="button"
-        className="hx-turnacts__btn hx-tipped"
-        aria-label={t('next.handoff.forkHere')}
-        aria-busy={busy || undefined}
-        disabled={busy}
-        onClick={() => void action.run('fork', () => onFork(turnId))}
-      >
-        {busy ? <Spinner /> : <Icon name="git-fork" size="sm" />}
-        <span className="hx-tip">{t('next.handoff.forkHere')}</span>
-      </button>
+      <CopyButton text={md} />
+      {onFork && (
+        <button
+          type="button"
+          className="hx-turnacts__btn hx-tipped"
+          aria-label={t('next.handoff.forkHere')}
+          aria-busy={busy || undefined}
+          disabled={busy}
+          onClick={() => void action.run('fork', () => onFork(turnId))}
+        >
+          {busy ? <Spinner /> : <Icon name="git-fork" size="sm" />}
+          <span className="hx-tip">{t('next.handoff.forkHere')}</span>
+        </button>
+      )}
     </div>
   );
 };
@@ -268,8 +274,8 @@ const TurnView = ({ item, open, machineName, handlers }: ITurnViewProps) => {
       <DelegationCards startedAt={turn.startedAt} endedAt={turn.endedAt} />
       <Outputs item={item} />
       <TurnEnd item={item} handlers={handlers} />
-      {handlers.onForkTurn && turn.status === 'done' && item.answer && (
-        <TurnActions turnId={turn.id} onFork={handlers.onForkTurn} />
+      {turn.status === 'done' && item.answer && (
+        <TurnActions turnId={turn.id} md={item.answer.md} onFork={handlers.onForkTurn} />
       )}
     </>
   );

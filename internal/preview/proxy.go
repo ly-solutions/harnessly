@@ -761,6 +761,10 @@ func (p *Proxy) deliver(w *trackedWriter, r *http.Request, c *Claim, rt *route, 
 		j := &bridgeInjector{w: out, tag: []byte(bridgeTag(c.ParentOrigin, tag, devJSON, has))}
 		out, closers = j, append(closers, j)
 	}
+	if plan.rewrite && basePath != "" && scriptTypes.MatchString(a.headers.Get("content-type")) {
+		mr := newModuleRewriter(out, basePath)
+		out, closers = mr, append(closers, mr)
+	}
 	if plan.rewrite {
 		rw := newOriginRewriter(out, ctx)
 		out, closers = rw, append(closers, rw)

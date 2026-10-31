@@ -9,7 +9,7 @@ import SiteView, {
   type ISiteTab,
 } from '@/next/features/designly/site-view';
 import { ACCESS, useProjectAccess } from '@/next/features/designly/access/use-access';
-import { atLeast, claimOwnership, fetchAccess, isUnowned } from '@/next/features/designly/access/api';
+import { claimOwnership, fetchAccess } from '@/next/features/designly/access/api';
 import ShareDialog from '@/next/features/designly/access/share-dialog';
 import PublishDialog from '@/next/features/designly/publish/publish-dialog';
 import NoAccess from '@/next/features/designly/access/no-access';
@@ -34,6 +34,7 @@ import { toast } from '@/next/ui/toast';
 import { t } from '@/next/i18n';
 import { onOpenNotePage, takeNoteBoard } from '@/next/features/designly/open-note';
 import DesignlyDeck from '@/next/bindings/designly-deck';
+import DesignlyVideo from '@/next/bindings/designly-video';
 
 /** The slot the open design's page lives in; «open outside» takes the next one so the two do not fight. */
 const PAGE_SLOT = 1;
@@ -89,6 +90,8 @@ export interface IDesignlySiteProps {
   onMissing: () => void;
   /** `?access=` of the address: the share dialog opens on that block. */
   access?: TAccessFocus | null;
+  /** The right pane of the design's chat, as a chat has it: its button in the design's strip; null without a chat. */
+  toolPane?: { open: boolean; onToggle: () => void } | null;
 }
 
 /** The design in the right pane: the chat it sits beside edits it; the way back is to the library. */
@@ -118,6 +121,7 @@ const DesignlySiteBody = ({
   onOpenDrawer,
   onMissing,
   access: accessFocus = null,
+  toolPane = null,
   pane,
 }: IBodyProps) => {
   // The library the home has just read starts the design: its page is asked for at once, the library is read anew behind.
@@ -381,15 +385,15 @@ const DesignlySiteBody = ({
   }, [id]);
 
   const gated = gate.state.k === ACCESS.ready ? gate.state.access : null;
+  // Wherever the gateway keeps the project's access, «Поделиться» opens its dialog, in the pane as on the page: who
+  // manages shares there, anyone else sees their role, asks for more or copies the link from it.
   const shareButton = ((): ISiteAccess | undefined => {
     if (gated === null) return undefined;
     if (gated.canManage)
       return { label: t('next.pane.designShare'), onOpen: () => setShareOpen(true), manage: true };
     if (gated.role === 'view' || gated.role === 'comment')
       return { label: t('next.access.askEdit'), onOpen: () => setShareOpen(true) };
-    if (isUnowned(gated) && atLeast(gated.role, 'edit'))
-      return { label: t('next.pane.designShare'), onOpen: () => setShareOpen(true) };
-    return undefined;
+    return { label: t('next.pane.designShare'), onOpen: () => setShareOpen(true) };
   })();
 
   const back = pane ? pane.onBack : () => goTo({ kind: ROUTE.designly });
@@ -487,6 +491,7 @@ const DesignlySiteBody = ({
       maxed={maxed}
       stage={stage}
       pane={pane && { onShare: copyLink, chat: paneChat }}
+      toolPane={toolPane}
       access={shareButton}
       publish={gated?.canManage ? { onOpen: () => setPublishOpen(true) } : undefined}
       devtools={{ machine, slot: slotOrigin, artifact: id }}
@@ -494,36 +499,39 @@ const DesignlySiteBody = ({
     />
   );
 
+  // A deck and a video take the same host props: the boards, the board on screen, the slot's frames and the site view
+  // as their fallback. Anything else, and a project not read yet, is the site view.
+  const kindView = () => {
+    if (!project) return site;
+    const host = {
+      machine,
+      id,
+      title: project.design.title,
+      boards: project.design.boards.map((b) => ({ path: b.path, title: b.title || b.path })),
+      path,
+      onGo: navigate,
+      src,
+      frameSrc: (page: string) =>
+        opened !== null && opened.origin !== null ? new URL(boardHref(id, page), opened.origin).href : null,
+      slotError,
+      onReload: () => setReloadKey((n) => n + 1),
+      stage,
+      pane: pane && { onBack: pane.onBack },
+      access: shareButton,
+      maxed,
+      onToggleMax,
+      onOpenDrawer,
+      fallback: site,
+    };
+    if (project.design.kind === 'video') return <DesignlyVideo {...host} />;
+    if (project.design.kind === 'slides')
+      return <DesignlyDeck {...host} onStale={() => setAttempt((n) => n + 1)} />;
+    return site;
+  };
+
   return (
     <>
-      {project?.design.kind === 'slides' ? (
-        <DesignlyDeck
-          machine={machine}
-          id={id}
-          title={project.design.title}
-          boards={project.design.boards.map((b) => ({ path: b.path, title: b.title || b.path }))}
-          path={path}
-          onGo={navigate}
-          src={src}
-          frameSrc={(page) =>
-            opened !== null && opened.origin !== null
-              ? new URL(boardHref(id, page), opened.origin).href
-              : null
-          }
-          slotError={slotError}
-          onReload={() => setReloadKey((n) => n + 1)}
-          stage={stage}
-          pane={pane && { onBack: pane.onBack }}
-          access={shareButton}
-          maxed={maxed}
-          onToggleMax={onToggleMax}
-          onOpenDrawer={onOpenDrawer}
-          fallback={site}
-          onStale={() => setAttempt((n) => n + 1)}
-        />
-      ) : (
-        site
-      )}
+      {kindView()}
       {gated?.canManage && project && project.design.kind !== 'slides' && (
         <PublishDialog
           open={publishOpen}

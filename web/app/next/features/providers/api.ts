@@ -1,6 +1,6 @@
 // The requests of the «Модели» page: the presets of the extra vendors with what the machine has of their keys
-// (GET /api/v2/providers), the key itself (PUT and DELETE /api/v2/providers/<id>/key) and the check of the connection
-// (POST /api/v2/providers/<id>/test). A key goes out in the body of the PUT and is never read back: the answers carry
+// (GET /api/v2/providers), the key itself (PUT and DELETE /api/v2/providers/<id>/key), the check of the connection
+// (POST /api/v2/providers/<id>/test) and the sign-in of a preset's proxy (POST/GET/DELETE .../login, POST .../logout). A key goes out in the body of the PUT and is never read back: the answers carry
 // only «configured» and the last digits.
 import { getPage, sendBody, sendPage } from '@/next/core/net/http';
 import { machineApi } from '@/next/core/net/machine';
@@ -32,3 +32,28 @@ export const deleteProviderKey = (machine: MachineId, id: ProfileId) =>
 
 export const testProvider = (machine: MachineId, id: ProfileId) =>
   sendPage('POST', machineApi(machine).http(`/providers/${id}/test`), parsePage.profileTest, TEST_TIMEOUT_MS);
+
+/** The proxy's device login: starting it waits for the link and the code. */
+const LOGIN_TIMEOUT_MS = 40_000;
+
+export const loadProviderLogin = (machine: MachineId, id: ProfileId) =>
+  getPage(machineApi(machine).http(`/providers/${id}/login`), parsePage.login, PROVIDERS_TIMEOUT_MS);
+
+export const startProviderLogin = (machine: MachineId, id: ProfileId) =>
+  sendPage('POST', machineApi(machine).http(`/providers/${id}/login`), parsePage.login, LOGIN_TIMEOUT_MS);
+
+export const cancelProviderLogin = (machine: MachineId, id: ProfileId) =>
+  sendPage(
+    'DELETE',
+    machineApi(machine).http(`/providers/${id}/login`),
+    parsePage.login,
+    PROVIDERS_TIMEOUT_MS,
+  );
+
+export const logoutProvider = (machine: MachineId, id: ProfileId) =>
+  sendPage(
+    'POST',
+    machineApi(machine).http(`/providers/${id}/logout`),
+    parsePage.loginOK,
+    PROVIDERS_TIMEOUT_MS,
+  );

@@ -47,7 +47,9 @@ import {
   type IFavGroupView,
   type TDropPlan,
 } from '@/next/features/sidebar/favorites';
-import { childrenOf, DAY_GROUP, sectionsOf, type TDayGroup } from '@/next/features/sidebar/group';
+import { childrenOf, DAY_GROUP, folderRows, sectionsOf, type TDayGroup } from '@/next/features/sidebar/group';
+import type { IWorkingDesign } from '@/next/features/designly/working';
+import type { DesignKind } from '@/next/protocol/v2';
 import MenuPanel, { useMenuActions } from '@/next/ui/menu-panel';
 import useDrag, { afterTouchClick } from '@/next/ui/use-drag';
 import MachineAlert from '@/next/features/sidebar/machine-alert';
@@ -159,8 +161,24 @@ export interface ISidebarProps {
   rail?: ReactNode;
   /** The agents' questions to people («People»), under the favorites; hidden on the rail. */
   people?: ReactNode;
+  /** The designs at work under «Sinopia Design»: the first five, then «Дальше»; null or empty shows none. */
+  designs?: ISidebarDesigns | null;
   ref?: Ref<HTMLElement>;
 }
+
+export interface ISidebarDesigns {
+  rows: readonly IWorkingDesign[];
+  /** The design on screen; it is never hidden behind «Дальше». */
+  current: string | null;
+  onOpen: (id: string) => void;
+}
+
+const DESIGN_ICON: Record<DesignKind, string> = {
+  site: 'app-window',
+  slides: 'presentation',
+  video: 'clapperboard',
+  ds: 'palette',
+};
 
 interface INavItemProps {
   icon: string;
@@ -172,9 +190,24 @@ interface INavItemProps {
   index: number;
   onClick: (anchor: HTMLElement) => void;
   children?: ReactNode;
+  /** The rows under it are a list of its own: no chevron in the item, the click goes where the item goes. */
+  list?: boolean;
+  /** A list's own chevron beside the item, that folds and unfolds the list. */
+  onFold?: () => void;
 }
 
-const NavItem = ({ icon, label, current, dot, expanded, index, onClick, children }: INavItemProps) => (
+const NavItem = ({
+  icon,
+  label,
+  current,
+  dot,
+  expanded,
+  index,
+  onClick,
+  children,
+  list,
+  onFold,
+}: INavItemProps) => (
   <div
     className="hx-nav__group hx-enter"
     data-enter="up"
@@ -195,8 +228,19 @@ const NavItem = ({ icon, label, current, dot, expanded, index, onClick, children
         {dot && <span className="hx-nav__dot" />}
       </span>
       <span className="hx-nav__label">{label}</span>
-      {children && <Icon name="chevron-right" size="sm" className="hx-nav__chev" />}
+      {children && !list && <Icon name="chevron-right" size="sm" className="hx-nav__chev" />}
     </button>
+    {onFold && (
+      <button
+        type="button"
+        className="hx-nav__fold"
+        aria-label={expanded ? t('next.sidebar.foldList') : t('next.sidebar.unfoldList')}
+        aria-expanded={expanded}
+        onClick={onFold}
+      >
+        <Icon name="chevron-right" size="sm" className="hx-nav__chev" />
+      </button>
+    )}
     {children && (
       <div className="hx-nav__kids" inert={!expanded}>
         <div>{children}</div>
@@ -204,6 +248,61 @@ const NavItem = ({ icon, label, current, dot, expanded, index, onClick, children
     )}
   </div>
 );
+
+/** The designs under «Sinopia Design» folded by its chevron; per device. */
+const DESIGNS_FOLDED_KEY = 'hx-sidebar-designs-folded';
+
+const readDesignsFolded = (): boolean => {
+  try {
+    return localStorage.getItem(DESIGNS_FOLDED_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const keepDesignsFolded = (folded: boolean) => {
+  try {
+    localStorage.setItem(DESIGNS_FOLDED_KEY, folded ? '1' : '0');
+  } catch {
+    // Blocked storage: the fold holds for this page.
+  }
+};
+
+/** The designs at work under «Sinopia Design»: five, then «Дальше» for the rest. */
+const DesignRows = ({
+  designs,
+  all,
+  onAll,
+}: {
+  designs: ISidebarDesigns;
+  all: boolean;
+  onAll: () => void;
+}) => {
+  const { shown, hidden } = all
+    ? { shown: designs.rows, hidden: 0 }
+    : folderRows(designs.rows, designs.current);
+  return (
+    <>
+      {shown.map((d) => (
+        <button
+          key={d.id}
+          type="button"
+          className="hx-nav__kid"
+          aria-current={d.id === designs.current ? 'page' : undefined}
+          onClick={() => designs.onOpen(d.id)}
+        >
+          <Icon name={DESIGN_ICON[d.kind]} size="sm" className="hx-nav__kid-icon" />
+          <span className="hx-item__title">{d.title}</span>
+        </button>
+      ))}
+      {hidden > 0 && (
+        <button type="button" className="hx-folder-more" onClick={onAll}>
+          {t('next.sidebar.folderMore')}
+        </button>
+      )}
+    </>
+  );
+};
 
 /** The theme's switch of the footer: the moon in a light page, the sun in a dark one. */
 const ThemeButton = ({ theme }: { theme: ISidebarTheme }) => {
@@ -315,12 +414,21 @@ const Sidebar = ({
   machineReveal = 0,
   rail,
   people,
+  designs = null,
   ref,
 }: ISidebarProps) => {
   const { pending, run } = usePendingList();
   const [renaming, setRenaming] = useState<{ id: string; saving: boolean } | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [projectChoice, setProjectChoice] = useState<ReadonlyMap<string, boolean>>(new Map());
+  // Folders whose «Дальше» was pressed: they show all their chats.
+  const [longFolders, setLongFolders] = useState<ReadonlySet<string>>(new Set());
+  const [allDesigns, setAllDesigns] = useState(false);
+  const [designsFolded, setDesignsFolded] = useState(readDesignsFolded);
+  const foldDesigns = () => {
+    keepDesignsFolded(!designsFolded);
+    setDesignsFolded(!designsFolded);
+  };
   const [foldedDays, setFoldedDays] = useState<ReadonlySet<TDayGroup>>(new Set());
   // The person's choice of showing the chats a chat delegated; without one they show while one of them is at work.
   const [kidsChoice, setKidsChoice] = useState<ReadonlyMap<string, boolean>>(new Map());
@@ -607,6 +715,25 @@ const Sidebar = ({
   const toggleProject = (id: string, open: boolean) =>
     setProjectChoice((current) => new Map(current).set(id, !open));
 
+  // A folder's first chats, then «Дальше» for the rest; opened once, it shows them all.
+  const renderFolder = (id: string, list: readonly ISidebarChat[]) => {
+    const { shown, hidden } = longFolders.has(id) ? { shown: list, hidden: 0 } : folderRows(list, currentId);
+    return (
+      <>
+        {renderRows(shown, ROW_VARIANT.kid)}
+        {hidden > 0 && (
+          <button
+            type="button"
+            className="hx-folder-more"
+            onClick={() => setLongFolders((current) => new Set(current).add(id))}
+          >
+            {t('next.sidebar.folderMore')}
+          </button>
+        )}
+      </>
+    );
+  };
+
   const toggleDay = (group: TDayGroup) =>
     setFoldedDays((current) => {
       const next = new Set(current);
@@ -709,10 +836,17 @@ const Sidebar = ({
           <NavItem
             icon="palette"
             label={t('next.sidebar.designly')}
-            current={view === SIDEBAR_VIEW.designly}
+            current={view === SIDEBAR_VIEW.designly && !designs?.current}
             index={2}
             onClick={onDesignly}
-          />
+            expanded={designs !== null && designs.rows.length > 0 && !designsFolded}
+            list
+            onFold={designs !== null && designs.rows.length > 0 ? foldDesigns : undefined}
+          >
+            {designs !== null && designs.rows.length > 0 && (
+              <DesignRows designs={designs} all={allDesigns} onAll={() => setAllDesigns(true)} />
+            )}
+          </NavItem>
         )}
         <NavItem
           icon="bell"
@@ -860,7 +994,7 @@ const Sidebar = ({
                   </div>
                   <div className="hx-nav__kids" inert={!open}>
                     <div>
-                      {renderRows(inProject, ROW_VARIANT.kid)}
+                      {renderFolder(project.id, inProject)}
                       {inProject.length === 0 && <p className="hx-snote">{t('next.sidebar.projectEmpty')}</p>}
                     </div>
                   </div>

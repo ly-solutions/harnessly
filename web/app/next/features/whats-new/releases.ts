@@ -13,6 +13,59 @@ export interface IRelease {
 
 export const RELEASES = [
   {
+    id: '2026-10-31e',
+    items: [{ key: 'questions', icon: 'message-square' }],
+  },
+  {
+    id: '2026-10-31d',
+    items: [
+      { key: 'chatgpt', icon: 'key-round' },
+      { key: 'looks', icon: 'palette' },
+      { key: 'notices', icon: 'bell' },
+      { key: 'settings', icon: 'sliders-horizontal' },
+    ],
+  },
+  {
+    id: '2026-10-31c',
+    items: [
+      { key: 'createField', icon: 'sliders-horizontal' },
+      { key: 'shortMessage', icon: 'message-square' },
+    ],
+  },
+  {
+    id: '2026-10-31b',
+    items: [{ key: 'apps', icon: 'blocks' }],
+  },
+  {
+    id: '2026-10-31',
+    items: [
+      { key: 'share', icon: 'share' },
+      { key: 'boardError', icon: 'triangle-alert' },
+      { key: 'designsFold', icon: 'chevron-right' },
+    ],
+  },
+  {
+    id: '2026-10-30c',
+    items: [
+      { key: 'activeDesigns', icon: 'palette' },
+      { key: 'video', icon: 'play' },
+      { key: 'rail', icon: 'panel-left' },
+      { key: 'layout', icon: 'palette' },
+    ],
+  },
+  {
+    id: '2026-10-30b',
+    items: [
+      { key: 'designs', icon: 'palette' },
+      { key: 'folders', icon: 'folder' },
+      { key: 'designMachine', icon: 'server' },
+    ],
+  },
+  {
+    id: '2026-10-30',
+    items: [{ key: 'browser', icon: 'globe' }],
+  },
+  {
     id: '2026-10-28i',
     items: [
       { key: 'same', icon: 'messages-square' },
