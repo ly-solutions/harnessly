@@ -48,7 +48,7 @@
     "mermaid": "12.2.0",
     "motion": "^14.6.0",
     "nanoid": "^6.0.2",
-    "pdfjs-dist": "5.4.530",
+    "pdfjs-dist": "6.5.438",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-hotkeys-hook": "^5.3.3",
