@@ -12,6 +12,11 @@
 if [ "$1" = "--version" ]; then echo "2.1.99 (Claude Code)"; exit 0; fi
 # tmux names a pane's command by argv[0]; a script would show up as the shell and look like a Claude that exited.
 if [ -z "$FAKE_CLAUDE_EXEC" ]; then export FAKE_CLAUDE_EXEC=1; exec -a claude /bin/bash "$0" "$@"; fi
+# A one-shot --print run (the turn's summary, a title) is the runtime's own background call, not an agent: it answers
+# on stdout and is noted apart, so the agent starts and their environment stay countable.
+for a in "$@"; do
+  if [ "$a" = "--print" ]; then cat >/dev/null; echo "$*" >> "$HOME/claude-print.log"; echo "Готово."; exit 0; fi
+done
 echo "$*" >> "$HOME/claude-calls.log"
 settings=""; sid=""; prompt=""
 while [ $# -gt 0 ]; do
