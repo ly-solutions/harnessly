@@ -12,6 +12,12 @@ const COMMANDS: &[&str] = &[
     "set_dock_badge",
     "set_locale",
     "set_native_theme",
+    "pane_browser_open",
+    "pane_browser_bounds",
+    "pane_browser_go",
+    "pane_browser_history",
+    "pane_browser_close",
+    "pane_browser_act",
 ];
 
 fn main() {

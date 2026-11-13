@@ -8,6 +8,22 @@
   };
   var ua = navigator.userAgent;
   var platform = /Mac/.test(ua) ? 'darwin' : /Win/.test(ua) ? 'win32' : 'linux';
+  // The pane's browser on this computer (pane_browser.rs): a site of the browser tab opens in a webview of the window,
+  // over the box the page keeps for it. Its moves come back as the 'harnessly:pane-browser' event of the window.
+  var paneBrowser = window.__HARNESSLY_PANE_BROWSER__ === true ? Object.freeze({
+    open: function (tab, url, script, bounds) {
+      return invoke('pane_browser_open', { tab: String(tab), url: String(url), script: String(script), bounds: bounds });
+    },
+    bounds: function (tab, bounds, visible) {
+      return invoke('pane_browser_bounds', { tab: String(tab), bounds: bounds, visible: visible === true });
+    },
+    go: function (tab, url) { return invoke('pane_browser_go', { tab: String(tab), url: String(url) }); },
+    history: function (tab, step) { return invoke('pane_browser_history', { tab: String(tab), step: Number(step) | 0 }); },
+    close: function (tab) { return invoke('pane_browser_close', { tab: String(tab) }); },
+    act: function (tab, message, timeoutMs) {
+      return invoke('pane_browser_act', { tab: String(tab), message: message, timeoutMs: Number(timeoutMs) || 0 });
+    },
+  }) : null;
   var api = {
     isElectron: false,
     isDesktop: true,
@@ -25,6 +41,7 @@
     checkForUpdates: function () { return Promise.resolve(null); },
     // Desktop notifications carry no click callback here; the subscription is kept so callers need no branch.
     onNotificationClick: function () { return function () {}; },
+    paneBrowser: paneBrowser,
   };
   Object.defineProperty(window, 'electronAPI', { value: Object.freeze(api), configurable: false, writable: false });
 })();

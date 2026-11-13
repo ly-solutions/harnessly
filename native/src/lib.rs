@@ -4,6 +4,7 @@ mod config;
 mod deeplink;
 #[cfg(desktop)]
 mod local_runtime;
+mod pane_browser;
 mod url_policy;
 mod window_state;
 
@@ -15,7 +16,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::ipc::CapabilityBuilder;
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Manager, RunEvent, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, Theme, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
@@ -27,7 +28,7 @@ const BRIDGE: &str = include_str!("bridge.js");
 const MIN_SIZE: (f64, f64) = (800.0, 500.0);
 const DARK_BACKGROUND: tauri::window::Color = tauri::window::Color(9, 9, 11, 255);
 /// The commands a page of the configured origin may call (`window.electronAPI`).
-const BRIDGE_PERMISSIONS: [&str; 7] = [
+const BRIDGE_PERMISSIONS: [&str; 13] = [
     "allow-open-external",
     "allow-show-notification",
     "allow-open-new-window",
@@ -35,6 +36,12 @@ const BRIDGE_PERMISSIONS: [&str; 7] = [
     "allow-set-dock-badge",
     "allow-set-locale",
     "allow-set-native-theme",
+    "allow-pane-browser-open",
+    "allow-pane-browser-bounds",
+    "allow-pane-browser-go",
+    "allow-pane-browser-history",
+    "allow-pane-browser-close",
+    "allow-pane-browser-act",
 ];
 #[cfg(any(windows, target_os = "android"))]
 const APP_PAGE: &str = "http://tauri.localhost/index.html";
@@ -102,7 +109,7 @@ fn ensure_bridge(app: &AppHandle, url: &str) {
     if bridged.contains(&pattern) {
         return;
     }
-    let mut cap = CapabilityBuilder::new(format!("bridge-{}", bridged.len())).local(false).remote(pattern.clone()).window("*");
+    let mut cap = CapabilityBuilder::new(format!("bridge-{}", bridged.len())).local(false).remote(pattern.clone()).webview("main").webview("window-*");
     for permission in BRIDGE_PERMISSIONS {
         cap = cap.permission(permission);
     }
@@ -114,11 +121,11 @@ fn ensure_bridge(app: &AppHandle, url: &str) {
     }
 }
 
-fn open_in(app: &AppHandle, window: &WebviewWindow, target: &str) {
+fn open_in(app: &AppHandle, view: &Webview, target: &str) {
     ensure_bridge(app, target);
     match Url::parse(target) {
         Ok(url) => {
-            if let Err(err) = window.navigate(url) {
+            if let Err(err) = view.navigate(url) {
                 eprintln!("[native] navigate: {err}");
             }
         }
@@ -134,14 +141,16 @@ fn open_safe_external(app: &AppHandle, url: &str) {
     }
 }
 
-fn primary_window(app: &AppHandle) -> Option<WebviewWindow> {
-    let windows = app.webview_windows();
-    windows
+/// The page's webview of the focused window, else of the first one. A window that holds a pane's browser is no longer
+/// a WebviewWindow to tauri (it has two webviews), so the shell works with windows and their page's webview.
+fn primary_window(app: &AppHandle) -> Option<Webview> {
+    let windows = app.windows();
+    let window = windows
         .values()
         .find(|w| w.is_focused().unwrap_or(false))
         .or_else(|| windows.get("main"))
-        .or_else(|| windows.values().next())
-        .cloned()
+        .or_else(|| windows.values().next())?;
+    app.get_webview(window.label())
 }
 
 fn work_areas(app: &AppHandle) -> Vec<Rect> {
@@ -160,11 +169,22 @@ fn work_areas(app: &AppHandle) -> Vec<Rect> {
         .collect()
 }
 
+/// The bridge, told whether the pane's browser may open sites on this computer (HARNESSLY_DESKTOP_PANE_BROWSER=0 keeps
+/// the page's own browser, the machine's).
+fn bridge_script(env: &HashMap<String, String>) -> String {
+    let on = pane_browser_enabled(env);
+    format!("window.__HARNESSLY_PANE_BROWSER__={on};\n{BRIDGE}")
+}
+
+fn pane_browser_enabled(env: &HashMap<String, String>) -> bool {
+    env.get("HARNESSLY_DESKTOP_PANE_BROWSER").is_none_or(|v| v != "0")
+}
+
 fn create_window(app: &AppHandle, url: Option<&str>) -> tauri::Result<WebviewWindow> {
     let shell = app.state::<Shell>();
     let seq = shell.window_seq.fetch_add(1, Ordering::SeqCst);
     let label = if seq == 0 { "main".to_string() } else { format!("window-{seq}") };
-    let open_windows = app.webview_windows().len();
+    let open_windows = app.windows().len();
     let saved = shell.config().window_state.unwrap_or(DEFAULT_WINDOW_STATE);
     let areas = work_areas(app);
     let largest = areas.iter().copied().max_by(|a, b| (a.width * a.height).total_cmp(&(b.width * b.height)));
@@ -183,7 +203,7 @@ fn create_window(app: &AppHandle, url: Option<&str>) -> tauri::Result<WebviewWin
         .title("Harnessly")
         .inner_size(width, height)
         .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
-        .initialization_script(BRIDGE)
+        .initialization_script(bridge_script(&shell.env))
         // The page handles dropped files itself, as in a browser.
         .disable_drag_drop_handler()
         .on_navigation(move |target| match url_policy::navigation(target) {
@@ -250,8 +270,8 @@ fn start_state_saver(app: AppHandle) {
         std::thread::sleep(Duration::from_millis(500));
         let labels: Vec<String> = app.state::<Shell>().dirty.lock().unwrap().drain().collect();
         for label in labels {
-            if let Some(window) = app.get_webview_window(&label) {
-                save_window_state(&app, &window.as_ref().window());
+            if let Some(window) = app.get_window(&label) {
+                save_window_state(&app, &window);
             }
         }
     });
@@ -289,9 +309,10 @@ fn handle_deep_link(app: &AppHandle, raw: &str) {
         return;
     };
     let Some(target) = origin_of(&current).and_then(|origin| deeplink::apply_deep_link(&origin, raw)) else { return };
-    let window = primary_window(app).or_else(|| create_window(app, None).ok());
-    if let Some(window) = window {
-        open_in(app, &window, &target);
+    let view = primary_window(app).or_else(|| create_window(app, None).ok().map(|w| w.as_ref().clone()));
+    if let Some(view) = view {
+        open_in(app, &view, &target);
+        let window = view.window();
         let _ = window.show();
         let _ = window.set_focus();
     }
@@ -301,7 +322,7 @@ fn handle_deep_link(app: &AppHandle, raw: &str) {
 
 /// Called by the start page: navigates the window when an address is known, else returns the recent servers.
 #[tauri::command]
-async fn startup(app: AppHandle, window: WebviewWindow) -> Result<Option<Vec<String>>, String> {
+async fn startup(app: AppHandle, webview: Webview) -> Result<Option<Vec<String>>, String> {
     let resolver = app.clone();
     let url = tauri::async_runtime::spawn_blocking(move || resolve_start(&resolver)).await.map_err(|e| e.to_string())?;
     let shell = app.state::<Shell>();
@@ -311,7 +332,7 @@ async fn startup(app: AppHandle, window: WebviewWindow) -> Result<Option<Vec<Str
             let target = pending
                 .and_then(|raw| origin_of(&url).and_then(|o| deeplink::apply_deep_link(&o, &raw)))
                 .unwrap_or(url);
-            open_in(&app, &window, &target);
+            open_in(&app, &webview, &target);
             Ok(None)
         }
         None => Ok(Some(shell.config().recent_remote_urls)),
@@ -319,7 +340,7 @@ async fn startup(app: AppHandle, window: WebviewWindow) -> Result<Option<Vec<Str
 }
 
 #[tauri::command]
-fn connect(app: AppHandle, window: WebviewWindow, url: String) -> bool {
+fn connect(app: AppHandle, webview: Webview, url: String) -> bool {
     let Some(url) = config::normalize_remote_url(&url) else { return false };
     let shell = app.state::<Shell>();
     shell.update_config(|cfg| {
@@ -327,7 +348,7 @@ fn connect(app: AppHandle, window: WebviewWindow, url: String) -> bool {
         cfg.recent_remote_urls = config::add_recent_remote_url(&cfg.recent_remote_urls, &url);
     });
     *shell.current_url.lock().unwrap() = Some(url.clone());
-    open_in(&app, &window, &url);
+    open_in(&app, &webview, &url);
     true
 }
 
@@ -360,7 +381,7 @@ fn open_external(app: AppHandle, url: String) {
 
 #[tauri::command]
 fn show_notification(app: AppHandle, title: String, body: String) -> bool {
-    if app.webview_windows().values().any(|w| w.is_focused().unwrap_or(false)) {
+    if app.windows().values().any(|w| w.is_focused().unwrap_or(false)) {
         return false;
     }
     app.notification().builder().title(title).body(body).show().is_ok()
@@ -378,13 +399,13 @@ fn open_new_window(app: AppHandle) {
 
 /// ⌘W / Ctrl+W belongs to the page: it closes the chats one at a time and asks for this once none is left.
 #[tauri::command]
-fn close_window(window: WebviewWindow) {
-    let _ = window.close();
+fn close_window(webview: Webview) {
+    let _ = webview.window().close();
 }
 
 #[tauri::command]
-fn set_dock_badge(window: WebviewWindow, count: i64) {
-    let _ = window.set_badge_count(if count > 0 { Some(count) } else { None });
+fn set_dock_badge(webview: Webview, count: i64) {
+    let _ = webview.window().set_badge_count(if count > 0 { Some(count) } else { None });
 }
 
 #[tauri::command]
@@ -460,16 +481,16 @@ fn build_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
 }
 
 fn on_menu(app: &AppHandle, id: &str) {
-    let Some(window) = primary_window(app) else { return };
+    let Some(view) = primary_window(app) else { return };
     match id {
         "switch-server" => {
             if let Ok(url) = Url::parse(&format!("{APP_PAGE}?connect=1")) {
-                let _ = window.navigate(url);
+                let _ = view.navigate(url);
             }
         }
         "new-window" => open_new_window(app.clone()),
         "reload" => {
-            let _ = window.reload();
+            let _ = view.reload();
         }
         _ => {}
     }
@@ -482,7 +503,7 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // A deep link in argv reaches on_open_url through the deep-link feature of this plugin.
-            if let Some(window) = primary_window(app) {
+            if let Some(window) = primary_window(app).map(|v| v.window()) {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -506,6 +527,12 @@ pub fn run() {
             set_dock_badge,
             set_locale,
             set_native_theme,
+            pane_browser::pane_browser_open,
+            pane_browser::pane_browser_bounds,
+            pane_browser::pane_browser_go,
+            pane_browser::pane_browser_history,
+            pane_browser::pane_browser_close,
+            pane_browser::pane_browser_act,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -513,6 +540,7 @@ pub fn run() {
             let path = config_path(&handle, &env);
             let cfg = std::fs::read_to_string(&path).map(|raw| config::parse_app_config(&raw)).unwrap_or_default();
             let deep_links = config::deep_links_enabled(&cfg, &env);
+            app.manage(pane_browser::Panes::default());
             app.manage(Shell {
                 config_path: path,
                 config: Mutex::new(cfg),
@@ -569,7 +597,7 @@ pub fn run() {
                 WindowEvent::CloseRequested { api, .. } => {
                     save_window_state(app, window);
                     // macOS keeps the app and its last window alive behind the Dock icon.
-                    let last = app.webview_windows().len() == 1;
+                    let last = app.windows().len() == 1;
                     if cfg!(target_os = "macos") && last && !app.state::<Shell>().quitting.load(Ordering::SeqCst) {
                         api.prevent_close();
                         let _ = window.hide();
@@ -592,7 +620,7 @@ pub fn run() {
             }
         }
         #[cfg(target_os = "macos")]
-        RunEvent::Reopen { .. } => match primary_window(app) {
+        RunEvent::Reopen { .. } => match primary_window(app).map(|v| v.window()) {
             Some(window) => {
                 let _ = window.show();
                 let _ = window.set_focus();

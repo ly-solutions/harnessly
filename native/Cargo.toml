@@ -19,7 +19,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2"
@@ -39,3 +39,7 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# The pane's browser on Linux is laid over the page in a GTK overlay (tauri packs child webviews one under another).
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
