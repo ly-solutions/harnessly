@@ -35,8 +35,12 @@ const ProposalCard = ({ proposal, closing, onAnswer }: IProposalCardProps) => {
         <span className="hx-setask__lead">{t('next.settingsChanges.ask.lead')}</span>
         <strong className="hx-setask__title">{proposal.title}</strong>
         <span className="hx-setlog__diff">
-          <s>{proposal.oldLabel}</s>
-          <Icon name="arrow-right" size="sm" />
+          {proposal.oldLabel !== '' && (
+            <>
+              <s>{proposal.oldLabel}</s>
+              <Icon name="arrow-right" size="sm" />
+            </>
+          )}
           <span>{proposal.newLabel}</span>
         </span>
         {proposal.why !== '' && <span className="hx-setask__why">{proposal.why}</span>}

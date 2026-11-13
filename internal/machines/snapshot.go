@@ -40,6 +40,31 @@ type MachineLimits struct {
 	// ClaudeSpend is what Claude cost lately, for a machine that pays it by the API; apart from Claude's limits, which
 	// such a machine may not have at all.
 	ClaudeSpend *Spend `json:"claudeSpend,omitempty"`
+	// Profiles are the limits of the vendors' profiles (Kimi Code, GLM, Grok…) by account: the key is the profile, with
+	// «/account» when the profile has more than one (limits.ProfileKey). An account whose limits are unknown is absent.
+	Profiles map[string]*ProfileLimits `json:"profiles,omitempty"`
+}
+
+// ProfileLimits is one account of a vendor's profile: the windows of ProviderLimits, the monthly pool and the balance
+// some vendors have instead, and whose they are.
+type ProfileLimits struct {
+	ProviderLimits
+	Profile string `json:"profile"`
+	Account string `json:"account"`
+	// Month is the monthly pool.
+	Month *LimitWindow `json:"month,omitempty"`
+	// Balance is what is left to spend on a platform paid by the token.
+	Balance *Balance `json:"balance,omitempty"`
+	// Estimate: the figures are counted by this machine, not told by the vendor.
+	Estimate bool `json:"estimate,omitempty"`
+	// Unofficial: the vendor's internal request, not one it documents.
+	Unofficial bool `json:"unofficial,omitempty"`
+}
+
+// Balance is money left on an account.
+type Balance struct {
+	Amount   Num    `json:"amount"`
+	Currency string `json:"currency"`
 }
 
 // Release is the release the runtime runs.
@@ -168,6 +193,39 @@ func BuildProviderLimits(raw any, samples samplesFunc, now float64, a *Activity)
 	return out
 }
 
+const periodMonth = 30 * 86400
+
+// BuildProfileLimits is one entry of provider-limits.json as the page reads it; nil for an entry that names no profile.
+// The windows carry no forecast: the history is kept for Claude and Codex only.
+func BuildProfileLimits(raw any, now float64) *ProfileLimits {
+	profile, ok := getOr(raw, "profile").(string)
+	if !ok || profile == "" {
+		return nil
+	}
+	none := func(string) []limits.Sample { return nil }
+	base := BuildProviderLimits(raw, none, now, nil)
+	if base == nil {
+		return nil
+	}
+	out := &ProfileLimits{ProviderLimits: *base, Profile: profile}
+	out.Account, _ = getOr(raw, "account").(string)
+	ts, hasTs := get(raw, "ts")
+	out.Month = windowView(getOr(raw, limits.WindowMonth), periodMonth, SevenDay, nil, ts, hasTs, nil, nil, now)
+	if b := getOr(raw, "balance"); jsvalue.Truthy(b) {
+		amount, aok := getOr(b, "amount").(float64)
+		currency, cok := getOr(b, "currency").(string)
+		if aok && cok {
+			out.Balance = &Balance{Amount: Num(amount), Currency: currency}
+		}
+	}
+	if msg, ok := getOr(getOr(raw, "error"), "message").(string); ok {
+		out.Error = &msg
+	}
+	out.Estimate = getOr(raw, "estimate") == true
+	out.Unofficial = getOr(raw, "unofficial") == true
+	return out
+}
+
 // HostStats are the machine's figures the snapshot shows.
 type HostStats struct {
 	CPUs  int
@@ -203,6 +261,9 @@ type SnapshotConfig struct {
 	Spend func() *Spend
 	// Billing is how Claude Code is paid (ClaudeBilling.Mode); not told when nil.
 	Billing func() *string
+	// LimitsAsked is told every time the limits are read, so the vendors' limits are asked while someone looks (and
+	// only then); nil for none.
+	LimitsAsked func()
 	// User is the runtime user's name; the process's own when empty.
 	User     string
 	Host     func() HostStats
@@ -287,6 +348,32 @@ func ReadRelease(file string) *Release {
 	return r
 }
 
+// profileLimits are the entries of provider-limits.json; nil when there is none.
+func (s *Snapshot) profileLimits(now float64) map[string]*ProfileLimits {
+	data, err := os.ReadFile(filepath.Join(s.cfg.DataDir, "provider-limits.json"))
+	if err != nil {
+		return nil
+	}
+	v, err := jsvalue.Parse(data)
+	if err != nil {
+		return nil
+	}
+	entries, ok := getOr(v, "entries").(*jsvalue.Object)
+	if !ok {
+		return nil
+	}
+	var out map[string]*ProfileLimits
+	for _, k := range entries.Keys() {
+		if p := BuildProfileLimits(getOr(entries, k), now); p != nil {
+			if out == nil {
+				out = map[string]*ProfileLimits{}
+			}
+			out[k] = p
+		}
+	}
+	return out
+}
+
 // Limits are both providers' limits with forecasts from limits-history.jsonl.
 func (s *Snapshot) Limits(now float64) MachineLimits {
 	var raw any = jsvalue.NewObject()
@@ -332,6 +419,10 @@ func (s *Snapshot) Limits(now float64) MachineLimits {
 	out := MachineLimits{
 		Claude: BuildProviderLimits(getOr(raw, "claude"), samples("claude"), now, activity["claude"]),
 		Codex:  BuildProviderLimits(getOr(raw, "codex"), samples("codex"), now, activity["codex"]),
+	}
+	out.Profiles = s.profileLimits(now)
+	if s.cfg.LimitsAsked != nil {
+		s.cfg.LimitsAsked()
 	}
 	if s.cfg.Spend != nil {
 		if sp := s.cfg.Spend(); sp != nil {

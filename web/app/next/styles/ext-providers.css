@@ -231,3 +231,46 @@
     animation: none;
   }
 }
+
+/* The default account of a provider that has several */
+.hx-extp__tag {
+  margin-left: 8px;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  font-weight: 400;
+}
+
+/* The variables of a launch: a name and its value in a row */
+.hx-extp__env {
+  align-items: stretch;
+  gap: 8px;
+}
+.hx-extp__env > .hx-set__btn {
+  align-self: flex-start;
+}
+.hx-extp__var {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.hx-extp__var-name {
+  overflow: hidden;
+  color: var(--hx-fg-2);
+  font-family: var(--hx-font-mono);
+  font-size: var(--hx-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-extp__var .hx-head-btn[aria-pressed='true'] {
+  color: var(--hx-fg-1);
+}
+@media (max-width: 720px) {
+  .hx-extp__var {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .hx-extp__var-name,
+  .hx-extp__var-key {
+    grid-column: 1 / -1;
+  }
+}

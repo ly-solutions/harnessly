@@ -269,8 +269,11 @@ func (s *Store) spacesOf(ctx context.Context, kind string) ([]string, error) {
 }
 
 // Room is the room of a space's collection.
-func (s *Store) Room(spaceID, kind string) string {
-	if spaceID != "" && spaceID == s.legacy {
+func (s *Store) Room(spaceID, kind string) string { return RoomName(s.legacy, spaceID, kind) }
+
+// RoomName is the room of a space's collection; legacy is the id of the space whose rooms are bare kinds ("" for none).
+func RoomName(legacy, spaceID, kind string) string {
+	if spaceID != "" && spaceID == legacy {
 		return kind
 	}
 	return kind + "-" + spaceID

@@ -25,6 +25,8 @@ const (
 	FeatureNextStep = "next-step"
 	// FeatureMemory: the background memory.
 	FeatureMemory = "memory"
+	// FeatureSearchAnswer: the answer the search gives to a question in words.
+	FeatureSearchAnswer = "search-answer"
 )
 
 // Feature is one background feature as Settings lists it.
@@ -52,6 +54,9 @@ func Features() []Feature {
 		{ID: FeatureMemory,
 			Title:       locale.Pick("Background memory", "Фоновая память"),
 			Description: locale.Pick("What is worth remembering from a chat, picked out after it.", "Что стоит запомнить из чата: выбирается после разговора.")},
+		{ID: FeatureSearchAnswer, Live: true,
+			Title:       locale.Pick("Answers in the search", "Ответы в поиске"),
+			Description: locale.Pick("A question typed into the search is answered from what the search found, with links to where the answer comes from.", "На вопрос, набранный в поиске, отвечает модель по найденному, со ссылками на то, откуда ответ.")},
 	}
 }
 
@@ -323,6 +328,22 @@ func (r *Runner) Forget(provider string) []string {
 	return changed
 }
 
+// Move puts every feature that runs on one account onto another of the same provider, where that one has the
+// feature's model. It answers the features it moved; the rest stay for Forget.
+func (r *Runner) Move(from, to string, hasModel func(model string) bool) []string {
+	var moved []string
+	for feature, c := range r.Store.All() {
+		if c.Provider != from || !hasModel(c.Model) {
+			continue
+		}
+		if _, err := r.Store.Set(feature, &Choice{Provider: to, Model: c.Model}); err == nil {
+			moved = append(moved, feature)
+		}
+	}
+	slices.Sort(moved)
+	return moved
+}
+
 // NotifySummary is the summary of a finished turn for its notification: one short line of what the agent did, from
 // the text of its answer. used is false for «as now».
 func (r *Runner) NotifySummary(ctx context.Context, answer string) (summary string, used bool, err error) {
@@ -335,4 +356,10 @@ func (r *Runner) NotifySummary(ctx context.Context, answer string) (summary stri
 	}
 	// One line, whatever the model made of it.
 	return strings.Join(strings.Fields(text), " "), true, nil
+}
+
+// TurnSummary is the few lines on a finished turn that stand on the chat as its recap, from a prompt that carries the
+// turn and says what to write. used is false for «as now».
+func (r *Runner) TurnSummary(ctx context.Context, prompt string) (text string, used bool, err error) {
+	return r.Run(ctx, FeatureNotifySummary, Call{Prompt: prompt, MaxTokens: 300, Timeout: 20 * time.Second})
 }

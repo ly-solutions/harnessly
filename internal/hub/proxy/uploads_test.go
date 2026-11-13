@@ -13,6 +13,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/history"
+	"github.com/ly-solutions/harnessly/internal/hub/metrics"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
 
@@ -135,5 +136,69 @@ func TestWorkspaceReadsTheHandedOverFilesFromTheHub(t *testing.T) {
 	// Another space's machine does not read this space's files.
 	if r := w.owner.Do("GET", base+sha+"?machine="+w.other+"&type=application/pdf", nil); r.Code == 200 {
 		t.Errorf("read through another space: %s", r)
+	}
+}
+
+// an upload the machine's own move verified in the store, with no ref of the person's (it was moved before the
+// move bound uploads to their person), is read from the hub by the machine's person, not sent to the machine.
+func TestWorkspaceReadsAMovedUploadWithoutARefFromTheHub(t *testing.T) {
+	w := setupWorkspace(t, fleetOn)
+	ctx := context.Background()
+	png := []byte("\x89PNG\r\n\x1a\n-a moved picture-")
+	sum := sha256.Sum256(png)
+	sha := hex.EncodeToString(sum[:])
+	m, _ := w.s.DB.S().MachineByID(ctx, w.home)
+	if err := w.s.Hub.Store.PutBlob(ctx, m.SpaceID, filestore.KindUploads, sha, bytes.NewReader(png)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.DB.S().Q().Exec(ctx, `INSERT INTO migration_objects (machine_id, migration, kind, object, sha256, size, state, changed_at)
+		VALUES (?, '0001-data-to-hub', 'uploads', 'up_MOVEDAAA', ?, ?, 'verified', 1)`, w.home, sha, len(png)); err != nil {
+		t.Fatal(err)
+	}
+	q := "?machine=" + w.home
+	base := "/agents/api/acme/uploads/"
+	// Somebody else of the space is not the machine's person: the machine answers them, as before.
+	member := w.s.SignIn("member@example.com")
+	w.owner.Join(m.SpaceID, member)
+	if r := member.Do("GET", base+"files/up_MOVEDAAA"+q, nil); r.Code == 200 {
+		t.Fatalf("a member reads the owner's moved upload: %s", r)
+	}
+	r := w.owner.Do("GET", base+"files/up_MOVEDAAA"+q, nil)
+	if r.Code != 200 || string(r.Body) != string(png) || r.Header.Get("Content-Type") != "image/png" || !strings.HasPrefix(r.Header.Get("Content-Disposition"), "inline") {
+		t.Fatalf("the moved upload from the hub: %s %v", r, r.Header)
+	}
+	// An upload the move has not verified still goes to the machine, and the hub says why: the machine never named it.
+	unreported, foreign := metrics.Misses(metrics.ReadUpload, metrics.MissUnreported), metrics.Misses(metrics.ReadUpload, metrics.MissForeign)
+	if r := w.owner.Do("GET", base+"files/up_NOTMOVED"+q, nil); r.Code != 307 {
+		t.Fatalf("an upload the hub has not got: %s", r)
+	}
+	if n := metrics.Misses(metrics.ReadUpload, metrics.MissUnreported); n != unreported+1 {
+		t.Fatalf("a read of an object the machine never named is counted so: %d, was %d", n, unreported)
+	}
+	// The member's read of the owner's moved upload is another reason: moved, but not theirs.
+	if r := member.Do("GET", base+"files/up_MOVEDAAA"+q, nil); r.Code != 307 || metrics.Misses(metrics.ReadUpload, metrics.MissForeign) != foreign+1 {
+		t.Fatalf("a member's read of a moved upload: %s", r)
+	}
+	// An object whose move failed is asked to be tried again by the read that needed it.
+	if _, err := w.s.DB.S().Q().Exec(ctx, `INSERT INTO migration_objects (machine_id, migration, kind, object, sha256, size, state, code, changed_at)
+		VALUES (?, '0001-data-to-hub', 'uploads', 'up_FAILEDAA', '', 0, 'failed', 'net', 1)`, w.home); err != nil {
+		t.Fatal(err)
+	}
+	failed := metrics.Misses(metrics.ReadUpload, metrics.MissFailed)
+	// Somebody else's read is counted and asks nothing of the machine's move.
+	if r := member.Do("GET", base+"files/up_FAILEDAA"+q, nil); r.Code != 307 {
+		t.Fatalf("a member's read of a failed object: %s", r)
+	}
+	var early string
+	if err := w.s.DB.S().Q().QueryRow(ctx, `SELECT asked FROM migration_objects WHERE machine_id = ? AND object = 'up_FAILEDAA'`, w.home).Scan(&early); err != nil || early != "" {
+		t.Fatalf("a member's read asked the machine's move: %q %v", early, err)
+	}
+	failed++
+	if r := w.owner.Do("GET", base+"files/up_FAILEDAA"+q, nil); r.Code != 307 || metrics.Misses(metrics.ReadUpload, metrics.MissFailed) != failed+1 {
+		t.Fatalf("a read of a failed object: %s", r)
+	}
+	var asked string
+	if err := w.s.DB.S().Q().QueryRow(ctx, `SELECT asked FROM migration_objects WHERE machine_id = ? AND object = 'up_FAILEDAA'`, w.home).Scan(&asked); err != nil || asked != "retry" {
+		t.Fatalf("the failed object is asked again: %q %v", asked, err)
 	}
 }

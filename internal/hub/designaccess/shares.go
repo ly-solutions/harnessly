@@ -306,6 +306,9 @@ func (t *txn) createShare(id, actor string, in shareInput) (shareRow, string, er
 		jsonOrNil(in.View, in.View == nil), in.Version, nullStr(in.Rev), jsonOrNil(in.Pages, in.Pages == nil), r.CreatedBy, ms(t.now)); err != nil {
 		return shareRow{}, "", err
 	}
+	if err := t.enterLink(linkID); err != nil {
+		return shareRow{}, "", err
+	}
 	details := map[string]any{"rights": in.Rights, "until": iso(expires), "version": in.Version}
 	if in.Pages != nil {
 		details["pages"] = len(in.Pages)
@@ -396,6 +399,9 @@ func (t *txn) updateShare(id, actor, linkID string, c shareChange) (shareRow, er
 		if n, _ := res.RowsAffected(); n == 0 {
 			return shareRow{}, fail("not_found", "Ссылка не найдена или уже отозвана")
 		}
+		if err := t.enterLink(linkID); err != nil {
+			return shareRow{}, err
+		}
 	}
 	r, err := scanShare(t.q.QueryRow(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE l.id = ? AND l.machine_id = ? AND l.project_id = ? AND l.revoked_at IS NULL`, linkID, t.m.ID, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -413,6 +419,9 @@ func (t *txn) revokeShare(id, actor, linkID string) error {
 	}
 	res, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET revoked_at = ? WHERE id = ? AND machine_id = ? AND project_id = ? AND revoked_at IS NULL`, ms(t.now), linkID, t.m.ID, id)
 	if err != nil {
+		return err
+	}
+	if err := t.enterLink(linkID); err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -497,7 +506,8 @@ func (l shareTarget) allows(board string) bool {
 	return false
 }
 
-// resolveShare judges a token by its row: missing, revoked, expired, or ok. Whether its maker may still share is the
+// resolveShare judges a token by its entry in the registry of guest links: missing, revoked, expired, or ok. What only
+// a design's link has (pinned revision, pages, view) comes from the link's own row. Whether its maker may still share is the
 // caller's to ask, on the machine's side.
 func (s *Service) resolveShare(ctx context.Context, now time.Time, token string) (string, *shareTarget, error) {
 	if !shareTokenRe.MatchString(token) {
@@ -507,8 +517,9 @@ func (s *Service) resolveShare(ctx context.Context, now time.Time, token string)
 	var machineID string
 	var rev, pages, view sql.NullString
 	var exp, revoked sql.NullInt64
-	err := s.db.QueryRow(ctx, `SELECT id, machine_id, project_id, title, rights, version, rev, pages, view, expires_at, revoked_at, created_by FROM design_share_links WHERE token_hash = ?`,
-		store.HashToken(token)).Scan(&r.ID, &machineID, &r.Project, &r.Title, &r.Rights, &r.Version, &rev, &pages, &view, &exp, &revoked, &r.CreatedBy)
+	err := s.db.QueryRow(ctx, `SELECT l.id, l.machine_id, l.project_id, g.title, g.rights, l.version, l.rev, l.pages, l.view, g.expires_at, g.revoked_at, l.created_by
+		FROM resource_guest_links g JOIN design_share_links l ON l.id = g.link_id WHERE g.token_hash = ? AND g.kind = ?`,
+		store.HashToken(token), registryKind).Scan(&r.ID, &machineID, &r.Project, &r.Title, &r.Rights, &r.Version, &rev, &pages, &view, &exp, &revoked, &r.CreatedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "missing", nil, nil
 	}
@@ -538,7 +549,10 @@ func (s *Service) resolveShare(ctx context.Context, now time.Time, token string)
 }
 
 func (t *txn) recordOpen(linkID string) error {
-	_, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET opens = opens + 1, last_opened_at = ? WHERE id = ?`, ms(t.now), linkID)
+	if _, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET opens = opens + 1, last_opened_at = ? WHERE id = ?`, ms(t.now), linkID); err != nil {
+		return err
+	}
+	_, err := t.q.Exec(t.ctx, `UPDATE resource_guest_links SET opens = opens + 1, last_opened_at = ? WHERE link_id = ? AND kind = ?`, ms(t.now), linkID, registryKind)
 	return err
 }
 

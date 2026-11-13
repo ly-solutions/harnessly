@@ -31,6 +31,8 @@ const (
 	CatalogApp = "app"
 	// CatalogPack is an environment pack in a repository (docs/hub/packs.md): tools, hooks, MCP and the safe's rules.
 	CatalogPack = "pack"
+	// CatalogProvider is a model provider for every machine of the audience (docs/hub/environment.md, «Model providers»).
+	CatalogProvider = "provider"
 )
 
 // CatalogItem is something an environment can hold: a skill, an MCP server, a repository or a document. OrgID is ""

@@ -12,6 +12,7 @@ export type TSetupStatus = (typeof SETUP_STATUS)[keyof typeof SETUP_STATUS];
 export const SETUP_KIND = {
   base: 'base',
   access: 'access',
+  provider: 'provider',
   repo: 'repo',
   claude: 'claude-settings',
   plugin: 'plugin',

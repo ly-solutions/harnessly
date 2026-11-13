@@ -59,6 +59,9 @@ func MachineItems(w *world, spaceID, teamID, owner string, setup bool, ex Extra)
 		if !ex.Packs && e.Kind == hubproto.EnvKindPack {
 			continue
 		}
+		if !ex.Providers && e.Kind == hubproto.EnvKindProvider {
+			continue
+		}
 		out = append(out, it)
 	}
 	hubproto.SortEnvItems(out)
@@ -202,9 +205,10 @@ func (p *Pusher) Connected(machineID string, hello hubproto.Hello) {
 	p.mu.Lock()
 	p.setup[machineID] = slices.Contains(hello.Features, hubproto.FeatureEnvSetup)
 	p.extra[machineID] = Extra{
-		Claude: p.setup[machineID] && slices.Contains(hello.Features, hubproto.FeatureEnvClaude),
-		Apps:   p.setup[machineID] && slices.Contains(hello.Features, hubproto.FeatureEnvApps),
-		Packs:  p.setup[machineID] && slices.Contains(hello.Features, hubproto.FeatureEnvPacks),
+		Claude:    p.setup[machineID] && slices.Contains(hello.Features, hubproto.FeatureEnvClaude),
+		Apps:      p.setup[machineID] && slices.Contains(hello.Features, hubproto.FeatureEnvApps),
+		Packs:     p.setup[machineID] && slices.Contains(hello.Features, hubproto.FeatureEnvPacks),
+		Providers: p.setup[machineID] && slices.Contains(hello.Features, hubproto.FeatureEnvProviders),
 		// The rule for apps does not need the setup: the runtime reads it from the list's file.
 		AppsConsent: slices.Contains(hello.Features, hubproto.FeatureEnvAppsConsent),
 	}
@@ -409,6 +413,8 @@ type Extra struct {
 	Packs bool
 	// AppsConsent: the machine keeps the organization's rule for apps (hubproto.FeatureEnvAppsConsent).
 	AppsConsent bool
+	// Providers: the machine keeps the environment's model providers (hubproto.FeatureEnvProviders).
+	Providers bool
 }
 
 // All is every kind: a list as the newest agent would hold it.

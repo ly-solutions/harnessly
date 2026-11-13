@@ -42,6 +42,45 @@
   font-size: inherit;
   font-weight: var(--hx-weight-regular);
 }
+/* The person's other subscriptions under the chat's own */
+.hx-lim__others {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--hx-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hx-lim__others li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--hx-text-sm);
+}
+.hx-lim__others li > span:first-child {
+  color: var(--hx-fg-2);
+  white-space: nowrap;
+}
+/* Two windows with their resets do not fit the card beside a name: the second goes under the first */
+.hx-lim__others .hx-lim-line {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 12px;
+}
+/* The same windows as one line of a list (Settings) */
+.hx-lim-line {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: var(--hx-text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .hx-lim__win[data-level='low'] {
   color: var(--hx-warning);
 }
@@ -188,7 +227,8 @@
     padding: 0 8px;
     gap: 6px;
   }
-  .hx-lim__win:not([data-least]):not(:only-of-type) {
+  .hx-lim__win:not([data-least]):not(:only-of-type),
+  .hx-lim__reset {
     display: none;
   }
   .hx-lim__pop {
@@ -239,4 +279,10 @@
   font-weight: var(--hx-weight-medium);
   font-variant-numeric: tabular-nums;
   color: var(--hx-fg-1);
+}
+
+@media (max-width: 640px) {
+  .hx-lim-line .hx-lim__win small:last-child {
+    display: none;
+  }
 }

@@ -3,7 +3,7 @@
 // UTC strings, days are YYYY-MM-DD (UTC). A number the hub has no facts for is null, never 0.
 
 export type CatalogKind =
-  'skill' | 'mcp' | 'repo' | 'doc' | 'script' | 'access' | 'plugin' | 'claude-settings' | 'app';
+  'skill' | 'mcp' | 'repo' | 'doc' | 'script' | 'access' | 'plugin' | 'claude-settings' | 'app' | 'provider';
 export type EnvLayerKind = 'org' | 'tenant' | 'team';
 export type AudienceMode = 'tenant' | 'teams' | 'off';
 
@@ -50,6 +50,15 @@ export type CatalogSource = {
   always?: unknown;
   ifAbsent?: unknown;
   claudeMd?: string;
+  // provider: a model provider for every machine. The key and the secret variables are named (a secret of the person's
+  // safe, or `vault:<path>#<key>` of the organization's), never carried; env are `NAME=value`, secretEnv `NAME=<secret>`.
+  api?: 'anthropic' | 'openai';
+  baseUrl?: string;
+  preset?: string;
+  models?: string[];
+  key?: string;
+  env?: string[];
+  secretEnv?: string[];
 };
 
 // `script` and `access` are counted by a hub that has the machine setup; an older one omits them.
@@ -63,6 +72,7 @@ export type KindCounts = {
   plugin?: number;
   'claude-settings'?: number;
   app?: number;
+  provider?: number;
 };
 
 export type Audience = {

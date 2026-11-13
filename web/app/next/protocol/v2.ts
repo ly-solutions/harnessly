@@ -468,7 +468,7 @@ export interface MachineAgent {
 }
 /** A profile id: lower case, `^[a-z][a-z0-9-]{0,31}$`. The runtime owns the list (`kimi`, `glm`, `xai`…). */
 export type ProfileId = string;
-export const PROFILE_VENDORS = ['kimi', 'glm', 'grok', 'gpt', 'auto'] as const;
+export const PROFILE_VENDORS = ['kimi', 'glm', 'grok', 'gpt', 'auto', 'own'] as const;
 export type ProfileVendor = (typeof PROFILE_VENDORS)[number];
 /** A backend profile a machine can start a conversation on: another vendor's models behind this CLI. */
 export interface ProfileOffer {
@@ -1079,6 +1079,8 @@ export interface AppRow {
   author: string | null;
   /** The author's picture as the page loads it (a route of the runtime); null when the code host gave none. */
   avatar: string | null;
+  /** The author is a bot of the code host (a dependency updater, a release robot). */
+  bot: boolean;
   assignees: string[];
   reviewers: string[];
   me: AppRole[];
@@ -2733,6 +2735,7 @@ const appRowBody: Decoder<AppRow> = object({
   closedAt: nullable(ms),
   author: nullable(id),
   avatar: nullable(id),
+  bot: bool,
   assignees: array(id),
   reviewers: array(id),
   me: array(oneOf(APP_ROLES)),
@@ -2744,10 +2747,11 @@ const appRowBody: Decoder<AppRow> = object({
   children: array(appChild),
   mr: nullable(appMr),
 });
-/** A runtime older than the avatars sends no `avatar`: its row reads as one without a picture. */
+/** A runtime older than the avatars sends no `avatar`, one older than the bots no `bot`: its row reads as one without
+ *  a picture, written by a person. */
 const appRow: Decoder<AppRow> = (v, p) => {
   const o = record(v, p);
-  return appRowBody(Object.hasOwn(o, 'avatar') ? o : { ...o, avatar: null }, p);
+  return appRowBody({ avatar: null, bot: false, ...o }, p);
 };
 const appFeed: Decoder<AppFeed> = (v, p) => {
   const feed = object({

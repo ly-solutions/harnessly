@@ -407,7 +407,7 @@
       }
     },
     "ProfileId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
-    "ProfileVendor": {"enum": ["kimi", "glm", "grok", "gpt", "auto"]},
+    "ProfileVendor": {"enum": ["kimi", "glm", "grok", "gpt", "auto", "own"]},
     "ProfileTestReason": {"enum": ["no-key", "unauthorized", "forbidden", "rate-limited", "unreachable", "timeout", "rejected"]},
     "ProfileSwitchReason": {"enum": ["no-login", "download", "start"]},
     "ProfileOffer": {
@@ -972,7 +972,7 @@
       "type": "object",
       "required": [
         "key", "id", "title", "url", "state", "flag", "tone", "project", "person", "target", "createdAt", "updatedAt",
-        "closedAt", "author", "avatar", "assignees", "reviewers", "me", "labels", "priority", "kind", "parent",
+        "closedAt", "author", "avatar", "bot", "assignees", "reviewers", "me", "labels", "priority", "kind", "parent",
         "progress", "children", "mr"
       ],
       "additionalProperties": false,
@@ -992,6 +992,7 @@
         "closedAt": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
         "author": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
         "avatar": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "bot": {"type": "boolean"},
         "assignees": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "reviewers": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "me": {"type": "array", "items": {"$ref": "#/$defs/AppRole"}},

@@ -87,9 +87,12 @@ type Service struct {
 	notice      Notice
 	shared      bool
 	view        Viewer
-	kits        *resaccess.Service
-	teamLevel   string
-	closed      bool
+	// cover is the count of the recorded projects the store has (coverage.go).
+	cover     coverage
+	warm      warmState
+	kits      *resaccess.Service
+	teamLevel string
+	closed    bool
 
 	mu       sync.Mutex
 	serving  map[string]bool   // machines whose agent serves design-access
@@ -302,6 +305,7 @@ func (s *Service) kick(id string) {
 
 // Run sweeps what ran out (grants, invites) and keeps every machine's snapshot fresh.
 func (s *Service) Run(ctx context.Context) {
+	s.warmOnce()
 	sweep := time.NewTicker(sweepEvery)
 	defer sweep.Stop()
 	last := s.now()
@@ -320,6 +324,7 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		s.budget.sweep(s.now())
 		s.dropTokens()
+		s.coverageDue()
 		if s.now().Sub(last) >= refreshEvery {
 			last = s.now()
 			s.mu.Lock()

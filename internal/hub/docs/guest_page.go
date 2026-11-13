@@ -5,6 +5,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"regexp"
 
 	"github.com/ly-solutions/harnessly/internal/hub/resaccess"
 )
@@ -64,4 +65,34 @@ func guestError(w http.ResponseWriter, status int, text string) {
 	t := html.EscapeString(text)
 	_, _ = io.WriteString(w, `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>`+t+
 		`</title><style>body{font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;color:#333;background:#fafafa}@media(prefers-color-scheme:dark){body{color:#ddd;background:#161616}}</style></head><body><p>`+t+`</p></body></html>`)
+}
+
+var guestFontName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}\.woff2$`)
+
+// guestFont serves one font of the document's page (GET /static/fonts/<name>.woff2): the page names its fonts by a
+// path of its own origin, and on the hub's address they are read from the documents service, which gives them to
+// anybody (they answered 404 on the share host, and the page fell back to the system font). The page is
+// sandboxed (an origin of its own), so the font is given to any origin, as the documents service gives it.
+func (s *Service) guestFont(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if s.art == nil || !guestFontName.MatchString(name) {
+		http.NotFound(w, r)
+		return
+	}
+	res, err := s.art.raw(r.Context(), http.MethodGet, "/static/fonts/"+name, nil, "font/woff2")
+	if err != nil {
+		http.Error(w, "the documents service does not answer", http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "font/woff2")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Access-Control-Allow-Origin", "*")
+	h.Set("Cache-Control", "public, max-age=86400")
+	_, _ = io.Copy(w, io.LimitReader(res.Body, 4<<20))
 }

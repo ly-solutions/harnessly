@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,14 +50,16 @@ const (
 
 // Reasons of a refusal, as the page is told them.
 const (
-	ReasonBadName  = "bad-name"
-	ReasonBadURL   = "bad-url"
-	ReasonBadAPI   = "bad-api"
-	ReasonBadKey   = "bad-key"
-	ReasonBadModel = "bad-model"
-	ReasonNotFound = "not-found"
-	ReasonTooMany  = "too-many"
-	ReasonFailed   = "failed"
+	ReasonBadName = "bad-name"
+	// ReasonNameTaken: another account is called so already.
+	ReasonNameTaken = "name-taken"
+	ReasonBadURL    = "bad-url"
+	ReasonBadAPI    = "bad-api"
+	ReasonBadKey    = "bad-key"
+	ReasonBadModel  = "bad-model"
+	ReasonNotFound  = "not-found"
+	ReasonTooMany   = "too-many"
+	ReasonFailed    = "failed"
 )
 
 // Refusal is a reason the caller is told.
@@ -103,9 +106,63 @@ type Provider struct {
 	KeyRef string  `json:"keyRef,omitempty"`
 	Models []Model `json:"models"`
 	// ModelsAt is when the models were last taken from the provider (ms); 0 when they never were.
-	ModelsAt  int64 `json:"modelsAt,omitempty"`
-	CreatedAt int64 `json:"createdAt"`
-	UpdatedAt int64 `json:"updatedAt"`
+	ModelsAt int64 `json:"modelsAt,omitempty"`
+	// Env are the variables the provider adds to the launch of an agent on it (launchenv.go).
+	Env []EnvVar `json:"env,omitempty"`
+	// Default marks the account of its provider that is used where no account is named: one of every Group.
+	Default bool `json:"default,omitempty"`
+	// Origin is the environment item the provider comes from; "" for one the person added.
+	Origin    string `json:"origin,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
+// Group is what the accounts of one provider share: the template they were made from, or the host of an address of
+// the person's own. A person may add several accounts of a provider, each a record with a key of its own.
+func (p Provider) Group() string {
+	if p.Preset != "" && p.Preset != PresetCustom {
+		return "preset:" + p.Preset
+	}
+	return "host:" + strings.ToLower(p.Host())
+}
+
+// settleDefaults leaves every group with one default account: the one marked first, else the one added first. A
+// registry written before accounts had a default is read so, each provider the only account of its group.
+func settleDefaults(list []Provider) {
+	has := map[string]bool{}
+	for i := range list {
+		g := list[i].Group()
+		if list[i].Default && has[g] {
+			list[i].Default = false
+		}
+		has[g] = has[g] || list[i].Default
+	}
+	for i := range list {
+		if g := list[i].Group(); !has[g] {
+			list[i].Default, has[g] = true, true
+		}
+	}
+}
+
+// sameName says whether two names read the same to a person: the case and the spaces around do not tell them apart.
+func sameName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+// freeName is name, or name with the first number that no other account has («DeepSeek 2»): two accounts are never
+// called the same.
+func freeName(list []Provider, name string) string {
+	taken := func(n string) bool {
+		return slices.ContainsFunc(list, func(p Provider) bool { return sameName(p.Name, n) })
+	}
+	if !taken(name) {
+		return name
+	}
+	for n := 2; ; n++ {
+		if next := name + " " + strconv.Itoa(n); !taken(next) {
+			return next
+		}
+	}
 }
 
 // View is a provider as the page sees it: everything but the name of its secret, and whether a key is saved.
@@ -120,7 +177,14 @@ type View struct {
 	Models   []Model `json:"models"`
 	ModelsAt int64   `json:"modelsAt,omitempty"`
 	// ClaudeCLI: the provider speaks the Anthropic API, so Claude CLI could run a chat on it.
-	ClaudeCLI bool  `json:"claudeCli"`
+	ClaudeCLI bool `json:"claudeCli"`
+	// Env are the variables of a launch on the provider; a secret one comes without its value.
+	Env []EnvView `json:"env"`
+	// Group is shared by the accounts of one provider; Default marks the one used where no account is named.
+	Group   string `json:"group"`
+	Default bool   `json:"default"`
+	// Managed: the provider is the environment's; the page shows it and does not let it be changed or removed.
+	Managed   bool  `json:"managed"`
 	CreatedAt int64 `json:"createdAt"`
 	UpdatedAt int64 `json:"updatedAt"`
 }
@@ -282,6 +346,7 @@ func (s *Store) read() (fileBody, error) {
 			body.Providers[i].Models = []Model{}
 		}
 	}
+	settleDefaults(body.Providers)
 	return body, nil
 }
 

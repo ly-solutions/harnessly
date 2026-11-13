@@ -25,6 +25,10 @@ const limits = (over: Partial<ProviderLimits> = {}): ProviderLimits => ({
     },
   },
   sevenDay: { usedPct: 81, resetsAt: inHours(100), forecast: null },
+  month: null,
+  balance: null,
+  estimate: false,
+  unofficial: false,
   updatedAt: Date.now(),
   plan: 'Claude Max 20x',
   error: null,
@@ -139,5 +143,81 @@ describe('LimitsChip', () => {
     expect(screen.getByRole('button', { name: /Claude limits/ })).toBeTruthy();
     rerender(<LimitsChip view={ready(limits({ fiveHour: null, sevenDay: null }), 'claude', spend(null))} />);
     expect(screen.getByRole('button', { name: /Claude spend/ })).toBeTruthy();
+  });
+});
+
+describe("LimitsChip for a vendor's profile", () => {
+  const profile = (value: ProviderLimits): LimitsView => ({
+    state: 'ready',
+    provider: 'claude',
+    profile: 'kimi-code',
+    limits: value,
+    spend: null,
+  });
+
+  it("is called by the profile's name and draws the monthly pool beside the windows", () => {
+    render(
+      <LimitsChip
+        view={profile(limits({ plan: null, month: { usedPct: 10, resetsAt: inHours(400), forecast: null } }))}
+      />,
+    );
+    const chip = screen.getByRole('button');
+    expect(chip.getAttribute('aria-label')).toContain('Kimi Code');
+    expect(chip.textContent).toContain('90%');
+  });
+
+  it('shows the balance of an account that has no windows', () => {
+    render(
+      <LimitsChip
+        view={profile(
+          limits({ fiveHour: null, sevenDay: null, plan: null, balance: { amount: 49.58, currency: 'USD' } }),
+        )}
+      />,
+    );
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toMatch(/49[.,]58/);
+    expect(text).not.toContain('—');
+  });
+});
+
+describe('the reset beside what is left', () => {
+  it('tells on the chip when each window resets, to its largest unit', () => {
+    render(
+      <LimitsChip
+        view={ready(limits({ sevenDay: { usedPct: 81, resetsAt: inHours(100.5), forecast: null } }))}
+      />,
+    );
+    const resets = [...document.querySelectorAll('.hx-lim__reset')].map((el) => el.textContent);
+    expect(resets).toHaveLength(2);
+    expect(resets[1]).toMatch(/4/);
+    expect(resets[1]).toMatch(/д|d/);
+  });
+});
+
+describe('the other subscriptions in the card', () => {
+  it("lists Codex under a Claude chat's own limits, with what is left and the reset", async () => {
+    const view: LimitsView = {
+      state: 'ready',
+      provider: 'claude',
+      limits: limits(),
+      spend: null,
+      others: [
+        {
+          key: 'codex',
+          name: null,
+          provider: 'codex',
+          limits: limits({
+            fiveHour: null,
+            sevenDay: { usedPct: 11, resetsAt: inHours(155), forecast: null },
+          }),
+        },
+      ],
+    };
+    render(<LimitsChip view={view} />);
+    fireEvent.click(screen.getByRole('button'));
+    const list = await screen.findByRole('list');
+    expect(list.textContent).toContain('Codex');
+    expect(list.textContent).toContain('89%');
+    expect(list.querySelector('.hx-lim-line')?.textContent).toMatch(/6/);
   });
 });

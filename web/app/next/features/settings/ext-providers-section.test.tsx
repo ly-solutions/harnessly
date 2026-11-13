@@ -50,6 +50,7 @@ const actions = () => ({
   onAdd: vi.fn(async () => ({ id: 'groq' }) as { id: string } | { error: string }),
   onSave: vi.fn(async () => null),
   onRemove: vi.fn(async () => null),
+  onDefault: vi.fn(async () => null),
   onCheck: vi.fn(async () => ({ ok: true, text: 'The connection works' })),
   onRefresh: vi.fn(async () => null),
 });
@@ -81,7 +82,11 @@ describe('the list', () => {
     expect(screen.queryByText(/None yet/)).toBeNull();
 
     rerender(
-      <ExtProvidersSection state={{ k: 'ready', providers: [], presets: [] }} usage={{}} {...actions()} />,
+      <ExtProvidersSection
+        state={{ k: 'ready', providers: [], presets: [], accounts: false, launch: false }}
+        usage={{}}
+        {...actions()}
+      />,
     );
     expect(screen.getByText(/None yet/)).toBeTruthy();
 
@@ -183,5 +188,129 @@ describe('an open provider', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Remove for sure?' }));
     });
     expect(found.onRemove).toHaveBeenCalledWith('deepseek');
+  });
+});
+
+describe('several accounts of one provider', () => {
+  // The same answer from a runtime that keeps accounts: a second DeepSeek account with a name of its own.
+  const several = (): IExtRegistry => {
+    const first = { ...answer.providers[0], group: 'preset:deepseek', default: true };
+    const second = { ...first, id: 'work', name: 'Work', default: false };
+    const read = readExtRegistry({ ...answer, providers: [first, second], accounts: true });
+    if (isRefused(read)) throw new Error('refused');
+    return read;
+  };
+
+  it('reads an older runtime as one account of a provider', () => {
+    const read = registry();
+    expect(read.accounts).toBe(false);
+    expect(read.providers[0]).toMatchObject({ group: '', isDefault: false });
+  });
+
+  it('marks the default account and makes another the default', async () => {
+    const found = actions();
+    render(
+      <ExtProvidersSection
+        state={{ k: 'ready', ...several() }}
+        usage={{ work: ['Notification summaries'] }}
+        {...found}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /DeepSeek.*default/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Work.*default/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Work/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Make it the default' }));
+    });
+    expect(found.onDefault).toHaveBeenCalledWith('work');
+    // Removing an account that runs a feature says what becomes of the feature.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(
+      screen.getByText(/It runs: notification summaries\. They move to the default account/),
+    ).toBeTruthy();
+  });
+
+  it('adds one more account of a connected provider under a name of its own', async () => {
+    const found = actions();
+    render(<ExtProvidersSection state={{ k: 'ready', ...several() }} usage={{}} {...found} />);
+    fireEvent.click(screen.getByRole('button', { name: /Work/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'One more account' }));
+    expect(screen.getByText('One more DeepSeek account')).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('For example, “Work”'), { target: { value: 'Home' } });
+    // The card of the account it was opened from is still leaving: the form's field is the last one.
+    const keys = screen.getAllByLabelText('API key');
+    fireEvent.change(keys[keys.length - 1] as HTMLElement, { target: { value: 'sk-home' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check and add' }));
+    });
+    expect(found.onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Home', key: 'sk-home', baseUrl: 'https://api.deepseek.com/v1' }),
+    );
+  });
+});
+
+describe('the variables of a launch', () => {
+  // An Anthropic-compatible provider of the person's own, with a token the safe keeps and a variable of theirs.
+  const corp = (): IExtRegistry => {
+    const provider = {
+      ...answer.providers[0],
+      id: 'corp',
+      name: 'Corp',
+      api: 'anthropic',
+      preset: 'custom',
+      group: 'host:llm.corp.example',
+      default: true,
+      env: [
+        { name: 'ANTHROPIC_AUTH_TOKEN', secret: true, set: true },
+        { name: 'CORP_TEAM', value: 'platform', secret: false, set: true },
+      ],
+    };
+    const read = readExtRegistry({ ...answer, providers: [provider], accounts: true, launch: true });
+    if (isRefused(read)) throw new Error('refused');
+    return read;
+  };
+
+  it('never has the value of a secret, only that it is set', () => {
+    const read = corp();
+    expect(read.providers[0]?.env).toEqual([
+      { name: 'ANTHROPIC_AUTH_TOKEN', value: '', secret: true, set: true },
+      { name: 'CORP_TEAM', value: 'platform', secret: false, set: true },
+    ]);
+    render(<ExtProvidersSection state={{ k: 'ready', ...corp() }} usage={{}} {...actions()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Corp/ }));
+    const token = screen.getByLabelText('ANTHROPIC_AUTH_TOKEN') as HTMLInputElement;
+    expect(token.value).toBe('');
+    expect(token.placeholder).toBe('set, kept in the safe');
+  });
+
+  it('sends the whole list: what was typed, the kept secret without a value, nothing for an empty field', async () => {
+    const found = actions();
+    render(<ExtProvidersSection state={{ k: 'ready', ...corp() }} usage={{}} {...found} />);
+    fireEvent.click(screen.getByRole('button', { name: /Corp/ }));
+    fireEvent.change(screen.getByLabelText('ANTHROPIC_BASE_URL'), {
+      target: { value: 'https://proxy.corp.example/v2' },
+    });
+    fireEvent.change(screen.getByLabelText('ANTHROPIC_MODEL'), { target: { value: '  ' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(found.onSave).toHaveBeenCalledWith(
+      'corp',
+      expect.objectContaining({
+        env: [
+          { name: 'ANTHROPIC_AUTH_TOKEN', secret: true },
+          { name: 'CORP_TEAM', secret: false, value: 'platform' },
+          { name: 'ANTHROPIC_BASE_URL', secret: false, value: 'https://proxy.corp.example/v2' },
+        ],
+      }),
+    );
+  });
+
+  it('is not offered for a provider Claude Code cannot run on', () => {
+    const read = corp();
+    const openai = { ...read, providers: read.providers.map((p) => ({ ...p, api: 'openai' as const })) };
+    render(<ExtProvidersSection state={{ k: 'ready', ...openai }} usage={{}} {...actions()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Corp/ }));
+    expect(screen.queryByLabelText('ANTHROPIC_BASE_URL')).toBeNull();
   });
 });

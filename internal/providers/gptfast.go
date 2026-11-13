@@ -35,6 +35,13 @@ const fastTier = "priority"
 // pane whichever way it was started.
 const ChatHeaderEnv = `ANTHROPIC_CUSTOM_HEADERS="` + chatHeader + `: ` + chatMarker + `$TMUX_PANE/$TMUX"`
 
+// ClaudeModelPinned says whether the person typed the model of their own provider (ANTHROPIC_MODEL among its
+// variables): what is filled in is always what a chat on it runs, whatever the picker of the chat says.
+func (l Launcher) ClaudeModelPinned(profile string) bool {
+	p, ok := Find(profile)
+	return ok && p.Custom && strings.TrimSpace(p.Env["ANTHROPIC_MODEL"]) != ""
+}
+
 // ClaudeLineEnv is what a Claude Code chat on the profile adds to its launch line: the pane header for gpt (whose
 // proxy has a fast tier to offer), nothing for another profile.
 func (l Launcher) ClaudeLineEnv(profile string) string {

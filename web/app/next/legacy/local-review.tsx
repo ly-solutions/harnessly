@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import type { IReviewCommit } from '@/next/features/review/model';
 import ReviewScreen from '@/next/features/review/review-screen';
 import { localDiffSource } from '@/next/legacy/review-sources';
+import { VIEWED_IO } from '@/next/legacy/code-review-api';
 
 interface ILocalReviewProps {
   root: string;
@@ -20,7 +21,7 @@ const LocalReview = ({ root, name, branch, diff, truncated, sha, title, commits 
     () => localDiffSource({ root, name, branch, diff, truncated, sha, title, commits }),
     [root, name, branch, diff, truncated, sha, title, commits],
   );
-  return <ReviewScreen source={source} />;
+  return <ReviewScreen source={source} viewedIo={VIEWED_IO} />;
 };
 
 export default LocalReview;

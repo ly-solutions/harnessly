@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
@@ -52,6 +53,9 @@ var sourceKeys = map[string][]string{
 	store.CatalogApp: {"from", "repo", "repoUrl", "branch", "path", "off"},
 	// A pack: the same, the folder of its harnessly/pack.json.
 	store.CatalogPack: {"from", "repo", "repoUrl", "branch", "path"},
+	// A model provider: the kind of its API, its address, the models offered, the name of the secret with its key, the
+	// plain variables of a launch (NAME=value) and the secret ones (NAME=<the secret's name or vault: reference>).
+	store.CatalogProvider: {"api", "baseUrl", "preset", "models", "key", "env", "secretEnv"},
 }
 
 // objectKeys are the keys whose value is an object of Claude Code's settings.
@@ -73,7 +77,7 @@ var listKeys = []string{"args", "secretRefs", "secrets"}
 func ValidKind(kind string) bool { _, ok := sourceKeys[kind]; return ok }
 
 // kindsRu lists the kinds for the message of a refused one.
-const kindsRu = "skill, mcp, repo, doc, script, access, plugin, claude-settings, app или pack"
+const kindsRu = "skill, mcp, repo, doc, script, access, plugin, claude-settings, app, pack или provider"
 
 // CleanText trims a name or a hint and checks its length in characters.
 func CleanText(field, raw string, max int, required bool) (string, error) {
@@ -234,6 +238,30 @@ func cleanScript(out map[string]any) error {
 	return nil
 }
 
+// providerRefusals says, by the registry's reason, which field of a provider's source is wrong and how.
+var providerRefusals = map[string][2]string{
+	extproviders.ReasonBadAPI:         {"source.api", "Выберите тип API: совместимый с OpenAI или с Anthropic"},
+	extproviders.ReasonBadURL:         {"source.baseUrl", "Адрес начинается с https:// или http:// и содержит имя сервера"},
+	extproviders.ReasonBadModel:       {"source.models", "Название модели — одно слово без пробелов"},
+	extproviders.ReasonBadSecretRef:   {"source.key", "Секрет называют именем в сейфе или ссылкой vault:<путь>#<ключ>"},
+	extproviders.ReasonSecretInSource: {"source.env", "Токен или ключ в окружение не пишут: назовите секрет, в котором он лежит"},
+	extproviders.ReasonBadEnv:         {"source.env", "Переменная пишется ИМЯ=значение: имя из букв, цифр и _, один раз, значение в одну строку"},
+	extproviders.ReasonEnvReserved:    {"source.env", "Среди переменных есть та, которую задаёт сам запуск: её здесь не меняют"},
+}
+
+// cleanProvider checks the source of a model provider with the rules of the machines' registry, so that the hub never
+// keeps a source a machine would refuse. The source names its secrets and holds none.
+func cleanProvider(raw json.RawMessage) (json.RawMessage, error) {
+	src, err := extproviders.ParseManagedSource(raw)
+	if err != nil {
+		if said, ok := providerRefusals[extproviders.ReasonOf(err)]; ok {
+			return nil, httpx.Invalid(said[0], said[1])
+		}
+		return nil, httpx.Invalid("source", "Источник провайдера не разобран")
+	}
+	return json.Marshal(src)
+}
+
 // cleanApp checks where an app comes from: a folder of a repository, inside it.
 func cleanApp(out map[string]any) error {
 	str := func(k string) string { s, _ := out[k].(string); return s }
@@ -268,6 +296,14 @@ func CleanSource(kind string, raw json.RawMessage) (json.RawMessage, error) {
 		}
 	}
 	allowed := sourceKeys[kind]
+	if kind == store.CatalogProvider {
+		for k := range m {
+			if !slices.Contains(allowed, k) {
+				return nil, httpx.Invalid("source."+k, "Это поле здесь не используется")
+			}
+		}
+		return cleanProvider(raw)
+	}
 	out := map[string]any{}
 	for k, v := range m {
 		if !slices.Contains(allowed, k) {

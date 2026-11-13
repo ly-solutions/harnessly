@@ -32,14 +32,28 @@ type GCReport struct {
 	BlobsKept       int // unreferenced but still inside the grace period
 }
 
-// RunGC forgets old revisions (when retention is active) and deletes blobs no revision refers to. A blob is never
+// Pins names the blobs something outside the store refers to, by room: the hub keeps blobs of its own in the rooms
+// (a chat's attachments, the answers it worked out from a design's revision, the page of a chat's snapshot) whose
+// record is a row of its database, not a revision here. A pinned blob is kept as a referenced one is.
+type Pins func(ctx context.Context) (map[string]map[string]struct{}, error)
+
+// RunGC is RunGCPinned for a store nothing outside refers to (a runtime's own, a test's). The hub's store is never
+// collected with it.
+func RunGC(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention, dry bool) ([]GCReport, error) {
+	return RunGCPinned(ctx, meta, blobs, ret, nil, dry)
+}
+
+// RunGCPinned forgets old revisions (when retention is active) and deletes blobs no revision refers to. A blob is never
 // deleted because it is old, only because nothing refers to it, and then only on a pass at least Grace after the
 // first pass that saw it unreferenced and after one more look at the references right before the delete. A blob
 // that a kept revision (current or in the history that stays) refers to is never touched. dry reports and changes
 // nothing.
 //
+// The pins are read before a room's blobs are listed and once more right before anything is deleted; a pass that
+// cannot read them deletes nothing.
+//
 // It takes a lock first, so several replicas running it do not duplicate the work (the ones that lose skip it).
-func RunGC(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention, dry bool) ([]GCReport, error) {
+func RunGCPinned(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention, pins Pins, dry bool) ([]GCReport, error) {
 	unlock, ok, err := meta.TryLock(ctx, "gc")
 	if err != nil {
 		return nil, err
@@ -58,7 +72,7 @@ func RunGC(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention, 
 	}
 	var out []GCReport
 	for _, room := range rooms {
-		rep, err := gcRoom(ctx, meta, blobs, room, ret, dry)
+		rep, err := gcRoom(ctx, meta, blobs, room, ret, pins, dry)
 		if err != nil {
 			return out, fmt.Errorf("gc room %s: %w", room, err)
 		}
@@ -67,7 +81,19 @@ func RunGC(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention, 
 	return out, nil
 }
 
-func gcRoom(ctx context.Context, meta MetaStore, blobs BlobStore, room string, ret Retention, dry bool) (GCReport, error) {
+// pinned reads the pins of one room.
+func pinned(ctx context.Context, pins Pins, room string) (map[string]struct{}, error) {
+	if pins == nil {
+		return nil, nil
+	}
+	all, err := pins(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("pins: %w", err)
+	}
+	return all[room], nil
+}
+
+func gcRoom(ctx context.Context, meta MetaStore, blobs BlobStore, room string, ret Retention, pins Pins, dry bool) (GCReport, error) {
 	rep := GCReport{Room: room}
 	rm, err := meta.Room(ctx, room)
 	if err != nil {
@@ -88,6 +114,13 @@ func gcRoom(ctx context.Context, meta MetaStore, blobs BlobStore, room string, r
 	refs, err := rm.ReferencedShas(ctx)
 	if err != nil {
 		return rep, err
+	}
+	held, err := pinned(ctx, pins, room)
+	if err != nil {
+		return rep, err
+	}
+	for sha := range held {
+		refs[sha] = struct{}{}
 	}
 	marks, err := rm.GCMarks(ctx)
 	if err != nil {
@@ -126,7 +159,18 @@ func gcRoom(ctx context.Context, meta MetaStore, blobs BlobStore, room string, r
 			drop = append(drop, sha) // the blob is gone already
 		}
 	}
+	// One more look at the pins right before the delete, as at the references: a row written since the listing keeps
+	// its blob.
+	if len(expired) > 0 {
+		if held, err = pinned(ctx, pins, room); err != nil {
+			return rep, err
+		}
+	}
 	for _, b := range expired {
+		if _, ok := held[b.Sha]; ok {
+			drop = append(drop, b.Sha) // pinned again: forgiven
+			continue
+		}
 		if dry {
 			if used, err := rm.Referenced(ctx, b.Sha); err != nil {
 				return rep, err
@@ -159,7 +203,7 @@ func gcRoom(ctx context.Context, meta MetaStore, blobs BlobStore, room string, r
 }
 
 // GCLoop runs RunGC every interval until ctx ends.
-func GCLoop(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention, every time.Duration) {
+func GCLoop(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention, pins Pins, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -168,7 +212,7 @@ func GCLoop(ctx context.Context, meta MetaStore, blobs BlobStore, ret Retention,
 			return
 		case <-t.C:
 		}
-		reps, err := RunGC(ctx, meta, blobs, ret, false)
+		reps, err := RunGCPinned(ctx, meta, blobs, ret, pins, false)
 		if err != nil {
 			slog.Error("gc", "err", err)
 			continue

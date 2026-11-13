@@ -8,10 +8,15 @@ import type { MachineId } from '@/next/protocol/v2';
 
 const TIMEOUT_MS = 10_000;
 
+/** `provider` is a connected provider's id; for a feature with `agents` also an agent's (SMART_AGENTS) or SMART_OFF. */
 export interface ISmartChoice {
   provider: string;
   model: string;
 }
+
+export const SMART_OFF = 'off';
+export const SMART_AGENTS = ['claude', 'codex'] as const;
+export type TSmartAgent = (typeof SMART_AGENTS)[number];
 
 export interface ISmartFeature {
   id: string;
@@ -19,6 +24,8 @@ export interface ISmartFeature {
   description: string;
   /** The feature already goes through the picked provider; one that is not keeps the choice for the day it does. */
   live: boolean;
+  /** The feature may also be given a model of an agent of the machine, or turned off (the summaries: HRN-1270). */
+  agents: boolean;
   /** null: as now. */
   choice: ISmartChoice | null;
   /** Why the last call to the provider failed, in the runtime's words; null when it went well or was not made. */
@@ -58,6 +65,7 @@ const readFeature = (v: unknown): ISmartFeature => {
     title: str(o.title, 'title'),
     description: str(o.description, 'description'),
     live: bool(o.live, 'live'),
+    agents: o.agents === true,
     choice: provider === '' ? null : { provider, model: opt(o.model) },
     failure: readFailure(o.last),
   };

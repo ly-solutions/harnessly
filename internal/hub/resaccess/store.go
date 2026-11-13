@@ -81,6 +81,17 @@ func (t *txn) legacy(ref Ref) (resource, []member, []teamGrant, error) {
 	switch ref.Kind {
 	case KindKit:
 		r.TeamLevel = levelNone // a kit nobody recorded is closed to everyone: the first machine to put it in the room claims it
+	case KindChat:
+		// A snapshot is read by the people of its space and is nobody's to edit; one nobody published is closed.
+		r.TeamLevel = levelNone
+		err := t.q.QueryRow(t.ctx, `SELECT owner_email, title FROM chat_shares WHERE id = ? AND space_id = ?`, ref.ID, ref.Space).Scan(&r.Owner, &r.Title)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return r, nil, nil, err
+		}
+		if err == nil {
+			r.TeamLevel = roleView
+			r.Owner = normEmail(r.Owner)
+		}
 	case KindDoc:
 		var level string
 		err := t.q.QueryRow(t.ctx, `SELECT owner_email, owner_name, team_level, title FROM doc_meta WHERE slug = ? AND COALESCE(space_id, '') = ?`, ref.ID, ref.Space).Scan(&r.Owner, &r.OwnerName, &level, &r.Title)

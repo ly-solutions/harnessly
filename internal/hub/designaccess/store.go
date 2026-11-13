@@ -389,6 +389,9 @@ func (s *Service) registerDeleted(ctx context.Context, m store.Machine, id, emai
 		if f.Role != roleOwner {
 			return t.writeLog(id, who, "delete_refused", who, map[string]any{"role": nullStr(f.Role)})
 		}
+		if err := t.leaveRegistry(t.key(id), id); err != nil {
+			return err
+		}
 		for _, table := range []string{"design_members", "design_team_grants", "design_requests", "design_invites", "design_share_links", "design_projects"} {
 			if _, err := t.q.Exec(t.ctx, `DELETE FROM `+table+` WHERE machine_id = ? AND project_id = ?`, t.key(id), id); err != nil {
 				return err
@@ -549,6 +552,9 @@ func (t *txn) revokeAll(id, actor string) error {
 	}
 	shares, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET revoked_at = ? WHERE `+in+` AND project_id = ? AND revoked_at IS NULL`, append(append([]any{ms(t.now)}, args...), id)...)
 	if err != nil {
+		return err
+	}
+	if err := t.enterProjectLinks(id); err != nil {
 		return err
 	}
 	np, _ := people.RowsAffected()

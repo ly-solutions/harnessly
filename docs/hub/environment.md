@@ -438,7 +438,51 @@ logged in, Linux scripts run in order. Machines are Linux only. Types: `internal
 | `access` | `service` (`gitlab` or `github`), `host` (empty: `gitlab.com` / `github.com`), `secret` (the safe's name of the token; empty: `gitlab-token` / `github-token`) |
 | `script` | `from` (`text`, `repo`, `file`, `url`); `body` (the commands for `text`, the file's text for `file`, ≤ 48 KiB); `fileName` (for `file`); `repo` (the item id of a `repo` of the list, for `repo`), `repoUrl` + `branch` (a repository outside the list, cloned only to run the script); `path` (the file in the repository); `url` (for `url`, https only); `run` (how to start it, ≤ 4 KiB, lines run in order; empty: `bash <file>`); `rerun` (`once` or `check`); `check` (for `check`: a command, exit 0 means ready); `secrets` (≤ 16 names of the safe, `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`) |
 
+| `provider` | `api` (`anthropic` or `openai`), `baseUrl`, `models` (the model ids offered; empty: the machine asks the provider), `key` (the secret with the provider's key; empty: none), `env` (plain variables of a launch, `NAME=value`), `secretEnv` (secret variables, `NAME=<secret>`), `preset` |
+
 A script that calls `brew` is refused (400, `details.field` `source.body` or `source.run`): the machines are Linux.
+
+### Model providers
+
+An item of kind `provider` gives every machine of its audience a model provider: the person finds it in Settings →
+«Провайдеры» beside the accounts they added themselves, marked «из окружения», and picks its models for the background
+tasks; with the Anthropic API it is also a launch profile of Claude Code chats, and `env` / `secretEnv` are added to
+the launch. The person cannot change or remove it on the machine (which account of a provider is the main one stays
+their choice); it leaves with its item.
+
+**The source names its secrets and holds none.** `key` and the right side of a `secretEnv` line are either the name
+of a secret of the person's safe (everyone puts their own; the machine opens the safe's ask and the step waits,
+`pending`), or a reference `vault:<path>#<key>` to a secret the organization keeps on the safe's server: nobody types
+it, the machine reads it through its safe ([docs/safe.md](../safe.md), «References»; the folders a reference may read
+are `HUB_SECRETS_REF_PREFIXES` / `RUNTIME_SECRETS_REF_PREFIXES`). A reference that cannot be read is the step's error,
+said at the setup and not at the first launch.
+
+**A secret goes only to the server the person allowed it for.** A secret of the person's safe is bound to sites
+(`origins`). The machine uses a named secret for a provider only when the person put it, or allowed the one they
+have, for that provider's server: the ask the machine opens names the server, and until it is answered the provider is
+kept without the secret (the step is `pending`). An item cannot therefore send a token the person keeps for something
+else to an address of its own, and a new address of the item needs the person's word again. The same holds for an
+account an agent writes with `harnessly settings`: it names only secrets allowed for that very server (`harnessly
+secret ask NAME --origin https://<host>`), never another account's key, and never a `vault:` reference. A variable that is a credential by its name (`…KEY`, `…TOKEN`,
+`…SECRET`, `…PASSWORD`) is refused in `env` (400, `source.env`): it goes to `secretEnv` with a secret named. The
+variables a launch sets itself (`PATH`, `HOME`, `CLAUDE_CONFIG_DIR`, the `HARNESSLY_`, `RUNTIME_` families
+and the like) and the ones that make a program run somebody's code (`NODE_OPTIONS`, `LD_PRELOAD`, `GIT_*`, `PYTHON*`,
+`EDITOR` and the like) are refused in both. So are the variables that would send the launch's requests, and with them the key,
+to another server than `baseUrl` or take away the check of who answers: `ANTHROPIC_BASE_URL` of another server, the
+proxy variables, `NODE_TLS_REJECT_UNAUTHORIZED`, the switches to another cloud. The paths of certificates
+(`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`) are taken. Values of secrets are in no answer of the hub or of the machine, in no journal and
+in no log: the registry keeps the names.
+
+A deployment names more families of its own in the runtime's `RUNTIME_LAUNCH_ENV_RESERVED` (prefixes, comma-separated;
+empty says there are none). A hub's machine without it says so in its log at start and in the machine checks.
+
+The hub sends the kind only to a machine whose `hello` has `environment.providers` (and the machine setup); an older
+machine gets the list without it. Only an organization admin writes such an item (as an `access`).
+
+The person's own accounts are set up on the machine: on the Settings screen, or by an agent with `harnessly settings`
+(the key `providers`: the list in JSON to read; an account in the same form as the source, with a `name`, to write).
+An agent names secrets the same way and asks the person for a missing one with `harnessly secret ask`; outside the
+Settings window its change waits for the person's confirmation on a card.
 
 ### Order
 

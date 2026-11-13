@@ -16,6 +16,10 @@ func sameServer(a, b string) bool {
 
 // Service is the registry with the safe its keys live in and the client that asks a provider for its models.
 type Service struct {
+	// Bound says whether the person allowed a secret of their safe for a site (scheme://host[:port]): a secret that is
+	// only named, by an agent or by the environment, is used for the server it was allowed for and for no other. nil:
+	// no secret is.
+	Bound   func(name, origin string) bool
 	Store   *Store
 	Secrets Secrets
 	// Probe asks a provider; nil is a Prober of its own.
@@ -44,7 +48,8 @@ func (s *Service) ViewOf(p Provider) View {
 		models = []Model{}
 	}
 	return View{ID: p.ID, Name: p.Name, BaseURL: p.BaseURL, Host: p.Host(), API: p.API, Preset: p.Preset,
-		HasKey: p.KeyRef != "" && s.Secrets.Has(p.KeyRef), Models: models, ModelsAt: p.ModelsAt, ClaudeCLI: p.ClaudeCLI(),
+		HasKey: s.holds(p.KeyRef), Models: models, ModelsAt: p.ModelsAt, ClaudeCLI: p.ClaudeCLI(),
+		Group: p.Group(), Default: p.Default, Managed: p.Origin != "", Env: s.envView(p.Env),
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 }
 
@@ -66,7 +71,7 @@ func (s *Service) Get(id string) (Provider, error) { return s.Store.Get(id) }
 
 // Key is the provider's key from the safe; "" for a provider that takes none.
 func (s *Service) Key(p Provider) (string, error) {
-	if p.KeyRef == "" || !s.Secrets.Has(p.KeyRef) {
+	if !s.holds(p.KeyRef) {
 		return "", nil
 	}
 	return s.Secrets.Reveal(p.KeyRef)
@@ -111,6 +116,8 @@ func (s *Service) Create(in Input) (View, error) {
 		if len(body.Providers) >= MaxProviders {
 			return refuse(ReasonTooMany)
 		}
+		// Another account of a provider the person has already: it is told apart by a number until it is given a name.
+		name = freeName(body.Providers, name)
 		id := slug(name)
 		taken := func(id string) bool {
 			return slices.ContainsFunc(body.Providers, func(p Provider) bool { return p.ID == id })
@@ -132,6 +139,8 @@ func (s *Service) Create(in Input) (View, error) {
 			}
 		}
 		body.Providers = append(body.Providers, made)
+		settleDefaults(body.Providers)
+		made = body.Providers[len(body.Providers)-1]
 		return nil
 	})
 	if err != nil {
@@ -148,6 +157,10 @@ type Patch struct {
 	API     *API     `json:"api"`
 	Key     *string  `json:"key"`
 	Models  *[]Model `json:"models"`
+	// Env, when given, is the whole list of the launch's variables: one that is not in it is removed.
+	Env *[]EnvInput `json:"env"`
+	// Default true makes the account the default one of its provider; false is not a change (another is made so).
+	Default *bool `json:"default"`
 }
 
 // Update changes a provider. A new address or kind of API drops the models taken from the old one, unless the patch
@@ -161,11 +174,19 @@ func (s *Service) Update(id string, patch Patch) (View, error) {
 		}
 		p := body.Providers[i]
 		before = p
+		// A provider of the environment is changed in the hub. Which account of a provider is the main one is the
+		// person's choice here too.
+		if p.Origin != "" && (patch.Name != nil || patch.BaseURL != nil || patch.API != nil || patch.Key != nil || patch.Models != nil || patch.Env != nil) {
+			return refuse(ReasonManaged)
+		}
 		moved := false
 		if patch.Name != nil {
 			name, err := cleanName(*patch.Name)
 			if err != nil {
 				return err
+			}
+			if slices.ContainsFunc(body.Providers, func(x Provider) bool { return x.ID != id && sameName(x.Name, name) }) {
+				return refuse(ReasonNameTaken)
 			}
 			p.Name = name
 		}
@@ -190,7 +211,9 @@ func (s *Service) Update(id string, patch Patch) (View, error) {
 		// A key is saved for one server. An address that moves to another server drops it, unless the patch brings the
 		// key of the new one: the old key is never sent to a server the person did not give it to.
 		if !sameServer(before.BaseURL, p.BaseURL) && patch.Key == nil && p.KeyRef != "" {
-			_ = s.Secrets.Remove(p.KeyRef)
+			if p.owns(p.KeyRef) {
+				_ = s.Secrets.Remove(p.KeyRef)
+			}
 			p.KeyRef = ""
 		}
 		if patch.Models != nil {
@@ -207,20 +230,40 @@ func (s *Service) Update(id string, patch Patch) (View, error) {
 			}
 			switch {
 			case key != "":
-				if p.KeyRef == "" {
+				// A key typed here is kept under the registry's own name: a secret that was only named is not overwritten.
+				if !p.owns(p.KeyRef) {
 					p.KeyRef = "provider-" + p.ID + "-key"
 				}
 				if err := s.Secrets.Put(p.KeyRef, key); err != nil {
 					return &Refusal{Reason: ReasonFailed, Err: err}
 				}
 			case p.KeyRef != "":
-				_ = s.Secrets.Remove(p.KeyRef)
+				if p.owns(p.KeyRef) {
+					_ = s.Secrets.Remove(p.KeyRef)
+				}
 				p.KeyRef = ""
 			}
 		}
+		if patch.Env != nil {
+			env, err := s.applyEnv(p.ID, p.Env, *patch.Env)
+			if err != nil {
+				return err
+			}
+			p.Env = env
+		}
 		p.UpdatedAt = s.Store.now()
+		if patch.Default != nil && *patch.Default {
+			for j := range body.Providers {
+				if body.Providers[j].Group() == p.Group() {
+					body.Providers[j].Default = false
+				}
+			}
+			p.Default = true
+		}
 		body.Providers[i] = p
-		after = p
+		// An address that moved to another provider joins its accounts: every group keeps one default.
+		settleDefaults(body.Providers)
+		after = body.Providers[i]
 		return nil
 	})
 	if err != nil {
@@ -239,14 +282,22 @@ func (s *Service) Remove(id string) error {
 			return refuse(ReasonNotFound)
 		}
 		gone = body.Providers[i]
+		if gone.Origin != "" {
+			return refuse(ReasonManaged)
+		}
 		body.Providers = slices.Delete(body.Providers, i, i+1)
+		// The default account is gone: the one added first among the rest of its provider takes its place.
+		settleDefaults(body.Providers)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	if gone.KeyRef != "" {
-		_ = s.Secrets.Remove(gone.KeyRef)
+	// A secret that was only named (by an agent, or by the person) is the person's and stays in the safe.
+	for _, ref := range gone.secretRefs() {
+		if gone.owns(ref) {
+			_ = s.Secrets.Remove(ref)
+		}
 	}
 	s.changed("removed", &gone, nil)
 	return nil
@@ -340,4 +391,18 @@ func (s *Service) Models(ctx context.Context, id string, refresh bool) (ModelLis
 		return ModelList{}, err
 	}
 	return ModelList{Models: p.Models, At: p.ModelsAt, Check: &got}, nil
+}
+
+// DefaultOf is the default account of the provider that p is (or was) an account of; false when it has none left.
+func (s *Service) DefaultOf(p Provider) (Provider, bool) {
+	list, err := s.Store.List()
+	if err != nil {
+		return Provider{}, false
+	}
+	for _, x := range list {
+		if x.Default && x.Group() == p.Group() {
+			return x, true
+		}
+	}
+	return Provider{}, false
 }

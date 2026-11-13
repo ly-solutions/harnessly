@@ -27,6 +27,10 @@ const (
 	// EnvKindApp is an app (the folder with harnessly/app.json) in a repository, installed for the person as the
 	// environment's: they cannot remove it, nor turn it off when it is pinned.
 	EnvKindApp = "app"
+	// EnvKindProvider is a model provider (internal/extproviders): its address, kind of API, models and the variables of
+	// a launch, with the key and the secret variables named, never held. The machine has it beside the person's own
+	// accounts; the person cannot change or remove it.
+	EnvKindProvider = "provider"
 
 	// BuiltInEnvItemPrefix starts the id of an item the platform itself puts into every organization (the hub keeps it
 	// in its code, not in the organization's catalog).
@@ -38,6 +42,9 @@ const (
 	// FeatureEnvApps is in `hello` when the machine's runtime installs the app kind; the hub sends it only to such a
 	// machine.
 	FeatureEnvApps = "environment.apps"
+	// FeatureEnvProviders is in `hello` when the machine's runtime keeps the provider kind in its registry of model
+	// providers; the hub sends it only to such a machine.
+	FeatureEnvProviders = "environment.providers"
 
 	// FeatureEnvSetup is in `hello` when the agent hands the setup kinds to its runtime and serves env.run. The hub sends
 	// script and access items, and the order of the list, only to such a machine: an older agent would refuse a list
@@ -154,7 +161,7 @@ type EnvSetupState struct {
 
 // IsSetupKind says whether the machine (the runtime) does something with an item of this kind besides the chats.
 func IsSetupKind(kind string) bool {
-	return kind == EnvKindScript || kind == EnvKindAccess || kind == EnvKindRepo || IsClaudeKind(kind) || kind == EnvKindApp || kind == EnvKindPack
+	return kind == EnvKindScript || kind == EnvKindAccess || kind == EnvKindRepo || IsClaudeKind(kind) || kind == EnvKindApp || kind == EnvKindPack || kind == EnvKindProvider
 }
 
 // IsClaudeKind says whether the kind changes the person's Claude Code (FeatureEnvClaude).

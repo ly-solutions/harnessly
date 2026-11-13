@@ -15,13 +15,77 @@ import { useEffect, useRef, useState } from 'react';
 import Composer from '@/next/features/composer/composer';
 import { pickerAgents, type IModelChoice } from '@/next/features/composer/agents';
 import type { IPresetState, PresetId, TestState } from '@/next/features/providers/model';
+import {
+  limitsOfOwner,
+  limitsOwnerOf,
+  otherLimitsOf,
+  readLimitsOf,
+  type LimitsView,
+} from '@/next/features/limits/model';
 import ContinueSheet from '@/next/features/chat/continue-sheet';
-import AccountsSection, { type IAgentCredentials } from '@/next/features/settings/accounts-section';
+import AccountsSection, {
+  AgentConnection,
+  VendorKeys,
+  gptOf,
+  type IAgentCredentials,
+  type VendorCards,
+} from '@/next/features/settings/accounts-section';
 import type { LoginState } from '@/next/features/accounts/model';
 import { pinLocale } from '@/next/i18n';
 import type { AgentSettings, MachineAgent, Provider } from '@/next/protocol/v2';
 import { PortalContext } from '@/next/ui/portal';
 import { useRouter } from '@/platform/router';
+
+/** What is left of the made-up subscriptions: Codex on a plan with the week alone, the vendors as they answer. */
+const inHours = (h: number): number => Math.round(Date.now() / 1000 + h * 3600);
+const LIMITS = readLimitsOf({
+  claude: {
+    fiveHour: { usedPct: 6, resetsAt: inHours(2.2) },
+    sevenDay: { usedPct: 19, resetsAt: inHours(100) },
+    plan: 'Claude Max 20x',
+    updatedAt: Date.now() / 1000,
+  },
+  codex: { fiveHour: null, sevenDay: { usedPct: 11, resetsAt: inHours(155) }, plan: 'ChatGPT Prolite' },
+  profiles: {
+    'kimi-code': {
+      profile: 'kimi-code',
+      account: '',
+      fiveHour: { usedPct: 9.5, resetsAt: inHours(3.4) },
+      sevenDay: { usedPct: 18, resetsAt: inHours(70) },
+      updatedAt: Date.now() / 1000,
+    },
+    glm: {
+      profile: 'glm',
+      account: '',
+      fiveHour: { usedPct: 81, resetsAt: inHours(0.7) },
+      sevenDay: { usedPct: 41, resetsAt: inHours(120) },
+      plan: 'GLM Pro',
+    },
+    xai: {
+      profile: 'xai',
+      account: '',
+      sevenDay: { usedPct: 90, resetsAt: inHours(30) },
+      unofficial: true,
+      updatedAt: Date.now() / 1000,
+    },
+    kimi: { profile: 'kimi', account: '', balance: { amount: 49.58, currency: 'USD' } },
+  },
+});
+
+const limitsViewOf = (choice: IModelChoice): LimitsView | null => {
+  const owner = limitsOwnerOf(choice);
+  if (!LIMITS || !owner) return null;
+  const limits = limitsOfOwner(LIMITS, owner);
+  if (owner.profile !== null && !limits) return null;
+  return {
+    state: 'ready',
+    provider: owner.provider,
+    ...(owner.profile === null ? {} : { profile: owner.profile }),
+    limits,
+    spend: null,
+    others: otherLimitsOf(LIMITS, owner),
+  };
+};
 
 const levels = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
@@ -206,7 +270,6 @@ const later = <T,>(value: T, ms = 600) => new Promise<T>((resolve) => setTimeout
 
 const SettingsScene = ({ state, check, login }: { state?: string; check?: string; login?: string }) => {
   const [states, setStates] = useState(() => startStates(state));
-  const [open, setOpen] = useState<string | null>(state === 'empty' ? 'claude' : 'kimi');
   const [loginState, setLoginState] = useState<LoginState>(LOGINS[login ?? 'idle'] ?? LOGINS.idle);
   const [codexKey, setCodexKey] = useState({ configured: login === 'key', tail: null });
   const change = (id: PresetId, patch: Partial<IPresetState>) =>
@@ -240,18 +303,38 @@ const SettingsScene = ({ state, check, login }: { state?: string; check?: string
       return null;
     },
   });
+  const vendors: Extract<VendorCards, { k: 'ready' }> = {
+    k: 'ready',
+    presets: states,
+    onSave: async (id, key) => {
+      await later(null, 500);
+      change(id, { key: { configured: true, tail: tailOf(key) } });
+      return null;
+    },
+    onRemove: async (id) => {
+      await later(null, 400);
+      change(id, { key: { configured: false, tail: null } });
+      return null;
+    },
+    onTest: async () => later(result(), 900),
+    // ?gpt=fail: the proxy does not start.
+    onSwitch: async (id, on) => {
+      await later(null, 1400);
+      if (on && new URLSearchParams(window.location.search).get('gpt') === 'fail')
+        return 'Прокси не запустился';
+      change(id, { switch: { on } });
+      return null;
+    },
+  };
   return (
     <div className="hx-root hx-providers-set">
       <div className="hx-set__page-in">
         <AccountsSection
+          limits={LIMITS}
           cards={[
             { provider: 'claude', k: 'ready', settings: settingsOf('claude', login === 'connected') },
             { provider: 'codex', k: 'ready', settings: settingsOf('codex', login === 'connected') },
           ]}
-          credentials={{
-            claude: credentials({ configured: false, tail: null }),
-            codex: credentials(codexKey),
-          }}
           speech={{
             k: 'ready',
             keys: {
@@ -262,35 +345,23 @@ const SettingsScene = ({ state, check, login }: { state?: string; check?: string
             onSave: async () => null,
             onRemove: async () => null,
           }}
-          vendors={{
-            k: 'ready',
-            presets: states,
-            onSave: async (id, key) => {
-              await later(null, 500);
-              change(id, { key: { configured: true, tail: tailOf(key) } });
-              return null;
-            },
-            onRemove: async (id) => {
-              await later(null, 400);
-              change(id, { key: { configured: false, tail: null } });
-              return null;
-            },
-            onTest: async () => later(result(), 900),
-            // ?gpt=fail: the proxy does not start.
-            onSwitch: async (id, on) => {
-              await later(null, 1400);
-              if (on && new URLSearchParams(window.location.search).get('gpt') === 'fail')
-                return 'Прокси не запустился';
-              change(id, { switch: { on } });
-              return null;
-            },
-          }}
-          open={open}
-          busy={new Set()}
-          onToggle={(card) => setOpen((now) => (now === card ? null : card))}
-          onBaseUrl={async () => true}
-          onRetry={() => undefined}
+          onOpen={() => undefined}
         />
+        <AgentConnection
+          settings={settingsOf('claude', login === 'connected')}
+          credentials={credentials({ configured: false, tail: null })}
+          busy={false}
+          gpt={null}
+          onBaseUrl={async () => true}
+        />
+        <AgentConnection
+          settings={settingsOf('codex', login === 'connected')}
+          credentials={credentials(codexKey)}
+          busy={false}
+          gpt={gptOf(vendors)}
+          onBaseUrl={async () => true}
+        />
+        <VendorKeys vendors={vendors} />
       </div>
     </div>
   );
@@ -327,6 +398,7 @@ const PickerScene = ({ locked = false }: { locked?: boolean }) => {
           onCancelRecording={() => undefined}
           onFinishRecording={() => undefined}
           maxText={20000}
+          limits={limitsViewOf(choice)}
         />
         <div ref={portalRef} className="hx-portal" />
       </div>

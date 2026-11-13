@@ -39,10 +39,13 @@ const (
 	VendorGPT  ProfileVendor = "gpt"
 	// VendorAuto is the router over the person's GLM and Kimi Code subscriptions (providers.Router).
 	VendorAuto ProfileVendor = "auto"
+	// VendorOwn is a provider the person added themselves or got from the team's environment (internal/extproviders):
+	// it has no mark of a vendor, the page draws the neutral one.
+	VendorOwn ProfileVendor = "own"
 )
 
 // ProfileVendors is every ProfileVendor, in the schema's order.
-var ProfileVendors = []ProfileVendor{VendorKimi, VendorGLM, VendorGrok, VendorGPT, VendorAuto}
+var ProfileVendors = []ProfileVendor{VendorKimi, VendorGLM, VendorGrok, VendorGPT, VendorAuto, VendorOwn}
 
 // ProfileOffer is a profile a machine can start a conversation on, as MachineAgent.Profiles lists it under the agent
 // CLI the profile runs through. Models are the profile's own (ids of the vendor), and a conversation of the profile

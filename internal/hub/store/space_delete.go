@@ -45,6 +45,8 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"doc_threads", `slug IN ` + docsOfSpace},
 	{"doc_reads", `slug IN ` + docsOfSpace},
 	{"resource_guest_links", bySpace},
+	{"design_derived", bySpace},
+	{"chat_shares", bySpace},
 	{"resource_access_log", bySpace},
 	{"resource_access_requests", bySpace},
 	{"resource_access_people", bySpace},

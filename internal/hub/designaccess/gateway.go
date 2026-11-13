@@ -430,6 +430,9 @@ func (t *txn) importProject(spaceID string, p GwProject, teams map[string]string
 		if err != nil {
 			return err
 		}
+		if err := t.enterLink(l.ID); err != nil {
+			return err
+		}
 		if !ok {
 			continue
 		}

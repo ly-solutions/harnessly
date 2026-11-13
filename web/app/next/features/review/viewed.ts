@@ -1,7 +1,8 @@
 // «Viewed» marks of the review: per person, per file path, per version of the file. A mark holds the version it was
 // put on, so a file that changed since reads as not viewed again. Kept in this browser; a missing or broken storage
-// only means the marks last as long as the page.
-import { useCallback, useSyncExternalStore } from 'react';
+// only means the marks last as long as the page. A change on a code host has them on every device: GitHub keeps the
+// marks itself (`host`), for the others the machine does (`io`), beside this browser's.
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { IReviewFile } from '@/next/features/review/model';
 
 export type TViewedMarks = Readonly<Record<string, string>>;
@@ -81,14 +82,84 @@ const subscribe = (listener: () => void) => {
   };
 };
 
+/** The machine's marks of one change: path to the version of the file the mark was put on. */
+export interface IViewedIo {
+  load: (scope: string) => Promise<TViewedMarks | null>;
+  /** An empty version takes the mark off. */
+  mark: (scope: string, path: string, version: string) => Promise<TViewedMarks | null>;
+}
+
+/** The code host's own marks (GitHub): the paths marked there, and the act that marks one. */
+export interface IHostViewed {
+  paths: readonly string[];
+  /** False when the host did not take it. */
+  set: (path: string, viewed: boolean) => Promise<boolean>;
+}
+
+export interface IViewedOptions {
+  io?: IViewedIo | null;
+  host?: IHostViewed | null;
+}
+
+const NO_MARKS: TViewedMarks = {};
+
 /** The person's marks within one scope and a way to toggle one. */
-export const useViewed = (person: string, scope: string) => {
+export const useViewed = (person: string, scope: string, { io = null, host = null }: IViewedOptions = {}) => {
   const marks = useSyncExternalStore(subscribe, () => read(person));
+  // What the machine keeps for this scope, as far as it is read; another scope's is not this one's.
+  const [kept, setKept] = useState<{ scope: string; marks: TViewedMarks } | null>(null);
+  // Marks sent to the host and not answered yet, so that the box does not wait for the round trip.
+  const [sent, setSent] = useState<Readonly<Record<string, boolean>>>({});
+  const remote = kept?.scope === scope ? kept.marks : NO_MARKS;
+  const hostPaths = host?.paths;
+  const hosted = hostPaths !== undefined;
+  const hostSet = host?.set;
+
+  useEffect(() => {
+    if (!io || hosted) return;
+    let live = true;
+    void io.load(scope).then((loaded) => {
+      if (live && loaded) setKept({ scope, marks: loaded });
+    });
+    return () => {
+      live = false;
+    };
+  }, [io, scope, hosted]);
+
   const toggle = useCallback(
-    (file: IReviewFile, viewed: boolean) => write(person, setViewed(read(person), scope, file, viewed)),
-    [person, scope],
+    (file: IReviewFile, viewed: boolean) => {
+      if (hostSet) {
+        const settle = () =>
+          setSent((was) => {
+            const next = { ...was };
+            delete next[file.path];
+            return next;
+          });
+        setSent((was) => ({ ...was, [file.path]: viewed }));
+        void hostSet(file.path, viewed).then(settle, settle);
+        return;
+      }
+      write(person, setViewed(read(person), scope, file, viewed));
+      if (!io) return;
+      setKept((was) => {
+        const next: Record<string, string> = { ...(was?.scope === scope ? was.marks : {}) };
+        delete next[file.path];
+        if (viewed) next[file.path] = file.version;
+        return { scope, marks: next };
+      });
+      void io.mark(scope, file.path, viewed ? file.version : '').then((saved) => {
+        if (saved) setKept({ scope, marks: saved });
+      });
+    },
+    [person, scope, io, hostSet],
   );
-  const viewed = useCallback((file: IReviewFile) => isViewed(marks, scope, file), [marks, scope]);
+  const viewed = useCallback(
+    (file: IReviewFile) => {
+      if (hostPaths) return sent[file.path] ?? hostPaths.includes(file.path);
+      return isViewed(marks, scope, file) || remote[file.path] === file.version;
+    },
+    [marks, scope, remote, hostPaths, sent],
+  );
   return { viewed, toggle };
 };
 

@@ -17,7 +17,7 @@ import { FeedNotesBar, showFeedNote, useFeedNoteChips } from '@/next/features/ch
 import type { INoteChipGroup } from '@/next/ui/notes/note-chips';
 import { useContextWindow } from '@/next/bindings/use-context-window';
 import { useAgentLimits } from '@/next/bindings/use-limits';
-import { limitsProviderOf } from '@/next/features/limits/model';
+import { limitsOwnerOf } from '@/next/features/limits/model';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   answerQuestion,
@@ -294,10 +294,10 @@ const ChatDock = ({ conv, machine, extra = null, handoff = null }: IChatDockProp
   const { notice: voiceNotice, insert, ...voice } = useVoice(machine, text, onChange, read, conv);
   const takes = useTakesMenu(insert);
   const window = useContextWindow(machine, conv, working);
-  // The usage meter is Anthropic's (or Codex's) own: a chat on a vendor's profile has none.
+  // The usage meter of whoever the chat spends: the agent's own account, or the vendor's profile it runs on.
   const limits = useAgentLimits(
     machine,
-    limitsProviderOf(record ? { provider: record.provider, profile: record.model?.profile } : null),
+    limitsOwnerOf(record ? { provider: record.provider, profile: record.model?.profile } : null),
   );
   const compacting = chatState?.k === 'working' && chatState.compacting;
   const idle = chatState?.k === 'idle' || chatState?.k === 'ready';

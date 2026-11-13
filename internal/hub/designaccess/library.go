@@ -110,10 +110,21 @@ func (s *Service) libraryRoute(w http.ResponseWriter, r *http.Request, u store.U
 	if err != nil {
 		return err
 	}
+	// Only the projects open to the person are read from the store: a project closed to them is not there
+	// for them, and reading the whole space's library for one person's list is what made a cold hub too slow to answer.
 	recorded := make(map[string]project, len(rows))
+	roles := make(map[string]string, len(rows))
 	also := make([]string, 0, len(rows))
 	for _, p := range rows {
+		f, err := t.fold(p, email)
+		if err != nil {
+			return err
+		}
+		if f.Role == "" {
+			continue
+		}
 		recorded[p.ID] = p
+		roles[p.ID] = f.Role
 		also = append(also, p.ID)
 	}
 	items, err := lister.Library(ctx, spaceID, also)
@@ -130,19 +141,11 @@ func (s *Service) libraryRoute(w http.ResponseWriter, r *http.Request, u store.U
 		if !ok {
 			continue
 		}
-		f, err := t.fold(p, email)
-		if err != nil {
-			return err
-		}
-		// A project closed to the person is not there for them.
-		if f.Role == "" {
-			continue
-		}
 		title := it.Title
 		if title == "" {
 			title = it.ID
 		}
-		a := storeArtifact{ID: it.ID, Title: title, UpdatedAt: it.UpdatedAt, Kind: it.Kind, Boards: it.Boards, Convs: []string{}, Role: f.Role}
+		a := storeArtifact{ID: it.ID, Title: title, UpdatedAt: it.UpdatedAt, Kind: it.Kind, Boards: it.Boards, Convs: []string{}, Role: roles[it.ID]}
 		if a.Boards == nil {
 			a.Boards = []LibraryBoard{}
 		}

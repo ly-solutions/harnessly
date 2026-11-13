@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ly-solutions/harnessly/internal/hub/store"
@@ -16,9 +17,15 @@ import (
 type fakeLibrary struct {
 	items []LibraryItem
 	files map[string][]byte
+	// asked is the projects the last listing was asked for.
+	asked []string
+	// heads is the newest revision of the projects the store has.
+	heads map[string]int64
 }
 
-func (f *fakeLibrary) Head(context.Context, string, string) (int64, error) { return 0, nil }
+func (f *fakeLibrary) Head(_ context.Context, _, project string) (int64, error) {
+	return f.heads[project], nil
+}
 func (f *fakeLibrary) Wait(context.Context, string, string, int64) (int64, error) {
 	return 0, nil
 }
@@ -32,6 +39,7 @@ func (f *fakeLibrary) Edit(context.Context, http.ResponseWriter, *http.Request, 
 	return nil
 }
 func (f *fakeLibrary) Library(_ context.Context, _ string, also []string) ([]LibraryItem, error) {
+	f.asked = also
 	return f.items, nil
 }
 func (f *fakeLibrary) ReadFile(_ context.Context, _ string, rel string, _ int64) ([]byte, error) {
@@ -101,6 +109,10 @@ func TestLibraryFromTheStoreKeepsAccess(t *testing.T) {
 
 	// The stranger, under their own machine (off too): the personal project is not there, nor the owner's shelves.
 	other := askLibrary(t, r, r.strangeU, r.stranger)
+	// a project closed to the person is not read from the store for them at all.
+	if len(lib.asked) != 1 || lib.asked[0] != "shared" {
+		t.Fatalf("the store was asked for projects closed to the stranger: %v", lib.asked)
+	}
 	for _, a := range other.Artifacts {
 		if a.ID == "secret" {
 			t.Fatalf("a stranger sees someone else's personal project: %+v", other.Artifacts)
@@ -125,5 +137,27 @@ func TestLibraryWithoutTheStoreIsNotFound(t *testing.T) {
 	var body struct{ Code string }
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Code != "store_off" {
 		t.Fatalf("without a store, the code: %q %v", body.Code, err)
+	}
+}
+
+// the hub counts the recorded projects by whether the store has a revision of them, and names the missing.
+func TestCoverageCountsTheProjectsTheStoreLacks(t *testing.T) {
+	ctx := context.Background()
+	r := newSpaceRig(t, true)
+	for _, id := range []string{"instore", "onmachine"} {
+		if done, err := r.svc.registerCreated(ctx, r.owner, id, r.ownerU.Email); err != nil || !done {
+			t.Fatalf("registerCreated %s: %v %v", id, done, err)
+		}
+	}
+	r.svc.UseView(&fakeLibrary{heads: map[string]int64{"instore": 4}})
+	c, missing, err := r.svc.countCoverage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Stored != 1 || c.Missing != 1 || len(missing) != 1 || !strings.HasSuffix(missing[0], "/onmachine") {
+		t.Fatalf("coverage: %+v %v", c, missing)
+	}
+	if got := r.svc.Coverage(); !got.At.IsZero() {
+		t.Fatalf("a count nobody made is said: %+v", got)
 	}
 }

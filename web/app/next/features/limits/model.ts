@@ -5,15 +5,44 @@
 import { locale, t } from '@/next/i18n';
 import type { Provider } from '@/next/protocol/v2';
 
-/**
- * The agent whose quota a chat's chip shows: none for a chat on a vendor's profile (Kimi, GLM, Grok), whose limits are
- * not Anthropic's or Codex's and are not read here.
- */
-export const limitsProviderOf = (
-  chat: { provider: Provider; profile?: string | null } | null | undefined,
-): Provider | null => (!chat || chat.profile ? null : chat.provider);
+/** Whose quota a chat's chip shows: the agent's own account, or the account of a vendor's profile (Kimi Code, GLM…). */
+export interface LimitsOwner {
+  provider: Provider;
+  /** Null for the CLI's own account. */
+  profile: string | null;
+}
 
-export const WINDOW = { fiveHour: 'five_hour', sevenDay: 'seven_day' } as const;
+/** The profiles that spend another owner's quota, or none that can be told. */
+const PROFILE_GPT = 'gpt';
+const PROFILE_AUTO = 'auto';
+
+/**
+ * The owner of the quota a chat spends. A chat on the GPT profile spends the ChatGPT subscription, whose limits are
+ * Codex's; the router over several subscriptions has no quota of its own.
+ */
+export const limitsOwnerOf = (
+  chat: { provider: Provider; profile?: string | null } | null | undefined,
+): LimitsOwner | null => {
+  if (!chat || chat.profile === PROFILE_AUTO) return null;
+  if (chat.profile === PROFILE_GPT) return { provider: 'codex', profile: null };
+  return { provider: chat.provider, profile: chat.profile ?? null };
+};
+
+const PROFILE_NAMES: Record<string, string> = {
+  kimi: 'Kimi',
+  'kimi-code': 'Kimi Code',
+  glm: 'GLM',
+  'glm-cn': 'GLM',
+  xai: 'Grok',
+};
+
+/** The prefix of the profile of a provider added by API (the machine's limits.APIProfile): `api:deepseek`. */
+export const API_PROFILE = 'api:';
+
+/** The name the chip calls a profile by; its id when it is not one of the known. */
+export const profileName = (profile: string): string => PROFILE_NAMES[profile] ?? profile;
+
+export const WINDOW = { fiveHour: 'five_hour', sevenDay: 'seven_day', month: 'month' } as const;
 export type WindowKind = (typeof WINDOW)[keyof typeof WINDOW];
 
 export const FORECAST = {
@@ -56,9 +85,23 @@ export interface LimitWindow {
   forecast: LimitForecast | null;
 }
 
+/** Money left on an account that is paid by the token. */
+export interface Balance {
+  amount: number;
+  /** ISO 4217. */
+  currency: string;
+}
+
 export interface ProviderLimits {
   fiveHour: LimitWindow | null;
   sevenDay: LimitWindow | null;
+  /** The monthly pool some vendors have. */
+  month: LimitWindow | null;
+  balance: Balance | null;
+  /** The figures are the machine's own count, not the vendor's word. */
+  estimate: boolean;
+  /** The figures come by the vendor's internal request, not one it documents. */
+  unofficial: boolean;
   /** Epoch ms of the machine's last reading. */
   updatedAt: number | null;
   plan: string | null;
@@ -86,9 +129,18 @@ export interface ClaudeSpend {
   billing: Billing | null;
 }
 
+/** One account of a vendor's profile. */
+export interface ProfileLimits extends ProviderLimits {
+  profile: string;
+  /** Empty for the only account of the profile. */
+  account: string;
+}
+
 export interface MachineLimits {
   claude: ProviderLimits | null;
   codex: ProviderLimits | null;
+  /** By the machine's key: the profile, with «/account» when it has several. */
+  profiles: Record<string, ProfileLimits>;
   claudeSpend: ClaudeSpend | null;
 }
 
@@ -139,11 +191,58 @@ const readProvider = (v: unknown): ProviderLimits | null => {
   return {
     fiveHour: readWindow(p.fiveHour),
     sevenDay: readWindow(p.sevenDay),
+    month: readWindow(p.month),
+    balance: readBalance(p.balance),
+    estimate: p.estimate === true,
+    unofficial: p.unofficial === true,
     updatedAt: updated === null ? null : updated * 1000,
     plan: text(p.plan),
     error: text(p.error),
   };
 };
+
+const readBalance = (v: unknown): Balance | null => {
+  const b = rec(v);
+  const amount = finite(b?.amount);
+  const currency = text(b?.currency);
+  return amount === null || currency === null ? null : { amount, currency };
+};
+
+/** A vendor's window has no forecast: the machine keeps the history of Claude and Codex only. */
+const bare = (window: LimitWindow | null): LimitWindow | null => window && { ...window, forecast: null };
+
+const readProfiles = (v: unknown): Record<string, ProfileLimits> => {
+  const out: Record<string, ProfileLimits> = {};
+  for (const [key, raw] of Object.entries(rec(v) ?? {})) {
+    const limits = readProvider(raw);
+    const profile = text(rec(raw)?.profile);
+    if (!limits || profile === null) continue;
+    out[key] = {
+      ...limits,
+      fiveHour: bare(limits.fiveHour),
+      sevenDay: bare(limits.sevenDay),
+      month: bare(limits.month),
+      profile,
+      account: text(rec(raw)?.account) ?? '',
+    };
+  }
+  return out;
+};
+
+/** The limits of a profile's account: the named one, else the profile's only (or first) account. */
+export const profileLimitsOf = (
+  limits: MachineLimits,
+  profile: string,
+  account?: string | null,
+): ProfileLimits | null => {
+  const all = Object.values(limits.profiles).filter((p) => p.profile === profile);
+  if (account) return all.find((p) => p.account === account) ?? null;
+  return all.find((p) => p.account === '') ?? all[0] ?? null;
+};
+
+/** What the owner of a chat's quota has left on the machine; null when the machine does not say. */
+export const limitsOfOwner = (limits: MachineLimits, owner: LimitsOwner): ProviderLimits | null =>
+  owner.profile === null ? limits[owner.provider] : profileLimitsOf(limits, owner.profile);
 
 const readHour = (v: unknown): SpendHour | null => {
   const h = rec(v);
@@ -184,6 +283,7 @@ export const readLimitsOf = (doc: unknown): MachineLimits | null => {
   return {
     claude: readProvider(limits.claude),
     codex: readProvider(limits.codex),
+    profiles: readProfiles(limits.profiles),
     claudeSpend: readSpend(limits.claudeSpend),
   };
 };
@@ -195,6 +295,7 @@ export const windowsOf = (limits: ProviderLimits | null): { kind: WindowKind; wi
   const all = [
     { kind: WINDOW.fiveHour, window: limits.fiveHour },
     { kind: WINDOW.sevenDay, window: limits.sevenDay },
+    { kind: WINDOW.month, window: limits.month },
   ];
   return all.flatMap(({ kind, window }) => (window ? [{ kind, window }] : []));
 };
@@ -218,10 +319,12 @@ export const leftAtReset = (window: LimitWindow): number | null => {
 const WINDOW_SHORT_KEY = {
   [WINDOW.fiveHour]: 'next.limits.fiveShort',
   [WINDOW.sevenDay]: 'next.limits.sevenShort',
+  [WINDOW.month]: 'next.limits.monthShort',
 } as const;
 const WINDOW_NAME_KEY = {
   [WINDOW.fiveHour]: 'next.limits.fiveHour',
   [WINDOW.sevenDay]: 'next.limits.sevenDay',
+  [WINDOW.month]: 'next.limits.month',
 } as const;
 export const windowShort = (kind: WindowKind): string => t(WINDOW_SHORT_KEY[kind]);
 export const windowName = (kind: WindowKind): string => t(WINDOW_NAME_KEY[kind]);
@@ -245,12 +348,39 @@ export const span = (seconds: number): string => {
   return t('next.limits.dur.minutes', { m });
 };
 
+/** The span to the chip's precision, its largest unit alone and never rounded up: «2 ч», «6 д», «45 мин». */
+export const spanShort = (seconds: number): string => {
+  const s = Math.max(0, seconds);
+  if (s >= DAY) return t('next.limits.dur.daysOnly', { d: Math.floor(s / DAY) });
+  if (s >= HOUR) return t('next.limits.dur.hoursOnly', { h: Math.floor(s / HOUR) });
+  return t('next.limits.dur.minutes', { m: Math.floor(s / MINUTE) });
+};
+
 /** «16:50», and with the weekday «сб 13:30» for the weekly window. */
 export const clockOf = (epochSec: number, withDay: boolean): string => {
   const date = new Date(epochSec * 1000);
   const hm = new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   if (!withDay) return hm.format(date);
   return `${new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(date)} ${hm.format(date)}`;
+};
+
+/** When a window resets, as the card tells it: the time, with the weekday for a week and the date for a month. */
+export const resetClock = (kind: WindowKind, epochSec: number): string => {
+  if (kind !== WINDOW.month) return clockOf(epochSec, kind === WINDOW.sevenDay);
+  return new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(
+    new Date(epochSec * 1000),
+  );
+};
+
+/** «$49.58», «¥120.00». */
+export const money = (balance: Balance): string => {
+  try {
+    return new Intl.NumberFormat(locale(), { style: 'currency', currency: balance.currency }).format(
+      balance.amount,
+    );
+  } catch {
+    return `${balance.amount.toFixed(2)} ${balance.currency}`;
+  }
 };
 
 export const FORECAST_TONE = { neutral: 'neutral', warning: 'warning', danger: 'danger' } as const;
@@ -264,7 +394,7 @@ export interface ForecastText {
 }
 
 /** The forecast is told to this precision: a guess to the minute is a lie. */
-const ROUND: Record<WindowKind, number> = { five_hour: 5 * MINUTE, seven_day: HOUR };
+const ROUND: Record<WindowKind, number> = { five_hour: 5 * MINUTE, seven_day: HOUR, month: HOUR };
 
 const join = (parts: (string | null)[]): string | null => parts.filter(Boolean).join(' · ') || null;
 
@@ -280,7 +410,7 @@ export const describeForecast = (
   kind: WindowKind,
   provider: string,
 ): ForecastText => {
-  const weekly = kind === WINDOW.sevenDay;
+  const weekly = kind !== WINDOW.fiveHour;
   const at = (epochSec: number) => clockOf(Math.round(epochSec / ROUND[kind]) * ROUND[kind], weekly);
   const reset = forecast.resetsAt === null ? null : clockOf(forecast.resetsAt, weekly);
   const confidence = forecast.confidence
@@ -340,10 +470,48 @@ export interface SpendView {
   dayStartHour: number;
 }
 
+/** Another subscription of the machine, by the name the card calls it. */
+export interface OtherLimits {
+  key: string;
+  /** The profile's name; null for an agent, which the card names itself. */
+  name: string | null;
+  provider: Provider | null;
+  limits: ProviderLimits;
+}
+
+const AGENTS: readonly Provider[] = ['claude', 'codex'];
+
+/** Every subscription of the machine that has something to show, but the owner's own. Providers added by API are
+ *  left to Settings: a chat does not run on them. */
+export const otherLimitsOf = (limits: MachineLimits, owner: LimitsOwner): OtherLimits[] => {
+  const shown = (l: ProviderLimits | null): l is ProviderLimits =>
+    l !== null && (windowsOf(l).length > 0 || l.balance !== null);
+  const out: OtherLimits[] = [];
+  for (const provider of AGENTS) {
+    const own = owner.profile === null && owner.provider === provider;
+    const l = limits[provider];
+    if (!own && shown(l)) out.push({ key: provider, name: null, provider, limits: l });
+  }
+  for (const [key, l] of Object.entries(limits.profiles)) {
+    if (l.profile === owner.profile || l.profile.startsWith(API_PROFILE) || !shown(l)) continue;
+    out.push({ key, name: profileName(l.profile), provider: null, limits: l });
+  }
+  return out;
+};
+
 /** What the composer's chip is given: the agent's limits on the machine, or that they could not be got. */
 export type LimitsView =
-  | { state: 'ready'; provider: Provider; limits: ProviderLimits | null; spend: SpendView | null }
-  | { state: 'failed'; provider: Provider; onRetry?: () => Promise<void> };
+  | {
+      state: 'ready';
+      provider: Provider;
+      /** The vendor's profile the limits are of; absent for the agent's own account. */
+      profile?: string;
+      limits: ProviderLimits | null;
+      spend: SpendView | null;
+      /** The person's other subscriptions on the machine, for the card: the chat spends none of them. */
+      others?: OtherLimits[];
+    }
+  | { state: 'failed'; provider: Provider; profile?: string; onRetry?: () => Promise<void> };
 
 // ---- the spend of a machine that pays by the API
 

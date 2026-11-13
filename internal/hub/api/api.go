@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -196,7 +197,7 @@ var AppsView func(st *storehub.Store, dataDir string, log *slog.Logger) storehub
 // DesignView makes the store's view of design projects (designview.Hub): guest links and the team's reads and edits
 // through the hub with no machine. The hub's main sets it; this package does not import the view, whose design code
 // imports the agent, whose tests import this package. Nil: projects are read from the machines only.
-var DesignView func(st *storehub.Store, dataDir string, app fs.FS, log *slog.Logger) designaccess.Viewer
+var DesignView func(st *storehub.Store, db *store.DB, derived bool, dataDir string, app fs.FS, log *slog.Logger) designaccess.Viewer
 
 // New builds the hub.
 func New(o Options) (*Hub, error) {
@@ -405,6 +406,11 @@ func New(o Options) (*Hub, error) {
 		LinkKey: linkKey, Notice: notice, Shared: !cfg.Store.Off, Kits: kitAccess(cfg, db, o),
 		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: cfg.DesignAccess.ClosedUnrecorded,
 	})
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		h.Design.ReconcileLinks(ctx)
+	}()
 	h.Efficiency = &efficiency.Service{DB: db, OrgGate: h.Orgs.OrgGate, Features: h.Features, Switches: h.Switches, Now: o.Now}
 	h.Docs = docs.New(docs.Deps{Config: cfg, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry, Gate: h.Switches, Notice: func(ctx context.Context, to, subject, body, link string) error {
 		if n, ok := o.Mailer.(mail.Noticer); ok {
@@ -497,7 +503,7 @@ func New(o Options) (*Hub, error) {
 		}
 		// guest links read their projects from the store, put into folders of the hub; no machine takes part.
 		if DesignView != nil {
-			if v := DesignView(h.Store, cfg.DataDir, o.Workspace, log); v != nil {
+			if v := DesignView(h.Store, h.db, cfg.DesignDerived, cfg.DataDir, o.Workspace, log); v != nil {
 				h.Design.UseView(v)
 			}
 		}
@@ -667,6 +673,9 @@ func New(o Options) (*Hub, error) {
 }
 
 // collectMetrics writes the gauges read from the hub's state at the moment of a scrape.
+// metricLabel is a value fit for a label of a metric.
+var metricLabel = regexp.MustCompile(`^[a-z_]{1,32}$`)
+
 func (h *Hub) collectMetrics(w *metrics.Writer) {
 	st := h.Registry.Stats()
 	w.Gauge("links", "Agent links this hub process holds.", float64(st.Links))
@@ -699,9 +708,29 @@ func (h *Hub) collectMetrics(w *metrics.Writer) {
 		h.Machines.Repl().Write(w, time.Now(), repl.Measured(), map[string]time.Duration{
 			"usage": usageLag, hubproto.ReplHistoryEvents: st.OldestBulk, hubproto.ReplHistoryBackfill: st.OldestBulk})
 	}
+	// how much of people's data is in the hub. The designs: recorded projects by whether the store has a
+	// revision of them (counted now and then, designaccess.Coverage).
+	if h.Design != nil {
+		if c := h.Design.Coverage(); !c.At.IsZero() {
+			const help = "Recorded design projects, by whether the hub's store has a revision of them (missing: they open only from a machine)."
+			w.Gauge("design_projects", help, float64(c.Stored), "state", "stored")
+			w.Gauge("design_projects", help, float64(c.Missing), "state", "missing")
+		}
+	}
 	// The hub's own queues, read from the database at the scrape: how much waits and for how long.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	// The machines' own data (chat attachments, handed-over files, handoff notes) by how far its move into the hub is.
+	if rows, err := h.db.S().Q().Query(ctx, `SELECT state, COUNT(*) FROM migration_objects GROUP BY state ORDER BY state`); err == nil {
+		for rows.Next() {
+			var state string
+			var n int64
+			if rows.Scan(&state, &n) == nil && metricLabel.MatchString(state) {
+				w.Gauge("migration_objects", "Objects of the machines' own data by the state of their move into the hub.", float64(n), "state", state)
+			}
+		}
+		_ = rows.Close()
+	}
 	now := time.Now()
 	queue := func(name, rowsHelp, ageHelp string, read func(context.Context) (store.QueueStat, error)) {
 		st, err := read(ctx)
@@ -973,12 +1002,12 @@ func noticeOf(m any) func(ctx context.Context, to, subject, body, link string) e
 	}
 }
 
-// docGuestLink is a request the documents' guest page answers (GET /d/<token>): the route is looked up in the mux,
+// docGuestLink is a request the documents' guest page answers (GET /d/<token>, and the fonts the page names): the route is looked up in the mux,
 // so with documents or their access off nothing is served and the request is not the hub's page by accident.
 func docGuestLink(mux *http.ServeMux, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
 	_, pattern := mux.Handler(r)
-	return pattern == "GET /d/{token}"
+	return pattern == "GET /d/{token}" || pattern == "GET /static/fonts/{name}"
 }

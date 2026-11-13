@@ -11,6 +11,7 @@ import { startFolder } from '@/next/bindings/home-composer';
 import { useSiteStage } from '@/next/bindings/site-stage';
 import type { TChatOpeners } from '@/next/bindings/chat-view';
 import { useDefaultCwd } from '@/next/stores/projects';
+import { useReviewRules } from '@/next/legacy/review-rules';
 import ReviewHome, { type THomeFeed } from '@/next/features/review/app/review-home';
 import type { IGithubList } from '@/next/features/review/app/home';
 import { loadGithubPulls } from '@/next/legacy/code-review-api';
@@ -80,6 +81,7 @@ const useHomeFeed = (machine: MachineId) => {
 
 const Home = ({ machine, onOpenDrawer }: { machine: MachineId; onOpenDrawer: () => void }) => {
   const { feed, retry } = useHomeFeed(machine);
+  const rules = useReviewRules();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), CLOCK_MS);
@@ -88,6 +90,7 @@ const Home = ({ machine, onOpenDrawer }: { machine: MachineId; onOpenDrawer: () 
   return (
     <ReviewHome
       feed={feed}
+      rules={rules}
       now={now}
       onOpen={(url) => goTo({ kind: ROUTE.review, url })}
       onRetry={retry}

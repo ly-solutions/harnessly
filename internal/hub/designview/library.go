@@ -2,17 +2,20 @@ package designview
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/design"
 	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/designaccess"
+	"github.com/ly-solutions/harnessly/internal/safego"
 )
 
 // The library of a space as the store has it, for the page while the person's machine is off or slow: each
@@ -31,7 +34,30 @@ type listedProject struct {
 	item designaccess.LibraryItem
 }
 
-// Library lists the projects named of the space's library that the store has files of, newest first.
+// A project's item is built on its own, not in the request that asked for it: the page gives the hub a
+// couple of seconds and leaves, and a build that ended with the request would start from nothing every time (a cold hub
+// never answered the library at all). A build outlives its request, later requests wait for the same one, and the
+// projects and their files are read several at a time.
+const (
+	// listHeads is how many projects' newest revisions one request asks the store for at a time.
+	listHeads = 8
+	// listBuildsAtOnce is how many projects' items the hub builds at a time, for all requests.
+	listBuildsAtOnce = 6
+	// listBlobs is how many files of one project are read from the store at a time.
+	listBlobs = 4
+	// listBuildTime is the longest one project's item is built.
+	listBuildTime = 2 * time.Minute
+)
+
+// listBuild is one project's item being built at a revision.
+type listBuild struct {
+	done chan struct{}
+	item designaccess.LibraryItem
+	err  error
+}
+
+// Library lists the projects named of the space's library that the store has files of, newest first. A project the
+// store could not be read for is left out (and logged): the rest of the library is still the person's to open.
 func (v *View) Library(ctx context.Context, spaceID string, ids []string) ([]designaccess.LibraryItem, error) {
 	if strings.ContainsAny(spaceID, "/\\.") || spaceID == "" {
 		return nil, ErrMissing
@@ -41,18 +67,42 @@ func (v *View) Library(ctx context.Context, spaceID string, ids []string) ([]des
 		return nil, err
 	}
 	seen := map[string]bool{}
-	out := make([]designaccess.LibraryItem, 0, len(ids))
+	asked := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if !design.IsLibraryID(id) || seen[id] {
 			continue
 		}
 		seen[id] = true
-		item, ok, err := v.listed(ctx, room, spaceID, id)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			out = append(out, item)
+		asked = append(asked, id)
+	}
+	got := make([]*designaccess.LibraryItem, len(asked))
+	gate := make(chan struct{}, listHeads)
+	var wg sync.WaitGroup
+	for i, id := range asked {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			item, ok, err := v.listed(ctx, room, gate, spaceID, id)
+			if err != nil {
+				if ctx.Err() == nil {
+					v.o.Log.Warn("design view: a project left out of the library, the store did not give it", "space", spaceID, "project", id, "error", err)
+				}
+				return
+			}
+			if ok {
+				got[i] = &item
+			}
+		}()
+	}
+	wg.Wait()
+	// The caller has left: what was being built goes on being built for the next one.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]designaccess.LibraryItem, 0, len(asked))
+	for _, item := range got {
+		if item != nil {
+			out = append(out, *item)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -64,9 +114,16 @@ func (v *View) Library(ctx context.Context, spaceID string, ids []string) ([]des
 	return out, nil
 }
 
-// listed is one project's item at its newest revision; false when the store has no file of it.
-func (v *View) listed(ctx context.Context, room Room, spaceID, id string) (designaccess.LibraryItem, bool, error) {
+// listed is one project's item at its newest revision; false when the store has no file of it. ctx bounds the wait,
+// not the build.
+func (v *View) listed(ctx context.Context, room Room, gate chan struct{}, spaceID, id string) (designaccess.LibraryItem, bool, error) {
+	select {
+	case gate <- struct{}{}:
+	case <-ctx.Done():
+		return designaccess.LibraryItem{}, false, ctx.Err()
+	}
 	es, err := room.HistoryUnder(ctx, id+"/", 1)
+	<-gate
 	if err != nil || len(es) == 0 {
 		return designaccess.LibraryItem{}, false, err
 	}
@@ -74,26 +131,70 @@ func (v *View) listed(ctx context.Context, room Room, spaceID, id string) (desig
 	key := spaceID + "/" + id
 	v.mu.Lock()
 	kept, ok := v.listing[key]
-	v.mu.Unlock()
 	if ok && kept.rev == head {
+		v.mu.Unlock()
 		return kept.item, kept.item.ID != "", nil
+	}
+	bkey := fmt.Sprintf("%s@%d", key, head)
+	b := v.listBuilds[bkey]
+	if b == nil {
+		b = &listBuild{done: make(chan struct{})}
+		if v.listBuilds == nil {
+			v.listBuilds = map[string]*listBuild{}
+		}
+		v.listBuilds[bkey] = b
+		safego.Go("designview list", func() { v.buildListed(b, spaceID, id, key, bkey, head) })
+	}
+	v.mu.Unlock()
+	select {
+	case <-b.done:
+	case <-ctx.Done():
+		return designaccess.LibraryItem{}, false, ctx.Err()
+	}
+	if b.err != nil {
+		return designaccess.LibraryItem{}, false, b.err
+	}
+	return b.item, b.item.ID != "", nil
+}
+
+// buildListed reads the project's item at head from the store and keeps it; it does not end with any request.
+func (v *View) buildListed(b *listBuild, spaceID, id, key, bkey string, head int64) {
+	defer close(b.done)
+	defer func() {
+		v.mu.Lock()
+		delete(v.listBuilds, bkey)
+		v.mu.Unlock()
+	}()
+	v.listGate <- struct{}{}
+	defer func() { <-v.listGate }()
+	ctx, cancel := context.WithTimeout(context.Background(), listBuildTime)
+	defer cancel()
+	room, err := v.o.Rooms(ctx, spaceID)
+	if err != nil {
+		b.err = err
+		return
 	}
 	snapshot, err := room.Snapshot(ctx, id+"/", head)
 	if err != nil {
-		return designaccess.LibraryItem{}, false, err
+		b.err = err
+		return
 	}
 	item, err := v.listProject(ctx, room, spaceID, id, snapshot.Entries)
 	if err != nil {
-		return designaccess.LibraryItem{}, false, err
+		b.err = err
+		return
 	}
 	item.Rev = head
 	v.mu.Lock()
 	if v.listing == nil {
 		v.listing = map[string]listedProject{}
 	}
-	v.listing[key] = listedProject{rev: head, item: item}
+	// A newer revision's item, built meanwhile, is not replaced by this one.
+	if kept, ok := v.listing[key]; !ok || kept.rev <= head {
+		v.listing[key] = listedProject{rev: head, item: item}
+	}
 	v.mu.Unlock()
-	return item, item.ID != "", nil
+	b.item = item
 }
 
 // listedFile: the listing reads this file's contents (the rest it only finds).
@@ -120,6 +221,8 @@ func (v *View) listProject(ctx context.Context, room Room, spaceID, id string, e
 	pruneMu.RLock()
 	defer pruneMu.RUnlock()
 	var newest int64
+	type read struct{ sha, file string }
+	var reads []read
 	for _, e := range entries {
 		rel, ok := strings.CutPrefix(e.Path, id+"/")
 		if !ok || rel == "" || path.Clean(rel) != rel || strings.HasPrefix(rel, "../") {
@@ -131,21 +234,54 @@ func (v *View) listProject(ctx context.Context, room Room, spaceID, id string, e
 			return designaccess.LibraryItem{}, err
 		}
 		if listedFile(rel) && e.Size <= listedMax && filestore.ValidSha(e.Sha) {
-			blob, err := v.blob(ctx, room, spaceID, e.Sha)
-			if err != nil {
-				return designaccess.LibraryItem{}, err
-			}
-			if err := os.Link(blob, file); err == nil {
-				continue
-			}
-			if err := copyFile(blob, file); err != nil {
-				return designaccess.LibraryItem{}, err
-			}
+			reads = append(reads, read{sha: e.Sha, file: file})
 			continue
 		}
 		if err := os.WriteFile(file, nil, 0o600); err != nil {
 			return designaccess.LibraryItem{}, err
 		}
+	}
+	// The files the listing reads come from the store several at a time; the first failure ends the rest.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		wg      sync.WaitGroup
+		failMu  sync.Mutex
+		failure error
+	)
+	gate := make(chan struct{}, listBlobs)
+	for _, rd := range reads {
+		if ctx.Err() != nil {
+			break
+		}
+		gate <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-gate }()
+			err := func() error {
+				blob, err := v.blob(ctx, room, spaceID, rd.sha)
+				if err != nil {
+					return err
+				}
+				if err := os.Link(blob, rd.file); err == nil {
+					return nil
+				}
+				return copyFile(blob, rd.file)
+			}()
+			if err != nil {
+				failMu.Lock()
+				if failure == nil {
+					failure = err
+				}
+				failMu.Unlock()
+				cancel()
+			}
+		}()
+	}
+	wg.Wait()
+	if failure != nil {
+		return designaccess.LibraryItem{}, failure
 	}
 	lib := design.New(design.Config{
 		LibraryDir: root,

@@ -919,6 +919,37 @@ button.hx-rvapp__thread:hover {
   justify-content: space-between;
   gap: var(--hx-space-2);
 }
+.hx-rvagent-panel__acts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hx-space-1);
+}
+.hx-rvrules {
+  width: min(360px, calc(100vw - 2 * var(--hx-space-4)));
+  padding: var(--hx-space-3);
+  border: 1px solid var(--hx-border-strong);
+  border-radius: var(--hx-radius-lg);
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay);
+}
+.hx-rvrules.hx-sheet--pop {
+  width: auto;
+  border: 0;
+  box-shadow: none;
+}
+.hx-rvrules__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-3);
+}
+.hx-rvrules__label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-1);
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+  font-weight: var(--hx-weight-medium);
+}
 .hx-rvagent-panel__note {
   margin: 0;
   color: var(--hx-fg-3);

@@ -376,7 +376,7 @@ func (r *rights) visibleTenants(w *world) ([]store.Space, error) {
 
 var kindRu = map[string]string{store.CatalogSkill: "скилл", store.CatalogMCP: "MCP", store.CatalogRepo: "репозиторий", store.CatalogDoc: "документ",
 	store.CatalogScript: "скрипт", store.CatalogAccess: "доступ", store.CatalogPlugin: "плагин", store.CatalogClaudeSettings: "настройки Claude",
-	store.CatalogApp: "приложение", store.CatalogPack: "пакет окружения"}
+	store.CatalogApp: "приложение", store.CatalogPack: "пакет окружения", store.CatalogProvider: "провайдер моделей"}
 
 // whereRu says where a layer is, for the title of a change.
 func (w *world) whereRu(layer, scopeID string) string {

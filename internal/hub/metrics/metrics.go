@@ -50,6 +50,86 @@ var (
 	HistoryChatsPurged, HistoryRowsPurged, HistoryPurgeErrors Counter
 )
 
+// Reads of people's data by what answered them: the hub's store, or the machine the data came from. A read
+// that goes to the machine is one the person cannot make while that machine is off, so the share of them is how far
+// the data is from living in the hub.
+const (
+	ReadDesign = iota
+	ReadUpload
+	ReadDelivered
+	readKinds
+)
+
+// Where a read's bytes came from.
+const (
+	FromStore = iota
+	FromMachine
+	readSources
+)
+
+var (
+	readKindNames   = [readKinds]string{"design", "upload", "delivered"}
+	readSourceNames = [readSources]string{"store", "machine"}
+	dataReads       [readKinds][readSources]atomic.Int64
+)
+
+// CountRead counts a read of a kind of data by where it was answered from; anything else is ignored.
+func CountRead(kind, from int) {
+	if kind < 0 || kind >= readKinds || from < 0 || from >= readSources {
+		return
+	}
+	dataReads[kind][from].Add(1)
+}
+
+// Why a read went to the machine: what stands between the data and the hub's store. The names are the
+// journal's of the machine's move, and three of the hub's own.
+const (
+	MissUnreported = "unreported" // the machine never named the object to the hub: an old runtime, or a move not started
+	MissPending    = "pending"    // named, not moved yet
+	MissFailed     = "failed"     // the move of it failed; the hub asks the machine to try again
+	MissSkipped    = "skipped"    // a person left it on the machine, or it is over a limit
+	MissForeign    = "foreign"    // moved, but the reader is not the person it is bound to
+	MissLost       = "lost"       // the journal says moved, the store does not have the bytes
+)
+
+var (
+	missReasons = []string{MissUnreported, MissPending, MissFailed, MissSkipped, MissForeign, MissLost}
+	dataMisses  [readKinds][6]atomic.Int64
+)
+
+// CountMiss counts a read that went to the machine by why; an unknown reason is ignored.
+func CountMiss(kind int, reason string) {
+	if kind < 0 || kind >= readKinds {
+		return
+	}
+	for i, r := range missReasons {
+		if r == reason {
+			dataMisses[kind][i].Add(1)
+		}
+	}
+}
+
+// Misses is how many reads of a kind went to the machine for a reason since the process started.
+func Misses(kind int, reason string) int64 {
+	if kind < 0 || kind >= readKinds {
+		return 0
+	}
+	for i, r := range missReasons {
+		if r == reason {
+			return dataMisses[kind][i].Load()
+		}
+	}
+	return 0
+}
+
+// Reads is how many reads of a kind were answered from a source since the process started.
+func Reads(kind, from int) int64 {
+	if kind < 0 || kind >= readKinds || from < 0 || from >= readSources {
+		return 0
+	}
+	return dataReads[kind][from].Load()
+}
+
 // CountErrorCode counts an answered error by its code; codes the hub does not count are ignored.
 func CountErrorCode(code string) {
 	switch code {
@@ -202,6 +282,18 @@ func Write(out io.Writer, collectors ...Collector) error {
 		for c := range httpRequests[g] {
 			w.Counter("http_requests_total", "Requests answered, by the group of the route and the class of the status.",
 				float64(httpRequests[g][c].Load()), "route", routeNames[g], "class", classNames[c])
+		}
+	}
+	for k := range dataMisses {
+		for i, reason := range missReasons {
+			w.Counter("data_read_misses_total", "Reads of people's data that went to the machine, by its kind and by why the hub's store could not answer.",
+				float64(dataMisses[k][i].Load()), "kind", readKindNames[k], "reason", reason)
+		}
+	}
+	for k := range dataReads {
+		for f := range dataReads[k] {
+			w.Counter("data_reads_total", "Reads of people's data, by its kind and by what answered: the hub's store or the machine it came from.",
+				float64(dataReads[k][f].Load()), "kind", readKindNames[k], "source", readSourceNames[f])
 		}
 	}
 	for _, collect := range collectors {

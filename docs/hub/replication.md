@@ -18,6 +18,7 @@ machine has no transport there.
 | automation results (`automations.result`) | **batches** (old: not sent to a hub link at all) | same; the hub checks the run's one-use token | the run id | go-back-N on a lost batch | same |
 | agent memory | HTTP | `/agent/memory/pull`, `/agent/memory/put` signed by the machine | per note revision | the machine's own timer | — |
 | chat attachments | HTTP | the page puts the bytes into the hub (`/uploads/blobs`, `/uploads/refs`) | sha256 | the page | — |
+| chat snapshots shared with the space | HTTP | the hub keeps the page the machine answers a publish with (`/shares`); a revoke ends in the hub | the snapshot's id and sha256 | the author publishes again | — |
 | the machine's `hello` | answer to a call | `hello` | replaced on every link | the next link | — |
 
 ## The protocol (`hubproto.FeatureRepl`)

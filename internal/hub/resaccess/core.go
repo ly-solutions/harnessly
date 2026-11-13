@@ -32,6 +32,11 @@ const (
 	// KindKit is a UI kit: id "<space>/<kit id>". Shared like a design, with a ceiling: only the owner and
 	// people named one by one edit, a team or the company gets view at most (see kit.go).
 	KindKit = "kit"
+	// KindChat is a chat's snapshot published for the people of its space: id is the snapshot's, the space
+	// its machine's. The people of the space read it; its record is chat_shares. It is not one of `kinds`: the sharing
+	// API (grants by name, guest links) does not take it, so a snapshot cannot be opened wider than its space. Whether
+	// it ever may is the owner's decision, and then it is one line there.
+	KindChat = "chat"
 )
 
 // Roles, weakest first; a team level is one of none, view, comment, edit.

@@ -511,6 +511,10 @@ describe('Composer limits chip', () => {
     limits: {
       fiveHour: { usedPct: 40, resetsAt: Date.now() / 1000 + 7200, forecast: null },
       sevenDay: null,
+      month: null,
+      balance: null,
+      estimate: false,
+      unofficial: false,
       updatedAt: null,
       plan: null,
       error: null,

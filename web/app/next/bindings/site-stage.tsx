@@ -15,7 +15,7 @@ import { noteLayoutKey } from '@/next/stores/chat-view';
 import type { IDockExtra } from '@/next/bindings/chat-dock';
 import { outgoingItem, useFeedItems } from '@/next/bindings/feed-items';
 import { useAgentLimits } from '@/next/bindings/use-limits';
-import { limitsProviderOf } from '@/next/features/limits/model';
+import { limitsOwnerOf } from '@/next/features/limits/model';
 import { useStartChoice } from '@/next/bindings/use-start-choice';
 import { useUploads } from '@/next/bindings/use-uploads';
 import { useVoice } from '@/next/bindings/use-voice';
@@ -235,7 +235,7 @@ const NewDesignChat = ({ machine, draftKey, creating, start, extra, onFirst }: I
   );
   const voice = useVoice(machine, text, onChange);
   useTourFill(text, onChange);
-  const limits = useAgentLimits(machine, limitsProviderOf(start.choice));
+  const limits = useAgentLimits(machine, limitsOwnerOf(start.choice));
   const first = useMessage(creating?.clientId ?? null);
   const items = useMemo(() => (first ? [outgoingItem(first)] : []), [first]);
   const [openedAt] = useState(() => Date.now());

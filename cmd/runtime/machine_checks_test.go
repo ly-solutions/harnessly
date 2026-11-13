@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/ly-solutions/harnessly/internal/apps"
+	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/preflight"
 	"github.com/ly-solutions/harnessly/internal/voice/engine"
 )
@@ -310,5 +311,34 @@ func TestSetGitIdentityWritesTheGlobalConfig(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(home, ".gitconfig"))
 	if !strings.Contains(string(raw), "Ada Lovelace") {
 		t.Fatalf("name: %s", raw)
+	}
+}
+
+func TestLaunchEnvUndeclared(t *testing.T) {
+	env := func(m map[string]string) (func(string) string, func(string) (string, bool)) {
+		return func(k string) string { return m[k] }, func(k string) (string, bool) { v, ok := m[k]; return v, ok }
+	}
+	for name, c := range map[string]struct {
+		env  map[string]string
+		want bool
+	}{
+		"no hub":            {map[string]string{}, false},
+		"a hub's, not set":  {map[string]string{"RUNTIME_HUB_URL": "https://hub.example"}, true},
+		"a hub's, none":     {map[string]string{"RUNTIME_HUB_URL": "https://hub.example", extproviders.ReservedPrefixesEnv: ""}, false},
+		"a hub's, declared": {map[string]string{"RUNTIME_HUB_URL": "https://hub.example", extproviders.ReservedPrefixesEnv: "ACME_"}, false},
+	} {
+		get, look := env(c.env)
+		if got := launchEnvUndeclared(get, look); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+	p, _ := fakeProbe(t)
+	p.LaunchEnvUndeclared = func() bool { return true }
+	found := false
+	for _, c := range p.run(context.Background()) {
+		found = found || (c.ID == "launch_env_reserved" && !c.OK)
+	}
+	if !found {
+		t.Error("the check is not in the list")
 	}
 }

@@ -150,13 +150,19 @@ export const readLibrary = (
   });
 
 /** A board of a project read-only from the hub's store, for a machine that is off (designaccess design/store). */
-export const storeBoardHref = (m: MachineId, id: string, board: string) =>
+export const storeBoardHref = (m: MachineId, id: string, board: string, query = '') =>
   runtimePath(
     platformPath(
-      `/design/store/${encodeURIComponent(id)}/f/${board.split('/').map(encodeURIComponent).join('/')}`,
+      `/design/store/${encodeURIComponent(id)}/f/${board.split('/').map(encodeURIComponent).join('/')}${query}`,
     ),
     m,
   );
+
+/** The board at one revision of the store: a newer revision is another address, so the frame loads again. The query
+ *  goes in before the machine's, or the address carries two «?» and names no machine. A video's scene asks
+ *  for the scene's runtime (design/public.go GuestSceneParam). */
+export const storeBoardAtHref = (m: MachineId, id: string, board: string, rev: number, scene: boolean) =>
+  storeBoardHref(m, id, board, `?rev=${rev}${scene ? '&scene=1' : ''}`);
 
 /**
  * The hub's stream «the project is at revision N» (designaccess team.go, `events`): the first event is the newest

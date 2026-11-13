@@ -28,6 +28,7 @@ import {
   isPublicAddress,
   keptLibrary,
   slotBoardHref,
+  storeBoardAtHref,
   storeBoardHref,
   type IDesign,
   type IDesignLibrary,
@@ -541,11 +542,9 @@ const DesignlySiteBody = ({
   useStorePush(machine, id, storeLacks);
   /** A board's address in the store at the revision on screen: a newer revision loads the frames again. A video's
    *  scene asks for the scene's runtime (design/public.go GuestSceneParam), as the machine gives it. */
-  const sceneParam = project?.design.kind === 'video' ? '&scene=1' : '';
+  const scene = project?.design.kind === 'video';
   const storeSrc = (page: string | null) =>
-    storeRev === null || page === null
-      ? null
-      : `${storeBoardHref(machine, id, page)}?rev=${storeRev}${sceneParam}`;
+    storeRev === null || page === null ? null : storeBoardAtHref(machine, id, page, storeRev, scene);
   const boardSrc = storeRev === null ? src : storeSrc(path);
   const boardPlainSrc = storeRev === null ? plainSrc : boardSrc;
   // The apps on in this document (their panels, selection menu, marks on the boards, the gate before a share). The

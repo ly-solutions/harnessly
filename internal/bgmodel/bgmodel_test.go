@@ -188,3 +188,64 @@ func TestChoice(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchAnswerCitesItsSources(t *testing.T) {
+	var prompt string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		prompt = string(raw)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Ключи лежат в сейфе машины [2]. Наружу не отдаются [2][1] [7]."}}]}`))
+	}))
+	defer srv.Close()
+	r := &Runner{
+		Store:     &Store{Path: filepath.Join(t.TempDir(), "v2", "background-tasks.json")},
+		Providers: fakeProviders{"local": {ID: "local", BaseURL: srv.URL, API: extproviders.APIOpenAI}},
+		Client:    &Client{},
+	}
+	ctx := context.Background()
+	sources := []SearchSource{{Kind: "Чат", Title: "Сейф", Text: "решили"}, {Kind: "Документ", Title: "Сейф — как устроен", Text: "ключи в сейфе"}}
+
+	// No model picked: nothing is called, and the caller is told so.
+	if _, _, used, err := r.SearchAnswer(ctx, "где ключи?", sources); used || err != nil || prompt != "" {
+		t.Fatalf("no model: used=%v err=%v", used, err)
+	}
+	if _, err := r.Pick(FeatureSearchAnswer, &Choice{Provider: "local", Model: "small"}); err != nil {
+		t.Fatal(err)
+	}
+	text, cited, used, err := r.SearchAnswer(ctx, "где ключи?", sources)
+	if !used || err != nil {
+		t.Fatalf("used=%v err=%v", used, err)
+	}
+	// The marks leave the text; a source is cited once, in the order named; a number of no source is dropped.
+	if text != "Ключи лежат в сейфе машины. Наружу не отдаются." {
+		t.Fatalf("the text: %q", text)
+	}
+	if len(cited) != 2 || cited[0] != 1 || cited[1] != 0 {
+		t.Fatalf("cited: %v", cited)
+	}
+	if !strings.Contains(prompt, "где ключи?") || !strings.Contains(prompt, "[2] Документ · Сейф — как устроен") {
+		t.Fatalf("the prompt: %s", prompt)
+	}
+}
+
+func TestMoveKeepsAFeatureOnAnotherAccountOfTheProvider(t *testing.T) {
+	r := &Runner{Store: &Store{Path: filepath.Join(t.TempDir(), "v2", "background-tasks.json")}}
+	for feature, model := range map[string]string{FeatureNotifySummary: "deepseek-chat", FeatureSearchAnswer: "only-there"} {
+		if _, err := r.Store.Set(feature, &Choice{Provider: "work", Model: model}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The removed account's features go on with the default one where it has the model; the rest are forgotten.
+	moved := r.Move("work", "home", func(model string) bool { return model == "deepseek-chat" })
+	forgot := r.Forget("work")
+	if len(moved) != 1 || moved[0] != FeatureNotifySummary || len(forgot) != 1 || forgot[0] != FeatureSearchAnswer {
+		t.Fatalf("moved %v, forgot %v", moved, forgot)
+	}
+	all := r.Store.All()
+	if c := all[FeatureNotifySummary]; c.Provider != "home" || c.Model != "deepseek-chat" {
+		t.Fatalf("the moved feature: %+v", c)
+	}
+	if _, ok := all[FeatureSearchAnswer]; ok {
+		t.Fatalf("the forgotten feature is still picked: %+v", all)
+	}
+}

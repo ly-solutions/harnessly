@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +71,13 @@ type View struct {
 	liveOrder []string
 	// listing is the library's items by space and project (library.go).
 	listing map[string]listedProject
+	// derived keeps the answers about a revision in the store (derived.go); build names the code that works them out.
+	derived Derived
+	build   string
+	// listBuilds is the items being built, by space, project and revision.
+	listBuilds map[string]*listBuild
+	// listGate bounds the items built at once.
+	listGate chan struct{}
 }
 
 type snap struct {
@@ -111,7 +119,7 @@ func New(o Options) *View {
 	_ = os.RemoveAll(filepath.Join(o.Dir, "edit"))
 	_ = os.RemoveAll(filepath.Join(o.Dir, "live"))
 	_ = os.RemoveAll(filepath.Join(o.Dir, "list"))
-	v := &View{o: o, snaps: map[string]*snap{}, lives: map[string]*live{}}
+	v := &View{o: o, snaps: map[string]*snap{}, lives: map[string]*live{}, listGate: make(chan struct{}, listBuildsAtOnce)}
 	safego.Go("designview pruneBlobs", func() { v.pruneBlobs() })
 	return v
 }
@@ -153,6 +161,17 @@ func (v *View) Wait(ctx context.Context, spaceID, project string, since int64) (
 // under the project (none for its board list), pages limits the boards (nil: all), pinned says the version on the
 // answer as a pinned read does.
 func (v *View) Serve(w http.ResponseWriter, r *http.Request, spaceID, project string, at int64, segs, pages []string, pinned bool) error {
+	// an answer about a revision is kept in the store once worked out, and given from there by every replica.
+	if done, err := v.serveDerived(w, r, spaceID, project, at, segs, pages, pinned, func(w http.ResponseWriter, r *http.Request) error {
+		return v.serveFolder(w, r, spaceID, project, at, segs, pages, pinned)
+	}); done {
+		return err
+	}
+	return v.serveFolder(w, r, spaceID, project, at, segs, pages, pinned)
+}
+
+// serveFolder answers from the revision put into a folder of this hub, by the runtime's own code.
+func (v *View) serveFolder(w http.ResponseWriter, r *http.Request, spaceID, project string, at int64, segs, pages []string, pinned bool) error {
 	// The head of a project (a read that does not name its version) is answered from the project's own folder and
 	// library, which a new revision only brings up to date; a read of one version is answered from that version's.
 	if !pinned && v.o.Live > 0 {
@@ -257,6 +276,7 @@ func (v *View) extract(ctx context.Context, spaceID, project string, at int64, b
 	defer pruneMu.RUnlock()
 	var total int64
 	files := map[string]string{}
+	shas := make([]string, 0, len(snapshot.Entries))
 	for _, e := range snapshot.Entries {
 		rel, ok := strings.CutPrefix(e.Path, project+"/")
 		if !ok || rel == "" || path.Clean(rel) != rel || strings.HasPrefix(rel, "../") || !filestore.ValidSha(e.Sha) {
@@ -266,10 +286,16 @@ func (v *View) extract(ctx context.Context, spaceID, project string, at int64, b
 			return nil, fmt.Errorf("designview: the project is over %d bytes", v.o.MaxBytes)
 		}
 		files[rel] = e.Sha
-		blob, err := v.blob(ctx, room, spaceID, e.Sha)
-		if err != nil {
-			return nil, err
-		}
+		shas = append(shas, e.Sha)
+	}
+	// a hub that has just started has none of the contents, and reading them one after another was most of
+	// the seconds a guest waited for the first page; they are read several at a time.
+	kept, err := v.blobs(ctx, room, spaceID, shas)
+	if err != nil {
+		return nil, err
+	}
+	for rel, sha := range files {
+		blob := kept[sha]
 		file := filepath.Join(tmp, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 			return nil, err
@@ -285,6 +311,58 @@ func (v *View) extract(ctx context.Context, spaceID, project string, at int64, b
 		return nil, err
 	}
 	return files, nil
+}
+
+// fillBlobs is how many blobs of one revision are read from the store at a time.
+const fillBlobs = 8
+
+// blobs is the kept files of the blobs named, by sha, read from the store several at a time; the first failure ends
+// the rest.
+func (v *View) blobs(ctx context.Context, room Room, spaceID string, shas []string) (map[string]string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		failure error
+	)
+	out := make(map[string]string, len(shas))
+	gate := make(chan struct{}, fillBlobs)
+	asked := map[string]bool{}
+	for _, sha := range shas {
+		if asked[sha] {
+			continue
+		}
+		asked[sha] = true
+		if ctx.Err() != nil {
+			break
+		}
+		gate <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-gate }()
+			file, err := v.blob(ctx, room, spaceID, sha)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if failure == nil {
+					failure = err
+				}
+				cancel()
+				return
+			}
+			out[sha] = file
+		}()
+	}
+	wg.Wait()
+	if failure != nil {
+		return nil, failure
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // blob is the kept file of a blob, read from the store once.
@@ -325,7 +403,21 @@ func (v *View) blob(ctx context.Context, room Room, spaceID, sha string) (string
 	if err := os.Rename(tmp.Name(), file); err != nil {
 		return "", err
 	}
+	// the runtime's code names a file's version by its time and size (design.FileVersion), and that version
+	// is the ETag a guest holds. The kept file's time is made of its contents, so every replica of the hub, and the same
+	// replica after a restart, gives the same file the same ETag.
+	at := blobTime(sha)
+	_ = os.Chtimes(file, at, at)
 	return file, nil
+}
+
+// blobTime is the time a kept blob's file carries: a second made of the first bytes of its sha256.
+func blobTime(sha string) time.Time {
+	n, err := strconv.ParseUint(sha[:8], 16, 32)
+	if err != nil {
+		return time.Unix(1_600_000_000, 0)
+	}
+	return time.Unix(1_600_000_000+int64(n%100_000_000), 0)
 }
 
 func copyFile(from, to string) error {
@@ -391,4 +483,18 @@ func (v *View) pruneBlobs() {
 	for _, p := range lone {
 		_ = os.Remove(p)
 	}
+}
+
+// Warm lays the project out at revision at ahead of a read: a hub that has just started has nothing of the
+// store on its disk, and the first guest of a link waited for the whole project to be read. It is the read's own way
+// in, without an answer: the live folder when the hub keeps them, the revision's folder otherwise.
+func (v *View) Warm(ctx context.Context, spaceID, project string, at int64) error {
+	if v.o.Live > 0 {
+		if l := v.liveAt(ctx, spaceID, project, at); l != nil {
+			l.mu.RUnlock()
+			return nil
+		}
+	}
+	_, err := v.snapshot(ctx, spaceID, project, at)
+	return err
 }

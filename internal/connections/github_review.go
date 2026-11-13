@@ -147,6 +147,7 @@ func clipText(s string, n int) string {
 }
 
 type gqlActor struct {
+	Typename  string `json:"__typename"`
 	Login     string `json:"login"`
 	AvatarURL string `json:"avatarUrl"`
 	Name      string `json:"name"`
@@ -156,7 +157,11 @@ func (a *gqlActor) person() *Person {
 	if a == nil {
 		return nil
 	}
-	return (&ghUser{Login: a.Login, Name: a.Name, AvatarURL: a.AvatarURL}).person()
+	p := (&ghUser{Login: a.Login, Name: a.Name, AvatarURL: a.AvatarURL}).person()
+	if p != nil {
+		p.Bot = a.Typename == "Bot" || BotLogin(a.Login)
+	}
+	return p
 }
 
 type gqlComment struct {
@@ -229,10 +234,22 @@ type ghPull struct {
 		Nodes []gqlComment `json:"nodes"`
 	} `json:"reviews"`
 	ReviewThreads gqlThreads `json:"reviewThreads"`
+	Files         gqlFiles   `json:"files"`
+}
+
+// gqlFiles are a pull request's changed files with the viewer's «viewed» mark of each.
+type gqlFiles struct {
+	PageInfo gqlPage `json:"pageInfo"`
+	Nodes    []struct {
+		Path              string `json:"path"`
+		ViewerViewedState string `json:"viewerViewedState"`
+	} `json:"nodes"`
 }
 
 const gqlActorFields = `fragment A on Actor{login avatarUrl ...on User{name}}
 fragment C on Comment{body createdAt lastEditedAt viewerDidAuthor author{...A}}`
+
+const gqlFileFields = `pageInfo{hasNextPage endCursor} nodes{path viewerViewedState}`
 
 const gqlThreadFields = `pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated path line originalLine diffSide
 comments(first:100){nodes{id databaseId state ...C}}}`
@@ -245,8 +262,15 @@ latestOpinionatedReviews(first:50){nodes{state author{...A}}}
 pending:reviews(states:PENDING,first:1){nodes{id}}
 comments(last:100){nodes{id databaseId ...C}}
 reviews(last:50,states:[APPROVED,CHANGES_REQUESTED,COMMENTED,DISMISSED]){nodes{id databaseId state ...C}}
-reviewThreads(first:50){` + gqlThreadFields + `}}}}
+reviewThreads(first:50){` + gqlThreadFields + `}
+files(first:100){` + gqlFileFields + `}}}}
 ` + gqlActorFields
+
+var ghFilesQuery = `query($owner:String!,$name:String!,$n:Int!,$after:String){
+repository(owner:$owner,name:$name){pullRequest(number:$n){files(first:100,after:$after){` + gqlFileFields + `}}}}`
+
+// ghFilePagesMax is how many pages of files are read for their marks: a larger pull request keeps the rest unmarked.
+const ghFilePagesMax = 10
 
 var ghThreadsQuery = `query($owner:String!,$name:String!,$n:Int!,$after:String){
 repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:50,after:$after){` + gqlThreadFields + `}}}}
@@ -293,6 +317,24 @@ func (c *ghClient) pull(ctx context.Context, project string, n int) (*ghPull, st
 		pr.ReviewThreads.Nodes = append(pr.ReviewThreads.Nodes, got.Nodes...)
 		page = got.PageInfo
 	}
+	files := pr.Files.PageInfo
+	delete(vars, "after")
+	for i := 1; files.HasNextPage && i < ghFilePagesMax; i++ {
+		var more struct {
+			Repository struct {
+				PullRequest struct {
+					Files gqlFiles `json:"files"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		}
+		vars["after"] = files.EndCursor
+		if err := c.gql(ctx, ghFilesQuery, vars, &more); err != nil {
+			return nil, "", err
+		}
+		got := more.Repository.PullRequest.Files
+		pr.Files.Nodes = append(pr.Files.Nodes, got.Nodes...)
+		files = got.PageInfo
+	}
 	return pr, out.Viewer.Login, nil
 }
 
@@ -330,6 +372,13 @@ func reviewOf(pr *ghPull, viewer string) *Review {
 	out := &Review{Me: (&gqlActor{Login: viewer}).person(), Mine: mine, Title: pr.Title, State: ghState(pr.State),
 		Draft: pr.IsDraft, ApprovedBy: []string{}, Threads: []ReviewThread{}, Drafts: []ReviewDraft{},
 		Refs: ReviewRefs{Base: pr.BaseRefOid, Start: pr.BaseRefOid, Head: pr.HeadRefOid}}
+	out.HostViewed = true
+	for _, f := range pr.Files.Nodes {
+		// DISMISSED is a mark the file outlived: it changed since, so it reads as not viewed.
+		if f.ViewerViewedState == "VIEWED" {
+			out.Viewed = append(out.Viewed, f.Path)
+		}
+	}
 	out.Approved = pr.ViewerLatestReview != nil && pr.ViewerLatestReview.State == "APPROVED"
 	out.CanApprove = !mine && pr.State == "OPEN"
 	for _, r := range pr.LatestOpinionatedReviews.Nodes {
@@ -442,6 +491,8 @@ func ownReview(pr *ghPull, thread string) (int, bool) {
 }
 
 const (
+	gqlViewed      = `mutation($pr:ID!,$p:String!){markFileAsViewed(input:{pullRequestId:$pr,path:$p}){clientMutationId}}`
+	gqlUnviewed    = `mutation($pr:ID!,$p:String!){unmarkFileAsViewed(input:{pullRequestId:$pr,path:$p}){clientMutationId}}`
 	gqlReply       = `mutation($t:ID!,$b:String!,$r:ID){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b,pullRequestReviewId:$r}){comment{id}}}`
 	gqlNewThread   = `mutation($r:ID!,$p:String!,$l:Int!,$s:DiffSide!,$b:String!){addPullRequestReviewThread(input:{pullRequestReviewId:$r,path:$p,line:$l,side:$s,body:$b}){thread{id}}}`
 	gqlEdit        = `mutation($id:ID!,$b:String!){updatePullRequestReviewComment(input:{pullRequestReviewCommentId:$id,body:$b}){pullRequestReviewComment{id}}}`
@@ -570,6 +621,15 @@ func (c *ghClient) ReviewAct(ctx context.Context, project string, n int, a Revie
 		if pr.IsDraft {
 			err = c.gql(ctx, gqlReady, map[string]any{"pr": pr.ID}, nil)
 		}
+	case ActViewed, ActUnviewed:
+		if a.Path == "" {
+			return nil, ErrBadAct
+		}
+		query := gqlViewed
+		if a.Op == ActUnviewed {
+			query = gqlUnviewed
+		}
+		err = c.gql(ctx, query, map[string]any{"pr": pr.ID, "p": a.Path}, nil)
 	default:
 		return nil, ErrBadAct
 	}

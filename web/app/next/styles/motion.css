@@ -271,7 +271,9 @@
       .hx-setup__spin,
       .hx-deck__spin,
       .hx-deck__spin[data-corner='1'],
-      .hx-mk[data-kind='task'] .hx-mk__icon[data-i='loader-circle']
+      .hx-mk[data-kind='task'] .hx-mk__icon[data-i='loader-circle'],
+      .hx-srch__ans-wait > i,
+      .hx-isle__think > i
     ) {
     animation-duration: 2.4s !important;
     animation-iteration-count: infinite !important;

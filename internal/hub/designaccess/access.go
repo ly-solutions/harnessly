@@ -528,6 +528,9 @@ func (t *txn) enableShare(id, actor, linkID string) error {
 		linkID, t.m.ID, id); err != nil {
 		return err
 	}
+	if err := t.enterLink(linkID); err != nil {
+		return err
+	}
 	return t.writeLog(id, actor, "share.enable", linkID, nil)
 }
 
@@ -544,6 +547,9 @@ func (t *txn) reissueShare(id, actor, linkID string) (string, error) {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return "", fail("conflict", linkOff)
+	}
+	if err := t.enterLink(linkID); err != nil {
+		return "", err
 	}
 	return token, t.writeLog(id, actor, "share.reissue", linkID, nil)
 }

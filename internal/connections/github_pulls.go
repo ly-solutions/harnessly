@@ -40,7 +40,7 @@ type PullLister interface {
 }
 
 const ghPullFields = `fragment P on PullRequest{number title url isDraft createdAt updatedAt baseRefName headRefName mergeable
-totalCommentsCount author{login avatarUrl ...on User{name}} repository{nameWithOwner}
+totalCommentsCount author{__typename login avatarUrl ...on User{name}} repository{nameWithOwner}
 assignees(first:10){nodes{login name}}
 reviewRequests(first:10){nodes{requestedReviewer{...on User{login name}}}}
 labels(first:5){nodes{name}}

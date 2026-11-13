@@ -1,5 +1,7 @@
 // A vendor of the «Модели» page: its name, one line of what is connected, and on opening the presets with the key form.
 // The card follows the «Модели и ключи» cards (.hx-acct) so the two pages read as one family.
+import LimitsLine from '@/next/features/limits/limits-line';
+import { profileLimitsOf, type MachineLimits } from '@/next/features/limits/model';
 import { useState } from 'react';
 import {
   defaultPreset,
@@ -37,11 +39,16 @@ interface IVendorCardProps extends IPresetActions {
   vendor: Vendor;
   states: readonly IPresetState[];
   open: boolean;
+  /** The machine's limits; the card's head shows what is left of the vendor's first account that has any. */
+  limits?: MachineLimits | null;
   onToggle: (vendor: Vendor) => void;
 }
 
-const VendorCard = ({ vendor, states, open, onToggle, ...actions }: IVendorCardProps) => {
+const VendorCard = ({ vendor, states, open, limits, onToggle, ...actions }: IVendorCardProps) => {
   const presets = presetsOfVendor(vendor, states);
+  const left = limits
+    ? (presets.map((p) => profileLimitsOf(limits, p.id)).find((entry) => entry !== null) ?? null)
+    : null;
   const [picked, setPicked] = useState<PresetId | null>(() => defaultPreset(vendor, states));
   const current = presets.find((p) => p.id === picked) ?? presets[0];
   const name = t(`next.providers.vendor.${vendor}`);
@@ -59,6 +66,7 @@ const VendorCard = ({ vendor, states, open, onToggle, ...actions }: IVendorCardP
           <span className="hx-acct__name">{name}</span>
           <span className="hx-acct__status">{vendorStatus(vendor, states)}</span>
         </span>
+        <LimitsLine limits={left} />
         <Icon name="chevron-down" size="sm" className="hx-acct__chev" />
       </button>
       <div className="hx-acct__body">

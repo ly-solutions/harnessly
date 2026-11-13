@@ -225,3 +225,44 @@ func TestJournalKeepsTheLast(t *testing.T) {
 		t.Fatalf("%d, %s … %s", len(all), all[0].ID, all[len(all)-1].ID)
 	}
 }
+
+func TestWatchMovesWithEveryChange(t *testing.T) {
+	s := &Service{}
+	rev := s.Rev()
+	// Nothing moved: the wait runs out and answers the same revision.
+	if got := s.WaitRev(context.Background(), rev, 10*time.Millisecond); got != rev {
+		t.Fatalf("nothing moved: %d, was %d", got, rev)
+	}
+	// A page with an older revision is answered at once.
+	if got := s.WaitRev(context.Background(), rev-1, time.Minute); got != rev {
+		t.Fatalf("an older revision: %d, want %d", got, rev)
+	}
+	got := make(chan uint64, 1)
+	go func() { got <- s.WaitRev(context.Background(), rev, time.Minute) }()
+	time.Sleep(20 * time.Millisecond)
+	s.bump()
+	select {
+	case next := <-got:
+		if next == rev {
+			t.Fatal("the revision did not move")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the wait was not woken")
+	}
+}
+
+// A value that changes a part of a text strikes out on the card only what it replaces: nothing when it adds.
+func TestProposalOfAPartSaysWhatItReplaces(t *testing.T) {
+	s, _ := newService(t)
+	list := "a,b"
+	s.Items = append(s.Items, Item{Key: "list", Title: "Список", Kind: KindText,
+		Get: func() (string, error) { return list, nil }, Set: func(v string) error { list += "," + v; return nil },
+		Free:     func(string) bool { return true },
+		Replaces: func(v string) (string, bool) { return map[string]string{"b2": "b"}[v], v != "whole" }})
+	for value, want := range map[string]string{"c": "", "b2": "b", "whole": "a,b"} {
+		out, err := s.Propose("list", value, "", Actor{Conv: "chat-" + value})
+		if err != nil || out.Proposal == nil || out.Proposal.OldLabel != want {
+			t.Errorf("%s: %+v, %v; want the card to strike out %q", value, out.Proposal, err, want)
+		}
+	}
+}

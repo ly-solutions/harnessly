@@ -615,6 +615,86 @@ export const DraftForm = ({
     );
   }
 
+  if (d.k === 'provider')
+    return (
+      <>
+        <Field label="Адрес" hint="Куда уходят запросы: адрес API провайдера или вашего шлюза">
+          <TextIn
+            mono
+            value={f.url}
+            onChange={(v) => set({ url: v.trim() })}
+            placeholder="https://llm.example.ru/anthropic"
+            label="Адрес"
+          />
+        </Field>
+        <Field label="API" hint="С API как у Anthropic на провайдере можно запускать чаты Claude Code">
+          <Seg
+            items={[
+              ['anthropic', 'Как у Anthropic'],
+              ['openai', 'Как у OpenAI'],
+            ]}
+            value={f.api}
+            onChange={(v) => set({ api: v })}
+            label="API"
+          />
+        </Field>
+        <Field
+          label="Ключ"
+          tip="Значение сюда не пишут. Имя — у каждого свой секрет в сейфе, машина попросит его положить. vault:путь#ключ — общий секрет организации на сервере сейфа, его никто не вводит"
+          hint="Имя секрета в сейфе или ссылка vault:путь#ключ. Пусто — провайдер без ключа"
+        >
+          <TextIn
+            mono
+            value={f.secret}
+            onChange={(v) => set({ secret: v.trim() })}
+            placeholder="vault:shared/llm/gateway#key"
+            label="Ключ"
+          />
+        </Field>
+        <Field label="Модели" hint="По модели на строку. Пусто — машина спросит список у провайдера">
+          <AreaIn
+            rows={3}
+            value={f.models}
+            onChange={(v) => set({ models: v })}
+            placeholder={'claude-sonnet-4-5\nclaude-haiku-4-5'}
+            label="Модели"
+          />
+        </Field>
+        <Field
+          label="Переменные запуска"
+          hint="ИМЯ=значение, по одной на строку: модель по умолчанию, путь к сертификату"
+        >
+          <AreaIn
+            rows={3}
+            value={f.env}
+            onChange={(v) => set({ env: v })}
+            placeholder={'ANTHROPIC_MODEL=claude-sonnet-4-5\nNODE_EXTRA_CA_CERTS=/etc/ssl/certs/corp.pem'}
+            label="Переменные запуска"
+          />
+        </Field>
+        <Field
+          label="Секретные переменные"
+          hint="ИМЯ=секрет: имя в сейфе или ссылка vault:путь#ключ. Значение токена сюда не пишут"
+        >
+          <AreaIn
+            rows={2}
+            value={f.secretEnv}
+            onChange={(v) => set({ secretEnv: v })}
+            placeholder="ANTHROPIC_AUTH_TOKEN=vault:shared/llm/gateway#token"
+            label="Секретные переменные"
+          />
+        </Field>
+        <Field label="Название" hint="Пусто — по адресу сервера">
+          <TextIn
+            value={f.name}
+            onChange={(v) => set({ name: v })}
+            placeholder="Шлюз моделей"
+            label="Название"
+          />
+        </Field>
+      </>
+    );
+
   if (d.k === 'plugin')
     return (
       <>

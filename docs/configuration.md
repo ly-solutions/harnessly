@@ -177,7 +177,7 @@ and the kill switch are in [hub/machine.md](hub/machine.md).
 
 | Variable | Meaning |
 | --- | --- |
-| `RUNTIME_SHARE_BASE_HEADER`, `RUNTIME_SHARE_TOKEN_HEADER`, `RUNTIME_SHARE_TOKEN_SALT`, `RUNTIME_SHARE_TOKEN_AUDIENCE`, `RUNTIME_SHARE_FILE_PREFIX` | snapshot links: the header the platform gives the links' address in, the header of the share gateway's read token, the token key's HKDF salt (keyed by the pair's secret) and audience, and the start of a downloaded file's name; with `RUNTIME_APP_NAME` (the page's brand) all set, the snapshot routes are the slice's, else the previous runtime's |
+| `RUNTIME_SHARE_BASE_HEADER`, `RUNTIME_SHARE_TOKEN_HEADER`, `RUNTIME_SHARE_TOKEN_SALT`, `RUNTIME_SHARE_TOKEN_AUDIENCE`, `RUNTIME_SHARE_FILE_PREFIX` | snapshot links: the header the platform gives the links' address in, the header of the share gateway's read token, the token key's HKDF salt (keyed by the pair's secret) and audience, and the start of a downloaded file's name; with `RUNTIME_APP_NAME` (the page's brand). Each has a default (`X-Harnessly-Share-Base`, `X-Harnessly-Share-Token`, `harnessly`, `harnessly-share-read`, `harnessly`), so the snapshot routes are always on; links are made only when the platform or the hub names their address in the base header |
 | `RUNTIME_SHARE_DROP_HOST`, `RUNTIME_PROFILE_HOMES` | links to the platform itself (this host suffix under `RUNTIME_APP_BASE_PATH`) a snapshot page drops, and the folder of per-person profiles whose homes a snapshot shortens to `~` |
 
 ### Machine and web push

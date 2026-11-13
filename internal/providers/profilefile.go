@@ -79,6 +79,7 @@ type FilePrice struct {
 var (
 	extraMu sync.RWMutex
 	extra   []Preset
+	custom  []Preset
 
 	keyRefShape = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._/-]{0,63}$`)
 	// A name that looks like a vendor's key is refused: the reference is meant to be a name.
@@ -99,7 +100,29 @@ func all() []Preset {
 			out = append(out, x)
 		}
 	}
+	// The person's own providers come last and never stand in for a preset or a profile of the file.
+	for _, x := range custom {
+		if !slices.ContainsFunc(out, func(p Preset) bool { return p.ID == x.ID }) {
+			out = append(out, x)
+		}
+	}
 	return out
+}
+
+// SetCustom replaces the profiles made of the providers the person added by hand: the whole list, as the registry has
+// it now. A profile that is not of Claude Code, has no model or an id that is no profile id is left out.
+func SetCustom(list []Preset) {
+	kept := make([]Preset, 0, len(list))
+	for _, p := range list {
+		if !wire.ValidProfileID(p.ID) || p.Via != wire.ProviderClaude || len(p.Models) == 0 {
+			continue
+		}
+		p.Custom = true
+		kept = append(kept, p)
+	}
+	extraMu.Lock()
+	custom = kept
+	extraMu.Unlock()
 }
 
 // LoadProfileFile reads the file and adds its profiles; on any error nothing is added.
@@ -191,7 +214,7 @@ func (fp FileProfile) preset() (Preset, []priceRow, error) {
 		return Preset{}, nil, errors.New("label: empty")
 	}
 	vendor := wire.ProfileVendor(fp.Vendor)
-	if !slices.Contains(wire.ProfileVendors, vendor) || vendor == wire.VendorAuto {
+	if !slices.Contains(wire.ProfileVendors, vendor) || vendor == wire.VendorAuto || vendor == wire.VendorOwn {
 		return Preset{}, nil, errors.New("vendor: one of kimi, glm, grok, gpt")
 	}
 	p := Preset{ID: fp.ID, Label: fp.Label, Vendor: vendor, Hint: fp.Hint, KeyRef: fp.KeyRef, KeyEnv: fp.KeyEnv}

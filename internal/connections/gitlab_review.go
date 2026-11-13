@@ -41,6 +41,10 @@ type Review struct {
 	Refs       ReviewRefs     `json:"refs"`
 	Threads    []ReviewThread `json:"threads"`
 	Drafts     []ReviewDraft  `json:"drafts"`
+	// HostViewed: the host keeps the person's «viewed» marks of the files itself; Viewed are the paths marked there.
+	// A host that keeps none leaves both empty, and the marks are kept on the machine.
+	HostViewed bool     `json:"hostViewed,omitempty"`
+	Viewed     []string `json:"viewed,omitempty"`
 }
 
 // ReviewRefs are the commits the merge request's diff is taken between; a new note is placed on them.
@@ -98,6 +102,10 @@ const (
 	ActApprove     = "approve"
 	ActUnapprove   = "unapprove"
 	ActReady       = "ready"
+	// ActViewed and ActUnviewed put and take off the person's «viewed» mark of a file (Path), where the host keeps
+	// such marks itself (GitHub); a host that keeps none refuses them.
+	ActViewed   = "viewed"
+	ActUnviewed = "unviewed"
 )
 
 // ReviewAct is one thing the person does in a review.

@@ -113,6 +113,7 @@ describe('the smart features', () => {
       <SmartSection
         state={{ k: 'ready', view: view() }}
         busy={new Set()}
+        agentModels={{ claude: [], codex: [] }}
         marks={{ 'background.next-step': { was: 'as now', busy: false, onUndo } }}
         onPick={onPick}
         onOpenProviders={() => {}}
@@ -153,6 +154,7 @@ describe('the smart features', () => {
       <SmartSection
         state={{ k: 'loading' }}
         busy={new Set()}
+        agentModels={{ claude: [], codex: [] }}
         marks={{}}
         onPick={() => {}}
         onOpenProviders={() => {}}
@@ -163,6 +165,7 @@ describe('the smart features', () => {
       <SmartSection
         state={{ k: 'failed', text: 'No connection', onRetry: () => {} }}
         busy={new Set()}
+        agentModels={{ claude: [], codex: [] }}
         marks={{}}
         onPick={() => {}}
         onOpenProviders={() => {}}

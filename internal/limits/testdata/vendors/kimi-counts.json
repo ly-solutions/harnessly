@@ -1,0 +1,9 @@
+{
+  "usage": {"limit": "2048", "used": "375", "remaining": "1673", "resetTime": "2026-01-09T15:23:13.373329235Z"},
+  "limits": [
+    {
+      "window": {"duration": 300, "timeUnit": "TIME_UNIT_MINUTE"},
+      "detail": {"limit": "200", "used": "19", "remaining": "181", "resetTime": "2026-01-06T15:05:24.374187075Z"}
+    }
+  ]
+}

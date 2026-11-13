@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/connections"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
@@ -480,6 +481,7 @@ type gitlabPerson struct {
 	Username  string `json:"username"`
 	Name      string `json:"name"`
 	AvatarURL string `json:"avatar_url"`
+	Bot       bool   `json:"bot"`
 }
 
 func (p gitlabPerson) name() *string { return or2(appText(p.Name), appText(p.Username)) }
@@ -648,6 +650,7 @@ func (s *Service) mrRow(mr gitlabMR, me string) (wire.AppRow, bool) {
 		row.Author = mr.Author.name()
 		row.Person = row.Author
 		row.Avatar = s.forgeAvatarLink(mr.Author.AvatarURL)
+		row.Bot = mr.Author.Bot || connections.BotLogin(mr.Author.Username)
 		if mine = mr.Author.Username == me; mine {
 			row.Me = append(row.Me, wire.RoleAuthor)
 		}

@@ -11,7 +11,7 @@ import { choiceKey, launchPrompt, toggleChoice } from '@/next/features/composer/
 import { createConversation, setConversationApps, type NewConversation } from '@/next/commands';
 import { failureText } from '@/next/bindings/outcome';
 import { useAgentLimits } from '@/next/bindings/use-limits';
-import { limitsProviderOf } from '@/next/features/limits/model';
+import { limitsOwnerOf } from '@/next/features/limits/model';
 import { useUploads } from '@/next/bindings/use-uploads';
 import { rememberChoice } from '@/next/features/composer/start-choice';
 import { useStartChoice } from '@/next/bindings/use-start-choice';
@@ -152,7 +152,7 @@ const HomeComposer = ({
     if (!choice || choiceKey(next) !== choiceKey(choice)) setMore([]);
     onPick(next);
   };
-  const limits = useAgentLimits(machine, limitsProviderOf(choice));
+  const limits = useAgentLimits(machine, limitsOwnerOf(choice));
   // «/» on the start page: the commands that may start a chat, the model and depth of the pill, the earlier sessions.
   const slashActions = useMemo<ISlashActions>(() => ({ resume: () => requestUi(UI_REQUEST.resume) }), []);
   const slash = useSlashSource({

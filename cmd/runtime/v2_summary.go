@@ -88,8 +88,13 @@ func (s *v2Summarizer) Summarize(p wire.Provider, model, message string, replies
 	if text == "" {
 		return "", errors.New("the model answered with no summary")
 	}
+	return redactSummary(text), nil
+}
+
+// redactSummary takes what looks like a secret out of a summary before it goes into a notification.
+func redactSummary(text string) string {
 	redactor := share.NewRedactor(share.RedactorConfig{KnownSecrets: share.EnvSecrets(os.Environ(), "")})
-	return redactor.Redact(text), nil
+	return redactor.Redact(text)
 }
 
 // lastRunes is the end of s: what the agent said last tells best what the turn came to.

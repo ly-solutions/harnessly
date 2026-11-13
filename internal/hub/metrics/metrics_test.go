@@ -114,3 +114,23 @@ func TestHandlerServesOnlyMetrics(t *testing.T) {
 		}
 	}
 }
+
+// a read of people's data is counted by its kind and by what answered it.
+func TestReadsAreCountedByKindAndSource(t *testing.T) {
+	before := Reads(ReadUpload, FromMachine)
+	CountRead(ReadUpload, FromMachine)
+	CountRead(99, FromStore)
+	CountRead(ReadDesign, -1)
+	if got := Reads(ReadUpload, FromMachine) - before; got != 1 {
+		t.Fatalf("counted %d reads", got)
+	}
+	var out strings.Builder
+	if err := Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`data_reads_total{kind="upload",source="machine"} `, `data_reads_total{kind="design",source="store"} `, `data_reads_total{kind="delivered",source="machine"} `} {
+		if !strings.Contains(out.String(), Prefix+want) {
+			t.Fatalf("no sample %s in:\n%s", want, out.String())
+		}
+	}
+}

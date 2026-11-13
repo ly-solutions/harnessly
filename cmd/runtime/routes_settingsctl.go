@@ -14,6 +14,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/agent"
 	"github.com/ly-solutions/harnessly/internal/bgmodel"
+	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/locale"
 	"github.com/ly-solutions/harnessly/internal/sameorigin"
@@ -29,6 +30,8 @@ import (
 //	GET  <platform>/settings-proposals                     {proposals: [Proposal]}: the cards that wait for the person
 //	POST <platform>/settings-proposals/<id>/approve        {status: "applied", change, proposal}
 //	POST <platform>/settings-proposals/<id>/decline        {status: "declined", proposal}
+//	GET  <platform>/settings-watch?rev=<n>                 {rev}: held until the journal or the proposals move (or
+//	                                                       settingsWatchMax passes); a page reads both again then
 //	GET  <platform>/settings-agent                         {chats: [<conversation id>]}
 //	PUT  <platform>/settings-agent                         {conv} -> {chats}: names the Settings window's own chat
 //	                                                       the person's page: a page session, same origin
@@ -42,6 +45,9 @@ import (
 
 // settingsWaitMax is the longest one wait request holds; the CLI asks again until the person answers.
 const settingsWaitMax = 50 * time.Second
+
+// settingsWatchMax is the longest a page's watch is held: under the timeouts of the proxies on its way.
+const settingsWatchMax = 25 * time.Second
 
 // settingsChats are the chats the Settings window made for its own agent, kept across restarts.
 type settingsChats struct {
@@ -252,12 +258,48 @@ func settingsItems(d deps) []settingsctl.Item {
 				})
 			}},
 	}
+	items = append(items, providersItem(providers))
+	summary := noticeSummaryFor(d)
 	for _, f := range bgmodel.Features() {
 		feature := f
+		if feature.ID == bgmodel.FeatureNotifySummary {
+			// One setting over the agents' models and the providers' (notice_summary.go).
+			items = append(items, settingsctl.Item{Key: "background." + feature.ID, Section: background, Kind: settingsctl.KindEnum,
+				Title: feature.Title,
+				Description: feature.Description + " " + locale.Pick("The value is «default» (the chat's own agent writes it), «off», «claude/<model>» or «codex/<model>» for an agent's model, or «<provider>/<model>» of a connected provider.",
+					"Значение — «default» (пишет сам агент чата), «off», «claude/<модель>» или «codex/<модель>» для модели агента, либо «<провайдер>/<модель>» подключённого провайдера."),
+				Options: func() []settingsctl.Option {
+					out := []settingsctl.Option{
+						{Value: backgroundAsNow, Label: locale.Pick("as now", "как сейчас")},
+						{Value: wire.NoticeSummaryOff, Label: locale.Pick("off", "выключено")},
+					}
+					views, _ := providers.List()
+					for _, p := range views {
+						for _, m := range p.Models {
+							out = append(out, settingsctl.Option{Value: p.ID + "/" + m.ID, Label: p.Name + " · " + m.ID})
+						}
+					}
+					return out
+				},
+				Free: func(v string) bool {
+					if summary.Takes(v) {
+						return true
+					}
+					c, ok := bgmodel.ParseChoice(v)
+					if !ok {
+						return false
+					}
+					_, err := providers.Get(c.Provider)
+					return err == nil && !strings.ContainsAny(c.Model, " \t\r\n")
+				},
+				Get: func() (string, error) { return summary.Value(), nil },
+				Set: summary.SetValue})
+			continue
+		}
 		items = append(items, settingsctl.Item{Key: "background." + feature.ID, Section: background, Kind: settingsctl.KindEnum,
 			Title: feature.Title,
-			Description: feature.Description + " " + locale.Pick("The value is «default» (as now: the chat's own agent decides) or «<provider>/<model>» of a connected provider.",
-				"Значение — «default» (как сейчас: решает сам агент чата) или «<провайдер>/<модель>» подключённого провайдера."),
+			Description: feature.Description + " " + locale.Pick("The value is «default» (as now: no model of a provider is used) or «<provider>/<model>» of a connected provider.",
+				"Значение — «default» (как сейчас: модель провайдера не используется) или «<провайдер>/<модель>» подключённого провайдера."),
 			Options: func() []settingsctl.Option {
 				out := []settingsctl.Option{{Value: backgroundAsNow, Label: locale.Pick("as now", "как сейчас")}}
 				views, _ := providers.List()
@@ -348,7 +390,11 @@ func settingsRefusal(w http.ResponseWriter, err error) {
 			agent.Log("warn", "settings: a change failed", agent.F{K: "error", V: r.Err.Error()})
 		}
 	}
-	body := map[string]any{"error": r.Reason, "message": settingsMessage(r.Reason)}
+	message := settingsMessage(r.Reason)
+	if r.Message != "" {
+		message = r.Message
+	}
+	body := map[string]any{"error": r.Reason, "message": message}
 	if r.Setting != nil {
 		// What the setting takes, so that the caller can pick a value it does.
 		body["setting"] = r.Setting
@@ -500,6 +546,22 @@ func settingsCtlRoutes(d deps, c *core) []gate.Route {
 		agent.Log("info", "settings: a proposal answered", agent.F{K: "id", V: id}, agent.F{K: "state", V: out.State})
 		secretJSON(w, http.StatusOK, out)
 	}
+	watch := func(w http.ResponseWriter, r *http.Request) {
+		if !pageOK(w, r) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			notAllowed(w)
+			return
+		}
+		// A page that names no revision (or one that does not read) is answered at once with the one there is.
+		after, err := strconv.ParseUint(r.URL.Query().Get("rev"), 10, 64)
+		if err != nil {
+			secretJSON(w, http.StatusOK, map[string]any{"rev": strconv.FormatUint(svc.Rev(), 10)})
+			return
+		}
+		secretJSON(w, http.StatusOK, map[string]any{"rev": strconv.FormatUint(svc.WaitRev(r.Context(), after, settingsWatchMax), 10)})
+	}
 	settingsAgent := func(w http.ResponseWriter, r *http.Request) {
 		if !pageOK(w, r) {
 			return
@@ -579,7 +641,110 @@ func settingsCtlRoutes(d deps, c *core) []gate.Route {
 		{Match: is(proposalsBase), Handler: http.HandlerFunc(proposals)},
 		{Match: below(proposalsBase), Handler: http.HandlerFunc(answer)},
 		{Match: is(agentBase), Handler: http.HandlerFunc(settingsAgent)},
+		{Match: is(platformAPI + "/settings-watch"), Handler: http.HandlerFunc(watch)},
 		{Match: is("/api/cli/settings"), Handler: http.HandlerFunc(cliList)},
 		{Match: is("/api/cli/settings/set"), Handler: http.HandlerFunc(cliSet)},
 	}
+}
+
+// providersItem is the person's own model providers as an agent sets them up: the whole list in JSON to read, one
+// account (or the whole list) to write. No value of a secret passes here: a key and a secret variable are named by a
+// secret of the safe, which the agent asks the person for with `harnessly secret ask`.
+func providersItem(svc *extproviders.Service) settingsctl.Item {
+	read := func() (string, error) {
+		list, err := svc.Declared()
+		if err != nil {
+			return "", err
+		}
+		b, err := json.Marshal(list)
+		return string(b), err
+	}
+	check := func(v string) error {
+		list, whole, err := extproviders.ParseDeclared(v)
+		if err != nil {
+			return err
+		}
+		return svc.Declare(list, whole, true)
+	}
+	return settingsctl.Item{Key: "providers", Section: locale.Pick("Model providers", "Провайдеры моделей"), Kind: settingsctl.KindText,
+		Title: locale.Pick("Your own model providers", "Свои провайдеры моделей"),
+		Description: locale.Pick(
+			`The accounts of model providers added on this machine, as a JSON list. To add or change one, set a JSON object: {"id"?, "name", "api": "anthropic"|"openai", "baseUrl", "models"?: [..], "key"?: "<secret>", "env"?: ["NAME=value"], "secretEnv"?: ["NAME=<secret>"], "default"?: true}; without "id" a new account is added; {"id", "remove": true} removes one; a JSON list replaces all of them. <secret> is the name of a secret of the safe (ask the person for it first: harnessly secret ask NAME --origin https://<the provider's host> --why …, so that it is allowed for that server only); a value of a key or a token is never written here, and the organization's vault: secrets are not named here. With the Anthropic API the account also starts Claude Code chats, with env and secretEnv added to the launch. The providers of the team's environment are not listed and are changed in the hub.`,
+			`Аккаунты провайдеров моделей, добавленные на этой машине, списком JSON. Добавить или изменить один — задать объект JSON: {"id"?, "name", "api": "anthropic"|"openai", "baseUrl", "models"?: [..], "key"?: "<секрет>", "env"?: ["ИМЯ=значение"], "secretEnv"?: ["ИМЯ=<секрет>"], "default"?: true}; без "id" добавится новый аккаунт; {"id", "remove": true} уберёт аккаунт; список JSON заменит все. <секрет> — имя секрета в сейфе (сначала попросите его у человека: harnessly secret ask ИМЯ --origin https://<хост провайдера> --why …, чтобы он был разрешён только для этого сервера); само значение ключа или токена сюда не пишут, секреты организации vault: здесь не называют. С API как у Anthropic на аккаунте запускаются и чаты Claude Code, env и secretEnv добавляются к запуску. Провайдеры из окружения команды здесь не показаны: их меняют в хабе.`),
+		Get:  read,
+		Free: func(v string) bool { return check(v) == nil },
+		Why: func(v string) string {
+			err := check(v)
+			if err == nil {
+				return ""
+			}
+			switch extproviders.ReasonOf(err) {
+			case extproviders.ReasonNoSecret:
+				return locale.Pick("A secret that is named is not in the safe yet. Ask the person for it: harnessly secret ask NAME --origin https://<host> --why …",
+					"Названного секрета ещё нет в сейфе. Попросите его у человека: harnessly secret ask ИМЯ --origin https://<хост> --why …")
+			case extproviders.ReasonFailed:
+				return locale.Pick("The value is not the JSON of an account or of a list of accounts.", "Значение — не JSON аккаунта и не список аккаунтов.")
+			}
+			return extProviderMessage(extproviders.ReasonOf(err))
+		},
+		Replaces: func(v string) (string, bool) {
+			list, whole, err := extproviders.ParseDeclared(v)
+			if err != nil || whole || len(list) != 1 {
+				return "", false
+			}
+			now, err := svc.Declared()
+			if err != nil {
+				return "", false
+			}
+			for _, d := range now {
+				if d.ID == list[0].ID {
+					return d.Name + " → " + d.BaseURL, true
+				}
+			}
+			return "", true
+		},
+		Label: func(v string) string {
+			list, whole, err := extproviders.ParseDeclared(v)
+			if err != nil {
+				return v
+			}
+			names := make([]string, 0, len(list))
+			for _, d := range list {
+				switch {
+				case d.Remove:
+					names = append(names, locale.Pick("remove ", "убрать ")+d.ID)
+				case d.BaseURL != "":
+					// The card says where the secrets go and which variables a launch gets: that is what is confirmed.
+					said := d.Name + " → " + d.BaseURL
+					if !whole && d.ID == "" {
+						said = locale.Pick("add ", "добавить ") + said
+					}
+					if refs := d.SecretRefs(); len(refs) > 0 {
+						said += locale.Pick("; secrets: ", "; секреты: ") + strings.Join(refs, ", ")
+					}
+					var vars []string
+					for _, line := range slices.Concat(d.Env, d.SecretEnv) {
+						n, _, _ := strings.Cut(line, "=")
+						vars = append(vars, strings.TrimSpace(n))
+					}
+					if len(vars) > 0 {
+						said += locale.Pick("; variables: ", "; переменные: ") + strings.Join(vars, ", ")
+					}
+					names = append(names, said)
+				default:
+					names = append(names, d.Name)
+				}
+			}
+			if whole && len(names) == 0 {
+				return locale.Pick("none", "нет")
+			}
+			return strings.Join(names, ", ")
+		},
+		Set: func(v string) error {
+			list, whole, err := extproviders.ParseDeclared(v)
+			if err != nil {
+				return err
+			}
+			return svc.Declare(list, whole, false)
+		}}
 }

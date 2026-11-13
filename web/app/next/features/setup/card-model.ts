@@ -21,6 +21,7 @@ export const INSIDE_MAX = 8;
 const STAGES: readonly { kind: TSetupKind; key: string }[] = [
   { kind: SETUP_KIND.base, key: 'next.setup.stage.base' },
   { kind: SETUP_KIND.access, key: 'next.setup.stage.access' },
+  { kind: SETUP_KIND.provider, key: 'next.setup.stage.providers' },
   { kind: SETUP_KIND.repo, key: 'next.setup.stage.code' },
   { kind: SETUP_KIND.claude, key: 'next.setup.stage.claude' },
   { kind: SETUP_KIND.plugin, key: 'next.setup.stage.plugins' },
@@ -31,6 +32,7 @@ const STAGES: readonly { kind: TSetupKind; key: string }[] = [
 const RUN_KEY: Record<TSetupKind, string> = {
   base: 'next.setup.run.base',
   access: 'next.setup.run.access',
+  provider: 'next.setup.run.provider',
   repo: 'next.setup.run.repo',
   'claude-settings': 'next.setup.run.claude',
   plugin: 'next.setup.run.plugin',

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +31,8 @@ type Store struct {
 	// Secrets turns the name of a secret of the safe (Preset.KeyRef of a profile of the profiles file) into its value; nil
 	// for none, and a profile with a KeyRef then takes the key typed on the Settings screen like any other.
 	Secrets func(name string) (string, error)
+	// Safe reads a secret of the machine's safe: the key and the secret variables of a custom profile (Preset.Custom).
+	Safe func(name string) (string, error)
 
 	mu sync.Mutex
 	// refreshed is when each profile's key was last taken from the safe.
@@ -37,6 +40,25 @@ type Store struct {
 	// masks are the keys the feed hides, each with the form it has in a JSON string; read on every frame, so kept here
 	// and rebuilt when a key is saved or removed. nil until the first use.
 	masks atomic.Pointer[[]mask]
+	// launched are the values of the secret variables put into a chat's launch (a custom profile's token): the feed
+	// hides them as it hides the keys.
+	launched []string
+}
+
+// hide adds values a launch took from the safe to what the feed hides.
+func (s *Store) hide(values []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	added := false
+	for _, v := range values {
+		// A value shorter than a key cannot be told from a word and would mask words.
+		if len(v) >= wire.ProfileKeyMin && !slices.Contains(s.launched, v) {
+			s.launched, added = append(s.launched, v), true
+		}
+	}
+	if added {
+		s.rebuildLocked()
+	}
 }
 
 type mask struct{ key, escaped, bullets []byte }
@@ -128,7 +150,16 @@ const refSettle = time.Minute
 // the file as it was.
 func (s *Store) refresh(id string) {
 	p, ok := Find(id)
-	if !ok || p.KeyRef == "" || s.Secrets == nil {
+	read := s.Secrets
+	if p.Custom {
+		read = s.Safe
+	}
+	if ok && p.Custom && p.KeyRef == "" {
+		// The person took the provider's key away: no file of it is left for a launch to read.
+		_ = os.Remove(s.KeyFile(id))
+		return
+	}
+	if !ok || p.KeyRef == "" || read == nil {
 		return
 	}
 	s.mu.Lock()
@@ -136,7 +167,7 @@ func (s *Store) refresh(id string) {
 	if at, ok := s.refreshed[id]; ok && time.Since(at) < refSettle {
 		return
 	}
-	val, err := s.Secrets(p.KeyRef)
+	val, err := read(p.KeyRef)
 	val = strings.TrimSpace(val)
 	if err != nil || len(val) < wire.ProfileKeyMin {
 		return
@@ -149,6 +180,13 @@ func (s *Store) refresh(id string) {
 		return
 	}
 	_ = s.writeLocked(id, val)
+}
+
+// Stale makes the next reader of a profile's key ask the safe again: the provider was changed.
+func (s *Store) Stale(id string) {
+	s.mu.Lock()
+	delete(s.refreshed, id)
+	s.mu.Unlock()
 }
 
 // Remove deletes the saved key; a profile with none stays as it is.
@@ -217,8 +255,24 @@ func (s *Store) Ready(id string) bool {
 	if s.Configured(id) {
 		return true
 	}
+	if p, ok := Find(id); ok && p.Custom && p.ownCredential() {
+		return true
+	}
 	_, ok := s.LoginOf(id)
 	return ok
+}
+
+// credentialEnv are the variables Claude Code takes a credential from.
+var credentialEnv = []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"}
+
+// ownCredential says whether the profile's variables carry a credential of their own, so it needs no saved key.
+func (p Preset) ownCredential() bool {
+	for _, name := range credentialEnv {
+		if _, ok := p.SecretEnv[name]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Credential is what a request of the profile is authorised with: the saved key, else the token of the vendor CLI's
@@ -272,6 +326,27 @@ func Mask(key string) string {
 // rebuildLocked reads every saved key again into the masks.
 func (s *Store) rebuildLocked() {
 	masks := []mask{}
+	hidden := slices.Clone(s.launched)
+	// After a restart the chats started before it still run with their variables: the values are read again from the
+	// safe by the names the custom profiles keep.
+	if s.Safe != nil {
+		for _, p := range all() {
+			if !p.Custom {
+				continue
+			}
+			for _, ref := range p.SecretEnv {
+				if v, err := s.Safe(ref); err == nil {
+					if v = strings.TrimSpace(v); len(v) >= wire.ProfileKeyMin && !slices.Contains(hidden, v) {
+						hidden = append(hidden, v)
+					}
+				}
+			}
+		}
+	}
+	for _, v := range hidden {
+		esc, _ := json.Marshal(v)
+		masks = append(masks, mask{key: []byte(v), escaped: esc[1 : len(esc)-1], bullets: []byte(Mask(v))})
+	}
 	ids := SpeechKeys
 	for _, p := range all() {
 		ids = append(ids[:len(ids):len(ids)], p.ID)

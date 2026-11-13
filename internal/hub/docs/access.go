@@ -68,6 +68,7 @@ func (s *Service) mountAccess(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+p+"-guest/{token}/content", s.guestContent)
 	mux.HandleFunc("POST "+p+"-guest/{token}/comments", s.guestComment)
 	mux.HandleFunc("GET /d/{token}", s.guestPage)
+	mux.HandleFunc("GET /static/fonts/{name}", s.guestFont)
 }
 
 func (s *Service) aclRoute(w http.ResponseWriter, r *http.Request, p *auth.Principal) error {

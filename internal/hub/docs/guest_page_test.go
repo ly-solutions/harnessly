@@ -75,3 +75,40 @@ func TestGuestLinkOpensTheDocumentPage(t *testing.T) {
 		t.Fatalf("the documents service is asked only for a live link: %v", asked)
 	}
 }
+
+// the document's page names its fonts by a path of its own origin; the hub reads them from the documents
+// service for anybody, and nothing else of that service is reachable this way.
+func TestGuestPageFontsComeThroughTheHub(t *testing.T) {
+	s, mux, _ := accessRig(t)
+	var asked []string
+	art := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Path)
+		if r.URL.Path != "/static/fonts/geist-400.woff2" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("wOF2-bytes"))
+	}))
+	t.Cleanup(art.Close)
+	s.art = newArtifacts(art.URL, "t", art.Client())
+	open := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w
+	}
+	w := open("/static/fonts/geist-400.woff2")
+	if w.Code != 200 || w.Body.String() != "wOF2-bytes" || w.Header().Get("Content-Type") != "font/woff2" || w.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("the font: %d %v", w.Code, w.Header())
+	}
+	if w := open("/static/fonts/none.woff2"); w.Code != 404 {
+		t.Fatalf("a font the service has not got: %d", w.Code)
+	}
+	for _, p := range []string{"/static/fonts/x.css", "/static/fonts/..%2Fa%2Fplan%2Fraw", "/static/fonts/A.woff2"} {
+		if w := open(p); w.Code != 404 {
+			t.Fatalf("%s: %d", p, w.Code)
+		}
+	}
+	if len(asked) != 2 {
+		t.Fatalf("only a font's name reaches the documents service: %v", asked)
+	}
+}

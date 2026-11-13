@@ -1227,11 +1227,15 @@
     margin-bottom: 8px;
     height: 48px;
   }
+  /* The way to the app's menu on a narrow window: a button that reads as one. */
   .hx-set__menu {
     display: grid;
     width: 40px;
     height: 40px;
     flex: none;
+    margin-right: 6px;
+    background: var(--hx-bg-hover);
+    color: var(--hx-fg-1);
   }
   .hx-set__nav-item {
     height: 52px;
@@ -2345,4 +2349,260 @@ html[data-theme='dark'] .hx-nplace__spot[aria-checked='true'] {
   font-family: var(--hx-font-mono);
   font-size: var(--hx-text-sm);
   overflow-wrap: anywhere;
+}
+
+/* «Провайдеры»: an agent's row leads to its page, where it is signed in. */
+.hx-acct-row {
+  width: 100%;
+  gap: 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms var(--hx-ease-out);
+}
+.hx-acct-row:hover {
+  background: var(--hx-bg-hover);
+}
+.hx-acct-row__go {
+  flex: none;
+  color: var(--hx-fg-3);
+}
+/* «Подключение» on the agent's page: the card's body without its head. */
+.hx-acct--page .hx-acct__inner {
+  padding-top: 16px;
+}
+.hx-acct--page .hx-acct__inner > .hx-src,
+.hx-acct--page .hx-acct__inner > .hx-proxy,
+.hx-acct--page .hx-acct__inner > .hx-seen,
+.hx-acct--page .hx-acct__inner > .hx-acct__label {
+  margin-left: 16px;
+}
+.hx-acct--page .hx-acct__block {
+  padding-left: 16px;
+}
+
+/* The agent of the Settings window: a field at the bottom of the page, over what scrolls, and its answer above it */
+.hx-set__nav {
+  grid-column: 1;
+  grid-row: 1;
+}
+.hx-set__page {
+  grid-column: 2;
+  grid-row: 1;
+}
+.hx-set__page-in {
+  padding-bottom: 176px;
+}
+.hx-set__isle {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  position: relative;
+  z-index: 5;
+  min-width: 0;
+  max-width: 760px;
+  padding: 0 40px 20px;
+  pointer-events: none;
+}
+.hx-isle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 680px;
+  pointer-events: auto;
+}
+.hx-isle__reply {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--hx-border-strong);
+  border-radius: 16px;
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay);
+  animation: hx-in-up 260ms var(--hx-ease-out) backwards;
+}
+.hx-isle__reply[data-state='closing'] {
+  animation: hx-isle-out 160ms var(--hx-ease-out) forwards;
+}
+@keyframes hx-isle-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.hx-isle__text {
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-md);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.hx-isle__think {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-isle__think > i {
+  animation: hx-spin 900ms linear infinite;
+}
+.hx-isle__diff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-isle__diff-title {
+  flex-basis: 100%;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+.hx-isle__diff s,
+.hx-isle__diff > .hx-icon {
+  color: var(--hx-fg-3);
+}
+.hx-isle__diff b {
+  margin-right: auto;
+  color: var(--hx-fg-1);
+  font-weight: 500;
+}
+.hx-isle__acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hx-isle__opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hx-isle__opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--hx-border);
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms var(--hx-ease-out),
+    border-color 160ms;
+}
+.hx-isle__opt:hover {
+  background: var(--hx-bg-hover);
+  border-color: var(--hx-border-strong);
+}
+.hx-isle__opt-name {
+  flex: 1;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-sm);
+}
+.hx-isle__opt-hint {
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+.hx-isle__box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 10px 16px;
+  border: 1px solid var(--hx-border-strong);
+  border-radius: 20px;
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay);
+  transition: border-color 160ms;
+}
+.hx-isle__box:focus-within {
+  border-color: var(--hx-focus);
+}
+.hx-isle__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hx-isle__input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-md);
+}
+.hx-isle__input::placeholder {
+  color: var(--hx-fg-3);
+}
+.hx-isle__send {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--hx-primary);
+  color: var(--hx-primary-fg);
+  cursor: pointer;
+  transition:
+    transform 120ms var(--hx-ease-out),
+    opacity 160ms;
+}
+.hx-isle__send:active {
+  transform: scale(0.94);
+}
+.hx-isle__send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.hx-isle__sugg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hx-isle__sugg button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-full);
+  background: transparent;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+  cursor: pointer;
+  transition:
+    background 160ms,
+    color 160ms;
+}
+.hx-isle__sugg button:hover {
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+}
+@media (max-width: 900px) {
+  .hx-set__nav,
+  .hx-set__page {
+    grid-column: 1;
+  }
+  .hx-set__page-in {
+    padding-bottom: calc(168px + env(safe-area-inset-bottom));
+  }
+  .hx-set__isle {
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 3;
+    padding: 0 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  /* The list of the sections has no field: it comes with the open section */
+  .hx-set[data-page='false'] .hx-set__isle {
+    display: none;
+  }
 }

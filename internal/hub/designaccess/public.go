@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ly-solutions/harnessly/internal/hub/metrics"
 	"html"
 	"io"
 	"net"
@@ -147,8 +148,10 @@ var errRuntime = errors.New("machine answer out of scope")
 // machine with a token of the given scope.
 func (s *Service) fetch(ctx context.Context, machine string, req hubproto.DesignPublicTokenRequest, segs []string, r *http.Request, pass ...string) (*http.Response, error) {
 	if res, done, err := s.fromStore(ctx, machine, req, segs, r, pass); done {
+		metrics.CountRead(metrics.ReadDesign, metrics.FromStore)
 		return res, err
 	}
+	metrics.CountRead(metrics.ReadDesign, metrics.FromMachine)
 	return s.machineFetch(ctx, machine, req, segs, r, pass...)
 }
 
@@ -733,9 +736,23 @@ func (s *Service) guestFile(w http.ResponseWriter, r *http.Request, g guestReq) 
 			return gNoFile
 		}
 	}
-	res, err := s.fetch(r.Context(), g.m.ID, g.scope(), segs, r)
+	// the file's version goes to the guest as its ETag and comes back as If-None-Match, so a file that has not
+	// changed is not sent again once the guest's copy is a moment old.
+	res, err := s.fetch(r.Context(), g.m.ID, g.scope(), segs, r, "If-None-Match")
 	if err != nil {
 		return err
+	}
+	if res.StatusCode == http.StatusNotModified && r.Header.Get("If-None-Match") != "" {
+		res.Body.Close()
+		h := w.Header()
+		baseHeaders(h)
+		if tag := res.Header.Get("ETag"); tag != "" {
+			h.Set("ETag", tag)
+		}
+		h.Set("Access-Control-Allow-Origin", "*")
+		h.Set("Cache-Control", guestCache(g, "private, max-age=30"))
+		w.WriteHeader(http.StatusNotModified)
+		return nil
 	}
 	if res.StatusCode != 200 {
 		res.Body.Close()
@@ -746,6 +763,9 @@ func (s *Service) guestFile(w http.ResponseWriter, r *http.Request, g guestReq) 
 	}
 	h := w.Header()
 	baseHeaders(h)
+	if tag := res.Header.Get("ETag"); tag != "" {
+		h.Set("ETag", tag)
+	}
 	h.Set("Content-Type", safeType(res.Header.Get("Content-Type")))
 	h.Set("Content-Security-Policy", "sandbox allow-scripts allow-popups allow-forms allow-modals; default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors "+s.shareURL)
 	h.Set("Access-Control-Allow-Origin", "*")

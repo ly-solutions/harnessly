@@ -50,6 +50,12 @@ type Preset struct {
 	// Switched: the profile takes no key. The person turns it on (Store.Switches), and Claude Code is pointed at the
 	// local proxy the switch keeps; BaseURL is where the proxy's requests end up.
 	Switched bool
+	// Custom: a provider the person added by hand (the registry of internal/extproviders, SetCustom). Its key and the
+	// values of SecretEnv come from the machine's safe (Store.Safe), and it may run on a credential of SecretEnv alone.
+	Custom bool
+	// SecretEnv are the variables of the CLI's environment whose values the safe holds: the name of the variable to the
+	// name of its secret. They are put over Env and over everything the launch sets itself (a custom profile only).
+	SecretEnv map[string]string
 	// KeyRef names a secret of the safe the key is taken from (a profile of the profiles file, ProfileFile). It is a
 	// name and never the value; Store.Secrets turns it into the key when the key is needed.
 	KeyRef string

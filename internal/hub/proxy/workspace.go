@@ -141,6 +141,10 @@ func (s *Service) workspaceAPI(w http.ResponseWriter, r *http.Request, p *auth.P
 		s.serveUploads(w, r, p, rest)
 		return
 	}
+	if match := chatSharePage.FindStringSubmatch(rest); match != nil {
+		s.serveChatSharePage(w, r, p, match[1])
+		return
+	}
 	if v := s.vaultService(); v != nil && vaultPath.MatchString(rest) {
 		v.Serve(w, r, vaultsvc.Person{ID: p.User.ID, Email: p.User.Email}, vaultPath.ReplaceAllString(rest, ""))
 		return
@@ -210,6 +214,9 @@ func (s *Service) workspaceAPI(w http.ResponseWriter, r *http.Request, p *auth.P
 	u := url.URL{Path: workspaceBase + rest, RawQuery: q.Encode()}
 	clone.URL = &u
 	clone.RequestURI = ""
+	if s.serveChatShares(w, clone, p.User, m, rest) {
+		return
+	}
 	if r.Method == http.MethodGet && platformMachines.MatchString(rest) {
 		// what is left of the agents' subscriptions is kept as it passes, for the page to draw before any
 		// machine answers.

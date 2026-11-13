@@ -6,6 +6,7 @@ package design
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -76,7 +77,9 @@ func (l *Library) SetKitReadOnly(kit, person string, on bool) error {
 }
 
 // readOnlyDrafts are the draft projects of the kits for viewing only, read again at most once a second: a role is
-// asked on every request, the kits folder is not read for each.
+// asked on every request and for every design of the library, the kits folder is not read for each. Only the kits'
+// settings and drafts are read: listing the kits checks every version's seal, file by file, and the library of a busy
+// machine waited a minute on it.
 var readOnlyDrafts = &draftCache{}
 
 type draftCache struct {
@@ -99,11 +102,12 @@ func (c *draftCache) of(kitsDir string) map[string]bool {
 		return c.have
 	}
 	have := map[string]bool{}
-	for _, k := range designkit.List(kitsDir) {
-		if !designkit.ReadSettings(kitsDir, k.ID).ReadOnly {
+	entries, _ := os.ReadDir(kitsDir)
+	for _, e := range entries {
+		if !e.IsDir() || !designkit.ValidID(e.Name()) || !designkit.ReadSettings(kitsDir, e.Name()).ReadOnly {
 			continue
 		}
-		if d, ok := designkit.ReadDraft(kitsDir, k.ID); ok {
+		if d, ok := designkit.ReadDraft(kitsDir, e.Name()); ok {
 			have[d.Project] = true
 		}
 	}

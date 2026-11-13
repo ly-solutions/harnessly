@@ -1,5 +1,5 @@
 import { t } from '@/next/i18n';
-import { foldText } from '@/next/features/search/highlight';
+import { matching, termsOf, type ITerms } from '@/next/features/search/terms';
 import type { ISearchGroup, ISearchRow, ISearchScope } from '@/next/features/search/search-dialog';
 import type { MessageHit } from '@/next/protocol/v2';
 import type { ISidebarChat, ISidebarProject } from '@/next/features/sidebar/types';
@@ -18,19 +18,15 @@ const rowOf = (chat: ISidebarChat, projects: readonly ISidebarProject[]): ISearc
   meta: projects.find((project) => project.id === chat.projectId)?.name ?? '',
 });
 
-const fold = foldText;
-
-/** Chats whose title has every word of the query; the newest first. */
+/** Chats whose title answers the query (every word of it, or a keyword of a question); the newest first. */
 export const searchChats = (
   chats: readonly ISidebarChat[],
   projects: readonly ISidebarProject[],
   query: string,
+  terms: ITerms = termsOf(query),
 ): readonly ISearchGroup[] => {
-  const words = fold(query).trim().split(/\s+/).filter(Boolean);
-  const found = [...chats]
-    .filter((chat) => words.every((word) => fold(chat.title).includes(word)))
-    .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
-    .map((chat) => rowOf(chat, projects));
+  const newest = [...chats].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  const found = matching(newest, terms, (chat) => [chat.title]).map((chat) => rowOf(chat, projects));
   return found.length > 0 ? [{ id: 'chats', label: t('next.search.groupChats'), rows: found }] : [];
 };
 

@@ -30,6 +30,7 @@ import { useSettingChanges } from '@/next/bindings/settings-changes';
 import { ExtProvidersPage } from '@/next/bindings/settings-ext-providers';
 import { SmartPage } from '@/next/bindings/settings-smart';
 import { smartKey } from '@/next/features/settings/smart-section';
+import SettingsAgent from '@/next/bindings/settings-agent';
 import { TakesPage } from '@/next/bindings/settings-takes';
 import { PluginsPage } from '@/next/bindings/settings-plugins';
 import { ExtensionsPage, useHasExtensions } from '@/next/features/app-views/slot-pages';
@@ -118,15 +119,28 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
   else if (active === 'accounts')
     body = (
       <>
-        <AccountsPage machine={machine} pages={pages} pending={pending} />
+        <AccountsPage
+          machine={machine}
+          pages={pages}
+          onOpen={(provider) => goTo({ kind: ROUTE.settings, section: provider })}
+        />
         <ExtProvidersPage machine={machine} />
       </>
     );
-  else if (active === 'smart') body = <SmartPage machine={machine} changes={changes} now={now} />;
+  else if (active === 'smart')
+    body = (
+      <SmartPage
+        machine={machine}
+        changes={changes}
+        now={now}
+        agentModels={{ claude: modelsOf('claude'), codex: modelsOf('codex') }}
+      />
+    );
   else if (active === 'claude' || active === 'codex')
     body = (
       <AgentPage
         key={active}
+        machine={machine}
         provider={active}
         handle={pages[active]}
         models={modelsOf(active)}
@@ -158,6 +172,13 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
       onPick={(next) => goTo({ kind: ROUTE.settings, section: next })}
       onBack={() => goTo({ kind: ROUTE.settings, section: null })}
       onOpenDrawer={onOpenDrawer}
+      island={
+        <SettingsAgent
+          machine={machine}
+          provider={view?.machine.agents[0]?.provider ?? null}
+          changes={changes}
+        />
+      }
     >
       {body}
     </SettingsShell>

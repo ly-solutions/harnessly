@@ -54,6 +54,8 @@ interface ISettingsShellProps {
   onPick: (section: SettingsSection) => void;
   onBack: () => void;
   onOpenDrawer: () => void;
+  /** The agent's field, kept at the bottom of the page over what scrolls. */
+  island?: ReactNode;
   children: ReactNode;
 }
 
@@ -66,6 +68,7 @@ const SettingsShell = ({
   onPick,
   onBack,
   onOpenDrawer,
+  island,
   children,
 }: ISettingsShellProps) => {
   const page = useRef<HTMLDivElement>(null);
@@ -83,7 +86,7 @@ const SettingsShell = ({
             aria-label={t('next.settings.menu')}
             onClick={onOpenDrawer}
           >
-            <Icon name="panel-left" />
+            <Icon name="menu" />
           </button>
           <span className="hx-set__h1">{t('next.settings.title')}</span>
         </div>
@@ -154,6 +157,7 @@ const SettingsShell = ({
           {children}
         </div>
       </div>
+      {island && <div className="hx-set__isle">{island}</div>}
     </section>
   );
 };

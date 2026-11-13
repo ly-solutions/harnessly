@@ -50,6 +50,7 @@ export const detWord = (d: Draft): string => {
     app: 'приложение',
     plugin: 'плагин',
     'claude-settings': 'настройки Claude',
+    provider: 'провайдер моделей',
   } as const;
   const src: Record<string, string> = {
     link: 'ссылка',

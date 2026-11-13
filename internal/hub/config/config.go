@@ -346,6 +346,10 @@ type Config struct {
 	// DesignShareDocs (HUB_DESIGN_SHARE_DOCS=on) lets the guest links to documents (/d/<token>) open on the share host
 	// and its aliases as well, under the same address a link was handed out at. Off: they open on the hub's origin only.
 	DesignShareDocs bool
+	// DesignDerived (HUB_DESIGN_DERIVED=on) keeps the answers about a revision of a design project in the store, so a
+	// replica gives them without putting the project into a folder of its own. Off: every replica lays the
+	// revision out, as before.
+	DesignDerived bool
 	// AppsGuestURL (HUB_APPS_GUEST_URL) is the origin of the guest links to apps (docs/hub/apps-guest-host.md): it serves
 	// /apps/guest/<token>/ and nothing else, so a guest's view never runs next to the hub's session. Empty: the links
 	// are served on the hub's own origin, as before.
@@ -1008,6 +1012,10 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 			bad("HUB_DESIGN_SHARE_URL must not be the hub's own origin")
 		}
 		c.DesignShareURL = strings.TrimRight(u, "/")
+	}
+	switch strings.ToLower(def("HUB_DESIGN_DERIVED", "off")) {
+	case "on", "true", "1", "yes":
+		c.DesignDerived = true
 	}
 	switch strings.ToLower(def("HUB_DESIGN_SHARE_DOCS", "off")) {
 	case "on", "true", "1", "yes":

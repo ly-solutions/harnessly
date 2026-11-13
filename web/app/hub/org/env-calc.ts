@@ -12,6 +12,7 @@ export const KINDS: readonly CatalogKind[] = [
   'plugin',
   'claude-settings',
   'app',
+  'provider',
 ];
 
 export const noCounts = (): KindCounts => ({ skill: 0, mcp: 0, repo: 0, doc: 0, script: 0, access: 0 });

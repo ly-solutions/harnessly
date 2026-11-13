@@ -18,8 +18,11 @@ import {
   leftAtReset,
   leftOf,
   levelOf,
+  money,
+  profileName,
+  resetClock,
   span,
-  WINDOW,
+  spanShort,
   windowName,
   windowShort,
   windowsOf,
@@ -27,6 +30,7 @@ import {
   type LimitWindow,
   type WindowKind,
 } from '@/next/features/limits/model';
+import LimitsLine from '@/next/features/limits/limits-line';
 import { t } from '@/next/i18n';
 import Icon from '@/next/ui/icon';
 import { usePresentFlag } from '@/next/ui/presence';
@@ -58,7 +62,6 @@ const Gauge = ({ kind, window, provider, now }: IGaugeProps) => {
   const meterRef = useRef<HTMLDivElement>(null);
   const left = leftOf(window);
   const atReset = leftAtReset(window);
-  const weekly = kind === WINDOW.sevenDay;
   const forecast = window.forecast ? describeForecast(window.forecast, kind, provider) : null;
   const name = windowName(kind);
 
@@ -90,7 +93,7 @@ const Gauge = ({ kind, window, provider, now }: IGaugeProps) => {
       <span className="hx-gauge__sub">
         {t('next.limits.resets', {
           span: span(window.resetsAt - now / 1000),
-          at: clockOf(window.resetsAt, weekly),
+          at: resetClock(kind, window.resetsAt),
         })}
       </span>
       {forecast && (
@@ -188,9 +191,11 @@ const WindowsChip = ({ view }: ILimitsChipProps) => {
   const now = useNow();
   useFitInViewport(getFloating, mounted);
 
-  const provider = t(`next.agent.${view.provider}`);
+  const provider = view.profile ? profileName(view.profile) : t(`next.agent.${view.provider}`);
   const limits = view.state === 'ready' ? view.limits : null;
   const windows = windowsOf(limits);
+  const balance = limits?.balance ? money(limits.balance) : null;
+  const others = view.state === 'ready' ? (view.others ?? []) : [];
   const lefts = windows.map((w) => leftOf(w.window));
   const least = windows.length > 1 ? lefts.indexOf(Math.min(...lefts)) : -1;
   const summary =
@@ -202,14 +207,18 @@ const WindowsChip = ({ view }: ILimitsChipProps) => {
           span: span(w.window.resetsAt - now / 1000),
         }),
       )
-      .join('; ') || t('next.limits.summaryNone');
+      .join('; ') ||
+    (balance ? t('next.limits.balanceItem', { sum: balance }) : t('next.limits.summaryNone'));
 
   let note: string | null = null;
   if (view.state === 'failed' && !view.onRetry) note = t('next.limits.failed');
-  else if (view.state === 'ready' && windows.length === 0) note = t('next.limits.none', { provider });
+  else if (view.state === 'ready' && windows.length === 0 && !balance && !limits?.error)
+    note = t('next.limits.none', { provider });
 
   const foot = [
     limits?.plan ?? null,
+    limits?.estimate ? t('next.limits.estimate') : null,
+    limits?.unofficial ? t('next.limits.unofficial') : null,
     limits?.updatedAt ? t('next.limits.updated', { at: clockOf(limits.updatedAt / 1000, false) }) : null,
   ]
     .filter(Boolean)
@@ -237,9 +246,18 @@ const WindowsChip = ({ view }: ILimitsChipProps) => {
           >
             <small>{windowShort(w.kind)}</small>
             {lefts[i]}%
+            <small className="hx-lim__reset">
+              {t('next.limits.resetShort', { span: spanShort(w.window.resetsAt - now / 1000) })}
+            </small>
           </span>
         ))}
-        {windows.length === 0 && <span className="hx-lim__win">—</span>}
+        {windows.length === 0 && balance && (
+          <span className="hx-lim__win">
+            {balance}
+            <small>{t('next.limits.balanceShort')}</small>
+          </span>
+        )}
+        {windows.length === 0 && !balance && <span className="hx-lim__win">—</span>}
       </button>
       {mounted && (
         <div
@@ -254,6 +272,12 @@ const WindowsChip = ({ view }: ILimitsChipProps) => {
           {windows.map((w) => (
             <Gauge key={w.kind} kind={w.kind} window={w.window} provider={provider} now={now} />
           ))}
+          {balance && (
+            <div className="hx-lim__spend">
+              <b>{balance}</b>
+              <span>{t('next.limits.balance')}</span>
+            </div>
+          )}
           {view.state === 'failed' && view.onRetry && (
             <LoadFailed
               size={LOAD_FAILED_SIZE.inline}
@@ -263,6 +287,16 @@ const WindowsChip = ({ view }: ILimitsChipProps) => {
             />
           )}
           {note && <p className="hx-lim__note">{note}</p>}
+          {others.length > 0 && (
+            <ul className="hx-lim__others" aria-label={t('next.limits.others')}>
+              {others.map((other) => (
+                <li key={other.key}>
+                  <span>{other.name ?? t(`next.agent.${other.provider ?? view.provider}`)}</span>
+                  <LimitsLine limits={other.limits} />
+                </li>
+              ))}
+            </ul>
+          )}
           {limits?.error && <p className="hx-lim__note">{limits.error}</p>}
           {foot && <p className="hx-lim__foot">{foot}</p>}
         </div>

@@ -47,5 +47,6 @@ The usual order on a machine is shadow, then the slice, then standalone once eve
 | `services` | routes that call external services with the person's tokens: GitLab pushes, merge requests and diffs, link previews, tracker cards and avatars, site icons, the organizer file |
 | `voice` | dictation over `/api/voice` (ffmpeg to the machine's speech recognition service) and the in-tab engine's model files |
 
-Some routes of a slice need the core and answer only while it runs; a slice whose configuration is missing (say, the
-snapshot routes without the `RUNTIME_SHARE_*` variables) leaves those routes to the previous runtime.
+Some routes of a slice need the core and answer only while it runs; a slice whose configuration is missing leaves
+those routes to the previous runtime (the snapshot routes are not one of them any more: their `RUNTIME_SHARE_*`
+settings have defaults).

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,9 +12,11 @@ import (
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/agent"
+	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/limits"
 	"github.com/ly-solutions/harnessly/internal/machines"
+	"github.com/ly-solutions/harnessly/internal/providers"
 	"github.com/ly-solutions/harnessly/internal/push"
 	"github.com/ly-solutions/harnessly/internal/updatecheck"
 )
@@ -69,7 +72,17 @@ func machineSliceRoutes(d deps, listen, upstream string, sender *push.Sender, ho
 		Lines:      transcriptLines("usage"),
 	}
 	releaseFile := os.Getenv("RUNTIME_RELEASE_FILE")
+	// The vendors' limits (Kimi Code, GLM, Grok…) are asked while a page reads the snapshot, each account at most once
+	// in limits.ProfileMinInterval.
+	profileLimits := &limits.Profiles{
+		Cache: &limits.ProfileCache{File: filepath.Join(d.DataDir, "provider-limits.json")},
+		Accounts: func() []limits.Account {
+			return append(profileLimitAccounts(voiceStore(d.DataDir)), apiLimitAccounts(extProvidersFor(d))...)
+		},
+		Warn: func(msg string, err error) { agent.Log("warn", "core: "+msg, agent.F{K: "err", V: err.Error()}) },
+	}
 	snapshot := machines.NewSnapshot(machines.SnapshotConfig{
+		LimitsAsked: profileLimits.Touch,
 		DataDir:     d.DataDir,
 		NamePrefix:  os.Getenv("RUNTIME_MACHINE_NAME_PREFIX"),
 		Codexbar:    filepath.IsAbs(os.Getenv("RUNTIME_CODEXBAR_BIN")),
@@ -89,6 +102,7 @@ func machineSliceRoutes(d deps, listen, upstream string, sender *push.Sender, ho
 		}
 		return nil
 	}
+
 	hidden := map[int]bool{}
 	for _, p := range splitList(os.Getenv("RUNTIME_RESERVED_PORTS")) {
 		if n, err := strconv.Atoi(p); err == nil && n > 0 {
@@ -212,4 +226,47 @@ func healthFallbackVersion() string {
 		return agent.BuildVersion
 	}
 	return "0.0.0-development"
+}
+
+// profileLimitAccounts are the profiles whose vendor has a limits request and that have a credential now: the saved
+// key, else the vendor CLI's sign-in. One account per profile today; the key of an entry carries the account, so a
+// profile with several accounts lists each.
+func profileLimitAccounts(store *providers.Store) []limits.Account {
+	var out []limits.Account
+	for _, p := range providers.Presets() {
+		if _, ok := limits.VendorOf(p.ID); !ok || !store.Ready(p.ID) {
+			continue
+		}
+		id := p.ID
+		out = append(out, limits.Account{Profile: id, Credential: func(ctx context.Context) (limits.Credential, error) {
+			if key, err := store.Key(id); err == nil {
+				return limits.Credential{Token: key}, nil
+			}
+			token, err := store.Credential(ctx, id)
+			return limits.Credential{Token: token, Login: true}, err
+		}})
+	}
+	return out
+}
+
+// apiLimitAccounts are the providers of the registry by API whose vendor tells the balance of a key: one made from a
+// preset, with a key, still pointing at the vendor's own host (a key is never sent to an address the person typed).
+func apiLimitAccounts(svc *extproviders.Service) []limits.Account {
+	list, err := svc.Store.List()
+	if err != nil {
+		return nil
+	}
+	var out []limits.Account
+	for _, p := range list {
+		v, ok := limits.VendorOf(limits.APIProfile(p.Preset))
+		if !ok || p.Preset == "" || p.KeyRef == "" || p.Host() != v.Host {
+			continue
+		}
+		provider := p
+		out = append(out, limits.Account{Profile: limits.APIProfile(p.Preset), Account: p.ID, Credential: func(context.Context) (limits.Credential, error) {
+			key, err := svc.Key(provider)
+			return limits.Credential{Token: key}, err
+		}})
+	}
+	return out
 }

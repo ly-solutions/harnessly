@@ -84,14 +84,21 @@ func hubAnalyticsUsage(authorized func(*http.Request) bool) func(*http.Request) 
 	}
 }
 
-// shareRoute is the conversation snapshots and read-only links; nil while the deployment has not named the share
-// headers, token, file prefix and app name (the routes then stay with the previous runtime).
+// shareDefaults stand in for the deployment's share settings it has not named: the snapshot routes used to
+// be on only with all six set, and no machine behind the hub had them, so a chat could be neither captured, downloaded
+// nor shared there. The link's address still comes from the platform in the base header: without it links stay off.
+var shareDefaults = map[string]string{
+	"RUNTIME_SHARE_BASE_HEADER": "X-Harnessly-Share-Base", "RUNTIME_SHARE_TOKEN_HEADER": "X-Harnessly-Share-Token",
+	"RUNTIME_SHARE_TOKEN_SALT": "harnessly", "RUNTIME_SHARE_TOKEN_AUDIENCE": "harnessly-share-read",
+	"RUNTIME_SHARE_FILE_PREFIX": "harnessly", "RUNTIME_APP_NAME": "harnessly",
+}
+
+// shareRoute is the conversation snapshots and read-only links, by the deployment's share settings or their defaults.
 func (c *core) shareRoute(d deps) *share.Route {
 	cfg := map[string]string{}
-	for _, k := range []string{"RUNTIME_SHARE_BASE_HEADER", "RUNTIME_SHARE_TOKEN_HEADER", "RUNTIME_SHARE_TOKEN_SALT",
-		"RUNTIME_SHARE_TOKEN_AUDIENCE", "RUNTIME_SHARE_FILE_PREFIX", "RUNTIME_APP_NAME"} {
+	for k, def := range shareDefaults {
 		if cfg[k] = os.Getenv(k); cfg[k] == "" {
-			return nil
+			cfg[k] = def
 		}
 	}
 	return &share.Route{

@@ -1072,6 +1072,75 @@
         }
       ]
     },
+    "chat_shares": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "space_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "owner_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "owner_email",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "sha256",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "size",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "revoked_at",
+          "type": "BIGINT"
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "chat_shares_machine",
+          "columns": [
+            "machine_id"
+          ]
+        }
+      ]
+    },
     "chat_work": {
       "columns": [
         {
@@ -1268,6 +1337,73 @@
             "machine_id",
             "project_id",
             "at"
+          ]
+        }
+      ]
+    },
+    "design_derived": {
+      "columns": [
+        {
+          "name": "key",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "space_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "project",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "rev",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "sha256",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "size",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "type",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "immutable",
+          "type": "INTEGER",
+          "notNull": true
+        },
+        {
+          "name": "headers",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "key"
+      ],
+      "indexes": [
+        {
+          "name": "design_derived_project",
+          "columns": [
+            "space_id",
+            "project",
+            "rev"
           ]
         }
       ]

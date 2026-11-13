@@ -12,9 +12,7 @@ import {
   DELEGATION_MAX_CHILDREN,
   IDLE_STOPS,
   type DelegationSettings,
-  type AgentModel,
   type IdleStop,
-  type NoticeSummaryModel,
   type OnOff,
 } from '@/next/protocol/v2';
 
@@ -27,22 +25,6 @@ export const FEED_ROWS = [
   'stand',
   'file',
 ] as const satisfies readonly TShownKind[];
-
-/** The values of the summary model's menu: `auto`, `off`, or `provider:model`. */
-export const SUMMARY_AUTO = 'auto';
-export const SUMMARY_OFF = 'off';
-export const summaryValue = (m: NoticeSummaryModel | null): string => {
-  if (!m || m.provider === 'auto') return SUMMARY_AUTO;
-  if (m.provider === 'off') return SUMMARY_OFF;
-  return `${m.provider}:${m.model ?? ''}`;
-};
-export const summaryFromValue = (value: string): NoticeSummaryModel | null => {
-  if (value === SUMMARY_AUTO) return null;
-  if (value === SUMMARY_OFF) return { provider: 'off' };
-  const [provider, ...rest] = value.split(':');
-  const model = rest.join(':');
-  return { provider: provider === 'codex' ? 'codex' : 'claude', ...(model ? { model } : {}) };
-};
 
 export const THEMES = ['light', 'dark', 'system'] as const;
 export type ThemeChoice = (typeof THEMES)[number];
@@ -86,10 +68,6 @@ export interface IGeneralSectionProps {
   restartContinue: OnOff | null;
   /** What the machine's agents may delegate; null when the machine cannot say, so the group is not there. */
   delegation: DelegationSettings | null;
-  /** The model of the turn summaries; null: «Авто». Meaningful only with `summaryModels`. */
-  noticeSummary: NoticeSummaryModel | null;
-  /** The machine's models by provider, for the summary model's menu; null when the machine cannot set it. */
-  summaryModels: Readonly<Record<'claude' | 'codex', readonly AgentModel[]>> | null;
   /** The keys of the rows waiting for the machine. */
   busy: ReadonlySet<string>;
   onEnterSends: (on: boolean) => void;
@@ -101,7 +79,6 @@ export interface IGeneralSectionProps {
   onLimitContinue: (on: boolean) => void;
   onRestartContinue: (on: boolean) => void;
   onDelegation: (value: DelegationSettings) => void;
-  onNoticeSummary: (value: NoticeSummaryModel | null) => void;
   onSignOut: () => void;
   /** «Обновления» of a machine a hub carries (update-group.tsx); null on any other machine. */
   updates?: ReactNode;
@@ -162,9 +139,6 @@ const GeneralSection = ({
   onRestartContinue,
   delegation,
   onDelegation,
-  noticeSummary,
-  summaryModels,
-  onNoticeSummary,
   onSignOut,
   updates = null,
   checks = null,
@@ -251,26 +225,6 @@ const GeneralSection = ({
           busy={busy.has('restartContinue')}
           mark={markOf(marks, 'runtime.restartContinue')}
           onChange={onRestartContinue}
-        />
-      )}
-      {summaryModels !== null && (
-        <MenuRow
-          label={t('next.settings.general.noticeSummary')}
-          hint={t('next.settings.general.noticeSummary.hint')}
-          value={summaryValue(noticeSummary)}
-          choices={[
-            { value: SUMMARY_AUTO, label: t('next.settings.general.noticeSummary.auto'), sub: null },
-            { value: SUMMARY_OFF, label: t('next.settings.general.noticeSummary.off'), sub: null },
-            ...(['claude', 'codex'] as const).flatMap((provider) =>
-              summaryModels[provider].map((m) => ({
-                value: `${provider}:${m.id}`,
-                label: m.label,
-                sub: provider === 'claude' ? 'Claude' : 'Codex',
-              })),
-            ),
-          ]}
-          busy={busy.has('noticeSummary')}
-          onPick={(value) => onNoticeSummary(summaryFromValue(String(value)))}
         />
       )}
     </Group>

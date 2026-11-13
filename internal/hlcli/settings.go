@@ -66,12 +66,18 @@ var settingsReasons = map[string]string{
 func (c *cli) settingsRefused(status int, raw []byte) error {
 	var r struct {
 		Error   string      `json:"error"`
+		Message string      `json:"message"`
 		Setting *cliSetting `json:"setting"`
 	}
 	_ = json.Unmarshal(raw, &r)
 	why := settingsReasons[r.Error]
 	if why == "" {
 		return apiError(status, raw)
+	}
+	// A setting that takes free text says itself what is wrong with the value: its list of values is empty and its
+	// current value is no hint.
+	if r.Setting != nil && len(r.Setting.Options) == 0 && r.Message != "" {
+		return fail("refused: %s — %s", r.Error, r.Message)
 	}
 	if r.Setting != nil {
 		return fail("refused: %s — %s. %s is %s now and takes: %s", r.Error, why, r.Setting.Key, r.Setting.Value, r.Setting.takes())

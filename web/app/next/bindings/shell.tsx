@@ -64,12 +64,13 @@ import { useNotices } from '@/next/bindings/notices';
 import { useTurnSummaries } from '@/next/bindings/turn-summary';
 import SmartNoticeHost, { noticeQuiet } from '@/next/bindings/smart-notice';
 import { setHistoryPerson } from '@/next/stores/notice-history';
-import { CHAT_SCOPES, messageGroups, recentChats, searchChats } from '@/next/features/search/search-chats';
+import { ROW_GO } from '@/next/features/search/search-dialog';
+import { SCOPE } from '@/next/features/search/smart-rows';
 import { APP_ROW, appSearchGroup } from '@/next/features/search/app-rows';
 import { useInstalledApps } from '@/next/features/app-views/api';
 import { openAppTab } from '@/next/features/app-views/open';
 import { setDraftText } from '@/next/stores/drafts';
-import { useMessageSearch } from '@/next/bindings/use-message-search';
+import { useSmartSearch } from '@/next/bindings/use-smart-search';
 import {
   hasTestChats,
   toggleShowTestChats,
@@ -171,6 +172,7 @@ import { FLY_FIELD, flyComposer } from '@/next/ui/fly-composer';
 const CHAT_LEAVE_MS = 180;
 const NO_CHATS: readonly ISidebarChat[] = [];
 const NO_PROJECTS: readonly ISidebarProject[] = [];
+const NO_ROWS: readonly ISearchRow[] = [];
 
 /** The value as the stage shows it: a change to another chat waits `ms` while the shown one leaves; to or from no
  *  chat it follows at once. */
@@ -345,7 +347,7 @@ const Shell = ({ owner }: IShellProps) => {
   // The dialog stays mounted through its exit (the scrim and the box fade out in CSS), then goes.
   const search = usePresentFlag(searchOpen, SEARCH_EXIT_MS);
   const [query, setQuery] = useState('');
-  const [scope, setScope] = useState(CHAT_SCOPES[0]?.id ?? 'all');
+  const [scope, setScope] = useState<string>(SCOPE.all);
   const login = owner.split('@')[0] ?? '';
   // The tabs over the window: a browser's, on a wide window, unless switched off in Settings.
   const phone = usePhone();
@@ -542,7 +544,6 @@ const Shell = ({ owner }: IShellProps) => {
   const notificationItems = center.items;
   const [machineReveal, setMachineReveal] = useState(0);
   const unread = notificationItems?.some((item) => item.unread) ?? false;
-  const messages = useMessageSearch(model.active, query, searchOpen);
   // The apps of the search: read once the dialog is open, so a page that never searches does not ask.
   const searchApps = useInstalledApps(model.active ?? 'local', 0, searchOpen && model.active !== null).list;
   const searchChat = useConversation(currentId !== null && isConvId(currentId) ? currentId : null);
@@ -555,20 +556,16 @@ const Shell = ({ owner }: IShellProps) => {
       ),
     [searchApps, searchChat, currentId, query],
   );
-  const searchResults = useMemo(() => {
-    if (shownChats === null) return null;
-    const titles = [
-      ...(appsGroup ? [appsGroup] : []),
-      ...searchChats(shownChats, model.projects ?? [], query),
-    ];
-    // The messages are still being asked and no title answers yet: the dialog keeps its «searching» rather than «nothing».
-    if (messages.asked && messages.hits === null && titles.length === 0) return null;
-    return messages.hits ? [...titles, ...messageGroups(messages.hits, shownChats, now)] : titles;
-  }, [shownChats, model.projects, query, messages.asked, messages.hits, now, appsGroup]);
-  const recent = useMemo(
-    () => (shownChats === null ? [] : recentChats(shownChats, model.projects ?? [])),
-    [shownChats, model.projects],
-  );
+  const smartSearch = useSmartSearch({
+    machine: model.active,
+    open: searchOpen,
+    query,
+    scope,
+    chats: shownChats,
+    projects: model.projects ?? NO_PROJECTS,
+    appsGroup,
+    now,
+  });
 
   const toggleNotifications = (anchor: HTMLElement, side: INotificationsState['side']) => {
     // On the phone the list is a sheet over the page: the side menu it was asked from lets go of the page first.
@@ -943,17 +940,47 @@ const Shell = ({ owner }: IShellProps) => {
             onClose: () => setSearchOpen(false),
             query,
             onQuery: setQuery,
-            scopes: CHAT_SCOPES,
+            scopes: smartSearch.scopes,
             scope,
             onScope: setScope,
-            results: searchResults,
+            results: smartSearch.results,
             failed: listFailed,
-            indexing: messages.indexing,
-            recent,
+            indexing: smartSearch.indexing,
+            recent: NO_ROWS,
+            idle: smartSearch.idle,
+            marks: smartSearch.marks,
+            smart: {
+              answer: smartSearch.answer,
+              onAsk: smartSearch.onAsk,
+              onSetting: smartSearch.onSetting,
+              onAddSource: () => {
+                setSearchOpen(false);
+                openScreen({ kind: ROUTE.settings, section: 'connections' });
+              },
+              onPickModel: () => {
+                setSearchOpen(false);
+                openScreen({ kind: ROUTE.settings, section: 'smart' });
+              },
+            },
             onPick: (row: ISearchRow) => {
               setSearchOpen(false);
               setQuery('');
-              if (row.id.startsWith(APP_ROW.command)) {
+              setScope(SCOPE.all);
+              if (row.go) {
+                const go = row.go;
+                if (go.k === ROW_GO.setting || go.k === ROW_GO.section)
+                  openScreen({ kind: ROUTE.settings, section: go.section });
+                else if (go.k === ROW_GO.design) openScreen({ kind: ROUTE.site, id: go.id });
+                else if (go.k === ROW_GO.review)
+                  openScreen({ kind: ROUTE.review, url: go.url, ...(currentId ? { chat: currentId } : {}) });
+                else if (go.k === ROW_GO.link) window.open(go.url, '_blank', 'noopener');
+                else if (go.k === ROW_GO.designs) openScreen({ kind: ROUTE.designly });
+                else {
+                  newChatProjectStore.set(null);
+                  newChatMachineStore.set(null);
+                  openScreen(HOME);
+                }
+              } else if (row.id.startsWith(APP_ROW.command)) {
                 const [chatId, ...words] = row.id.slice(APP_ROW.command.length).split('|');
                 if (chatId && isConvId(chatId)) {
                   setDraftText(chatId, words.join('|'));

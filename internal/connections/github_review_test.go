@@ -16,6 +16,8 @@ import (
 const ghPullAnswer = `{"data":{"viewer":{"login":"alice"},"repository":{"pullRequest":{
 "id":"PR_1","title":"HRN-1 thing","state":"OPEN","isDraft":true,"headRefOid":"ccccccc","baseRefOid":"aaaaaaa",
 "author":{"login":"bob","name":"Bob"},
+"files":{"pageInfo":{"hasNextPage":false},"nodes":[{"path":"a.go","viewerViewedState":"VIEWED"},
+  {"path":"b.go","viewerViewedState":"DISMISSED"},{"path":"c.go","viewerViewedState":"UNVIEWED"}]},
 "viewerLatestReview":{"id":"PRR_mine","state":"APPROVED"},
 "latestOpinionatedReviews":{"nodes":[{"state":"APPROVED","author":{"login":"carol","name":"Carol"}},
   {"state":"CHANGES_REQUESTED","author":{"login":"dave"}}]},
@@ -92,6 +94,10 @@ func TestGitHubReviewReadsThreadsDraftsAndApprovals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// GitHub keeps the «viewed» marks itself; a mark the file outlived (DISMISSED) is not one.
+	if !rv.HostViewed || len(rv.Viewed) != 1 || rv.Viewed[0] != "a.go" {
+		t.Errorf("viewed %v %+v", rv.HostViewed, rv.Viewed)
+	}
 	if rv.Mine || !rv.Draft || !rv.CanApprove || !rv.Approved || rv.State != "opened" || rv.Refs.Head != "ccccccc" ||
 		len(rv.ApprovedBy) != 1 || rv.ApprovedBy[0] != "Carol" || rv.Me == nil || rv.Me.Login != "alice" {
 		t.Errorf("review %+v", rv)
@@ -142,6 +148,8 @@ func TestGitHubReviewActs(t *testing.T) {
 		{Op: ActApprove},
 		{Op: ActUnapprove},
 		{Op: ActReady},
+		{Op: ActViewed, Path: "c.go"},
+		{Op: ActUnviewed, Path: "a.go"},
 	} {
 		if _, err := src.ReviewAct(ctx, "acme/app", 5, a); err != nil {
 			t.Fatalf("%s: %v", a.Op, err)
@@ -166,6 +174,8 @@ func TestGitHubReviewActs(t *testing.T) {
 		`submitPullRequestReview {"e":"APPROVE","r":"PRR_pending"}`,
 		`dismissPullRequestReview {"m":"Approval withdrawn","r":"PRR_mine"}`,
 		`markPullRequestReadyForReview {"pr":"PR_1"}`,
+		`markFileAsViewed {"p":"c.go","pr":"PR_1"}`,
+		`unmarkFileAsViewed {"p":"a.go","pr":"PR_1"}`,
 	}
 	if strings.Join(*writes, "\n") != strings.Join(want, "\n") {
 		t.Errorf("writes:\n%s\nwant:\n%s", strings.Join(*writes, "\n"), strings.Join(want, "\n"))
@@ -232,5 +242,17 @@ func TestGitHubOpenPullRequestAndLink(t *testing.T) {
 	cl := gitHubProvider{}.Open(Conn{Kind: GitHub, APIURL: "https://api.github.com"}, Credentials{}, NewHTTP(nil)).(*ghClient)
 	if cl.graphqlURL() != "https://api.github.com/graphql" {
 		t.Errorf("cloud graphql %s", cl.graphqlURL())
+	}
+}
+
+func TestBotLogin(t *testing.T) {
+	for login, want := range map[string]bool{
+		"dependabot[bot]": true, "renovate": true, "Renovate": true, "project_12_bot_ab34": true, "group_7_bot": true,
+		"service_account_ci": true, "release-bot": true, "deploy_bot": true,
+		"alice": false, "abbot": false, "botanist": false, "robotnik": false, "": false,
+	} {
+		if got := BotLogin(login); got != want {
+			t.Errorf("BotLogin(%q) = %v", login, got)
+		}
 	}
 }

@@ -10,6 +10,8 @@ import type {
   TMrRefusal,
 } from '@/next/features/review/app/mr-review';
 import type { IGithubList } from '@/next/features/review/app/home';
+import { parseRules, type IReviewRules, type IReviewRulesPatch } from '@/next/features/review/app/rules';
+import { parseViewed, type IViewedIo, type TViewedMarks } from '@/next/features/review/viewed';
 import type { AppRow } from '@/next/protocol/v2';
 import { t } from '@/next/i18n';
 
@@ -129,3 +131,59 @@ export const loadGithubPulls = async (): Promise<IGithubList> => {
     return { state: 'failed', reason: 'unreachable', host: null, rows: [] };
   }
 };
+
+const JSON_POST = { method: 'POST', headers: { 'Content-Type': 'application/json' } } as const;
+
+/** The person's review rules (GET <platform>/code-review/prefs); null when the runtime did not give them. */
+export const loadReviewRules = async (): Promise<IReviewRules | null> => {
+  try {
+    const res = await appFetch(`${PATH}/prefs`);
+    return res.ok ? parseRules(await res.json()) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveReviewRules = async (patch: IReviewRulesPatch): Promise<IReviewRules | null> => {
+  try {
+    const res = await appFetch(`${PATH}/prefs`, { ...JSON_POST, body: JSON.stringify(patch) });
+    return res.ok ? parseRules(await res.json()) : null;
+  } catch {
+    return null;
+  }
+};
+
+const marksOf = async (res: Response): Promise<TViewedMarks | null> => {
+  if (!res.ok) return null;
+  const body = (await res.json().catch(() => null)) as { marks?: unknown } | null;
+  return body && typeof body.marks === 'object' && body.marks !== null
+    ? parseViewed(JSON.stringify(body.marks))
+    : null;
+};
+
+/** The «viewed» marks the machine keeps for a change (path to the file's version); null when it gave none. */
+export const loadViewedMarks = async (scope: string): Promise<TViewedMarks | null> => {
+  try {
+    return await marksOf(await appFetch(`${PATH}/viewed?${new URLSearchParams({ scope })}`));
+  } catch {
+    return null;
+  }
+};
+
+/** Puts a file's mark at a version on the machine; an empty version takes it off. */
+export const markViewedFile = async (
+  scope: string,
+  path: string,
+  version: string,
+): Promise<TViewedMarks | null> => {
+  try {
+    return await marksOf(
+      await appFetch(`${PATH}/viewed`, { ...JSON_POST, body: JSON.stringify({ scope, path, version }) }),
+    );
+  } catch {
+    return null;
+  }
+};
+
+/** The machine's marks, for the screens that show a change. */
+export const VIEWED_IO: IViewedIo = { load: loadViewedMarks, mark: markViewedFile };

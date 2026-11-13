@@ -1,6 +1,7 @@
 // Settings → «Провайдеры» → «По API» on the machine the person has open: the registry is read when the page
 // opens and changes only from the machine's answers. Adding a provider first checks its address and key, and the
 // models the check found are kept with it.
+import { useMachineLimits } from '@/next/bindings/use-limits';
 import { useCallback, useEffect, useState } from 'react';
 import { refusalOf } from '@/next/bindings/settings-changes';
 import {
@@ -28,7 +29,13 @@ import type { MachineId } from '@/next/protocol/v2';
 type TLoad =
   | { k: 'loading' }
   | { k: 'failed'; text: string }
-  | { k: 'ready'; providers: readonly IExtProvider[]; presets: readonly IExtPreset[] };
+  | {
+      k: 'ready';
+      providers: readonly IExtProvider[];
+      presets: readonly IExtPreset[];
+      accounts: boolean;
+      launch: boolean;
+    };
 
 /** What each provider does: the titles of the features given to it. null: the machine did not say. */
 const useUsage = (machine: MachineId, stamp: number): Readonly<Record<string, readonly string[]>> | null => {
@@ -55,6 +62,7 @@ export const ExtProvidersPage = ({ machine }: { machine: MachineId }) => {
   // Moves with every change of the list, so what the providers do is read again (a removed one does nothing).
   const [edits, setEdits] = useState(0);
   const usage = useUsage(machine, edits);
+  const limits = useMachineLimits(machine);
 
   useEffect(() => {
     let live = true;
@@ -129,10 +137,27 @@ export const ExtProvidersPage = ({ machine }: { machine: MachineId }) => {
     return null;
   };
 
+  /** The list as the machine has it now: a default that moved changes more accounts than the one that was touched. */
+  const reread = () => setAttempt((n) => n + 1);
   const onRemove = async (id: string): Promise<string | null> => {
     const refused = refusalOf(await removeExtProvider(machine, id));
     if (refused !== null) return refused;
     change((list) => list.filter((p) => p.id !== id));
+    reread();
+    return null;
+  };
+  const onDefault = async (id: string): Promise<string | null> => {
+    const res = await patchExtProvider(machine, id, { default: true });
+    const refused = refusalOf(res);
+    if (refused !== null || !('ok' in res) || isRefused(res.value))
+      return refused ?? t('next.settings.failed');
+    const made = res.value;
+    change((list) =>
+      list.map((p) => {
+        if (p.id === made.id) return made;
+        return p.group === made.group ? { ...p, isDefault: false } : p;
+      }),
+    );
     return null;
   };
 
@@ -173,10 +198,12 @@ export const ExtProvidersPage = ({ machine }: { machine: MachineId }) => {
   return (
     <ExtProvidersSection
       state={state}
+      limits={limits}
       usage={usage}
       onAdd={onAdd}
       onSave={onSave}
       onRemove={onRemove}
+      onDefault={onDefault}
       onCheck={onCheck}
       onRefresh={onRefresh}
     />

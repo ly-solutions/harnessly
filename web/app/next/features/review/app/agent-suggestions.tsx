@@ -6,6 +6,8 @@ import { createPortal } from 'react-dom';
 import type { IAgentSuggestion } from '@/next/features/review/app/agent-review';
 import { LAYER_OWNER, type ILayerMarks, type NotesLayer } from '@/next/features/review/app/notes-layer';
 import { docsOf, EXIT_MS, linesLabel } from '@/next/features/review/app/review-notes';
+import { ReviewRules } from '@/next/features/review/app/review-rules';
+import type { IReviewRulesApi } from '@/next/features/review/app/rules';
 import { AGENT_STATE, type IAgentReviewApi } from '@/next/features/review/app/use-agent-review';
 import { LINE_SIDE, type IFileContent, type IReviewFile, type TLineSide } from '@/next/features/review/model';
 import { Button } from '@/next/ui/button';
@@ -152,9 +154,13 @@ interface IAgentPanelProps {
   files: readonly IReviewFile[];
   onAsk: () => void;
   onOpen: (file: IReviewFile, line: number) => void;
+  /** The person's instructions for the review; none where they are not kept. */
+  rules?: IReviewRulesApi | null;
+  repo?: string | null;
+  repoName?: string | null;
 }
 
-export const AgentPanel = ({ api, files, onAsk, onOpen }: IAgentPanelProps) => {
+export const AgentPanel = ({ api, files, onAsk, onOpen, rules, repo, repoName }: IAgentPanelProps) => {
   const asking = api.state === AGENT_STATE.asking;
   const sorted = [...api.suggestions].sort((a, b) => a.path.localeCompare(b.path) || a.from - b.from);
   return (
@@ -164,9 +170,12 @@ export const AgentPanel = ({ api, files, onAsk, onOpen }: IAgentPanelProps) => {
           {t('next.reviewApp.agent.title')}{' '}
           {sorted.length > 0 && <span className="hx-rvnotes__count">{sorted.length}</span>}
         </h3>
-        <Button size="sm" icon="sparkles" busy={asking} disabled={asking} onClick={onAsk}>
-          {t('next.reviewApp.agent.ask')}
-        </Button>
+        <span className="hx-rvagent-panel__acts">
+          {rules && <ReviewRules api={rules} repo={repo ?? null} repoName={repoName ?? null} />}
+          <Button size="sm" icon="sparkles" busy={asking} disabled={asking} onClick={onAsk}>
+            {t('next.reviewApp.agent.ask')}
+          </Button>
+        </span>
       </div>
       {asking && <p className="hx-rvagent-panel__note">{t('next.reviewApp.agent.asking')}</p>}
       {!asking && api.state === AGENT_STATE.failed && (

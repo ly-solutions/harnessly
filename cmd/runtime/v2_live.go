@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/ly-solutions/harnessly/internal/apps"
 	"github.com/ly-solutions/harnessly/internal/browseract"
+	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/fileplace"
 	"github.com/ly-solutions/harnessly/internal/history"
 	"net/http"
@@ -154,6 +155,14 @@ func newV2Live(d deps, c *core) *v2Live {
 		v.profiles = c.agents.profiles
 	}
 	shareProviders(d.DataDir, v.profiles)
+	// The providers the person added by API start Claude Code chats too: their keys and secret variables come from the
+	// machine's safe, and the profiles follow the registry.
+	extSvc := extProvidersFor(d)
+	v.profiles.Safe = extSvc.Secrets.Reveal
+	syncExtProfiles(extSvc, v.profiles)
+	onExtProviderChange(d.DataDir, func(string, *extproviders.Provider, *extproviders.Provider) {
+		syncExtProfiles(extSvc, v.profiles)
+	})
 	v.machine = newLiveMachine(v2Machine, version, features, d.DataDir, func() int { return v.rt.Busy() }, c.preflight, c.v2Models)
 	v.machine.offers = profileOffers(v.profiles)
 	if c.agents != nil {
@@ -196,7 +205,7 @@ func newV2Live(d deps, c *core) *v2Live {
 	var noticesRT atomic.Pointer[convo.Runtime]
 	notices := newChatNotices(c, &noticesRT)
 	v.rt = convo.New(convo.Deps{Notify: notices.notice, Moves: moveStore, Index: index, Digest: digest, ExportDir: filepath.Join(d.DataDir, "v2", "chat-exports"), AgentSession: ses.Find, MachineID: v2Machine, Publisher: publisher, Machine: v.tm, Launcher: v.starter, Input: codexInputOf(c), Handoffs: handoffs,
-		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{Index: c.transcripts}, Transcripts: c.transcripts, Shots: &shots.Reader{Index: c.transcripts}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir, imagesDir(d), codexImagesDir(d)}, Titler: titler.Title, Summarizer: summarizer.Summarize, SummaryModel: func() *wire.NoticeSummaryModel { return runtimeSettings.RuntimeSettings().NoticeSummary }, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
+		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{Index: c.transcripts}, Transcripts: c.transcripts, Shots: &shots.Reader{Index: c.transcripts}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir, imagesDir(d), codexImagesDir(d)}, Titler: titler.Title, Summarizer: turnSummarizer(d.DataDir, summarizer.Summarize), SummaryModel: func() *wire.NoticeSummaryModel { return runtimeSettings.RuntimeSettings().NoticeSummary }, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
 		Terminals: terminals, IdleStop: func() time.Duration { return runtimeSettings.RuntimeSettings().IdleStop.After() },
 		IdleFloor: idleFloor, MemoryShort: memoryShort, PressureStop: pressureFloor, LegacyLife: !sessionOwnerOn(os.Getenv),
 		TerminalOff: chatGuard.Off,

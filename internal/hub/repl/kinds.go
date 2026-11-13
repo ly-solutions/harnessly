@@ -75,6 +75,8 @@ var Kinds = []Kind{
 		Wire: []string{hubproto.MemoryPullPath, hubproto.MemoryPutPath}},
 	{Name: "attachments", DataKind: "chat attachments", Transport: TransportHTTP,
 		Wire: []string{"PUT <platform api>/uploads/blobs, /uploads/refs: the page puts the bytes into the hub beside the machine"}},
+	{Name: "chat snapshots", DataKind: "chat snapshots shared with the space", Transport: TransportHTTP,
+		Wire: []string{"POST, DELETE <platform api>/shares: the hub keeps the page the machine answers a publish with and ends a revoked one itself"}},
 	{Name: "machine hello", DataKind: "what a machine reports about itself", Transport: TransportEvent,
 		Wire: []string{hubproto.OpHello}},
 }

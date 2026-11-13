@@ -10,6 +10,7 @@ const catalogKind = lit(
   'plugin',
   'claude-settings',
   'app',
+  'provider',
 );
 const layerKind = lit('org', 'tenant', 'team');
 const lockedReason = nullable(lit('pinned_by_org', 'pinned_by_tenant', 'no_rights', 'built_in'));
@@ -23,6 +24,7 @@ const kindCounts = obj({
   plugin: opt(num),
   'claude-settings': opt(num),
   app: opt(num),
+  provider: opt(num),
 });
 const audience = obj({ mode: lit('tenant', 'teams', 'off'), teams: arr(str) });
 
@@ -153,6 +155,13 @@ const source = obj({
   always: opt(unknownValue),
   ifAbsent: opt(unknownValue),
   claudeMd: opt(str),
+  api: opt(lit('anthropic', 'openai')),
+  baseUrl: opt(str),
+  preset: opt(str),
+  models: opt(arr(str)),
+  key: opt(str),
+  env: opt(arr(str)),
+  secretEnv: opt(arr(str)),
 });
 const catalogOwner = obj({ layer: layerKind, scopeId: str });
 export const catalogItem = obj({

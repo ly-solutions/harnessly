@@ -26,6 +26,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/browser"
 	"github.com/ly-solutions/harnessly/internal/design"
 	"github.com/ly-solutions/harnessly/internal/envsetup"
+	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/integrations"
 	"github.com/ly-solutions/harnessly/internal/journal"
@@ -519,6 +520,10 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	self := newSelfUpdater(cfg.DataDir)
 	f.Add(updateRoutes(d, checker, checkOn, self)...)
 	f.Add(machineCheckRoutes(d, self)...)
+	if launchEnvUndeclared(os.Getenv, os.LookupEnv) {
+		agent.Log("warn", "the reserved launch variables of this deployment are not set: a provider's launch is checked against harnessly's own only",
+			agent.F{K: "variable", V: extproviders.ReservedPrefixesEnv})
+	}
 	f.Add(moveRoutes(d)...)
 	f.Add(selftestRoutes(d)...)
 	startKeeper(d)
@@ -528,6 +533,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(secretRoutes(d, ref.c)...)
 	f.Add(extProviderRoutes(d)...)
 	f.Add(backgroundRoutes(d)...)
+	f.Add(searchRoutes(d)...)
 	f.Add(settingsCtlRoutes(d, ref.c)...)
 	setupRunners := envSetupRunners(d, os.Getenv("AGENT_HUB_OBSERVE_FILE"), cfg.Version)
 	// The organization's rule for apps comes with the hub's list (apps_consent_policy.go).

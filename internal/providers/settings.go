@@ -22,6 +22,8 @@ var (
 	ErrNotClaude = errors.New("providers: the profile does not run through Claude Code")
 	// ErrUnknownModel: the model is none of the preset's.
 	ErrUnknownModel = errors.New("providers: the preset has no such model")
+	// ErrNoSecret: a secret variable of the profile has no value in the safe.
+	ErrNoSecret = errors.New("providers: a secret variable of the profile has no value in the safe")
 	// ErrSwitchOff: the profile's switch is off, or its proxy has no address yet.
 	ErrSwitchOff = errors.New("providers: the profile is switched off")
 
@@ -47,6 +49,10 @@ func (p Preset) claudeEnv(base string, model Model) map[string]string {
 		"ANTHROPIC_AUTH_TOKEN":                     "",
 		"ANTHROPIC_API_KEY":                        "",
 		"CLAUDE_CODE_OAUTH_TOKEN":                  OAuthStub,
+	}
+	if p.Custom && model.Window == 0 {
+		// A provider the person added says nothing of its models' windows: Claude Code keeps its own.
+		delete(env, "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
 	}
 	for k, v := range p.Env {
 		env[k] = v
@@ -100,8 +106,29 @@ func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 	for k, v := range p.claudeEnv(base, m) {
 		env[k] = v
 	}
+	// What the person typed for the provider replaces whatever stands there: the values come from the safe into this
+	// file (0600, in the profiles' folder of 0700) and nowhere else.
+	var taken []string
+	for name, ref := range p.SecretEnv {
+		if !p.Custom || s.Safe == nil {
+			return "", ErrNoSecret
+		}
+		val, err := s.Safe(ref)
+		if val = strings.TrimSpace(val); err != nil || val == "" {
+			return "", fmt.Errorf("%w: %s", ErrNoSecret, name)
+		}
+		env[name] = val
+		taken = append(taken, val)
+	}
+	// An agent that prints its environment prints these: the feed hides them from now on.
+	s.hide(taken)
 	settings["env"] = env
-	settings["apiKeyHelper"] = "cat " + shellQuote(keyFile)
+	if p.Custom && (p.ownCredential() || !s.Configured(id)) {
+		// The provider's own token goes in the environment; a helper would be asked before it.
+		delete(settings, "apiKeyHelper")
+	} else {
+		settings["apiKeyHelper"] = "cat " + shellQuote(keyFile)
+	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return "", err
