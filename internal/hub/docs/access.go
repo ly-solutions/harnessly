@@ -106,6 +106,13 @@ func (s *Service) aclRoute(w http.ResponseWriter, r *http.Request, p *auth.Princ
 			rest = append(rest, v)
 		}
 	}
+	// A link is made for what the slug is at this moment, and says so: a board's link opens the board's guest view, a
+	// document's the document, and neither ever opens the other.
+	if r.Method == http.MethodPost && len(rest) > 0 && rest[0] == "shares" {
+		if info.Target, err = s.linkTarget(r.Context(), slug); err != nil {
+			return err
+		}
+	}
 	s.access.Serve(w, r, s.actorOf(r.Context(), m, author, p, nil), refOf(slug, m), rest, info, func(v any) (string, error) {
 		if v == nil {
 			return "", nil

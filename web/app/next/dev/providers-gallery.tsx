@@ -1,5 +1,5 @@
 // The extra model vendors on made-up data, for the eye and for screenshots: ?dev=providers. Never a real key: the keys
-// typed here go nowhere and only their last digits are kept. ?scene=settings|picker|chat picks the page, ?state=empty|kimi|
+// typed here go nowhere and only their last digits are kept. ?scene=settings|accounts|picker|chat picks the page, ?state=empty|kimi|
 // all the keys on the machine, ?check=ok|auth|network|limit what the check of a connection finds,
 // ?theme=light|dark&lang=en|ru the look. Never part of a production path.
 import '@/next/styles/tokens.css';
@@ -9,6 +9,7 @@ import '@/next/styles/ui.css';
 import '@/next/styles/icons.css';
 import '@/next/styles/chat.css';
 import '@/next/styles/settings.css';
+import '@/next/styles/ext-providers.css';
 import '@/next/dev/providers-gallery.css';
 
 import { useEffect, useRef, useState } from 'react';
@@ -23,6 +24,8 @@ import {
   type LimitsView,
 } from '@/next/features/limits/model';
 import ContinueSheet from '@/next/features/chat/continue-sheet';
+import { EXT_API, type IExtPreset, type IExtProvider } from '@/next/features/settings/ext-providers-api';
+import ExtProvidersSection from '@/next/features/settings/ext-providers-section';
 import AccountsSection, {
   AgentConnection,
   VendorKeys,
@@ -30,7 +33,9 @@ import AccountsSection, {
   type IAgentCredentials,
   type VendorCards,
 } from '@/next/features/settings/accounts-section';
+import LoginPanel from '@/next/features/accounts/login-panel';
 import type { LoginState } from '@/next/features/accounts/model';
+import CodexLoginsGroup, { CodexLoginCard } from '@/next/features/settings/codex-logins-group';
 import { pinLocale } from '@/next/i18n';
 import type { AgentSettings, MachineAgent, Provider } from '@/next/protocol/v2';
 import { PortalContext } from '@/next/ui/portal';
@@ -120,6 +125,16 @@ const MACHINE_AGENTS = [
             efforts: [],
             defaultEffort: null,
           },
+        ],
+      },
+      {
+        // A second account of the vendor: a profile of its own under the name the person gave it.
+        id: 'x-kimi-rabochiy',
+        label: 'Kimi рабочий',
+        vendor: 'kimi',
+        configured: true,
+        models: [
+          { id: 'kimi-k3.1-pro', label: 'K3.1 Pro', hint: '1M контекста', efforts: [], defaultEffort: null },
         ],
       },
       {
@@ -361,6 +376,37 @@ const SettingsScene = ({ state, check, login }: { state?: string; check?: string
           gpt={gptOf(vendors)}
           onBaseUrl={async () => true}
         />
+        <CodexLoginsGroup
+          logins={[
+            { id: 'ab12', name: 'Рабочий', profile: 'cx-ab12', account: 'work@example.com', main: true },
+            { id: 'cd34', name: 'Личный', profile: 'cx-cd34', account: '', main: false },
+          ]}
+          full={false}
+          onAdd={async () => null}
+          renderLogin={(one) => (
+            <CodexLoginCard
+              key={one.id}
+              login={one}
+              onRename={async () => null}
+              onRemove={async () => null}
+              onMain={async () => null}
+            >
+              <LoginPanel
+                via="subscription"
+                account={
+                  one.account === ''
+                    ? { signedIn: false, method: null, plan: null, who: null }
+                    : { signedIn: true, method: 'subscription', plan: null, who: one.account }
+                }
+                login={{ k: 'idle' }}
+                onLogin={async () => null}
+                onSubmitCode={async () => null}
+                onCancel={async () => undefined}
+                onLogout={async () => null}
+              />
+            </CodexLoginCard>
+          )}
+        />
         <VendorKeys vendors={vendors} />
       </div>
     </div>
@@ -426,6 +472,97 @@ const ContinueScene = () => {
   );
 };
 
+const EXT_PRESETS: readonly IExtPreset[] = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    api: EXT_API.openai,
+    keyUrl: '',
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic API',
+    baseUrl: 'https://api.anthropic.com',
+    api: EXT_API.anthropic,
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'kimi-code',
+    name: 'Kimi Code',
+    baseUrl: 'https://api.kimi.com/coding',
+    api: EXT_API.anthropic,
+    keyUrl: 'https://www.kimi.com/code',
+  },
+  {
+    id: 'glm',
+    name: 'GLM · Z.ai',
+    baseUrl: 'https://api.z.ai/api/anthropic',
+    api: EXT_API.anthropic,
+    keyUrl: 'https://z.ai/manage-apikey/apikey-list',
+  },
+  {
+    id: 'glm-cn',
+    name: 'GLM · bigmodel.cn',
+    baseUrl: 'https://open.bigmodel.cn/api/anthropic',
+    api: EXT_API.anthropic,
+    keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
+  },
+  { id: 'custom', name: 'Свой адрес', baseUrl: '', api: EXT_API.openai, keyUrl: '' },
+];
+
+const kimiAccount = (id: string, name: string, isDefault: boolean): IExtProvider => ({
+  id,
+  name,
+  baseUrl: 'https://api.kimi.com/coding',
+  host: 'api.kimi.com',
+  api: EXT_API.anthropic,
+  preset: 'kimi-code',
+  hasKey: true,
+  models: [
+    { id: 'k3.1-pro', label: 'K3.1 Pro' },
+    { id: 'k3', label: 'K3' },
+  ],
+  group: 'kimi-code',
+  isDefault,
+  managed: false,
+  env: [],
+});
+
+/** «Провайдеры по API»: two accounts of one vendor, and the form that adds another by a template. */
+const AccountsScene = () => {
+  const portalRef = useRef<HTMLDivElement>(null);
+  const done = () => later<string | null>(null);
+  return (
+    <PortalContext value={portalRef}>
+      <div className="hx-root hx-providers-set">
+        <div className="hx-set__page-in">
+          <ExtProvidersSection
+            state={{
+              k: 'ready',
+              providers: [
+                kimiAccount('kimi-code', 'Kimi Code', true),
+                kimiAccount('kimi-rabochiy', 'Kimi рабочий', false),
+              ],
+              presets: EXT_PRESETS,
+              accounts: true,
+              launch: true,
+            }}
+            usage={{ 'kimi-code': [], 'kimi-rabochiy': [] }}
+            onAdd={() => later({ id: 'new' })}
+            onSave={done}
+            onRemove={done}
+            onDefault={done}
+            onCheck={() => later({ ok: true, text: '' })}
+            onRefresh={done}
+          />
+        </div>
+        <div ref={portalRef} className="hx-portal" />
+      </div>
+    </PortalContext>
+  );
+};
+
 const ProvidersGallery = () => {
   const { query } = useRouter();
   const theme = query.theme === 'dark' ? 'dark' : 'light';
@@ -436,6 +573,7 @@ const ProvidersGallery = () => {
     root.classList.toggle('dark', theme === 'dark');
     root.style.colorScheme = theme;
   }, [theme]);
+  if (query.scene === 'accounts') return <AccountsScene />;
   if (query.scene === 'continue') return <ContinueScene />;
   if (query.scene === 'picker') return <PickerScene />;
   if (query.scene === 'chat') return <PickerScene locked />;

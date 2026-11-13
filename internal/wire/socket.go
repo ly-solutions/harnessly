@@ -139,6 +139,9 @@ type Server struct {
 	// Logins signs the agents in and out: GET/POST/DELETE /api/v2/agents/<provider>/login, POST .../login/code, PUT
 	// .../key, POST .../logout; nil: no such routes.
 	Logins LoginSource
+	// AccountLogins gives the sign-in of one more account of a CLI (`?account=<id>` on the sign-in routes): a home of
+	// its own beside the main one. nil, or false for an account it does not know, answers «not found».
+	AccountLogins func(p Provider, account string) (LoginSource, bool)
 	// RuntimeSettings are the runtime's own settings: GET and PUT /api/v2/runtime-settings; nil: both are 404s.
 	RuntimeSettings RuntimeSettingsStore
 	// Me is the person of a runtime on its own; nil: /api/v2/me is a 404 (the cluster's gateway answers it itself).

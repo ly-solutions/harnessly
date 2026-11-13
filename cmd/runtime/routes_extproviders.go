@@ -64,20 +64,25 @@ func extProvidersFor(d deps) *extproviders.Service {
 	}
 	dataDir := d.DataDir
 	s := &extproviders.Service{
-		Store:   &extproviders.Store{Dir: filepath.Join(dataDir, "v2", "ext-providers")},
-		Secrets: extSecrets{store: safeFor(d).store},
-		Bound:   safeBound(safeFor(d).store),
-		OnChange: func(what string, before, after *extproviders.Provider) {
-			extProvidersMu.Lock()
-			hear := append([]func(string, *extproviders.Provider, *extproviders.Provider){}, extProviderHearers[dataDir]...)
-			extProvidersMu.Unlock()
-			for _, h := range hear {
-				h(what, before, after)
-			}
-		},
+		Store:    &extproviders.Store{Dir: filepath.Join(dataDir, "v2", "ext-providers")},
+		Secrets:  extSecrets{store: safeFor(d).store},
+		Bound:    safeBound(safeFor(d).store),
+		OnChange: tellExtProviderHearers(dataDir),
 	}
 	extProvidersAll[dataDir] = s
 	return s
+}
+
+// tellExtProviderHearers is what a registry calls after a change: it tells the hearers of its data folder.
+func tellExtProviderHearers(dataDir string) func(what string, before, after *extproviders.Provider) {
+	return func(what string, before, after *extproviders.Provider) {
+		extProvidersMu.Lock()
+		hear := append([]func(string, *extproviders.Provider, *extproviders.Provider){}, extProviderHearers[dataDir]...)
+		extProvidersMu.Unlock()
+		for _, h := range hear {
+			h(what, before, after)
+		}
+	}
 }
 
 // extProviderHearers are told of every change of a data folder's registry.
@@ -99,6 +104,8 @@ func extProviderMessage(reason string) string {
 		return locale.Pick("A variable needs a name of letters, digits and _ (once), a value of one line, and a secret one a value.", "У переменной имя из букв, цифр и _ (один раз), значение в одну строку, а у секретной оно обязательно.")
 	case extproviders.ReasonEnvReserved:
 		return locale.Pick("This variable is set by the launch itself and cannot be changed here.", "Эту переменную задаёт сам запуск, здесь её менять нельзя.")
+	case extproviders.ReasonSubscriptionToken:
+		return locale.Pick("This is the token of a Claude subscription. A machine has one sign-in by a subscription, in Settings → Claude Code; a provider takes a key of the API.", "Это токен подписки Claude. Вход по подписке на машине один — в настройках Claude Code; провайдеру нужен ключ API.")
 	case extproviders.ReasonBadURL:
 		return locale.Pick("The address must start with https:// or http:// and name a host.", "Адрес должен начинаться с https:// или http:// и содержать имя сервера.")
 	case extproviders.ReasonBadAPI:

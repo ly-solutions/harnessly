@@ -49,6 +49,8 @@ func TestMachineOffersProfiles(t *testing.T) {
 
 // A conversation on a profile whose key was removed is not resumed to fail on every request.
 func TestResumeNeedsTheProfilesKey(t *testing.T) {
+	// The key is typed for the profile itself here: no account of the person's providers stands behind it.
+	providers.SetBacked(nil)
 	store := &providers.Store{Dir: filepath.Join(t.TempDir(), "providers")}
 	conv := wire.Conversation{Model: &wire.Model{ID: "kimi-k3.1-pro", Profile: "kimi"}}
 	if err := profileKeyGone(store, conv); err == nil {

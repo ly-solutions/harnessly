@@ -26,7 +26,13 @@ type Actor struct {
 }
 
 // Info is what the caller knows about a resource the model has no row for yet: its owner, as the kind's own records have it.
-type Info struct{ Owner, OwnerName string }
+type Info struct {
+	Owner, OwnerName string
+	// Target says what the resource is where one kind covers several (a document's kind covers a board: "board"). It is
+	// written into a guest link when the link is made, by the caller who has just established it, and read back when
+	// the link is opened: what a link opens is decided once, when it is given, never guessed at the door.
+	Target string
+}
 
 // proved reports whether the person has proved the address.
 func (a Actor) proved(email string) bool {
@@ -460,6 +466,7 @@ func (s *Service) sharesRoute(r *http.Request, a Actor, ref Ref, rest []string, 
 		var token string
 		_, _, err = change(func(t *txn) error {
 			var err error
+			in.Target = info.Target
 			made, token, err = t.createLink(ref, email, in)
 			return err
 		})

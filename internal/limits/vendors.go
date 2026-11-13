@@ -42,6 +42,8 @@ const (
 type Credential struct {
 	Token string
 	Login bool
+	// Account is the account of the sign-in the vendor wants named beside the token (Vendor.AccountHeader); "" for none.
+	Account string
 }
 
 // Vendor is how one vendor's limits are asked.
@@ -60,6 +62,8 @@ type Vendor struct {
 	// Unofficial: the request is the vendor's internal one, known from outside its own sources. Its entry says so, and
 	// a failure leaves nothing of the last answer: what such a source said before it broke is not to be trusted.
 	Unofficial bool
+	// AccountHeader is the header the account of a sign-in goes in; "" when the vendor wants none.
+	AccountHeader string
 	// Host is the host a provider of the registry must point at for the request to be made with its key; empty for a
 	// chat profile, whose address the runtime owns.
 	Host string
@@ -79,6 +83,11 @@ var vendors = map[string]Vendor{
 	// The Moonshot platform is paid by the token: its documented balance, no windows.
 	"kimi": {Source: SourceMoonshot, URL: "https://api.moonshot.ai/v1/users/me/balance", Auth: bearer, Parse: moonshotUSD},
 	// The providers of the registry by API whose vendor documents a balance for the key itself.
+	// The same vendors as accounts of the registry: each key asks for itself.
+	"api:kimi-code":  {Source: SourceKimiUsages, URL: "https://api.kimi.com/coding/v1/usages", Auth: bearer, Parse: ParseKimiUsage, Host: "api.kimi.com"},
+	"api:kimi":       {Source: SourceMoonshot, URL: "https://api.moonshot.ai/v1/users/me/balance", Auth: bearer, Parse: moonshotUSD, Host: "api.moonshot.ai"},
+	"api:glm":        {Source: SourceZaiQuota, URL: "https://api.z.ai/api/monitor/usage/quota/limit", Auth: rawKey, Parse: ParseZaiQuota, Refused: zaiRefused, Host: "api.z.ai"},
+	"api:glm-cn":     {Source: SourceZaiQuota, URL: "https://open.bigmodel.cn/api/monitor/usage/quota/limit", Auth: rawKey, Parse: ParseZaiQuota, Refused: zaiRefused, Host: "open.bigmodel.cn"},
 	"api:deepseek":   {Source: SourceDeepSeek, URL: "https://api.deepseek.com/user/balance", Auth: bearer, Parse: ParseDeepSeekBalance, Host: "api.deepseek.com"},
 	"api:openrouter": {Source: SourceOpenRouter, URL: "https://openrouter.ai/api/v1/credits", Auth: bearer, Parse: ParseOpenRouterCredits, Host: "openrouter.ai"},
 }
@@ -95,8 +104,32 @@ func grokAuth(req *http.Request, token string) {
 
 func moonshotUSD(body any, now float64) Data { return ParseMoonshotBalance(body, "USD", now) }
 
+// CodexLoginPrefix starts the id of a profile that is one more sign-in of the Codex CLI.
+const CodexLoginPrefix = "cx-"
+
+// codexLogin asks the windows of a ChatGPT plan the way the Codex CLI does, with the token of that sign-in.
+var codexLogin = Vendor{Source: SourceCodexUsage, URL: CodexUsageURL, Auth: codexAuth, Parse: profileCodexUsage,
+	LoginOnly: true, AccountHeader: "ChatGPT-Account-Id"}
+
+func codexAuth(req *http.Request, token string) {
+	bearer(req, token)
+	req.Header.Set("originator", "codex_cli_rs")
+}
+
+// profileCodexUsage is ParseCodexUsage without the field only the entry of the CLI's own sign-in has.
+func profileCodexUsage(body any, now float64) Data {
+	data := ParseCodexUsage(body, now)
+	if data != nil {
+		delete(data, "codexbarError")
+	}
+	return data
+}
+
 // VendorOf is how the limits of a profile are asked; ok is false for a profile that has no such request.
 func VendorOf(profile string) (Vendor, bool) {
+	if strings.HasPrefix(profile, CodexLoginPrefix) {
+		return codexLogin, true
+	}
 	v, ok := vendors[profile]
 	return v, ok
 }

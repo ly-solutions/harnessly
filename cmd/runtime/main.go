@@ -532,6 +532,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(askRoutes(d, ref.c)...)
 	f.Add(secretRoutes(d, ref.c)...)
 	f.Add(extProviderRoutes(d)...)
+	f.Add(codexLoginRoutes(d)...)
 	f.Add(backgroundRoutes(d)...)
 	f.Add(searchRoutes(d)...)
 	f.Add(settingsCtlRoutes(d, ref.c)...)

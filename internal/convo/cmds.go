@@ -258,6 +258,13 @@ func (c *conv) send(m wire.SendCmd, now time.Time) wire.CmdResult {
 		return wire.Refused(wire.RefuseForbidden)
 	}
 	d := outbox.Draft{ClientID: m.ClientID, Text: m.Text, Mode: m.Mode, Kind: m.Kind, Attachments: []wire.AttachmentRef{}}
+	// Another agent's message is known by its client id: it never answers the person's question, and it is read at the
+	// agent's next step. Only this machine's own delegation marks one to be read at once (DeliverPeerAtOnce): nothing
+	// in the message, whose id its sender chose, can say so.
+	d.Agent = IsPeerClientID(m.ClientID)
+	_, atOnce := c.peerAtOnce[m.ClientID]
+	delete(c.peerAtOnce, m.ClientID)
+	d.Soft = d.Agent && !atOnce
 	if ch, ok := c.box.TakenBack(d, now); ok {
 		// The person took the message back before it came: it is shown as cancelled, and the agent is not woken for it.
 		return c.result(ch, "", wire.ResultAccepted, now)

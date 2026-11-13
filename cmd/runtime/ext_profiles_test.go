@@ -44,3 +44,19 @@ func TestExtProfileOfAProvider(t *testing.T) {
 		t.Fatalf("the id of a long provider: %q", id)
 	}
 }
+
+// A provider that came with the sign-in of a Claude subscription in a variable in plain sight (an item of the hub's
+// environment, a file an agent wrote) is no profile: the machine has one such sign-in, the CLI's own. A key of the
+// API in the same place is a profile like any other.
+func TestAProviderWithASubscriptionsTokenIsNoProfile(t *testing.T) {
+	p := extproviders.Provider{ID: "second", Name: "Second", BaseURL: "https://proxy.example/anthropic", API: extproviders.APIAnthropic,
+		Models: []extproviders.Model{{ID: "m"}},
+		Env:    []extproviders.EnvVar{{Name: "MY_TOKEN", Value: "sk-ant-" + "oat01-not-a-token-of-anyone"}}}
+	if _, ok := extProfile(p); ok {
+		t.Fatal("a provider with a subscription's token is a profile")
+	}
+	p.Env = []extproviders.EnvVar{{Name: "MY_TOKEN", Value: "sk-ant-" + "api03-not-a-key-of-anyone"}}
+	if _, ok := extProfile(p); !ok {
+		t.Fatal("a provider with a key of the API is no profile")
+	}
+}

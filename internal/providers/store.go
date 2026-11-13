@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/agents"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
@@ -94,8 +95,8 @@ func (s *Store) KeyFile(id string) string { return filepath.Join(s.Dir, id+".key
 
 // Set saves the key of a profile, replacing a saved one, and answers what the page may know of it.
 func (s *Store) Set(id, key string) (wire.ProfileKey, error) {
-	// A switched profile takes no key: it has none to save.
-	if p, ok := Find(id); !IsSpeechKey(id) && (!ok || p.Switched) {
+	if p, ok := Find(id); !IsSpeechKey(id) && (!ok || p.Switched || p.Backed) {
+		// A switched profile has no key; a backed one takes its account's, changed among the providers.
 		return wire.ProfileKey{}, wire.ErrProfileUnknown
 	}
 	if err := (wire.ProfileKeyEdit{Key: key}).Validate(); err != nil {
@@ -151,10 +152,10 @@ const refSettle = time.Minute
 func (s *Store) refresh(id string) {
 	p, ok := Find(id)
 	read := s.Secrets
-	if p.Custom {
+	if p.Custom || p.Backed {
 		read = s.Safe
 	}
-	if ok && p.Custom && p.KeyRef == "" {
+	if ok && (p.Custom || p.Backed) && p.KeyRef == "" {
 		// The person took the provider's key away: no file of it is left for a launch to read.
 		_ = os.Remove(s.KeyFile(id))
 		return
@@ -170,6 +171,11 @@ func (s *Store) refresh(id string) {
 	val, err := read(p.KeyRef)
 	val = strings.TrimSpace(val)
 	if err != nil || len(val) < wire.ProfileKeyMin {
+		return
+	}
+	if (p.Custom || p.Backed) && agents.ClaudeSubscriptionToken(val) {
+		// The secret the provider names is the sign-in of a subscription, not a key: the provider has no key to run on.
+		_ = os.Remove(s.KeyFile(id))
 		return
 	}
 	if s.refreshed == nil {
@@ -191,7 +197,8 @@ func (s *Store) Stale(id string) {
 
 // Remove deletes the saved key; a profile with none stays as it is.
 func (s *Store) Remove(id string) (wire.ProfileKey, error) {
-	if _, ok := Find(id); !ok && !IsSpeechKey(id) {
+	p, ok := Find(id)
+	if (!ok || p.Backed) && !IsSpeechKey(id) {
 		return wire.ProfileKey{}, wire.ErrProfileUnknown
 	}
 	s.mu.Lock()
@@ -238,6 +245,9 @@ func (s *Store) Configured(id string) bool { return s.State(id).Configured }
 
 // LoginOf is the account of the vendor CLI's sign-in the profile can run on; ok is false while there is none.
 func (s *Store) LoginOf(id string) (account string, ok bool) {
+	if p, found := Find(id); found && p.Home != "" {
+		return (&CodexLogin{Path: filepath.Join(p.Home, "auth.json")}).Account()
+	}
 	l := s.Logins[id]
 	if l == nil {
 		return "", false
@@ -251,6 +261,10 @@ func (s *Store) Ready(id string) bool {
 	if p, ok := Find(id); ok && p.Switched {
 		sw := s.SwitchOf(id)
 		return sw != nil && sw.Ready()
+	}
+	if p, ok := Find(id); ok && p.Home != "" {
+		// Another sign-in of Codex: ready when its home holds a sign-in. No key counts for it.
+		return codexSignedIn(p.Home)
 	}
 	if s.Configured(id) {
 		return true

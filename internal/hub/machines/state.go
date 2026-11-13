@@ -316,6 +316,21 @@ func (s *Service) dispatch(ctx context.Context, l *link.Link, m store.Machine, e
 		if s.docs != nil {
 			s.docs.Event(l, m, ev)
 		}
+	case hubproto.EventEnvPropose:
+		if s.proposals != nil {
+			raw := ev.Raw
+			safego.Go("machines env.propose", func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+				defer cancel()
+				res := s.proposals.Proposed(ctx, m, raw)
+				if res.RequestID == "" {
+					return
+				}
+				if _, err := l.Call(ctx, hubproto.OpEnvProposed, res); err != nil {
+					s.log.Warn("env.proposed not delivered", "machine", m.ID, "error", err)
+				}
+			})
+		}
 	case hubproto.EventAutomationResult:
 		if s.automations != nil {
 			s.automations.Event(m, ev)

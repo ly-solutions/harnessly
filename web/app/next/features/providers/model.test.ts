@@ -4,6 +4,7 @@ import {
   isKeyShape,
   presetName,
   presetsOfVendor,
+  keyNotMoved,
   vendorsOf,
   type IPresetState,
 } from '@/next/features/providers/model';
@@ -33,6 +34,12 @@ describe('presets', () => {
 
   it('lists only the vendors the runtime has presets of, in the page’s order', () => {
     expect(vendorsOf(LIST)).toEqual(['kimi', 'grok']);
+    // A vendor whose keys are accounts has no card; one whose key was not moved keeps it, and says so.
+    const moved = LIST.map((p) => (p.vendor === 'kimi' ? { ...p, account: true } : p));
+    expect(vendorsOf(moved)).toEqual(['grok']);
+    expect(keyNotMoved('kimi', moved)).toBe(false);
+    expect(keyNotMoved('kimi', LIST)).toBe(true);
+    expect(keyNotMoved('grok', LIST)).toBe(false);
     expect(vendorsOf([])).toEqual([]);
   });
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -65,11 +66,12 @@ func machineSliceRoutes(d deps, listen, upstream string, sender *push.Sender, ho
 	}
 	billing := &machines.ClaudeBilling{ConfigDir: claudeDir, ConfigFile: claudeConfig}
 	usage := &machines.Usage{
-		ClaudeRoot: filepath.Join(claudeDir, "projects"),
-		CodexRoot:  filepath.Join(limits.CodexHome(os.Getenv("CODEX_HOME"), d.Home), "sessions"),
-		TZOffset:   float64(tz) * 60,
-		CacheFile:  filepath.Join(d.DataDir, "limits-spend-cache.gob"),
-		Lines:      transcriptLines("usage"),
+		ClaudeRoot:     filepath.Join(claudeDir, "projects"),
+		CodexRoot:      filepath.Join(limits.CodexHome(os.Getenv("CODEX_HOME"), d.Home), "sessions"),
+		MoreCodexRoots: codexLoginSessionRoots,
+		TZOffset:       float64(tz) * 60,
+		CacheFile:      filepath.Join(d.DataDir, "limits-spend-cache.gob"),
+		Lines:          transcriptLines("usage"),
 	}
 	releaseFile := os.Getenv("RUNTIME_RELEASE_FILE")
 	// The vendors' limits (Kimi Code, GLM, Grok…) are asked while a page reads the snapshot, each account at most once
@@ -238,6 +240,17 @@ func profileLimitAccounts(store *providers.Store) []limits.Account {
 			continue
 		}
 		id := p.ID
+		if home := p.Home; home != "" {
+			// One more sign-in of Codex: the token its own home holds now, read and never renewed here.
+			out = append(out, limits.Account{Profile: id, Credential: func(context.Context) (limits.Credential, error) {
+				login := limits.ReadCodexLogin(home)
+				if login == nil {
+					return limits.Credential{}, errors.New("the sign-in has no token")
+				}
+				return limits.Credential{Token: login.AccessToken, Account: login.AccountID, Login: true}, nil
+			}})
+			continue
+		}
 		out = append(out, limits.Account{Profile: id, Credential: func(ctx context.Context) (limits.Credential, error) {
 			if key, err := store.Key(id); err == nil {
 				return limits.Credential{Token: key}, nil

@@ -107,6 +107,12 @@ func (s *Service) Create(in Input) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
+	if len(in.Models) == 0 {
+		// The template knows the models of a vendor whose address lists none.
+		if k := slices.IndexFunc(presets, func(p Preset) bool { return p.ID == in.Preset }); k >= 0 {
+			in.Models = slices.Clone(presets[k].Models)
+		}
+	}
 	models, err := cleanModels(in.Models)
 	if err != nil {
 		return View{}, err
@@ -352,15 +358,24 @@ func (s *Service) Check(ctx context.Context, id string) (Check, error) {
 		return Check{}, &Refusal{Reason: ReasonFailed, Err: err}
 	}
 	got := s.prober().Check(ctx, p.BaseURL, p.API, key)
-	if got.OK && len(got.Models) > 0 {
-		_ = s.Store.change(func(body *fileBody) error {
-			i := slices.IndexFunc(body.Providers, func(x Provider) bool { return x.ID == id })
-			if i < 0 {
-				return refuse(ReasonNotFound)
-			}
-			body.Providers[i].Models, body.Providers[i].ModelsAt = got.Models, s.Store.now()
-			return nil
-		})
+	if !got.OK || len(got.Models) == 0 {
+		return got, nil
+	}
+	var before, after Provider
+	err = s.Store.change(func(body *fileBody) error {
+		i := slices.IndexFunc(body.Providers, func(x Provider) bool { return x.ID == id })
+		if i < 0 {
+			return refuse(ReasonNotFound)
+		}
+		before = body.Providers[i]
+		body.Providers[i].Models, body.Providers[i].ModelsAt = got.Models, s.Store.now()
+		after = body.Providers[i]
+		return nil
+	})
+	// Other models are a change of the provider like one the person made: what follows the registry (the profiles the
+	// chats start on) hears of it at once.
+	if err == nil && !slices.Equal(before.Models, after.Models) {
+		s.changed("updated", &before, &after)
 	}
 	return got, nil
 }

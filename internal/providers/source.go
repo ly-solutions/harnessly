@@ -36,8 +36,12 @@ func (s *Source) Profiles(context.Context) (wire.ProfileList, error) {
 	list := all()
 	out := make([]wire.ProfileInfo, 0, len(list))
 	for _, p := range list {
+		// Another sign-in of Codex is kept on the Codex page, not among the vendors' keys.
+		if p.Unlisted || p.Home != "" {
+			continue
+		}
 		info := wire.ProfileInfo{ID: p.ID, Label: p.Label, Vendor: p.Vendor, Via: p.Via, Host: p.Host, Hint: p.Hint,
-			Key: s.Store.State(p.ID), Models: s.Store.AgentModels(p)}
+			Key: s.Store.State(p.ID), Models: s.Store.AgentModels(p), Account: p.Backed}
 		if account, ok := s.Store.LoginOf(p.ID); ok {
 			info.Login = &wire.ProfileLogin{Account: account}
 		}
@@ -75,6 +79,10 @@ func (s *Source) SwitchProfile(ctx context.Context, id string, on bool) (wire.Pr
 }
 
 func (s *Source) SetProfileKey(_ context.Context, id, key string) (wire.ProfileKey, error) {
+	// A sign-in of Codex runs on its plan: it takes no key.
+	if p, ok := Find(id); ok && p.Home != "" {
+		return wire.ProfileKey{}, wire.ErrProfileUnknown
+	}
 	st, err := s.Store.Set(id, key)
 	s.changed(err)
 	return st, err

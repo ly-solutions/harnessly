@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -243,5 +244,47 @@ func TestParseBalancesOfAPIProviders(t *testing.T) {
 	}
 	if v, ok := VendorOf(APIProfile("deepseek")); !ok || v.Host != "api.deepseek.com" {
 		t.Fatalf("vendor: %+v", v)
+	}
+}
+
+// One more sign-in of Codex is a profile of its own: its windows are asked the way the CLI asks them, with the token
+// and the account of that sign-in, and kept apart from the CLI's own entry and from another sign-in's.
+func TestProfilesAskTheWindowsOfACodexSignIn(t *testing.T) {
+	seen := map[string]string{}
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.Header.Get("Authorization")] = r.Header.Get("ChatGPT-Account-Id") + "|" + r.Header.Get("originator")
+		mu.Unlock()
+		used := "12"
+		if r.Header.Get("ChatGPT-Account-Id") == "acct-b" {
+			used = "80"
+		}
+		_, _ = w.Write([]byte(`{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":` + used + `,"limit_window_seconds":18000,"reset_after_seconds":600}}}`))
+	}))
+	defer srv.Close()
+	now := 1785800000.0
+	cred := func(token, account string, login bool) func(context.Context) (Credential, error) {
+		return func(context.Context) (Credential, error) {
+			return Credential{Token: token, Account: account, Login: login}, nil
+		}
+	}
+	p := profilesFor(t, srv, &now,
+		Account{Profile: "cx-aaaaaaaaaa", Credential: cred("t-a", "acct-a", true)},
+		Account{Profile: "cx-bbbbbbbbbb", Credential: cred("t-b", "acct-b", true)},
+		// A key is no plan: it has no windows to ask.
+		Account{Profile: "cx-cccccccccc", Credential: cred("k-c", "", false)})
+	p.Refresh(context.Background())
+	if len(seen) != 2 || seen["Bearer t-a"] != "acct-a|codex_cli_rs" || seen["Bearer t-b"] != "acct-b|codex_cli_rs" {
+		t.Fatalf("asked: %v", seen)
+	}
+	entries := p.Cache.Read()
+	a, _ := object(entries["cx-aaaaaaaaaa"]["five_hour"])
+	b, _ := object(entries["cx-bbbbbbbbbb"]["five_hour"])
+	if a["used_percentage"] != 12.0 || b["used_percentage"] != 80.0 || a["resets_at"] != now+600 {
+		t.Fatalf("entries: %v", entries)
+	}
+	if _, has := entries["cx-aaaaaaaaaa"]["codexbarError"]; has || entries["cx-cccccccccc"] != nil {
+		t.Fatalf("entries: %v", entries)
 	}
 }

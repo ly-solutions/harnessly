@@ -57,13 +57,15 @@ func usageRoute(d deps, authorized func(*http.Request) bool) *usagereport.Route 
 	host, _ := os.Hostname()
 	offset, _ := strconv.ParseFloat(os.Getenv("RUNTIME_USAGE_TZ_OFFSET_MINUTES"), 64)
 	collector := usagereport.NewCollector(usagereport.Config{
-		ClaudeRoot: filepath.Join(env("CLAUDE_CONFIG_DIR", filepath.Join(d.Home, ".claude")), "projects"),
-		CodexRoot:  filepath.Join(env("CODEX_HOME", filepath.Join(d.Home, ".codex")), "sessions"),
-		CacheFile:  filepath.Join(d.DataDir, "stats", env("RUNTIME_USAGE_CACHE_FILE", "usage-v2.json")),
-		Projects:   &usagereport.Projects{Root: os.Getenv("RUNTIME_PROJECTS_ROOT"), TaskPrefixes: trackerKeys()},
-		Clock:      usagereport.Clock{Offset: offset * 60},
-		Timezone:   env("RUNTIME_USAGE_TIMEZONE", "UTC"),
-		Machine:    host,
+		ClaudeRoot:     filepath.Join(env("CLAUDE_CONFIG_DIR", filepath.Join(d.Home, ".claude")), "projects"),
+		CodexRoot:      filepath.Join(env("CODEX_HOME", filepath.Join(d.Home, ".codex")), "sessions"),
+		MoreCodexRoots: codexLoginSessionRoots,
+		CacheFile:      filepath.Join(d.DataDir, "stats", env("RUNTIME_USAGE_CACHE_FILE", "usage-v2.json")),
+		Projects:       &usagereport.Projects{Root: os.Getenv("RUNTIME_PROJECTS_ROOT"), TaskPrefixes: trackerKeys()},
+		Clock:          usagereport.Clock{Offset: offset * 60},
+		Timezone:       env("RUNTIME_USAGE_TIMEZONE", "UTC"),
+		Machine:        host,
+		AccountOf:      accountOfSession(d.DataDir),
 	})
 	if d.UsageRefresh > 0 {
 		go collector.KeepFresh(d.UsageRefresh, nil)

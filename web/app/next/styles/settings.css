@@ -2606,3 +2606,62 @@ html[data-theme='dark'] .hx-nplace__spot[aria-checked='true'] {
     display: none;
   }
 }
+
+/* «Ещё входы» of Codex: the head of a sign-in (its name, whose plan, rename and remove) and the row that adds one. */
+.hx-cxl__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+.hx-cxl .hx-acct__inner {
+  padding: 10px 14px 12px;
+}
+.hx-cxl__who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.hx-cxl__who b {
+  font-size: var(--hx-text-sm);
+  font-weight: 600;
+  color: var(--hx-fg-1);
+  overflow-wrap: anywhere;
+}
+.hx-cxl__who small {
+  font-size: var(--hx-text-xs);
+  color: var(--hx-fg-3);
+  overflow-wrap: anywhere;
+}
+.hx-cxl__main {
+  margin-right: 6px;
+  color: var(--hx-fg-1);
+  font-weight: 600;
+}
+.hx-cxl__rename,
+.hx-cxl__add {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.hx-cxl__rename .hx-set__input,
+.hx-cxl__add .hx-set__input {
+  flex: 1;
+  min-width: 0;
+}
+.hx-cxl__add {
+  padding: 12px 14px;
+}
+@media (max-width: 560px) {
+  .hx-cxl__head,
+  .hx-cxl__rename,
+  .hx-cxl__add {
+    flex-wrap: wrap;
+  }
+  .hx-cxl__who {
+    flex-basis: 100%;
+  }
+}

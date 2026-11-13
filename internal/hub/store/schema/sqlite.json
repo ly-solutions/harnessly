@@ -2823,6 +2823,99 @@
         }
       ]
     },
+    "env_proposals": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "org_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "machine_name",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "owner_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "conv",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "conv_title",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "hint",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "remove",
+          "type": "INTEGER",
+          "notNull": true
+        },
+        {
+          "name": "source",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "decided_at",
+          "type": "BIGINT"
+        },
+        {
+          "name": "decided_by",
+          "type": "TEXT"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "env_proposals_org",
+          "columns": [
+            "org_id",
+            "state"
+          ]
+        }
+      ]
+    },
     "env_runs": {
       "columns": [
         {

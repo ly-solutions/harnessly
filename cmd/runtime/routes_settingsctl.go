@@ -142,6 +142,14 @@ func boolOnOff(b bool) string {
 	return settingsctl.Off
 }
 
+// deliveryOf is the delivery in force: the one set, else into the running turn.
+func deliveryOf(d wire.DelegationSettings) wire.DelegationDelivery {
+	if d.Steers() {
+		return wire.DelegationStep
+	}
+	return wire.DelegationTurn
+}
+
 // runtimeSettingValues are the runtime settings as the catalog's values, by key.
 func runtimeSettingValues(s wire.RuntimeSettings) map[string]string {
 	del := s.DelegationOf()
@@ -151,6 +159,7 @@ func runtimeSettingValues(s wire.RuntimeSettings) map[string]string {
 		"runtime.restartContinue":        onOff(s.RestartContinue),
 		"runtime.delegation.maxChildren": strconv.Itoa(del.MaxChildren),
 		"runtime.delegation.anyChat":     boolOnOff(del.AnyChat),
+		"runtime.delegation.delivery":    string(deliveryOf(del)),
 	}
 }
 
@@ -258,7 +267,29 @@ func settingsItems(d deps) []settingsctl.Item {
 				})
 			}},
 	}
+	items = append(items, settingsctl.Item{Key: "runtime.delegation.delivery", Section: delegation, Kind: settingsctl.KindEnum,
+		Title: locale.Pick("When an agent's message reaches a working agent", "Когда сообщение агента доходит до работающего агента"),
+		Description: locale.Pick("A message one agent sends to another chat, and the news that a delegated chat finished: «step» puts it into the running turn, read at the agent's next step; «turn» keeps it in the queue until the turn ends. The sender may choose for one message (deliver).",
+			"Сообщение, которое агент шлёт в другой чат, и весть о том, что порученный чат закончил: «step» досылает в идущий ход, агент читает на следующем шаге; «turn» держит в очереди до конца хода. Отправитель может выбрать для одного сообщения (deliver)."),
+		Options: func() []settingsctl.Option {
+			return []settingsctl.Option{
+				{Value: string(wire.DelegationStep), Label: locale.Pick("into the running turn", "в идущий ход")},
+				{Value: string(wire.DelegationTurn), Label: locale.Pick("after the turn", "после хода")},
+			}
+		},
+		Get: runtimeValue("runtime.delegation.delivery"),
+		Set: func(v string) error {
+			return change(func(s *wire.RuntimeSettings) {
+				del := s.DelegationOf()
+				del.Delivery = wire.DelegationDelivery(v)
+				s.Delegation = &del
+			})
+		}})
 	items = append(items, providersItem(providers))
+	if strings.TrimSpace(os.Getenv("RUNTIME_HUB_URL")) != "" {
+		// A machine of a hub: its person's agent may propose a provider for the whole organization.
+		items = append(items, envProvidersItem(providers, agentEnvProposer(d.DataDir)))
+	}
 	summary := noticeSummaryFor(d)
 	for _, f := range bgmodel.Features() {
 		feature := f

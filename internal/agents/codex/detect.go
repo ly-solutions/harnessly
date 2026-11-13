@@ -55,6 +55,14 @@ func remember(dir string) {
 	}
 }
 
+// RememberHome names a home a Codex is run in besides the main one (another sign-in's), so its sessions are found
+// before a process in it was seen.
+func RememberHome(dir string) {
+	if dir != "" {
+		remember(dir)
+	}
+}
+
 // NewDetector looks at the machine's processes and <home>/.codex.
 func NewDetector(home string) *Detector {
 	d := &Detector{Dir: agentcfg.CodexDirIn(os.Getenv, home), Procs: proc.System(), Match: agents.MatchArgv, Now: time.Now}

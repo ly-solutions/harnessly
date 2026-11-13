@@ -58,6 +58,10 @@ type Config struct {
 	StatePath string
 	// Identity says which account and endpoint a provider's CLI uses now; nil knows nothing.
 	Identity func(provider string) Identity
+	// SessionIdentity says which account and endpoint a session ran on, when the runtime noted it at the launch (a chat
+	// on a provider the person added, or on another account of one); ok is false for a session nobody noted, which is
+	// then the CLI's own. nil knows none.
+	SessionIdentity func(provider, sessionID string) (Identity, bool)
 	// Now is the clock (tests move it); nil is the real one.
 	Now func() time.Time
 	// MaxPending and MaxBytes cap the unacknowledged records (count, bytes on disk); zero is the default.
@@ -176,6 +180,14 @@ func (f *Feed) Run(ctx context.Context, every time.Duration, written func(epoch 
 			pass()
 		}
 	}
+}
+
+// sessionIdentity is Config.SessionIdentity, false without one.
+func (f *Feed) sessionIdentity(provider, sessionID string) (Identity, bool) {
+	if f.cfg.SessionIdentity == nil || sessionID == "" {
+		return Identity{}, false
+	}
+	return f.cfg.SessionIdentity(provider, sessionID)
 }
 
 // session is what the transcripts say of one session, summed over its files.
@@ -347,6 +359,10 @@ func (f *Feed) Pass(ctx context.Context) (int, error) {
 
 		id := idents[fa.Provider]
 		since := f.st.Idents[fa.Provider].Since
+		// A subagent's transcript carries its parent's session: it ran on the parent's account.
+		if own, ok := f.sessionIdentity(fa.Provider, fa.SessionID); ok {
+			id, since = own, 0
+		}
 		rows := fa.Messages
 		fs := f.st.Files[fkey]
 		start := 0
@@ -432,7 +448,14 @@ func (f *Feed) Pass(ctx context.Context) (int, error) {
 			Provider: s.provider, SessionKey: s.key, ParentKey: s.parent, StartedAt: startedAt,
 			Origin: hubproto.OriginLive, Attribution: hubproto.AttributionGuessed, Metrics: met, MRKeys: mrKeys,
 		}
-		if startedAt >= f.st.Idents[s.provider].Since {
+		root := s.key
+		if s.parent != "" {
+			root = s.parent
+		}
+		if own, ok := f.sessionIdentity(s.provider, root); ok {
+			// Noted at the launch: true for the whole session, whatever the CLI is signed in with now.
+			fact.AccountRef, fact.AuthMode, fact.BaseURLHost = own.AccountRef, own.AuthMode, own.BaseURLHost
+		} else if startedAt >= f.st.Idents[s.provider].Since {
 			fact.AccountRef, fact.AuthMode, fact.BaseURLHost = id.AccountRef, id.AuthMode, id.BaseURLHost
 		}
 		if over {

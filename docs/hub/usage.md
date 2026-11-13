@@ -120,6 +120,12 @@ machine creator's on the machine's login, `attribution: 'guessed'`; the UI shows
 
 The hash is computed on the machine. A test puts a fake key in the environment and checks it is nowhere in the outbox.
 
+**The account of a session.** A chat started on a provider the person added, or on another account of one (several
+Kimi, GLM or Anthropic API keys), is that account's and not the CLI's own sign-in's: the runtime notes
+`session → { ref, host }` when it learns the agent's session (`<data>/v2/session-accounts.jsonl`, the same digest of the
+key), and the machine's agent names the session and its calls by that note. A session nobody noted is the CLI's own, as
+before. The runtime's own report (`/stats`) counts such a session under the name the person gave the account.
+
 **Price by provider.** The price of a call is looked up by the provider the call went to — from `baseUrlHost`
 (`api.kimi.com` → Kimi, `api.z.ai` → Z.ai, `openrouter.ai` → OpenRouter, empty or `api.anthropic.com` → Anthropic) — and
 the model. A model with no price row gets **no price** (`list_cost = NULL`, a «модель без цены» signal), never a

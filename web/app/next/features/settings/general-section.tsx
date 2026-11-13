@@ -9,6 +9,7 @@ import { t } from '@/next/i18n';
 import type { PersonSettings } from '@/next/stores/me';
 import type { TShownKind, TShownKinds } from '@/next/features/chat/outputs';
 import {
+  DELEGATION_DELIVERY,
   DELEGATION_MAX_CHILDREN,
   IDLE_STOPS,
   type DelegationSettings,
@@ -247,6 +248,18 @@ const GeneralSection = ({
           busy={busy.has('delegation')}
           mark={markOf(marks, 'runtime.delegation.anyChat')}
           onChange={(anyChat) => onDelegation({ ...delegation, anyChat })}
+        />
+        <SegRow
+          label={t('next.settings.delegation.delivery')}
+          hint={t('next.settings.delegation.deliveryHint')}
+          value={delegation.delivery ?? 'step'}
+          choices={DELEGATION_DELIVERY.map((value) => ({
+            value,
+            label: t(`next.settings.delegation.delivery.${value}`),
+          }))}
+          busy={busy.has('delegation')}
+          mark={markOf(marks, 'runtime.delegation.delivery')}
+          onPick={(delivery) => onDelegation({ ...delegation, delivery })}
         />
       </Group>
     )}

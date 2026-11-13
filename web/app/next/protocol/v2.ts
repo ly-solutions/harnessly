@@ -503,6 +503,8 @@ export interface ProfileInfo {
   /** Present on a profile that takes no key but is turned on and off (`gpt`: a local proxy over the Codex CLI's
    *  ChatGPT sign-in); absent on the others. */
   switch?: ProfileSwitch;
+  /** The profile's key is an account of the person's providers, changed there; absent on a profile with a key of its own. */
+  account?: boolean;
 }
 /** Whether the person turned a switched profile on. Whether it can run now is the offer's `configured`. */
 export interface ProfileSwitch {
@@ -1495,7 +1497,12 @@ export interface NoticeSummaryModel {
 export interface DelegationSettings {
   maxChildren: number;
   anyChat: boolean;
+  /** When an agent's message reaches a working agent: `step` (absent) inside the running turn, `turn` after it. */
+  delivery?: DelegationDelivery;
 }
+/** `step`: an agent's message is read inside the running turn, at its next step; `turn`: when the turn ends. */
+export const DELEGATION_DELIVERY = ['step', 'turn'] as const;
+export type DelegationDelivery = (typeof DELEGATION_DELIVERY)[number];
 /** The delegation a runtime keeps when it was never set (wire.DefaultDelegation). */
 export const DEFAULT_DELEGATION: DelegationSettings = { maxChildren: 5, anyChat: false };
 /** The counts «Поручений на один чат» offers. */
@@ -2402,7 +2409,7 @@ const profileInfo: Decoder<ProfileInfo> = object(
     key: profileKey,
     models: array(agentModel),
   },
-  { login: object({ account: str }), switch: object({ on: bool }) },
+  { login: object({ account: str }), switch: object({ on: bool }), account: bool },
 );
 const profileList: Decoder<ProfileList> = object({ profiles: array(profileInfo) });
 const profileTest: Decoder<ProfileTest> = object({
@@ -2869,7 +2876,7 @@ const runtimeSettings: Decoder<RuntimeSettings> = object(
   {
     limitContinue: oneOf(ON_OFFS),
     restartContinue: oneOf(ON_OFFS),
-    delegation: object({ maxChildren: int, anyChat: bool }),
+    delegation: object({ maxChildren: int, anyChat: bool }, { delivery: oneOf(['step', 'turn'] as const) }),
     noticeSummary: object({ provider: oneOf(['claude', 'codex', 'off', 'auto'] as const) }, { model: str }),
   },
 );

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -94,6 +95,10 @@ func TestLaunchVariablesRefused(t *testing.T) {
 		"twice":                 {[]EnvInput{{Name: "A", Value: str("1")}, {Name: "A", Value: str("2")}}, ReasonBadEnv},
 		"two lines":             {[]EnvInput{{Name: "A", Value: str("1\n2")}}, ReasonBadEnv},
 		"a secret without one":  {[]EnvInput{{Name: "ANTHROPIC_API_KEY", Secret: true}}, ReasonBadEnv},
+		// A Claude subscription has one sign-in on a machine, the CLI's own: a provider brings no second one.
+		"a subscription's variable":        {[]EnvInput{{Name: "CLAUDE_CODE_OAUTH_TOKEN", Value: str("x"), Secret: true}}, ReasonEnvReserved},
+		"a subscription's token, secret":   {[]EnvInput{{Name: "ANTHROPIC_AUTH_TOKEN", Value: str(subscriptionToken), Secret: true}}, ReasonSubscriptionToken},
+		"a subscription's token, in sight": {[]EnvInput{{Name: "MY_VALUE", Value: str(" " + subscriptionToken)}}, ReasonSubscriptionToken},
 	} {
 		env := c.env
 		if _, err := svc.Update(p.ID, Patch{Env: &env}); ReasonOf(err) != c.reason {
@@ -104,5 +109,59 @@ func TestLaunchVariablesRefused(t *testing.T) {
 	bad := []EnvInput{{Name: "ANTHROPIC_AUTH_TOKEN", Value: str("typed")}, {Name: "PATH", Value: str("/tmp")}}
 	if _, err := svc.Update(p.ID, Patch{Env: &bad}); ReasonOf(err) != ReasonEnvReserved || len(sec) != 0 {
 		t.Fatalf("a refused list: %v, safe %v", err, sec)
+	}
+}
+
+// subscriptionToken has the shape of the token of a Claude subscription's sign-in; it is no token of anyone.
+const subscriptionToken = "sk-ant-" + "oat01-not-a-token-of-anyone"
+
+func TestAProviderTakesNoSubscriptionTokenForAKey(t *testing.T) {
+	svc, sec := newService(t)
+	in := Input{Name: "Second", BaseURL: "https://api.anthropic.com", API: APIAnthropic, Preset: PresetCustom, Key: subscriptionToken}
+	if _, err := svc.Create(in); ReasonOf(err) != ReasonSubscriptionToken || len(sec) != 0 {
+		t.Fatalf("made with a subscription's token: %v, safe %v", err, sec)
+	}
+	// A key of the API at the same address is a provider like any other, and more than one.
+	in.Key = "sk-ant-" + "api03-not-a-key-of-anyone"
+	a, err := svc.Create(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := svc.Create(in); err != nil || b.ID == a.ID || b.Name == a.Name {
+		t.Fatalf("a second account by a key: %+v %v", b, err)
+	}
+	token := subscriptionToken
+	if _, err := svc.Update(a.ID, Patch{Key: &token}); ReasonOf(err) != ReasonSubscriptionToken {
+		t.Fatalf("the key was changed for a subscription's token: %v", err)
+	}
+}
+
+// The vendors Claude Code runs on by a key are templates: as many accounts of one as the person has keys, each under
+// its own name and with the vendor's models, so each is a profile a chat is started on.
+func TestSeveralAccountsOfAVendorByTheirKeys(t *testing.T) {
+	svc, _ := newService(t)
+	for _, preset := range []string{"anthropic", "kimi-code", "kimi", "glm", "glm-cn"} {
+		k := slices.IndexFunc(presets, func(p Preset) bool { return p.ID == preset })
+		if k < 0 || presets[k].API != APIAnthropic {
+			t.Fatalf("no template %s Claude Code runs on", preset)
+		}
+		tpl := presets[k]
+		in := Input{Name: tpl.Name, BaseURL: tpl.BaseURL, API: tpl.API, Preset: tpl.ID, Key: "a-key-of-no-one-1"}
+		first, err := svc.Create(in)
+		if err != nil {
+			t.Fatalf("%s: %v", preset, err)
+		}
+		in.Name, in.Key = "Команда", "a-key-of-no-one-2"
+		in.Name = tpl.Name + " · команда"
+		second, err := svc.Create(in)
+		if err != nil || second.ID == first.ID || second.Name != tpl.Name+" · команда" {
+			t.Fatalf("%s: a second account: %+v %v", preset, second, err)
+		}
+		if !first.Default || second.Default {
+			t.Fatalf("%s: the default account: %v %v", preset, first.Default, second.Default)
+		}
+		if len(first.Models) != len(tpl.Models) || len(second.Models) != len(tpl.Models) {
+			t.Fatalf("%s: the template's models: %v %v", preset, first.Models, second.Models)
+		}
 	}
 }

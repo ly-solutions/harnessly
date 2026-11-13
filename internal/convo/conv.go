@@ -266,6 +266,9 @@ type conv struct {
 	// shots are the pictures the agent looked at, newest first, and shotPaths the files they are, by id.
 	shots     []wire.Shot
 	shotPaths map[string]string
+	// peerAtOnce are the client ids of the agents' messages on their way here that this machine's delegation marked
+	// to be read at once (DeliverPeerAtOnce); the send that brings one takes its mark.
+	peerAtOnce map[string]struct{}
 	// pics is what the messages name and may be shown (pictures.go).
 	pics pictureState
 

@@ -303,6 +303,11 @@ var Routes = all(
 		"POST /api/orgs/{org}/env/groups",
 		"PATCH /api/orgs/{org}/env/groups/{groupId}",
 		"DELETE /api/orgs/{org}/env/groups/{groupId}",
+		// What an agent of a machine proposed for the organization's environment: env.open like the rest, then an
+		// administrator of the organization only (env.openProposals), who applies it under their own session.
+		"GET /api/orgs/{org}/env/proposals",
+		"POST /api/orgs/{org}/env/proposals/{proposalId}/apply",
+		"POST /api/orgs/{org}/env/proposals/{proposalId}/decline",
 	),
 	guarded("internal/hub/env", Person, "auth.Require: the settings of the signed-in person",
 		"GET /api/me/env/machines",

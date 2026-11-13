@@ -1,6 +1,9 @@
 export type TUsageProvider = 'claude' | 'codex';
 
-/** [day, provider, model, project, input, output, cacheRead, cacheWrite, costUsd, apiCalls] */
+/**
+ * [day, provider, model, project, input, output, cacheRead, cacheWrite, costUsd, apiCalls, account?]: the account of the
+ * provider the row was paid by comes last and only where the machine noted one.
+ */
 export type TUsageRow = [
   string,
   TUsageProvider,
@@ -12,6 +15,7 @@ export type TUsageRow = [
   number,
   number,
   number,
+  string?,
 ];
 
 export interface IUsageDay {

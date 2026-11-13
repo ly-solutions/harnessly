@@ -269,6 +269,24 @@ describe("the limits of the vendors' profiles", () => {
     expect(glm?.plan).toBe('GLM Pro');
   });
 
+  it("shows a chat on a provider's account the limits of that account and of no other", () => {
+    const limits = readLimitsOf(doc);
+    if (!limits) throw new Error('no limits');
+    const own = {
+      ...limits,
+      profiles: {
+        ...limits.profiles,
+        'api:glm/glm-work': { ...limits.profiles.glm, profile: 'api:glm', account: 'glm-work', plan: 'Work' },
+        'api:glm/glm-home': { ...limits.profiles.glm, profile: 'api:glm', account: 'glm-home', plan: 'Home' },
+      },
+    };
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-glm-home' })?.plan).toBe('Home');
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-glm-work' })?.plan).toBe('Work');
+    // An account the machine has no limits of shows none, not its neighbour's.
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-glm-third' })).toBeNull();
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-home' })).toBeNull();
+  });
+
   it('finds an account by its name, and the balance of a platform paid by the token', () => {
     const limits = readLimitsOf(doc);
     if (!limits) throw new Error('no limits');

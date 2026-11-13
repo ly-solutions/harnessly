@@ -131,7 +131,7 @@ func newCoreAgents(c coreAgentsConfig) *coreAgents {
 	if router != nil {
 		profiles.Switches["auto"] = router
 	}
-	launcher := providers.Launcher{Store: profiles, Relay: codexRelay(c)}
+	launcher := providers.Launcher{Store: profiles, Relay: codexRelay(c), SyncHome: syncCodexLoginHome}
 	editor := func() (string, error) {
 		script := c.EditorScript
 		if script == "" {

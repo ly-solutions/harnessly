@@ -882,6 +882,9 @@ func (r *Runtime) Attach(id, session, transcriptPath, agentSessionID string) err
 		}
 		if agentSessionID != "" {
 			c.rec.AgentSessionID = agentSessionID
+			if m := c.rec.Model; m != nil && m.Profile != "" && c.d.SessionAccount != nil {
+				c.d.SessionAccount(c.rec.Provider, agentSessionID, m.Profile)
+			}
 		}
 		if transcriptPath != "" && transcriptPath != c.rec.TranscriptPath {
 			// The first transcript of a conversation that began in v2 may hold a turn already (the agent writes it after

@@ -78,6 +78,10 @@ type Item struct {
 	Get      func() (string, error)
 	// Set is given a value that passed the check of its kind.
 	Set func(value string) error
+	// SetBy, when set, is called in place of Set and is also told who asks (a change that is made elsewhere, in the
+	// hub, says the chat it comes from). Its note, when not empty, says what became of the value in place of a
+	// change made here: it was passed on and waits for someone else's yes.
+	SetBy func(value string, by Actor) (note string, err error)
 	// Free lets an enum take a value that is none of Options when it says so (a model the provider does not list);
 	// for a text it is the whole check.
 	Free func(value string) bool
@@ -180,6 +184,12 @@ type Refusal struct {
 }
 
 func (r *Refusal) Error() string { return "settingsctl: " + r.Reason }
+
+// Said is an error of a setting's Set whose words are for the person and the agent: a change that was refused where it
+// is made (the hub said the person has no right to it).
+type Said struct{ Message string }
+
+func (e *Said) Error() string    { return e.Message }
 func (r *Refusal) Unwrap() error { return r.Err }
 
 // RefusalOf is the refusal of any error of the service.
@@ -230,6 +240,8 @@ type Change struct {
 	Via      string `json:"via"`
 	// Why is the agent's one line of why it changed the setting.
 	Why string `json:"why,omitempty"`
+	// Note, when not empty, says that the value was not set here but passed on, and what it waits for.
+	Note string `json:"note,omitempty"`
 }
 
 // The states of a proposal.
@@ -255,6 +267,9 @@ type Proposal struct {
 	Conv      string `json:"conv"`
 	ConvTitle string `json:"convTitle"`
 	State     string `json:"state"`
+	// Failed says why a change the person agreed to was not made, in the setting's words; "" for one that was not
+	// tried or was made. Such a proposal is declined: nothing changed.
+	Failed string `json:"failed,omitempty"`
 }
 
 type proposal struct {
@@ -379,8 +394,18 @@ func (s *Service) Apply(key, value string, by Actor, via, why string) (Change, e
 	if err != nil {
 		return Change{}, err
 	}
-	if err := it.Set(value); err != nil {
-		return Change{}, &Refusal{Reason: ReasonFailed, Setting: &cur, Err: err}
+	set := it.Set
+	note := ""
+	if it.SetBy != nil {
+		set = func(v string) (err error) { note, err = it.SetBy(v, by); return err }
+	}
+	if err := set(value); err != nil {
+		r := &Refusal{Reason: ReasonFailed, Setting: &cur, Err: err}
+		var said *Said
+		if errors.As(err, &said) {
+			r.Message = said.Message
+		}
+		return Change{}, r
 	}
 	said := it.label(value)
 	if it.Kind == KindText {
@@ -391,7 +416,7 @@ func (s *Service) Apply(key, value string, by Actor, via, why string) (Change, e
 		}
 	}
 	ch := Change{ID: newID("sc_"), At: s.now().UnixMilli(), Key: key, Title: it.Title, Old: cur.Value, New: value,
-		OldLabel: cur.ValueLabel, NewLabel: said, By: by, Via: via, Why: CleanWhy(why)}
+		OldLabel: cur.ValueLabel, NewLabel: said, By: by, Via: via, Why: CleanWhy(why), Note: note}
 	if s.Journal != nil {
 		_ = s.Journal.Append(ch)
 	}
@@ -574,6 +599,9 @@ func (s *Service) Approve(id string) (Outcome, error) {
 	p.settled = s.now()
 	if err != nil {
 		p.State = StateDeclined
+		if p.Failed = RefusalOf(err).Message; p.Failed == "" {
+			p.Failed = "the change was not made"
+		}
 		close(p.done)
 		s.bump()
 		return Outcome{}, err

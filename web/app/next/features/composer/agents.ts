@@ -19,6 +19,8 @@ export interface IPickerAgent {
   profile?: string | null;
   /** The vendor of a profile group, for its mark; absent for Claude and Codex. */
   vendor?: Vendor | null;
+  /** The group a new chat of the agent starts on in place of the agent itself (its main sign-in). */
+  preferred?: boolean;
   name: string;
   short: string;
   models: readonly AgentModel[];

@@ -98,6 +98,7 @@ func (t *txn) oneLink(ref Ref, id string) (link, error) {
 
 type linkInput struct {
 	Rights, Title, Pinned string
+	Target                string // Info.Target of the request that makes the link
 	Term                  ttl
 }
 
@@ -117,8 +118,8 @@ func (t *txn) createLink(ref Ref, actor string, in linkInput) (link, string, err
 		return link{}, "", fail("conflict", "Слишком много действующих ссылок: отключите ненужные")
 	}
 	token, id := newToken(), newID()
-	if _, err := t.q.Exec(t.ctx, `INSERT INTO resource_guest_links (link_id, kind, id, space_id, token_hash, rights, pinned_version, title, created_by, created_at, expires_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?)`, id, ref.Kind, ref.ID, ref.Space, hashToken(token), in.Rights, in.Pinned, clip(in.Title, maxTitle), actor, ms(t.now), nullTime(exp)); err != nil {
+	if _, err := t.q.Exec(t.ctx, `INSERT INTO resource_guest_links (link_id, kind, id, space_id, token_hash, rights, pinned_version, title, options, created_by, created_at, expires_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?)`, id, ref.Kind, ref.ID, ref.Space, hashToken(token), in.Rights, in.Pinned, clip(in.Title, maxTitle), in.Target, actor, ms(t.now), nullTime(exp)); err != nil {
 		return link{}, "", err
 	}
 	if err := t.log(ref, actor, "link_create", id, map[string]any{"rights": in.Rights}); err != nil {
@@ -186,6 +187,8 @@ func (t *txn) revokeAllLinks(ref Ref, actor string) (int64, error) {
 // Guest is what a token opens: the resource, the rights and the version the link shows.
 type Guest struct {
 	LinkID, Title, Rights, Pinned string
+	// Target is what the link was made for (Info.Target): "" for the kind's ordinary resource.
+	Target string
 	Ref
 	Expires *time.Time
 }
@@ -207,7 +210,11 @@ func (s *Service) Resolve(ctx context.Context, token string) (*Guest, error) {
 	if l.Revoked != nil || (l.Expires != nil && !l.Expires.After(t.now)) {
 		return nil, fail("gone", "Ссылка отключена или её срок вышел")
 	}
-	return &Guest{LinkID: l.ID, Title: l.Title, Rights: l.Rights, Pinned: l.Pinned, Ref: l.Ref, Expires: l.Expires}, nil
+	g := &Guest{LinkID: l.ID, Title: l.Title, Rights: l.Rights, Pinned: l.Pinned, Ref: l.Ref, Expires: l.Expires}
+	if err := t.q.QueryRow(ctx, `SELECT options FROM resource_guest_links WHERE link_id = ?`, l.ID).Scan(&g.Target); err != nil {
+		return nil, err
+	}
+	return g, nil
 }
 
 // RecordOpen counts one opening of a link.

@@ -143,6 +143,30 @@ describe('liveEnv', () => {
     expect(seen[0]?.body).toEqual({ layer: 'tenant', scopeId: 't1', when: 'now' });
   });
 
+  it('reads and decides the proposals of agents', async () => {
+    const one = {
+      id: 'p1',
+      change: 'add',
+      name: 'Шлюз',
+      hint: '',
+      machine: 'ноутбук',
+      owner: 'Анна',
+      conv: 'tab-1',
+      convTitle: 'Чат',
+      createdAt: 1,
+      expiresAt: 2,
+    };
+    const seen = answer(200, { proposals: [one] });
+    expect(await liveEnv().envProposals('acme')).toEqual([one]);
+    await liveEnv().envProposalApply('acme', 'p 1');
+    await liveEnv().envProposalDecline('acme', 'p1');
+    expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual([
+      'GET /api/orgs/acme/env/proposals',
+      'POST /api/orgs/acme/env/proposals/p%201/apply',
+      'POST /api/orgs/acme/env/proposals/p1/decline',
+    ]);
+  });
+
   it('turns the hub’s refusals into the codes the screen reads', async () => {
     const cases: [number, string, string][] = [
       [409, 'exists', 'Это уже есть в окружении.'],

@@ -35,7 +35,9 @@ type Envelope struct {
 }
 
 var (
-	envelopeRE = regexp.MustCompile(`(?s)^\s*<peer-message\b([^>]*)>\n?(.*?)\n?</peer-message>\s*$`)
+	// envelopeRE is one envelope; a text is envelopes and nothing else when only blank space is left between them. A
+	// body cannot hold the closing tag (Wrap neutralizes it), so the shortest match is the whole envelope.
+	envelopeRE = regexp.MustCompile(`(?s)<peer-message\b([^>]*)>\n?(.*?)\n?</peer-message>`)
 	attrRE     = regexp.MustCompile(`([a-z-]+)="([^"]*)"`)
 	// pastedRE is a paste as Claude Code records it; a long message typed by the outbox comes back wrapped in one.
 	pastedRE = regexp.MustCompile(`(?s)^\s*<pasted_content id="([^"]+)">\n?(.*?)\n?</pasted_content id="([^"]+)">\s*$`)
@@ -117,16 +119,47 @@ func Wrap(e Envelope) string {
 }
 
 // Parse reads an envelope back from a user entry's text (unwrapping the paste Claude Code may have recorded it as).
+// Several agents' messages that went in as one (ParseAll) read as the first of them with the words of all.
 func Parse(text string) (Envelope, bool) {
+	all := ParseAll(text)
+	if len(all) == 0 {
+		return Envelope{}, false
+	}
+	e := all[0]
+	for _, next := range all[1:] {
+		e.Text += "\n\n" + next.Text
+	}
+	return e, true
+}
+
+// ParseAll reads the envelopes a user entry's text is made of: one, or the several that waited in the line and were
+// typed as one message, in their order. A text with anything but envelopes in it is not another agent's message: nil.
+func ParseAll(text string) []Envelope {
 	if m := pastedRE.FindStringSubmatch(text); m != nil && m[1] == m[3] {
 		text = m[2]
 	}
-	m := envelopeRE.FindStringSubmatch(text)
-	if m == nil {
-		return Envelope{}, false
+	found := envelopeRE.FindAllStringSubmatchIndex(text, -1)
+	if len(found) == 0 {
+		return nil
 	}
-	e := Envelope{Text: m[2]}
-	for _, a := range attrRE.FindAllStringSubmatch(m[1], -1) {
+	at := 0
+	out := make([]Envelope, 0, len(found))
+	for _, m := range found {
+		if strings.TrimSpace(text[at:m[0]]) != "" {
+			return nil
+		}
+		at = m[1]
+		out = append(out, envelopeOf(text[m[2]:m[3]], text[m[4]:m[5]]))
+	}
+	if strings.TrimSpace(text[at:]) != "" {
+		return nil
+	}
+	return out
+}
+
+func envelopeOf(attrs, body string) Envelope {
+	e := Envelope{Text: body}
+	for _, a := range attrRE.FindAllStringSubmatch(attrs, -1) {
 		v := html.UnescapeString(a[2])
 		switch a[1] {
 		case "id":
@@ -145,5 +178,5 @@ func Parse(text string) (Envelope, bool) {
 			e.Via = v
 		}
 	}
-	return e, true
+	return e
 }

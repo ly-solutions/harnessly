@@ -15,5 +15,9 @@
   "next.settings.delegation.hint": "An agent can hand a task to another agent in a new chat, shown under its own chat.",
   "next.settings.delegation.maxChildren": "Delegated chats per chat",
   "next.settings.delegation.anyChat": "Write to any chat",
-  "next.settings.delegation.anyChatHint": "Otherwise an agent writes only to the chats it delegated."
+  "next.settings.delegation.anyChatHint": "Otherwise an agent writes only to the chats it delegated.",
+  "next.settings.delegation.delivery": "Messages from agents",
+  "next.settings.delegation.deliveryHint": "When a working agent reads another agent's message: at its next step or after the turn. Questions arrive at once.",
+  "next.settings.delegation.delivery.step": "At once",
+  "next.settings.delegation.delivery.turn": "After the turn"
 }

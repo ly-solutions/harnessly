@@ -2823,6 +2823,99 @@
         }
       ]
     },
+    "env_proposals": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "org_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "machine_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "owner_id",
+          "type": "text"
+        },
+        {
+          "name": "conv",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "conv_title",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "hint",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "remove",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "decided_at",
+          "type": "bigint"
+        },
+        {
+          "name": "decided_by",
+          "type": "text"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "env_proposals_org",
+          "columns": [
+            "org_id",
+            "state"
+          ]
+        }
+      ]
+    },
     "env_runs": {
       "columns": [
         {

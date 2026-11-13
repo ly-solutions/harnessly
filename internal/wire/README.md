@@ -695,7 +695,8 @@ event (`prompt_state`, `message_upsert`); the page never decides that a message 
 63. **Delegated chats.** `conversation.create` may carry `parentId` (a conversation of this machine; an unknown one is
     `refused{not_found}`) and `title` (at most 200 characters, the name from the start): an agent's `delegate_task`
     starts a chat so, and the record carries `parentId` for as long as it lives. `RuntimeSettings.delegation`
-    `{maxChildren 1–10, anyChat}` bounds what agents may delegate; a PUT without it keeps the saved one. Both go only to
+    `{maxChildren 1–10, anyChat, delivery?}` bounds what agents may delegate (`delivery`: `step`, the default — an
+    agent's message goes into the running turn of the chat it is sent to — or `turn`, after that turn); a PUT without it keeps the saved one. Both go only to
     a page that names the cap (`/api/v2/socket?caps=delegation`, and `?caps=delegation` on `/api/v2/runtime-settings`):
     any other page gets the record without `parentId` (an event's older form is encoded with the same seq) and the
     settings without `delegation`.

@@ -41,6 +41,10 @@ func (b *Box) plan(a Agent, head *Record) headPlan {
 	case wire.StateLaunchFailed:
 		return headPlan{reason: wire.QueuedPaused, pause: wire.PausedLaunchFailed}
 	case wire.StateWorking:
+		if head.Agent && st.Compacting {
+			// A compaction reads nothing: another agent's message waits it out in the line, where it cannot be lost.
+			return headPlan{reason: wire.QueuedAgentBusy}
+		}
 		if head.Message.Mode == wire.ModeSteer {
 			return headPlan{reason: wire.QueuedAgentBusy, typing: true, steer: true}
 		}
@@ -49,6 +53,10 @@ func (b *Box) plan(a Agent, head *Record) headPlan {
 		// A permission menu takes keys as its answer: nothing is ever typed into it.
 		return headPlan{reason: wire.QueuedBlockedMenu}
 	case wire.StateWaitingQuestion, wire.StateIdle, wire.StateReady:
+		if head.Agent && st.K == wire.StateWaitingQuestion {
+			// The question is the person's to answer: another agent's words are never typed into it as the answer.
+			return headPlan{reason: wire.QueuedBlockedMenu}
+		}
 		// Text written into an open question is the person's answer in words: the typist chats about it first.
 		return headPlan{reason: wire.QueuedAgentBusy, typing: true}
 	case wire.StateUnknown:
@@ -147,8 +155,8 @@ func (b *Box) Pump(a Agent, size int64, now time.Time) (*Job, Change) {
 			return nil, ch
 		}
 	}
-	msg := typist.Message{Text: head.Message.Text, Images: head.Images, Steer: p.steer, HandOver: p.steer && a.HandOver,
-		Leftovers: b.pasted(), Typed: b.typedTexts(head.Message.ClientID)}
+	msg := typist.Message{Text: head.Message.Text, Images: head.Images, Steer: p.steer, HandOver: p.steer && a.HandOver && !head.Soft,
+		Agent: head.Agent, Leftovers: b.pasted(), Typed: b.typedTexts(head.Message.ClientID)}
 	if a.Screen != nil {
 		switch typist.Decide(msg, *a.Screen, a.Provider).Decision {
 		case typist.DecideBlockedMenu:
@@ -972,6 +980,18 @@ func (b *Box) Status(ids []string) []wire.MessageStatus {
 		out = append(out, wire.MessageStatus{ClientID: id, K: wire.StatusKnown, Message: &m, Handed: r.handed()})
 	}
 	return out
+}
+
+// Steered says whether the message was typed into a turn that ran (it is, or was, read inside that turn).
+func (b *Box) Steered(clientID string) bool {
+	r, ok := b.recs[clientID]
+	return ok && r.Steered && r.TypedAt > 0
+}
+
+// Soft says whether the message, another agent's, is read at the agent's next step rather than at once.
+func (b *Box) Soft(clientID string) bool {
+	r, ok := b.recs[clientID]
+	return ok && r.Soft
 }
 
 // handed is when and where a typed message went: in the agent's input box, in its own queue (steered), with the agent

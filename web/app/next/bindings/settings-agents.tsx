@@ -12,6 +12,7 @@ import {
 } from '@/next/bindings/settings-data';
 import { switchHubEnv } from '@/next/features/hub-env/api';
 import HubEnvSection from '@/next/features/settings/hub-env-section';
+import { CodexLogins } from '@/next/bindings/settings-codex-logins';
 import { useAgentCredentials } from '@/next/bindings/settings-credentials';
 import { useProviders } from '@/next/bindings/settings-providers';
 import { useSpeechKeys } from '@/next/bindings/settings-speech';
@@ -180,6 +181,7 @@ const AgentLoaded = ({
           )
         }
       />
+      {provider === 'codex' && <CodexLogins machine={machine} />}
       <AgentSection
         settings={settings}
         models={models}

@@ -6,6 +6,7 @@ import type {
   EnvCard,
   EnvEntryRow,
   EnvOrderResponse,
+  EnvProposalsResponse,
   EnvRunResponse,
   EnvRunsResponse,
   EnvTryResponse,
@@ -34,6 +35,9 @@ const withSpace = (path: string, space?: string): string =>
 const group = (org: string, id: string): string => orgPath(org, `/env/groups/${encodeURIComponent(id)}`);
 
 const preset = (org: string, id: string): string => orgPath(org, `/env/presets/${encodeURIComponent(id)}`);
+
+const proposal = (org: string, id: string, act: 'apply' | 'decline'): string =>
+  orgPath(org, `/env/proposals/${encodeURIComponent(id)}/${act}`);
 
 const entry = (org: string, id: string): string => orgPath(org, `/env/entries/${encodeURIComponent(id)}`);
 
@@ -79,6 +83,14 @@ export const liveEnv = (): EnvApi => ({
     await http.del(preset(org, presetId));
   },
   envApply: (org, req) => http.post<ApplyResponse>(orgPath(org, '/env/apply'), req),
+  envProposals: async (org) =>
+    (await http.get<EnvProposalsResponse>(orgPath(org, '/env/proposals'))).proposals,
+  envProposalApply: async (org, id) => {
+    await http.post<unknown>(proposal(org, id, 'apply'), {});
+  },
+  envProposalDecline: async (org, id) => {
+    await http.post<unknown>(proposal(org, id, 'decline'), {});
+  },
   catalogPatch: async (org, itemId, req) =>
     (await http.patch<CatalogItemResponse>(orgPath(org, `/catalog/${encodeURIComponent(itemId)}`), req)).item,
   catalogDelete: async (org, itemId) => {

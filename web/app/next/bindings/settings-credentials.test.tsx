@@ -51,7 +51,7 @@ describe('the sign-in of an agent', () => {
     await act(async () => {
       expect(await result.current.onSubmitCode('abc-123')).toBeNull();
     });
-    expect(api.sendLoginCode).toHaveBeenCalledWith('m', 'claude', 'f1', 'abc-123');
+    expect(api.sendLoginCode).toHaveBeenCalledWith('m', 'claude', 'f1', 'abc-123', undefined);
     await waitFor(() => expect(result.current.login.k).toBe('checking'));
   });
 

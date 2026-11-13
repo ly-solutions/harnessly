@@ -31,6 +31,24 @@ describe('mergeTeam', () => {
     expect([...data.missing].sort()).toEqual(['projects', 'punchcard']);
     expect(data.facts).toHaveLength(1);
   });
+  it('reads the account a row was paid by, and none from a row without one', () => {
+    const data = team();
+    data.runtimes[0].report?.usage.push([
+      '2026-11-09',
+      'claude',
+      'kimi-k3.1-pro',
+      '',
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      'Kimi рабочий',
+    ]);
+    expect(mergeTeam(data).facts.map((f) => f.account)).toEqual([null, 'Kimi рабочий']);
+  });
+
   it('a runtime report names none', () => {
     expect(mergeTeam(team()).missing.size).toBe(0);
   });

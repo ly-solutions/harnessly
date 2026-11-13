@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/ly-solutions/harnessly/internal/agents"
 )
 
 // OAuthStub is the Claude Code OAuth token of a profile's chat. Claude Code takes the key of apiKeyHelper before an
@@ -24,6 +26,9 @@ var (
 	ErrUnknownModel = errors.New("providers: the preset has no such model")
 	// ErrNoSecret: a secret variable of the profile has no value in the safe.
 	ErrNoSecret = errors.New("providers: a secret variable of the profile has no value in the safe")
+	// ErrSubscriptionToken: the key or a secret variable of a provider is the token of a Claude subscription's sign-in.
+	// The machine has one such sign-in, the CLI's own; a chat is not started on a second one.
+	ErrSubscriptionToken = errors.New("providers: a provider holds the token of a Claude subscription, not a key of the API")
 	// ErrSwitchOff: the profile's switch is off, or its proxy has no address yet.
 	ErrSwitchOff = errors.New("providers: the profile is switched off")
 
@@ -116,6 +121,9 @@ func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 		val, err := s.Safe(ref)
 		if val = strings.TrimSpace(val); err != nil || val == "" {
 			return "", fmt.Errorf("%w: %s", ErrNoSecret, name)
+		}
+		if agents.ClaudeSubscriptionToken(val) {
+			return "", fmt.Errorf("%w: %s", ErrSubscriptionToken, name)
 		}
 		env[name] = val
 		taken = append(taken, val)

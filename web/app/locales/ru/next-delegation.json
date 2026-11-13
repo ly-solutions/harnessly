@@ -15,5 +15,9 @@
   "next.settings.delegation.hint": "Агент может поручить задачу другому агенту в новом чате — он появится под своим чатом.",
   "next.settings.delegation.maxChildren": "Поручений на один чат",
   "next.settings.delegation.anyChat": "Писать в любые чаты",
-  "next.settings.delegation.anyChatHint": "Без этого агент пишет только в чаты, которые поручил сам."
+  "next.settings.delegation.anyChatHint": "Без этого агент пишет только в чаты, которые поручил сам.",
+  "next.settings.delegation.delivery": "Сообщения от агентов",
+  "next.settings.delegation.deliveryHint": "Когда работающий агент читает сообщение другого агента: на ближайшем шаге или после хода. Вопросы приходят сразу.",
+  "next.settings.delegation.delivery.step": "Сразу",
+  "next.settings.delegation.delivery.turn": "После хода"
 }

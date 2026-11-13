@@ -153,6 +153,29 @@ func TestCustomProfileRefusals(t *testing.T) {
 	if _, err := s.SettingsFile("x-gone", "m", hooks); !errors.Is(err, ErrNoSecret) {
 		t.Fatalf("a missing secret: %v", err)
 	}
+	// A secret that is the token of a Claude subscription starts no chat: the machine has one such sign-in.
+	token := "sk-ant-" + "oat01-not-a-token-of-anyone"
+	s2, hooks2 := customStore(t, map[string]string{"named": token, "named-key": token})
+	SetCustom([]Preset{
+		{ID: "x-second", Label: "Second", Vendor: wire.VendorOwn, Via: wire.ProviderClaude, BaseURL: "https://api.anthropic.com", Host: "api.anthropic.com",
+			Models: []Model{{ID: "m"}}, Small: "m", Test: "m", SecretEnv: map[string]string{"ANTHROPIC_AUTH_TOKEN": "named"}},
+		{ID: "x-keyed", Label: "Keyed", Vendor: wire.VendorOwn, Via: wire.ProviderClaude, BaseURL: "https://api.anthropic.com", Host: "api.anthropic.com",
+			KeyRef: "named-key", Models: []Model{{ID: "m"}}, Small: "m", Test: "m"},
+		{ID: "x-gone", Label: "Gone", Vendor: wire.VendorAuto, Via: wire.ProviderClaude, BaseURL: "https://a.example", Host: "a.example",
+			Models: []Model{{ID: "m"}}, Small: "m", Test: "m", SecretEnv: map[string]string{"ANTHROPIC_AUTH_TOKEN": "missing"}},
+		{ID: "x-codex", Label: "Codex one", Via: wire.ProviderCodex, Models: []Model{{ID: "m"}}},
+		{ID: "x-empty", Label: "No models", Via: wire.ProviderClaude},
+		{ID: "kimi", Label: "Not Kimi", Via: wire.ProviderClaude, Models: []Model{{ID: "m"}}},
+	})
+	if _, err := s2.SettingsFile("x-second", "m", hooks2); !errors.Is(err, ErrSubscriptionToken) {
+		t.Fatalf("a subscription's token in a variable: %v", err)
+	}
+	if s2.Ready("x-keyed") {
+		t.Fatal("a provider whose key is a subscription's token is ready")
+	}
+	if raw, err := os.ReadFile(s2.KeyFile("x-keyed")); err == nil {
+		t.Fatalf("the token was written as the key: %d bytes", len(raw))
+	}
 	for _, id := range []string{"x-codex", "x-empty"} {
 		if _, ok := Find(id); ok {
 			t.Errorf("%s is no profile Claude Code starts on", id)

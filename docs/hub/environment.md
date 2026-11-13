@@ -484,6 +484,27 @@ The person's own accounts are set up on the machine: on the Settings screen, or 
 An agent names secrets the same way and asks the person for a missing one with `harnessly secret ask`; outside the
 Settings window its change waits for the person's confirmation on a card.
 
+#### Proposals of an agent
+
+An agent may propose a provider for the whole organization, with `harnessly settings` and the key
+`environment.providers` (a machine of a hub only): `{"name", "hint"?, …the source}` adds the provider of that name or
+changes it, `{"name", "remove": true}` takes it out of the environment. The machine's link proves the machine, not a
+person — whoever drives a chat on an admin's machine is not that admin — so a machine changes nothing: the proposal
+travels as the event `env.propose` (`hubproto.EnvProposal`), the hub checks its shape with the rules of a source and
+keeps it (`env_proposals`), and answers with the op `env.proposed` (`hubproto.EnvProposalResult`): `202`, it waits, or
+a refusal with its words. The machine asks twice: first with `check` (nothing is kept), so that a wrong value is
+refused before any card, then for the proposal itself, after the person confirmed it on the card; the agent is told
+«proposed, nothing is changed yet». No value of a secret is carried: a key and a secret variable are named.
+
+An organization admin decides it on the environment screen, in the block «Предложения агентов», under their own
+session: `GET /api/orgs/{org}/env/proposals` lists the waiting ones — what would change (the source as proposed, and the
+one of that name the organization has now), the machine, who connected it and the chat it came from —
+`POST …/env/proposals/{id}/apply` makes the change through the handlers of the screen (the admin's rights, the same
+checks, the same journal, whose line names the admin as the author and says it was an agent's proposal, from which chat
+and machine), `POST …/env/proposals/{id}/decline` drops it. Nobody but an organization admin sees or decides them; being
+an administrator of the installation does not count here. A proposal waits seven days; the same machine proposing the
+same name again replaces its waiting one; a machine keeps at most five waiting and an organization twenty.
+
 ### Order
 
 Scripts run in the order of the list: the organization's first, then the tenant's, then the team's, each layer in its

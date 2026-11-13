@@ -1,14 +1,18 @@
 package providers
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ly-solutions/harnessly/internal/agents"
 	"github.com/ly-solutions/harnessly/internal/agents/claude"
 	"github.com/ly-solutions/harnessly/internal/agents/codex"
+	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
 func claudeCfg(t *testing.T, st *Store, withProfiles bool) claude.LaunchConfig {
@@ -214,5 +218,84 @@ func TestLauncherLookup(t *testing.T) {
 	}
 	if !l.OwnsModel(models[0]) || l.OwnsModel("opus") || l.OwnsModel("gpt-5.4") {
 		t.Fatal("owns")
+	}
+}
+
+// Another sign-in of the Codex CLI is a profile without a provider of its own: the chat is the CLI itself, started with
+// that sign-in's home. It is ready when the home is signed in, whatever keys the machine has.
+func TestACodexSignInProfileRunsTheCLIInItsOwnHome(t *testing.T) {
+	st := newStore(t)
+	plan, _ := Find("gpt")
+	home := filepath.Join(t.TempDir(), "it's a home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	SetCodexLogins([]Preset{
+		{ID: "cx-work", Label: "Рабочий", Vendor: plan.Vendor, Via: plan.Via, Models: plan.Models, Home: home}, // not of Codex: left out
+		{ID: "cx-none", Label: "Без дома", Via: "codex", Models: plan.Models},
+		{ID: "cx-second", Label: "Второй", Vendor: plan.Vendor, Via: "codex", Models: plan.Models, Home: home},
+	})
+	t.Cleanup(func() { SetCodexLogins(nil) })
+	if _, ok := Find("cx-work"); ok {
+		t.Fatal("a profile that is not of Codex was kept")
+	}
+	if _, ok := Find("cx-none"); ok {
+		t.Fatal("a profile without a home was kept")
+	}
+
+	var synced []string
+	l := Launcher{Store: st, SyncHome: func(id string) error { synced = append(synced, id); return nil }}
+	if via, ready, models, ok := l.Lookup("cx-second"); !ok || via != "codex" || ready || len(models) != len(plan.Models) {
+		t.Fatalf("before the sign-in: %v %v %v %v", via, ready, models, ok)
+	}
+	codexAuth(t, filepath.Join(home, "auth.json"), "chatgpt", "a1", time.Now().Add(time.Hour), true)
+	if _, ready, _, _ := l.Lookup("cx-second"); !ready {
+		t.Fatal("a signed-in home is not ready")
+	}
+	if account, ok := st.LoginOf("cx-second"); !ok || account != "me@example.com" {
+		t.Fatalf("the account of the sign-in: %q %v", account, ok)
+	}
+
+	// It is kept on the Codex page: the vendors' keys neither list it nor take a key for it.
+	src := &Source{Store: st}
+	list, err := src.Profiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range list.Profiles {
+		if p.ID == "cx-second" {
+			t.Fatal("a sign-in of Codex is listed among the vendors' keys")
+		}
+	}
+	if _, err := src.SetProfileKey(context.Background(), "cx-second", "a-test-key"); !errors.Is(err, wire.ErrProfileUnknown) {
+		t.Fatalf("a key for a sign-in of Codex: %v", err)
+	}
+
+	c := codexCfg(t, st, true)
+	c.Profiles = l
+	launch := choose(plan.Models[0].ID, "cx-second")
+	line, err := c.LauncherLine("ws", "", launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(line, "CODEX_HOME="+agents.ShellQuote(home)+" node ") || !strings.Contains(line, "'cx-second/"+plan.Models[0].ID+"'") {
+		t.Fatalf("%q", line)
+	}
+	if len(synced) != 1 || synced[0] != "cx-second" {
+		t.Fatalf("the home was not brought up to date before the launch: %v", synced)
+	}
+	// Codex is given no provider of another vendor: the arguments are those of a chat on the CLI's own account.
+	args, _, err := c.RuntimeArgs("ws", "", launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all := strings.Join(args, " "); strings.Contains(all, "model_provider") || !strings.Contains(all, "-m "+plan.Models[0].ID) {
+		t.Fatalf("%q", all)
+	}
+	// A home that cannot be brought up to date starts nothing.
+	l.SyncHome = func(string) error { return os.ErrPermission }
+	c.Profiles = l
+	if _, err := c.LauncherLine("ws", "", launch); err == nil {
+		t.Fatal("a launch went on without its home")
 	}
 }

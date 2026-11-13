@@ -13,6 +13,9 @@ type Launcher struct {
 	Store *Store
 	// Relay is where Codex reaches a Relayed profile; nil sends it straight to the vendor with the saved key.
 	Relay *RelayEndpoint
+	// SyncHome brings the home of a profile that is another sign-in of Codex up to date before a chat starts in it
+	// (what the main home gained since); nil does nothing.
+	SyncHome func(profile string) error
 }
 
 // RelayEndpoint is the runtime's relay as Codex is told about it: the address of a profile's relay is
@@ -43,6 +46,15 @@ func (l Launcher) Codex(profile string) (agents.CodexProfile, error) {
 	}
 	if p.Via != wire.ProviderCodex {
 		return agents.CodexProfile{}, fmt.Errorf("providers: %s does not run through Codex", profile)
+	}
+	if p.Home != "" {
+		// Another sign-in of the CLI itself: no provider of its own, only the home the chat runs with.
+		if l.SyncHome != nil {
+			if err := l.SyncHome(p.ID); err != nil {
+				return agents.CodexProfile{}, fmt.Errorf("providers: the home of %s: %w", profile, err)
+			}
+		}
+		return agents.CodexProfile{Home: p.Home}, nil
 	}
 	prefix := "model_providers." + p.ID + "."
 	if r := l.Relay; p.Relayed && r != nil && r.Base != "" && r.Header != "" && r.TokenEnv != "" {

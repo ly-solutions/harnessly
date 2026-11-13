@@ -79,7 +79,9 @@ type FilePrice struct {
 var (
 	extraMu sync.RWMutex
 	extra   []Preset
-	custom  []Preset
+	// codexLogins are the profiles of the other sign-ins of the Codex CLI (SetCodexLogins).
+	codexLogins []Preset
+	custom      []Preset
 
 	keyRefShape = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._/-]{0,63}$`)
 	// A name that looks like a vendor's key is refused: the reference is meant to be a name.
@@ -93,6 +95,16 @@ func all() []Preset {
 	extraMu.RLock()
 	defer extraMu.RUnlock()
 	out := append([]Preset(nil), presets...)
+	// A vendor's profile whose key is an account of the person's providers: the key and the name are that account's.
+	// A profile of the file that stands in its place below is the file's own and keeps what the file says.
+	for i := range out {
+		if b, ok := backed[out[i].ID]; ok {
+			out[i].Backed, out[i].KeyRef = true, b.KeyRef
+			if b.Label != "" {
+				out[i].Label = b.Label
+			}
+		}
+	}
 	for _, x := range extra {
 		if i := slices.IndexFunc(out, func(p Preset) bool { return p.ID == x.ID }); i >= 0 {
 			out[i] = x
@@ -100,13 +112,61 @@ func all() []Preset {
 			out = append(out, x)
 		}
 	}
-	// The person's own providers come last and never stand in for a preset or a profile of the file.
-	for _, x := range custom {
+	// The person's own providers come last and never stand in for a preset or a profile of the file; the other
+	// sign-ins of Codex after them, by the same rule.
+	for _, x := range append(append([]Preset(nil), custom...), codexLogins...) {
 		if !slices.ContainsFunc(out, func(p Preset) bool { return p.ID == x.ID }) {
 			out = append(out, x)
 		}
 	}
 	return out
+}
+
+// Backing is the account of the person's providers a vendor's profile runs on: the secret of the safe that holds its
+// key, and the name the person gave the account. An empty KeyRef says there is no account: the profile has no key.
+type Backing struct {
+	KeyRef string
+	Label  string
+}
+
+// AccountVendors are the vendors' profiles whose key is an account of the person's providers, added and removed
+// among the providers and not typed for the profile itself.
+var AccountVendors = []string{"kimi", "kimi-code", "glm", "glm-cn"}
+
+// IsAccountVendor says whether a profile is one of AccountVendors.
+func IsAccountVendor(id string) bool { return slices.Contains(AccountVendors, id) }
+
+// backed is what SetBacked last gave, by the profile's id.
+var backed map[string]Backing
+
+// SetBacked says which account each of the vendors' profiles runs on: the whole map, as the registry has it now. A
+// profile the map does not name keeps the key typed for it.
+func SetBacked(m map[string]Backing) {
+	kept := map[string]Backing{}
+	for id, b := range m {
+		if IsAccountVendor(id) {
+			kept[id] = b
+		}
+	}
+	extraMu.Lock()
+	backed = kept
+	extraMu.Unlock()
+}
+
+// SetCodexLogins replaces the profiles of the other sign-ins of the Codex CLI: the whole list, as the registry
+// (internal/codexaccounts) has it now. One that is not of Codex, has no home, no model or an id that is no profile id
+// is left out.
+func SetCodexLogins(list []Preset) {
+	kept := make([]Preset, 0, len(list))
+	for _, p := range list {
+		if !wire.ValidProfileID(p.ID) || p.Via != wire.ProviderCodex || p.Home == "" || len(p.Models) == 0 {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	extraMu.Lock()
+	codexLogins = kept
+	extraMu.Unlock()
 }
 
 // SetCustom replaces the profiles made of the providers the person added by hand: the whole list, as the registry has

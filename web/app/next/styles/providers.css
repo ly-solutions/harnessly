@@ -56,6 +56,13 @@
 .hx-prov__body .hx-segmented {
   justify-self: start;
 }
+/* Ключ вендора не переехал в аккаунты: сказано над полем ключа */
+.hx-prov__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hx-fg-2);
+}
 .hx-preset {
   display: flex;
   flex-direction: column;

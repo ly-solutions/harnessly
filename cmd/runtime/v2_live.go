@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/ly-solutions/harnessly/internal/apps"
 	"github.com/ly-solutions/harnessly/internal/browseract"
-	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/fileplace"
 	"github.com/ly-solutions/harnessly/internal/history"
 	"net/http"
@@ -25,6 +24,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/catalog"
 	"github.com/ly-solutions/harnessly/internal/chatmove"
 	"github.com/ly-solutions/harnessly/internal/chatwork"
+	"github.com/ly-solutions/harnessly/internal/codexaccounts"
 	"github.com/ly-solutions/harnessly/internal/convo"
 	"github.com/ly-solutions/harnessly/internal/delegation"
 	"github.com/ly-solutions/harnessly/internal/design"
@@ -159,12 +159,17 @@ func newV2Live(d deps, c *core) *v2Live {
 	// machine's safe, and the profiles follow the registry.
 	extSvc := extProvidersFor(d)
 	v.profiles.Safe = extSvc.Secrets.Reveal
+	moveVendorKeys(extSvc, v.profiles)
 	syncExtProfiles(extSvc, v.profiles)
-	onExtProviderChange(d.DataDir, func(string, *extproviders.Provider, *extproviders.Provider) {
-		syncExtProfiles(extSvc, v.profiles)
-	})
+	// The other sign-ins of the Codex CLI start Codex chats in their own homes.
+	codexLogins := &codexaccounts.Store{Dir: d.DataDir, Main: providers.CodexHome(d.Home)}
+	codexLoginStore.Store(codexLogins)
+	syncCodexLoginProfiles(codexLogins)
+	codexHub := &codexLoginFlows{store: codexLogins}
+	codexLoginHub.Store(codexHub)
 	v.machine = newLiveMachine(v2Machine, version, features, d.DataDir, func() int { return v.rt.Busy() }, c.preflight, c.v2Models)
 	v.machine.offers = profileOffers(v.profiles)
+	followExtProviders(d.DataDir, extSvc, v.profiles, v.machine.republishProfiles)
 	if c.agents != nil {
 		v.machine.skip = c.agents.claude.SkipPermissions
 		v.machine.codexConfig = filepath.Join(d.Home, ".codex", "config.toml")
@@ -204,7 +209,7 @@ func newV2Live(d deps, c *core) *v2Live {
 	summarizer.models = v.machine.modelsOf
 	var noticesRT atomic.Pointer[convo.Runtime]
 	notices := newChatNotices(c, &noticesRT)
-	v.rt = convo.New(convo.Deps{Notify: notices.notice, Moves: moveStore, Index: index, Digest: digest, ExportDir: filepath.Join(d.DataDir, "v2", "chat-exports"), AgentSession: ses.Find, MachineID: v2Machine, Publisher: publisher, Machine: v.tm, Launcher: v.starter, Input: codexInputOf(c), Handoffs: handoffs,
+	v.rt = convo.New(convo.Deps{Notify: notices.notice, Moves: moveStore, Index: index, Digest: digest, ExportDir: filepath.Join(d.DataDir, "v2", "chat-exports"), AgentSession: ses.Find, SessionAccount: noteSessionAccount(d.DataDir, v.profiles), MachineID: v2Machine, Publisher: publisher, Machine: v.tm, Launcher: v.starter, Input: codexInputOf(c), Handoffs: handoffs,
 		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{Index: c.transcripts}, Transcripts: c.transcripts, Shots: &shots.Reader{Index: c.transcripts}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir, imagesDir(d), codexImagesDir(d)}, Titler: titler.Title, Summarizer: turnSummarizer(d.DataDir, summarizer.Summarize), SummaryModel: func() *wire.NoticeSummaryModel { return runtimeSettings.RuntimeSettings().NoticeSummary }, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
 		Terminals: terminals, IdleStop: func() time.Duration { return runtimeSettings.RuntimeSettings().IdleStop.After() },
 		IdleFloor: idleFloor, MemoryShort: memoryShort, PressureStop: pressureFloor, LegacyLife: !sessionOwnerOn(os.Getenv),
@@ -306,11 +311,23 @@ func newV2Live(d deps, c *core) *v2Live {
 	// A key an agent printed (a `cat` of its file, an environment dump) leaves the machine masked.
 	wire.SetRedactor(v.profiles.Redact)
 	if c.agents != nil && c.agents.checker != nil {
-		v.srv.Logins = v2Logins(d.Home, cachedPath(c.agents.checker.ShellPath), func(wire.Provider) {
+		shellPath := cachedPath(c.agents.checker.ShellPath)
+		v.srv.Logins = v2Logins(d.Home, shellPath, func(wire.Provider) {
 			// The account changed: the next look at the CLIs is a fresh one, and the page hears it.
 			c.agents.checker.Invalidate()
 			safego.Go("machine refresh", func() { v.machine.refresh() })
 		})
+		// One more sign-in of Codex signs in and out in its own home; the profiles of the sign-ins follow.
+		codexHub.make = func(codexHome string, changed func(wire.Provider)) wire.LoginSource {
+			return v2LoginsIn(d.Home, codexHome, shellPath, changed)
+		}
+		codexHub.changed = v.machine.republishProfiles
+		codexHub.inUse = func(profile string) bool {
+			snap, err := v.rt.Conversations(context.Background())
+			// A list that could not be read does not say the sign-in is free.
+			return err != nil || liveOn(profile, snap.Conversations)
+		}
+		v.srv.AccountLogins = codexHub.of
 	}
 	v.srv.Context = v.rt.Context
 	v.srv.MessageStatus = v.rt.MessageStatus
@@ -1051,7 +1068,7 @@ func profileOffers(store *providers.Store) func(wire.Provider) []wire.ProfileOff
 	return func(p wire.Provider) []wire.ProfileOffer {
 		var out []wire.ProfileOffer
 		for _, pr := range providers.Presets() {
-			if pr.Via == p {
+			if pr.Via == p && !pr.Unlisted {
 				out = append(out, wire.ProfileOffer{ID: pr.ID, Label: pr.Label, Vendor: pr.Vendor,
 					Configured: store.Ready(pr.ID), Models: store.AgentModels(pr)})
 			}

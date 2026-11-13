@@ -431,7 +431,7 @@ func New(o Options) (*Hub, error) {
 	h.Machines = machines.New(machines.Deps{
 		Config: cfg, DB: db, Auth: h.Auth, Spaces: h.Spaces, Reg: h.Registry, Tickets: h.Tickets, Limiter: o.Limiter, Log: log, Now: o.Now,
 		OnRevoked: func(machineID string) { px.Forget(machineID) }, Usage: usageSink, Budget: budgetSink, Env: envSink,
-		Provider: prov, Features: machineFeatures, Publisher: o.Publisher, Design: h.Design, Docs: h.Docs, Automations: h.Automations,
+		Provider: prov, Features: machineFeatures, Publisher: o.Publisher, Design: h.Design, Docs: h.Docs, Proposals: h.Env, Automations: h.Automations,
 		History: historySink, Switches: h.Switches, Notice: noticeOf(o.Mailer),
 	})
 	h.Analytics.UseMachines(h.Machines)

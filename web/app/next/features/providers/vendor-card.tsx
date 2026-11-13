@@ -6,6 +6,7 @@ import { useState } from 'react';
 import {
   defaultPreset,
   presetName,
+  keyNotMoved,
   presetsOfVendor,
   type IPresetActions,
   type IPresetState,
@@ -79,6 +80,11 @@ const VendorCard = ({ vendor, states, open, limits, onToggle, ...actions }: IVen
                 options={presets.map((p) => ({ value: p.id, label: presetName(p) }))}
                 onChange={setPicked}
               />
+            )}
+            {keyNotMoved(vendor, states) && (
+              <p className="hx-prov__note" role="status">
+                {t('next.providers.keyNotMoved')}
+              </p>
             )}
             <PresetPanel key={current.id} state={current} vendor={name} {...actions} />
           </div>

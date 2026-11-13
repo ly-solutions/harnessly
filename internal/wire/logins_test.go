@@ -153,3 +153,39 @@ func TestLoginFlowShape(t *testing.T) {
 		}
 	}
 }
+
+// One more account of a CLI signs in on the same routes with `?account=`: its own source answers, the main one is not
+// touched, and an account nobody knows is not found.
+func TestASignInOfAnotherAccountGoesToItsOwnSource(t *testing.T) {
+	g := newRig(t, time.Hour)
+	main, second := &fakeLogins{}, &fakeLogins{}
+	g.srv.Logins = main
+	var st wire.LoginStatus
+	if code := g.do("GET", "/api/v2/agents/codex/login?account=ab12", nil, &st); code != http.StatusNotFound {
+		t.Fatalf("a machine without accounts answers %d", code)
+	}
+	g.srv.AccountLogins = func(p wire.Provider, account string) (wire.LoginSource, bool) {
+		if p == wire.ProviderCodex && account == "ab12" {
+			return second, true
+		}
+		return nil, false
+	}
+	if code := g.do("POST", "/api/v2/agents/codex/login?account=ab12", jsonBody(wire.LoginStart{Mode: wire.LoginDevice}), &st); code != 200 {
+		t.Fatalf("start: %d", code)
+	}
+	var ok wire.LoginOK
+	if code := g.do("POST", "/api/v2/agents/codex/logout?account=ab12", nil, &ok); code != 200 || !ok.OK {
+		t.Fatalf("logout: %d", code)
+	}
+	if got := strings.Join(second.calls, "|"); got != "start codex device|logout codex" {
+		t.Fatalf("the account's source: %q", got)
+	}
+	if len(main.calls) != 0 {
+		t.Fatalf("the main sign-in was touched: %v", main.calls)
+	}
+	for _, path := range []string{"/api/v2/agents/codex/login?account=zz99", "/api/v2/agents/claude/login?account=ab12"} {
+		if code := g.do("GET", path, nil, &st); code != http.StatusNotFound {
+			t.Fatalf("%s: %d", path, code)
+		}
+	}
+}

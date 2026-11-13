@@ -22,13 +22,15 @@ type clock struct{ t time.Time }
 func (c *clock) now() time.Time { return c.t }
 
 type rig struct {
-	t      *testing.T
-	dir    string
-	claude string // the CLI's projects folder
-	clock  *clock
-	box    *usageoutbox.Outbox
-	feed   *Feed
-	ident  func(string) Identity
+	// sessionIdent is Config.SessionIdentity: the accounts the runtime noted for its sessions.
+	sessionIdent func(provider, sessionID string) (Identity, bool)
+	t            *testing.T
+	dir          string
+	claude       string // the CLI's projects folder
+	clock        *clock
+	box          *usageoutbox.Outbox
+	feed         *Feed
+	ident        func(string) Identity
 	// cap and source change what open builds: the limits, and what the feed reads through.
 	maxPending int
 	maxBytes   int64
@@ -66,7 +68,7 @@ func (r *rig) open() {
 	if r.wrap != nil {
 		src = r.wrap(col)
 	}
-	feed, err := New(Config{Outbox: box, Source: src, StatePath: StatePath(filepath.Join(r.dir, "usage-outbox")), Identity: r.ident, Now: r.clock.now,
+	feed, err := New(Config{Outbox: box, Source: src, StatePath: StatePath(filepath.Join(r.dir, "usage-outbox")), Identity: r.ident, SessionIdentity: r.sessionIdent, Now: r.clock.now,
 		MaxPending: r.maxPending, MaxBytes: r.maxBytes})
 	if err != nil {
 		r.t.Fatal(err)
@@ -582,5 +584,50 @@ func TestToolFactsCarryNoText(t *testing.T) {
 	raw, _ := json.Marshal(r.all())
 	if strings.Contains(string(raw), "SECRET") || len(toolFacts(r.all())) != 1 {
 		t.Fatalf("%s", raw)
+	}
+}
+
+// A session the runtime noted an account for is that account's, its subagent's calls too, whatever the CLI is signed in
+// with; a session nobody noted stays the CLI's own.
+func TestASessionNotedAtTheLaunchIsItsAccounts(t *testing.T) {
+	r := newRig(t)
+	r.ident = func(string) Identity { return Identity{AccountRef: "claude:own", AuthMode: "subscription"} }
+	noted := Identity{AccountRef: KeyRef("kc-" + "work-0000-abcdef"), AuthMode: "api_key", BaseURLHost: "api.kimi.com"}
+	r.sessionIdent = func(provider, id string) (Identity, bool) {
+		if provider == "claude" && id == "sess-1" {
+			return noted, true
+		}
+		return Identity{}, false
+	}
+	r.open()
+	standard(r)
+	base := t0.Add(-3 * time.Hour)
+	r.write("-work-app/sess-2.jsonl", base.Add(time.Hour), assistant("sess-2", msg{"req_x", "msg_x", base.Add(time.Second), 7}))
+	r.pass()
+	calls, sessions := kinds(r.all())
+	for _, c := range calls {
+		want := noted.BaseURLHost
+		if c.SessionKey == "sess-2" {
+			want = ""
+		}
+		if c.BaseURLHost != want {
+			t.Errorf("call %s of %s goes to %q", c.MsgKey, c.SessionKey, c.BaseURLHost)
+		}
+	}
+	for _, s := range sessions {
+		switch s.SessionKey {
+		case "sess-1", "sess-1/agent-ab12":
+			if s.AccountRef != noted.AccountRef || s.AuthMode != "api_key" || s.BaseURLHost != "api.kimi.com" {
+				t.Errorf("%s: %+v", s.SessionKey, s)
+			}
+		case "sess-2":
+			// Its start is before the CLI's identity was first seen: it is given none, as before.
+			if s.AccountRef == noted.AccountRef || s.BaseURLHost != "" {
+				t.Errorf("a session nobody noted took the account: %+v", s)
+			}
+		}
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("%d sessions", len(sessions))
 	}
 }

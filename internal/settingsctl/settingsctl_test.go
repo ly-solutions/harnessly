@@ -266,3 +266,45 @@ func TestProposalOfAPartSaysWhatItReplaces(t *testing.T) {
 		}
 	}
 }
+
+func TestAChangeMadeElsewhereIsToldWhoAndSaysItsRefusal(t *testing.T) {
+	s, _ := newService(t)
+	var by Actor
+	var refuse error
+	s.Items = append(s.Items, Item{Key: "shared", Title: "Общее", Kind: KindText, Get: func() (string, error) { return "[]", nil },
+		Free:  func(string) bool { return true },
+		SetBy: func(_ string, a Actor) (string, error) { by = a; return "ждёт админа", refuse }})
+
+	// In the Settings chat the change is made at once, and the setting is told the chat; what the setting says of a
+	// value it only passed on goes with the change.
+	out, err := s.Propose("shared", "one", "", Actor{Kind: ByAgent, Conv: "settings-chat", Title: "Настройки"})
+	if err != nil || out.Change == nil || out.Change.Note != "ждёт админа" {
+		t.Fatalf("%+v %v", out, err)
+	}
+	if by.Conv != "settings-chat" || by.Title != "Настройки" {
+		t.Fatalf("the setting was not told who: %+v", by)
+	}
+
+	// Where the change is made it may be refused: the words reach the caller.
+	refuse = &Said{Message: "нет права"}
+	_, err = s.Propose("shared", "two", "", Actor{Kind: ByAgent, Conv: "settings-chat"})
+	if r := RefusalOf(err); err == nil || r.Reason != ReasonFailed || r.Message != "нет права" {
+		t.Fatalf("%+v", r)
+	}
+
+	// From another chat the person agrees first; a refusal after that is kept with the proposal, which is declined.
+	out, err = s.Propose("shared", "three", "", Actor{Kind: ByAgent, Conv: "tab-1", Title: "Чат"})
+	if err != nil || out.State != StateWaiting {
+		t.Fatalf("%+v %v", out, err)
+	}
+	if _, err := s.Approve(out.Proposal.ID); RefusalOf(err).Message != "нет права" {
+		t.Fatalf("%v", err)
+	}
+	got := s.Wait(context.Background(), out.Proposal.ID, 0)
+	if got.State != StateDeclined || got.Proposal == nil || got.Proposal.Failed != "нет права" {
+		t.Fatalf("%+v", got)
+	}
+	if by.Conv != "tab-1" || by.Kind != ByAgent {
+		t.Fatalf("%+v", by)
+	}
+}

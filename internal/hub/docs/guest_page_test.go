@@ -76,6 +76,98 @@ func TestGuestLinkOpensTheDocumentPage(t *testing.T) {
 	}
 }
 
+// A guest link made for a board opens the read-only page of the boards service's guest view, fetched with the hub's
+// token; a page without the mark of that view (a build that does not know it answers with the board's key in the page)
+// is never passed on. What a link opens is written into it when it is made: a document's link whose document is gone
+// never reaches the boards service, though a board has the same slug.
+func TestGuestLinkOpensABoardThroughItsGuestView(t *testing.T) {
+	s, mux, _ := accessRig(t)
+	art := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/a" || strings.HasPrefix(r.URL.Path, "/a?") || r.URL.Path == "/api/artifacts" {
+			_, _ = w.Write([]byte(`{"artifacts":[]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(art.Close)
+	s.art = newArtifacts(art.URL, "t", art.Client())
+	marked := true
+	var asked []string
+	boards := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer boards-token" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/b/api/boards" {
+			_, _ = w.Write([]byte(`{"boards":[{"slug":"flow-abc","title":"Flow"}]}`))
+			return
+		}
+		asked = append(asked, r.URL.RequestURI())
+		if r.URL.Path != "/b/flow-abc" {
+			http.NotFound(w, r)
+			return
+		}
+		if marked {
+			w.Header().Set("X-Boards-View", "guest")
+			_, _ = w.Write([]byte("<html><body>board, read only</body></html>"))
+			return
+		}
+		_, _ = w.Write([]byte("<html><body>board?k=SECRETKEY</body></html>"))
+	}))
+	t.Cleanup(boards.Close)
+	s.cfg.Docs, s.cfg.BoardsURL, s.cfg.BoardsToken = true, boards.URL, "boards-token"
+
+	ctx := context.Background()
+	if target, err := s.boardsOnlyTarget(ctx, "flow-abc"); err != nil || target != targetBoard {
+		t.Fatalf("a slug the boards service has is a board: %q %v", target, err)
+	}
+	if target, err := s.boardsOnlyTarget(ctx, "plan"); err != nil || target != "" {
+		t.Fatalf("a slug the boards service does not have is a document: %q %v", target, err)
+	}
+
+	owner := resaccess.Actor{Email: "author@example.com", Name: "Author"}
+	link := func(slug, target string) string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		s.access.Serve(w, httptest.NewRequest("POST", "/x", strings.NewReader(`{"rights":"view","ttl":"1d"}`)), owner,
+			resaccess.Ref{Kind: resaccess.KindDoc, ID: slug}, []string{"shares"}, resaccess.Info{Owner: owner.Email, Target: target}, nil)
+		var out struct{ URL string }
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 201 {
+			t.Fatalf("link: %d %s", w.Code, w.Body.String())
+		}
+		return strings.TrimPrefix(out.URL, "https://hub.example.com")
+	}
+	open := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w
+	}
+	path := link("flow-abc", targetBoard)
+	w := open(path)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "board, read only") || !strings.HasPrefix(w.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Fatalf("the guest sees the board: %d %s", w.Code, w.Body.String())
+	}
+	if len(asked) != 1 || asked[0] != "/b/flow-abc?embed=1&guest=1" {
+		t.Fatalf("the boards service is asked for its guest view: %v", asked)
+	}
+
+	marked = false
+	if w := open(path); w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), "SECRETKEY") {
+		t.Fatalf("a page that is not the guest view is not passed on: %d %s", w.Code, w.Body.String())
+	}
+
+	// A link that was made for a document: its document is not there, a board of the same slug is. The hub's token
+	// does not open the board for it.
+	marked = true
+	before := len(asked)
+	if w := open(link("flow-abc", "")); w.Code != 404 || strings.Contains(w.Body.String(), "board, read only") || strings.Contains(w.Body.String(), "page not found") {
+		t.Fatalf("a document's link opened a board: %d %s", w.Code, w.Body.String())
+	}
+	if len(asked) != before {
+		t.Fatalf("the boards service was asked for a document's link: %v", asked[before:])
+	}
+}
+
 // the document's page names its fonts by a path of its own origin; the hub reads them from the documents
 // service for anybody, and nothing else of that service is reachable this way.
 func TestGuestPageFontsComeThroughTheHub(t *testing.T) {

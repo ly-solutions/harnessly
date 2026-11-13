@@ -208,11 +208,13 @@ func (c *cli) settingsSet(args []string) error {
 		var r struct {
 			Status string `json:"status"`
 			Change *struct {
-				Old string `json:"old"`
-				New string `json:"new"`
+				Old  string `json:"old"`
+				New  string `json:"new"`
+				Note string `json:"note"`
 			} `json:"change"`
 			Proposal *struct {
-				ID string `json:"id"`
+				ID     string `json:"id"`
+				Failed string `json:"failed"`
 			} `json:"proposal"`
 		}
 		_ = json.Unmarshal(raw, &r)
@@ -225,13 +227,18 @@ func (c *cli) settingsSet(args []string) error {
 				c.printRaw(raw)
 				return nil
 			}
-			if r.Change != nil {
+			if r.Change != nil && r.Change.Note != "" {
+				c.out("proposed, nothing is changed yet: %s\n", r.Change.Note)
+			} else if r.Change != nil {
 				c.out("changed: %s was %s, is %s now\n", key, r.Change.Old, r.Change.New)
 			} else {
 				c.out("changed: %s is %s now (the person confirmed)\n", key, value)
 			}
 			return nil
 		case "declined":
+			if r.Proposal != nil && r.Proposal.Failed != "" {
+				return fail("failed: the person agreed to %s, but the change was not made — %s", key, r.Proposal.Failed)
+			}
 			return fail("declined: the person said no to %s = %s. Do not propose it again; ask them what they want instead", key, value)
 		case "expired":
 			return fail("expired: the person did not answer about %s = %s in time. Tell them the setting is unchanged", key, value)

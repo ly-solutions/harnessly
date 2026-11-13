@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/agent"
+	"github.com/ly-solutions/harnessly/internal/hubproto"
+	"github.com/ly-solutions/harnessly/internal/sessionaccounts"
 	"github.com/ly-solutions/harnessly/internal/usagefeed"
 	"github.com/ly-solutions/harnessly/internal/usagereport"
 )
@@ -63,11 +65,21 @@ func usageFeed(d agent.UsageDeps) (agent.UsageFeed, error) {
 		now: time.Now,
 	}
 	local := usagefeed.Local{Home: d.Home, Getenv: d.Getenv}
+	// The accounts the runtime noted for its sessions (a chat on a provider the person added, or on another account of
+	// one): such a session is that account's, not the CLI's own sign-in's.
+	noted := &sessionaccounts.Store{Path: filepath.Join(runtimeDir, "v2", "session-accounts.jsonl")}
 	return usagefeed.New(usagefeed.Config{
 		Outbox:    d.Box,
 		Source:    src,
 		StatePath: usagefeed.StatePath(d.Dir),
 		Identity:  local.Identity,
+		SessionIdentity: func(provider, session string) (usagefeed.Identity, bool) {
+			e, ok := noted.Of(provider, session)
+			if !ok {
+				return usagefeed.Identity{}, false
+			}
+			return usagefeed.Identity{AccountRef: e.Ref, AuthMode: authModeOfRef(e.Ref), BaseURLHost: e.Host}, true
+		},
 		// counts of the skills a session was offered and called; off until the fleet flag turns it on.
 		SkillMetrics: os.Getenv("AGENT_USAGE_SKILL_METRICS") == "on",
 	})
@@ -167,4 +179,15 @@ func (u *usageSource) Entries() []usagereport.Entry {
 		return nil
 	}
 	return u.cur.Entries()
+}
+
+// authModeOfRef is how an account named by a digest of its key signs in; "" for an account without a key of its own.
+func authModeOfRef(ref string) string {
+	if ref == "" {
+		return ""
+	}
+	if strings.HasPrefix(ref, "key:") {
+		return hubproto.AuthAPIKey
+	}
+	return hubproto.AuthSubscription
 }

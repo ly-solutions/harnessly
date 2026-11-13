@@ -586,11 +586,30 @@ func (m *NoticeSummaryModel) Auto() bool {
 }
 
 // DelegationSettings bound the agents' delegation: how many chats one conversation may have delegated (not deleted),
-// and whether an agent may write to any chat of the machine rather than only to the ones it delegated.
+// whether an agent may write to any chat of the machine rather than only to the ones it delegated, and when a message
+// one agent sends another reaches an agent that works (absent: DelegationStep).
 type DelegationSettings struct {
-	MaxChildren int  `json:"maxChildren"`
-	AnyChat     bool `json:"anyChat"`
+	MaxChildren int                `json:"maxChildren"`
+	AnyChat     bool               `json:"anyChat"`
+	Delivery    DelegationDelivery `json:"delivery,omitempty"`
 }
+
+// DelegationDelivery is when a message an agent sends to another chat (send_to_conversation without its own choice, the
+// news that a delegated chat finished) reaches an agent in the middle of a turn.
+type DelegationDelivery string
+
+const (
+	// DelegationStep: inside the running turn, at the agent's next step.
+	DelegationStep DelegationDelivery = "step"
+	// DelegationTurn: when the turn ends, as the head of the queue.
+	DelegationTurn DelegationDelivery = "turn"
+)
+
+// DelegationDeliveries is every DelegationDelivery, in the schema's order.
+var DelegationDeliveries = []DelegationDelivery{DelegationStep, DelegationTurn}
+
+// Steers says whether a message without a choice of its own goes into the running turn.
+func (d DelegationSettings) Steers() bool { return d.Delivery != DelegationTurn }
 
 // DelegationMaxChildren is the most a person may let one conversation delegate; DefaultDelegation the setting nobody set.
 const DelegationMaxChildren = 10

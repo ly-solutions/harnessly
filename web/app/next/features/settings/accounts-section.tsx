@@ -286,7 +286,14 @@ const Proxy = ({ settings, busy, onBaseUrl }: IProxyProps) => {
 };
 
 export const AgentConnection = ({ settings, credentials, busy, gpt, onBaseUrl }: IAgentConnectionProps) => (
-  <Group title={t('next.settings.accounts.connection')} foot={t('next.settings.accounts.connectionFoot')}>
+  <Group
+    title={t('next.settings.accounts.connection')}
+    foot={
+      settings.provider === 'claude'
+        ? t('next.settings.accounts.connectionFootClaude')
+        : t('next.settings.accounts.connectionFoot')
+    }
+  >
     <div className="hx-acct hx-acct--page" data-open data-on={settings.account.signedIn}>
       <div className="hx-acct__body">
         <div className="hx-acct__inner">

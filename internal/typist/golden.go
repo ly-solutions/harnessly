@@ -21,6 +21,10 @@ import (
 //go:embed testdata/tui/claude-2.1.322-input-draft.ansi.txt
 //go:embed testdata/tui/claude-2.1.322-question.ansi.txt
 //go:embed testdata/tui/claude-2.1.322-turn-done.ansi.txt
+//go:embed testdata/tui/claude-2.1.323-idle-placeholder.ansi.txt
+//go:embed testdata/tui/claude-2.1.323-input-draft.ansi.txt
+//go:embed testdata/tui/claude-2.1.323-question.ansi.txt
+//go:embed testdata/tui/claude-2.1.323-turn-done.ansi.txt
 var goldenFS embed.FS
 
 // Golden is one reference screen and what the reader must see on it ("" from Want: it does).
@@ -88,6 +92,10 @@ func Goldens() []Golden {
 		{c, "2.1.322", "input-draft", wantInput("a draft the person left in the box")},
 		{c, "2.1.322", "question", wantMenu(MenuQuestion, "Alpha", "Bravo")},
 		{c, "2.1.322", "turn-done", wantEmptyBox},
+		{c, "2.1.323", "idle-placeholder", wantEmptyBox},
+		{c, "2.1.323", "input-draft", wantInput("a draft the person left in the box")},
+		{c, "2.1.323", "question", wantMenu(MenuQuestion, "Alpha", "Bravo")},
+		{c, "2.1.323", "turn-done", wantEmptyBox},
 	}
 }
 

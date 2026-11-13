@@ -266,6 +266,9 @@ func (p *Profiles) ask(ctx context.Context, a Account, v Vendor, now float64) (D
 	}
 	req.Header.Set("Accept", "application/json")
 	v.Auth(req, cred.Token)
+	if v.AccountHeader != "" && cred.Account != "" {
+		req.Header.Set(v.AccountHeader, cred.Account)
+	}
 	client := p.Client
 	if client == nil {
 		client = profileClient

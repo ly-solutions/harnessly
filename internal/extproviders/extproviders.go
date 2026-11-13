@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/ly-solutions/harnessly/internal/agents"
 )
 
 // API is the protocol a provider speaks.
@@ -214,6 +216,9 @@ type Preset struct {
 	API     API    `json:"api"`
 	// KeyURL is the page of the vendor where a key is made.
 	KeyURL string `json:"keyUrl,omitempty"`
+	// Models are the models an account of the template starts with when the form names none: a vendor that speaks the
+	// Anthropic API may list no models at its address.
+	Models []Model `json:"models,omitempty"`
 }
 
 // PresetCustom is the template of an address of the person's own.
@@ -224,6 +229,17 @@ var presets = []Preset{
 	{ID: "groq", Name: "Groq", BaseURL: "https://api.groq.com/openai/v1", API: APIOpenAI, KeyURL: "https://console.groq.com/keys"},
 	{ID: "xai", Name: "xAI", BaseURL: "https://api.x.ai/v1", API: APIOpenAI, KeyURL: "https://console.x.ai"},
 	{ID: "openrouter", Name: "OpenRouter", BaseURL: "https://openrouter.ai/api/v1", API: APIOpenAI, KeyURL: "https://openrouter.ai/keys"},
+	// The vendors Claude Code runs chats on by a key. A person adds as many accounts of one as they have keys, each
+	// under a name of its own; the sign-in by a Claude subscription is not among them (one for the machine, the CLI's).
+	{ID: "anthropic", Name: "Anthropic API", BaseURL: "https://api.anthropic.com", API: APIAnthropic, KeyURL: "https://console.anthropic.com/settings/keys"},
+	{ID: "kimi-code", Name: "Kimi Code", BaseURL: "https://api.kimi.com/coding", API: APIAnthropic, KeyURL: "https://www.kimi.com/code",
+		Models: []Model{{ID: "k3.1-pro", Label: "K3.1 Pro"}, {ID: "k3", Label: "K3"}, {ID: "kimi-for-coding", Label: "Kimi for Coding"}}},
+	{ID: "kimi", Name: "Kimi · Moonshot", BaseURL: "https://api.moonshot.ai/anthropic", API: APIAnthropic, KeyURL: "https://platform.moonshot.ai/console/api-keys",
+		Models: []Model{{ID: "kimi-k3.1-pro", Label: "K3.1 Pro"}, {ID: "kimi-k2.7-code", Label: "K2.7 Code"}}},
+	{ID: "glm", Name: "GLM · Z.ai", BaseURL: "https://api.z.ai/api/anthropic", API: APIAnthropic, KeyURL: "https://z.ai/manage-apikey/apikey-list",
+		Models: []Model{{ID: "glm-5.3", Label: "GLM 5.3"}, {ID: "glm-5.3-flash", Label: "GLM 5.3 Flash"}}},
+	{ID: "glm-cn", Name: "GLM · bigmodel.cn", BaseURL: "https://open.bigmodel.cn/api/anthropic", API: APIAnthropic, KeyURL: "https://open.bigmodel.cn/usercenter/apikeys",
+		Models: []Model{{ID: "glm-5.3", Label: "GLM 5.3"}, {ID: "glm-5.3-flash", Label: "GLM 5.3 Flash"}}},
 	{ID: PresetCustom, Name: "Свой адрес", API: APIOpenAI},
 }
 
@@ -259,6 +275,9 @@ func cleanKey(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if len(s) > MaxKey || strings.ContainsAny(s, "\r\n\x00") {
 		return "", refuse(ReasonBadKey)
+	}
+	if agents.ClaudeSubscriptionToken(s) {
+		return "", refuse(ReasonSubscriptionToken)
 	}
 	return s, nil
 }

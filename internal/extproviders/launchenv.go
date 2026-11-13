@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/ly-solutions/harnessly/internal/agents"
 )
 
 // The variables a provider adds to the launch of an agent on it: the base ones of the agent's CLI the person typed by
@@ -27,6 +29,9 @@ const (
 	ReasonBadEnv = "bad-env"
 	// ReasonEnvReserved: the variable is the launch's own and is not the person's to set.
 	ReasonEnvReserved = "env-reserved"
+	// ReasonSubscriptionToken: the key or the value is the token of a Claude subscription's sign-in. A machine has one
+	// such sign-in, the CLI's own; a provider takes a key of the API.
+	ReasonSubscriptionToken = "subscription-token"
 )
 
 // EnvVar is one variable as the registry file keeps it: the value of a plain one, the name of the safe's secret of a
@@ -67,6 +72,8 @@ var reservedEnv = []string{
 // reservedEnvPrefixes are the families harnessly, its panes and its integrations set themselves.
 var reservedEnvPrefixes = []string{
 	"HARNESSLY_", "RUNTIME_", "TMUX", "DYLD_", "CLAUDE_CODE_SESSION", "ARTIFACTS_", "BOARDS_",
+	// The sign-in of a Claude subscription is the CLI's own and one for the machine: a provider brings no second one.
+	"CLAUDE_CODE_OAUTH",
 	// What makes a program the agent starts run somebody's code: git, the interpreters, the shell's functions, npm.
 	"GIT_", "PYTHON", "PERL", "RUBY", "BASH_FUNC_", "NPM_CONFIG_",
 }
@@ -134,12 +141,18 @@ func (s *Service) applyEnv(provider string, have []EnvVar, in []EnvInput) ([]Env
 			return nil, refuse(ReasonBadEnv)
 		}
 		if !v.Secret && !EnvAlwaysSecret(name) {
+			if agents.ClaudeSubscriptionToken(value) {
+				return nil, refuse(ReasonSubscriptionToken)
+			}
 			if value = strings.TrimSpace(value); value != "" {
 				out = append(out, EnvVar{Name: name, Value: value})
 			}
 			continue
 		}
 		ref := envRef(provider, name)
+		if agents.ClaudeSubscriptionToken(value) {
+			return nil, refuse(ReasonSubscriptionToken)
+		}
 		if value = strings.TrimSpace(value); value != "" {
 			puts = append(puts, put{ref, value})
 		} else {

@@ -114,6 +114,9 @@ type ProfileInfo struct {
 	// Switch is present on a profile that takes no key but is turned on and off (gpt: a local proxy over the Codex
 	// CLI's ChatGPT sign-in); absent on the others.
 	Switch *ProfileSwitch `json:"switch,omitempty"`
+	// Account: the profile's key is an account of the person's providers, added and changed there; no key is typed for
+	// the profile itself. Absent on a profile that keeps a key of its own.
+	Account bool `json:"account,omitempty"`
 }
 
 // ProfileSwitch is whether the person turned a switched profile on. On says nothing of whether it can run now: the

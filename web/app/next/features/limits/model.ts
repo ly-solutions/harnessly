@@ -240,9 +240,24 @@ export const profileLimitsOf = (
   return all.find((p) => p.account === '') ?? all[0] ?? null;
 };
 
+/** The profile of a provider's account the person added starts so, then the account's id (cmd/runtime/ext_profiles.go). */
+const ACCOUNT_PROFILE = 'x-';
+
+/** The limits of the account a chat's profile is: the key of that account alone, never another account's of the vendor. */
+const accountLimitsOf = (limits: MachineLimits, profile: string): ProfileLimits | null => {
+  const account = profile.slice(ACCOUNT_PROFILE.length);
+  return (
+    Object.values(limits.profiles).find((p) => p.profile.startsWith(API_PROFILE) && p.account === account) ??
+    null
+  );
+};
+
 /** What the owner of a chat's quota has left on the machine; null when the machine does not say. */
-export const limitsOfOwner = (limits: MachineLimits, owner: LimitsOwner): ProviderLimits | null =>
-  owner.profile === null ? limits[owner.provider] : profileLimitsOf(limits, owner.profile);
+export const limitsOfOwner = (limits: MachineLimits, owner: LimitsOwner): ProviderLimits | null => {
+  if (owner.profile === null) return limits[owner.provider];
+  if (owner.profile.startsWith(ACCOUNT_PROFILE)) return accountLimitsOf(limits, owner.profile);
+  return profileLimitsOf(limits, owner.profile);
+};
 
 const readHour = (v: unknown): SpendHour | null => {
   const h = rec(v);

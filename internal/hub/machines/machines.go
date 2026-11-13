@@ -55,6 +55,8 @@ type Deps struct {
 	Design DesignSink
 	// Docs answers the machines' doc.publish and doc.acl (internal/hub/docs); nil: nobody answers.
 	Docs DocsSink
+	// Proposals answers the machines' env.propose; nil: nobody answers.
+	Proposals EnvProposals
 	// Automations takes the reports of automation conversations (internal/hub/automations); nil: nobody does.
 	Automations AutomationsSink
 	// History keeps the machines' chats (internal/hub/history); nil: the hub takes none.
@@ -98,6 +100,11 @@ type DocsSink interface {
 	Event(l *link.Link, m store.Machine, ev link.Event)
 }
 
+// EnvProposals answers a change of the environment a machine's agent proposes for its person (internal/hub/env).
+type EnvProposals interface {
+	Proposed(ctx context.Context, m store.Machine, raw json.RawMessage) hubproto.EnvProposalResult
+}
+
 // DesignSink is what keeps a machine's design access (internal/hub/designaccess).
 type DesignSink interface {
 	Connected(m store.Machine, features []string)
@@ -117,23 +124,24 @@ type UsageSink interface {
 
 // Service is the machine side of the hub.
 type Service struct {
-	notice  func(ctx context.Context, to, subject, body, link string) error
-	cfg     *config.Config
-	db      *store.DB
-	auth    *auth.Service
-	spaces  *spaces.Service
-	reg     *link.Registry
-	events  *events.Broker
-	tickets *ticket.Store
-	lim     *ratelimit.Limiter
-	log     *slog.Logger
-	now     func() time.Time
-	revoked func(machineID string)
-	usage   UsageSink
-	budget  BudgetSink
-	env     EnvSink
-	design  DesignSink
-	docs    DocsSink
+	notice    func(ctx context.Context, to, subject, body, link string) error
+	cfg       *config.Config
+	db        *store.DB
+	auth      *auth.Service
+	spaces    *spaces.Service
+	reg       *link.Registry
+	events    *events.Broker
+	tickets   *ticket.Store
+	lim       *ratelimit.Limiter
+	log       *slog.Logger
+	now       func() time.Time
+	revoked   func(machineID string)
+	usage     UsageSink
+	budget    BudgetSink
+	env       EnvSink
+	design    DesignSink
+	docs      DocsSink
+	proposals EnvProposals
 	// automations takes the report of a conversation an automation run started (nil: automations are off).
 	automations AutomationsSink
 	history     HistorySink
@@ -159,7 +167,7 @@ type Service struct {
 
 // New makes the service.
 func New(d Deps) *Service {
-	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, spaces: d.Spaces, reg: d.Reg, events: d.Spaces.Events(), tickets: d.Tickets, lim: d.Limiter, log: d.Log, now: d.Now, revoked: d.OnRevoked, usage: d.Usage, budget: d.Budget, env: d.Env, design: d.Design, docs: d.Docs, automations: d.Automations, history: d.History, prov: d.Provider, pub: d.Publisher, gate: d.Features, notice: d.Notice}
+	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, spaces: d.Spaces, reg: d.Reg, events: d.Spaces.Events(), tickets: d.Tickets, lim: d.Limiter, log: d.Log, now: d.Now, revoked: d.OnRevoked, usage: d.Usage, budget: d.Budget, env: d.Env, design: d.Design, docs: d.Docs, proposals: d.Proposals, automations: d.Automations, history: d.History, prov: d.Provider, pub: d.Publisher, gate: d.Features, notice: d.Notice}
 	s.res.init()
 	if s.now == nil {
 		s.now = time.Now
