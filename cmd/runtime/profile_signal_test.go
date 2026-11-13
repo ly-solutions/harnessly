@@ -34,17 +34,31 @@ func TestWriteProfilesKeepsTheNewestSets(t *testing.T) {
 // SIGUSR1 writes a set.
 func TestProfileOnSignal(t *testing.T) {
 	dir := t.TempDir()
-	profileOnSignal(dir)
+	profileOnSignal(dir, 20*time.Millisecond)
 	if err := syscall.Kill(os.Getpid(), syscall.SIGUSR1); err != nil {
 		t.Fatal(err)
 	}
-	for range 100 {
-		if m, _ := filepath.Glob(filepath.Join(dir, "goroutine-*.pprof")); len(m) == 1 {
+	for range 250 {
+		g, _ := filepath.Glob(filepath.Join(dir, "goroutine-*.pprof"))
+		c, _ := filepath.Glob(filepath.Join(dir, "cpu-*.pprof"))
+		if len(g) == 1 && len(c) == 1 && !cpuProfiling.Load() {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("no profiles after SIGUSR1")
+}
+
+// waitCPUProfilerFree waits out a CPU profile another test's signal started: one runs at a time.
+func waitCPUProfilerFree(t *testing.T) {
+	t.Helper()
+	for range 250 {
+		if !cpuProfiling.Load() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("the CPU profiler stayed busy")
 }
 
 // The CPU profile of a signal lands beside its set and goes with it when the set is pruned.
@@ -55,6 +69,7 @@ func TestCPUProfileIsWrittenBesideTheSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitCPUProfilerFree(t)
 	if err := writeCPUProfile(dir, stamp, 20*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}

@@ -49,8 +49,8 @@ func writeCPUProfile(dir, stamp string, d time.Duration) error {
 	return nil
 }
 
-// profileOnSignal writes the profiles into dir on every SIGUSR1.
-func profileOnSignal(dir string) {
+// profileOnSignal writes the profiles into dir on every SIGUSR1 and then samples the CPU for cpuFor.
+func profileOnSignal(dir string, cpuFor time.Duration) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGUSR1)
 	go func() {
@@ -67,7 +67,7 @@ func profileOnSignal(dir string) {
 				agent.F{K: "heapReleasedMB", V: m.HeapReleased >> 20}, agent.F{K: "sysMB", V: m.Sys >> 20},
 				agent.F{K: "numGC", V: m.NumGC}, agent.F{K: "goroutines", V: runtime.NumGoroutine()})
 			go func() {
-				if err := writeCPUProfile(dir, stamp, cpuProfileFor); err != nil {
+				if err := writeCPUProfile(dir, stamp, cpuFor); err != nil {
 					agent.Log("warn", "cpu profile not written", agent.F{K: "error", V: err.Error()})
 				}
 			}()

@@ -32,6 +32,11 @@ import (
 const fakeClaude = `#!/bin/bash
 if [ "$1" = "--version" ]; then echo "2.1.99 (Claude Code)"; exit 0; fi
 if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0; fi
+# A one-shot --print run (the turn's summary, a title) is the runtime's own background call, not an agent: it answers
+# on stdout and is noted apart, so the agent starts and their environment stay countable.
+for a in "$@"; do
+  if [ "$a" = "--print" ]; then cat >/dev/null; echo "$*" >> "$HOME/claude-print.log"; echo "Готово."; exit 0; fi
+done
 echo "$*" >> "$HOME/claude-calls.log"
 env | grep -E '^(BOARDS|ARTIFACTS|RUNTIME|HARNESSLY)_' | sort >> "$HOME/claude-env.log"
 settings=""; sid=""

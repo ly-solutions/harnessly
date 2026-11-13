@@ -615,7 +615,7 @@ func main() {
 	apps.PermissionsFromEnv()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	profileOnSignal(filepath.Join(cfg.DataDir, "debug"))
+	profileOnSignal(filepath.Join(cfg.DataDir, "debug"), cpuProfileFor)
 	if err := run(ctx, cfg); err != nil {
 		fail(err)
 	}
