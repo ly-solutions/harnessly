@@ -58,6 +58,11 @@ const (
 	// exited or never ran (a broken CLI). Without it the launch waited out its whole deadline, and a «Continue
 	// sending» pressed meanwhile found the conversation still starting and launched nothing.
 	LaunchNoAgent = 15 * time.Second
+	// TmuxLostFor is how long a chat taken for gone by a session not found waits for its pane to come back. A loaded
+	// machine's tmux may fail to answer for a while; a session still missing after this is gone for good (the runtime
+	// restarted, tmux was killed), and a chat with an agent session to resume becomes a stopped one its queue resumes.
+	// Without it the chat stayed gone, its messages queued under «агента нет» with nothing to start the agent.
+	TmuxLostFor = 2 * time.Minute
 	// CompactHold is how long a compaction (PreCompact, and neither PostCompact nor the transcript's compaction line
 	// yet) keeps a working agent from counting as quiet. Claude writes nothing to the transcript while it compacts
 	// (45–95 s seen), and its screen may not read busy. Past the hold silence counts again: a lost PostCompact must not
@@ -1094,6 +1099,11 @@ func (c *conv) seeing(s seen, now time.Time) {
 		// by its next message like the one above.
 		c.input(agentstate.Input{K: agentstate.Shell, Resumable: c.rec.State.Resumable || c.resumableAtRestart || c.rec.AgentSessionID != ""}, now)
 		return
+	case !c.probe.Session && c.lostTmux() && (c.rec.AgentSessionID != "" || c.rec.TranscriptPath != "") && ms(now)-c.rec.State.Since >= TmuxLostFor.Milliseconds():
+		// The pane has not come back: the session is gone for good, and the agent resumes on its session like a stopped
+		// one (the resume makes the tmux session again).
+		c.input(agentstate.Input{K: agentstate.Shell, Resumable: true}, now)
+		return
 	case !c.probe.Session:
 		if c.rec.State.K != wire.StateStarting {
 			c.input(agentstate.Input{K: agentstate.Gone, GoneReason: wire.GoneTmuxLost}, now)
@@ -1810,7 +1820,8 @@ func (c *conv) ultracodeAgain(now time.Time) {
 // tick is the clock's turn: terms that ran out, the queue's timers, the held-back now, the coalesced record, the
 // gates kept past their time.
 func (c *conv) tick(now time.Time) {
-	c.input(agentstate.Input{K: agentstate.Tick}, now)
+	c.input(agentstate.Input{K: agentstate.Tick, Alive: c.probe.Session && c.probe.Foreground}, now)
+	c.box.Starting = c.rec.State.K == wire.StateStarting
 	c.change(c.box.Tick(now), now)
 	for _, id := range slices.Clone(c.order) {
 		g := c.gates[id]

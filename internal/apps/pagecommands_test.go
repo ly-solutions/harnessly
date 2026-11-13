@@ -87,7 +87,8 @@ func (r *commandRig) call(ctx context.Context, key string) chan callEnd {
 // taken waits for the page's next take to bring a command.
 func (r *commandRig) taken(page string) PageCall {
 	r.t.Helper()
-	for i := 0; i < 400; i++ {
+	// A deadline, not a count of tries: under -race on a loaded runner the call's journal write took over 2 s.
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
 		if calls := r.pages.TakeBy("tab-1", page, page != ""); len(calls) == 1 {
 			return calls[0]
 		} else if len(calls) > 1 {
@@ -298,7 +299,8 @@ func TestCommandExpires(t *testing.T) {
 func TestCommandDeadAfterRefusal(t *testing.T) {
 	enabled := []string{"acme.form"}
 	h, pages := windowRig(t, &enabled)
-	pages.CallTTL = 120 * time.Millisecond
+	// Long enough for the call to be taken before it expires on a loaded runner under -race (120 ms was not, GitHub CI).
+	pages.CallTTL = 600 * time.Millisecond
 	if err := pages.OpenCommands(filepath.Join(t.TempDir(), PageCommandsFile)); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +314,7 @@ func TestCommandDeadAfterRefusal(t *testing.T) {
 		done <- text
 	}()
 	var got []PageCall
-	for i := 0; i < 400 && len(got) == 0; i++ {
+	for i := 0; i < 1000 && len(got) == 0; i++ {
 		got = pages.TakeBy("tab-1", "page-a", true)
 		time.Sleep(2 * time.Millisecond)
 	}
