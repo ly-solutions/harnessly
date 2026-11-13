@@ -99,3 +99,28 @@ export const nextMark = (mark: IMediaMark | null, time: number): IMediaMark | nu
   if (mark.to === null) return { from: Math.min(mark.from, time), to: Math.max(mark.from, time) };
   return null;
 };
+
+export const MEDIA_FAILURE = { load: 'load', format: 'format' } as const;
+export type TMediaFailure = (typeof MEDIA_FAILURE)[keyof typeof MEDIA_FAILURE];
+
+// MediaError.code: the picture or the sound cannot be decoded, or the browser plays no such file.
+const MEDIA_ERR_DECODE = 3;
+const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
+
+/** Why a file did not play. A browser calls an address that was refused or is not there a file it cannot play
+ *  (code 4), so the element's word is not enough: only a file whose address does answer is one the browser cannot play. */
+export const mediaFailureOf = (code: number | null, reachable: boolean): TMediaFailure =>
+  reachable && (code === MEDIA_ERR_DECODE || code === MEDIA_ERR_SRC_NOT_SUPPORTED)
+    ? MEDIA_FAILURE.format
+    : MEDIA_FAILURE.load;
+
+/** Whether the file's address answers with the file: its first byte is asked for, as a player asks. */
+export const mediaReachable = async (src: string): Promise<boolean> => {
+  try {
+    const res = await fetch(src, { credentials: 'same-origin', headers: { Range: 'bytes=0-0' } });
+    void res.body?.cancel();
+    return res.ok;
+  } catch {
+    return false;
+  }
+};

@@ -26,7 +26,12 @@ import { NotifyBotsPage } from '@/next/bindings/settings-notify-bots';
 import { PeersPage } from '@/next/bindings/settings-peers';
 import { ConnectionsPage } from '@/next/bindings/settings-connections';
 import { SafePage } from '@/next/bindings/settings-safe';
+import { useSettingChanges } from '@/next/bindings/settings-changes';
+import { ExtProvidersPage } from '@/next/bindings/settings-ext-providers';
+import { SmartPage } from '@/next/bindings/settings-smart';
+import { smartKey } from '@/next/features/settings/smart-section';
 import { TakesPage } from '@/next/bindings/settings-takes';
+import { PluginsPage } from '@/next/bindings/settings-plugins';
 import { ExtensionsPage, useHasExtensions } from '@/next/features/app-views/slot-pages';
 import SettingsShell from '@/next/features/settings/settings-shell';
 import { t } from '@/next/i18n';
@@ -34,6 +39,9 @@ import type { MachineId } from '@/next/protocol/v2';
 import { goTo, ROUTE, type SettingsSection } from '@/next/routes/routes';
 import { useMachine } from '@/next/stores/machines';
 import usePendingList from '@/next/ui/use-pending-list';
+
+/** The catalog's keys of the runtime's settings, which «Основные» shows (cmd/runtime/routes_settingsctl.go). */
+const RUNTIME_KEY = 'runtime.';
 
 /** The «x minutes ago» of the machines list moves on with this clock. */
 const CLOCK_MS = 60_000;
@@ -64,6 +72,7 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
   const view = useMachine(machine);
   const now = useClock();
   const pending = usePendingList();
+  const changes = useSettingChanges(machine, now);
   const hasExtensions = useHasExtensions(machine);
   const pages = useAgentPages(machine, {
     claude: active === 'claude' || active === 'accounts' || active === 'skills',
@@ -83,8 +92,15 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
   if (active === 'claude' || active === 'codex')
     lead = t(`next.settings.lead.${active}`, { machine: machineName, path: path(active) });
 
+  // Where an agent has just changed something: «Умные функции» for a feature's model, «Основные» for the runtime's.
+  const lit = Object.keys(changes.marks);
+  const changedSections: SettingsSection[] = [];
+  if (lit.some((key) => key.startsWith(smartKey('')))) changedSections.push('smart');
+  if (lit.some((key) => key.startsWith(RUNTIME_KEY))) changedSections.push('general');
+
   let body = null;
-  if (active === 'general') body = <GeneralPage machine={machine} name={name} pending={pending} />;
+  if (active === 'general')
+    body = <GeneralPage machine={machine} name={name} pending={pending} changes={changes} />;
   else if (active === 'appearance') body = <AppearancePage pending={pending} />;
   else if (active === 'keys') body = <KeysPage pending={pending} />;
   else if (active === 'voice') body = <VoicePage machine={machine} />;
@@ -99,7 +115,14 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
   else if (active === 'browser') body = <BrowserPage machine={machine} now={now} />;
   else if (active === 'safe') body = <SafePage machine={machine} now={now} />;
   else if (active === 'takes') body = <TakesPage now={now} />;
-  else if (active === 'accounts') body = <AccountsPage machine={machine} pages={pages} pending={pending} />;
+  else if (active === 'accounts')
+    body = (
+      <>
+        <AccountsPage machine={machine} pages={pages} pending={pending} />
+        <ExtProvidersPage machine={machine} />
+      </>
+    );
+  else if (active === 'smart') body = <SmartPage machine={machine} changes={changes} now={now} />;
   else if (active === 'claude' || active === 'codex')
     body = (
       <AgentPage
@@ -121,6 +144,7 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
   else if (active === 'connections') body = <ConnectionsPage machine={machine} start={connect} />;
   else if (active === 'design') body = <DesignPage machine={machine} />;
   else if (active === 'extensions') body = <ExtensionsPage machine={machine} />;
+  else if (active === 'plugins') body = <PluginsPage />;
   else if (active === 'beta') body = <BetaPage />;
   else body = <AppsPage machine={machine} />;
 
@@ -130,6 +154,7 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
       pageOpen={section !== null}
       lead={lead}
       hidden={hasExtensions ? [] : ['extensions']}
+      changed={changedSections}
       onPick={(next) => goTo({ kind: ROUTE.settings, section: next })}
       onBack={() => goTo({ kind: ROUTE.settings, section: null })}
       onOpenDrawer={onOpenDrawer}

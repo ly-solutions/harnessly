@@ -140,9 +140,22 @@ export interface IDeckStyleProps {
   /** The layout asked of the agent for the slide on screen, if any. */
   layout: TDeckLayout | null;
   onLayout: (layout: TDeckLayout) => void;
+  /**
+   * A video: its scenes carry their own look until a theme is chosen, so nothing is marked before the settings are
+   * `picked` (a deck's boards follow the theme from the start).
+   */
+  ownLook?: boolean;
 }
 
-const DeckStyle = ({ machine, state, settings, onSettings, layout, onLayout }: IDeckStyleProps) => {
+const DeckStyle = ({
+  machine,
+  state,
+  settings,
+  onSettings,
+  layout,
+  onLayout,
+  ownLook = false,
+}: IDeckStyleProps) => {
   const [kitFonts, setKitFonts] = useState<readonly IKitFont[]>([]);
   useEffect(() => {
     const abort = new AbortController();
@@ -162,8 +175,10 @@ const DeckStyle = ({ machine, state, settings, onSettings, layout, onLayout }: I
       },
     );
   };
-  const theme = settings ? (pending?.theme ?? settings.theme) : null;
-  const font = settings ? (pending?.font ?? settings.font) : null;
+  // Nothing chosen yet: a video's scenes are in their own look, no swatch or font stands for it.
+  const unpicked = ownLook && settings !== null && settings.picked !== true;
+  const theme = settings ? (pending?.theme ?? (unpicked ? null : settings.theme)) : null;
+  const font = settings ? (pending?.font ?? (unpicked ? null : settings.font)) : null;
   const themes = settings ? deckThemes(settings) : DECK_THEMES.map((th) => ({ ...th, name: t(th.name) }));
   const source = settings?.style?.source ?? '';
   return (
@@ -175,6 +190,7 @@ const DeckStyle = ({ machine, state, settings, onSettings, layout, onLayout }: I
       aria-busy={settings === null || pending !== null || undefined}
     >
       <div className="hx-deck-h">{t('next.deck.style.theme')}</div>
+      {unpicked && pending === null && <p className="hx-deck-own">{t('next.deck.style.ownLook')}</p>}
       <div className="hx-deck-sws">
         {themes.map((th) => (
           <Swatch

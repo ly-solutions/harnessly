@@ -69,7 +69,7 @@ func TestPreviewHeadersSandboxAtTheHub(t *testing.T) {
 	h.Set("Clear-Site-Data", `"*"`)
 	h.Set("Strict-Transport-Security", "max-age=1; includeSubDomains")
 	h.Set("Content-Type", "text/html")
-	previewHeaders(h)
+	previewHeaders(h, false)
 	csp := strings.Join(h.Values("Content-Security-Policy"), "; ")
 	if !strings.Contains(csp, "sandbox allow-scripts") || strings.Contains(csp, "allow-same-origin") || !strings.Contains(csp, "frame-ancestors 'self'") {
 		t.Fatalf("csp: %q", csp)
@@ -106,5 +106,59 @@ func TestPreviewRefusalTellsTheFrameAndLogsTheTrace(t *testing.T) {
 	s.previewRefused(httptest.NewRecorder(), plain, "abc", errPreviewOffline, func() { answered = true })
 	if !answered {
 		t.Error("a request that is not a frame got the frame's page")
+	}
+}
+
+// A document a slot's page holds in a frame (a Storybook's canvas) has that page, with its opaque origin, among its
+// ancestors: no frame-ancestors source admits it, so the answer to a frame of the slot carries none, and stays sandboxed.
+func TestPreviewHeadersLetASlotFrameItsOwnDocuments(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/m/m1/__pv/1-0123456789abcdef0123456789abcdef/iframe.html", nil)
+	if slotFrame(r) {
+		t.Fatal("a request that says nothing of itself is not a slot's frame")
+	}
+	r.Header.Set("Sec-Fetch-Dest", "iframe")
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
+	if slotFrame(r) {
+		t.Fatal("the hub's own frame of the slot is not a frame inside the slot")
+	}
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	if !slotFrame(r) {
+		t.Fatal("a frame navigating from the slot's opaque origin")
+	}
+	r.Header.Set("Sec-Fetch-Dest", "document")
+	if slotFrame(r) {
+		t.Fatal("a page navigation is not a frame")
+	}
+
+	h := http.Header{}
+	h.Set("Strict-Transport-Security", "max-age=1")
+	previewHeaders(h, true)
+	csp := strings.Join(h.Values("Content-Security-Policy"), "; ")
+	if !strings.Contains(csp, "sandbox allow-scripts") || strings.Contains(csp, "allow-same-origin") {
+		t.Fatalf("a nested document left the sandbox: %q", csp)
+	}
+	if strings.Contains(csp, "frame-ancestors") || h.Get("X-Frame-Options") != "" {
+		t.Fatalf("a nested document is refused by its own ancestor: csp %q, x-frame-options %q", csp, h.Get("X-Frame-Options"))
+	}
+	if h.Get("Strict-Transport-Security") != "" || h.Get("Referrer-Policy") != "no-referrer" || h.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("headers: %v", h)
+	}
+}
+
+// On a slot host the page's origin is real, and a document it frames of itself has that origin among its ancestors.
+func TestSlotHeadersAdmitTheSlotItself(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-Frame-Options", "DENY")
+	slotHeaders(h, []string{"https://hub.example.net"})
+	if got := h.Values("Content-Security-Policy"); len(got) != 1 || got[0] != "frame-ancestors 'self' https://hub.example.net" {
+		t.Fatalf("csp: %q", got)
+	}
+	if h.Get("X-Frame-Options") != "" {
+		t.Fatal("the older header would refuse the hub's frame")
+	}
+	h = http.Header{}
+	slotHeaders(h, nil)
+	if got := h.Get("Content-Security-Policy"); got != "frame-ancestors 'self'" {
+		t.Fatalf("no hub origin known: %q", got)
 	}
 }

@@ -25,6 +25,7 @@ import { LINK, startCandidateOf, type IStartCandidate, type Link } from '@/next/
 import { cancelQueuedChat, queuedItemOf, useQueuedChats } from '@/next/commands/queued-chats';
 import { queuedRows } from '@/next/features/queued-chat/rows';
 import type { IMachineNotice } from '@/next/features/notifications/from-machines';
+import { useSteadyNotices } from '@/next/features/notifications/machine-steady';
 import { hub } from '@/next/core/realtime/hub';
 import { chatStatusOf, statusNoteOf } from '@/next/features/sidebar/status';
 import {
@@ -48,6 +49,7 @@ import type {
   Conversation,
   HealthIssue,
   HealthMetric,
+  HealthStall,
   Machine,
   MachineId,
   MachineLoad,
@@ -132,8 +134,9 @@ const REASON_KEY = {
   disk: { warn: 'next.health.reason.diskWarn', critical: 'next.health.reason.diskCritical' },
   mem: { warn: 'next.health.reason.memWarn', critical: 'next.health.reason.memCritical' },
   cpu: { warn: 'next.health.reason.cpuWarn', critical: 'next.health.reason.cpuWarn' },
+  io: { warn: 'next.health.reason.io', critical: 'next.health.reason.io' },
 } as const;
-const METRIC_ICON = { disk: 'hard-drive', mem: 'memory-stick', cpu: 'cpu' } as const;
+const METRIC_ICON = { disk: 'hard-drive', mem: 'memory-stick', cpu: 'cpu', io: 'clock' } as const;
 
 const issueOf = (machine: Machine, metric: HealthMetric): HealthIssue | undefined =>
   machine.health?.issues.find((i) => i.metric === metric);
@@ -148,11 +151,26 @@ const healthOf = (machine: Machine, linkDown: boolean): TMachineHealth => {
 const lineOf = (machine: Machine, metric: HealthMetric): { tone: TMachineTone; reason: string | null } => {
   const issue = issueOf(machine, metric);
   if (!issue) return { tone: MACHINE_TONE.normal, reason: null };
-  return { tone: TONE_OF_LEVEL[issue.level], reason: t(REASON_KEY[metric][issue.level]) };
+  return { tone: TONE_OF_LEVEL[issue.level], reason: t(REASON_KEY[issue.metric][issue.level]) };
 };
 
+/** The processor's line says a stall too: a load the processors do not explain has no meter of its own. */
+const cpuLineOf = (machine: Machine): { tone: TMachineTone; reason: string | null } =>
+  issueOf(machine, 'cpu') ? lineOf(machine, 'cpu') : lineOf(machine, 'io');
+
+/** A folder by its last name: «projects» of «/home/dev/projects». */
+const folderName = (path: string): string => path.split('/').filter(Boolean).pop() ?? path;
+
 /** The banner's line of a critical issue: with the figure when the load is here, without it otherwise. */
-const alertText = (issue: HealthIssue, load: MachineLoad | undefined): string => {
+const alertText = (
+  issue: HealthIssue,
+  load: MachineLoad | undefined,
+  stall: HealthStall | undefined,
+): string => {
+  if (issue.metric === 'io') {
+    const mount = stall?.mounts[0];
+    return mount ? t('next.health.alert.ioMount', { name: folderName(mount) }) : t('next.health.alert.io');
+  }
   if (issue.metric === 'disk')
     return load && load.diskTotal > 0
       ? t('next.health.alert.diskFree', { free: gb(load.diskFree) })
@@ -173,8 +191,9 @@ export const alertOf = (machine: Machine, linkDown: boolean): IMachineAlert | nu
   return {
     key: `${machine.id}:${critical.map((i) => i.metric).join(',')}`,
     icon: METRIC_ICON[first.metric],
-    text: alertText(first, machine.load),
+    text: alertText(first, machine.load, machine.health.stall),
     metric: first.metric,
+    ...(first.metric === 'io' ? { waiting: machine.health.stall?.waiting ?? [] } : {}),
   };
 };
 
@@ -211,7 +230,7 @@ export const cardOf = (view: MachineView, linkDown: boolean): IMachineCard => {
               label: t('next.shellData.cpu'),
               value: `${Math.round(load.cpu * 100)}%`,
               ratio: load.cpu,
-              ...lineOf(machine, 'cpu'),
+              ...cpuLineOf(machine),
             },
             {
               id: 'mem',
@@ -592,16 +611,20 @@ export function useShellModel(): IShellModel {
       }),
     [startViews, startMachines, liveMachines, down],
   );
-  const machineNotices = useMemo(
+  const rawMachineNotices = useMemo(
     () =>
       [...(activeView ? [activeView] : []), ...(machines ?? []).filter((v) => v !== activeView)].flatMap(
         ({ machine: m }): IMachineNotice[] => {
           const alert = alertOf(m, (m.id === cardOn && cardDown) || (m.id === here && linkDown));
-          return alert && m.health ? [{ id: m.id, name: machineName(m), alert, since: m.health.since }] : [];
+          return alert && m.health
+            ? [{ id: m.id, name: machineName(m), alert, since: m.health.since, urgent: true }]
+            : [];
         },
       ),
     [machines, activeView, cardOn, cardDown, here, linkDown],
   );
+  // What the notices show is held: a reconnect or one good look does not take the card away and bring it back.
+  const machineNotices = useSteadyNotices(rawMachineNotices);
 
   const actions = useMemo<IChatActions>(() => {
     const chat = (id: string) => id as Conversation['id'];

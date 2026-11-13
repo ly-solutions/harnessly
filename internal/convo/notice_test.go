@@ -123,3 +123,20 @@ func TestNoticeQuestionAndStop(t *testing.T) {
 		t.Fatalf("notices: %s", k)
 	}
 }
+
+// A delegated chat works unheard: only what waits for the person reaches their devices.
+func TestNoticeDelegatedPushesOnlyQuestions(t *testing.T) {
+	parent := "parent"
+	for _, c := range []struct {
+		kind NoticeKind
+		want bool
+	}{{NoticeDone, false}, {NoticeFailed, false}, {NoticeQuestion, true}} {
+		x := Notice{Kind: c.kind, Conv: wire.Conversation{ParentID: &parent}}
+		if x.Push() != c.want {
+			t.Fatalf("%s: push %v, want %v", c.kind, x.Push(), c.want)
+		}
+		if !(Notice{Kind: c.kind}).Push() {
+			t.Fatalf("%s: a chat of the person's own must push", c.kind)
+		}
+	}
+}

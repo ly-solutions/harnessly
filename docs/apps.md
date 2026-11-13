@@ -229,6 +229,10 @@ work), never on the page's. It gets the same bridge as a package view: the host 
 never sees it), hands the view a nonce in the address's fragment (`#hl-nonce=…`, which never reaches the server), and
 answers only that origin and that frame. The view serves the SDK itself: `harnessly app sdk ./public/hl` writes
 `bridge-shim.js` (load it first in the page: it reads and removes the nonce and makes the handshake) and `app-sdk.js`.
+The frame is shown at once, as a site: the page does not wait for the machine's session (a bridge call that needs it
+waits for it instead), and the view counts as up when its page has loaded, with or without a handshake. So a remote view
+should read its own data from its own server and move between its own screens by itself (the History API keeps the
+bridge), and use the bridge for what only the host has: the theme, the chat, a tool call that signs the person in.
 A navigation inside the frame ends the bridge, as for a package view: sign the person in before the view's page, or in
 a popup. A site that exists already (an admin panel) takes the loader line instead and tells the agent its forms and
 actions with `state`, `action` and `screen`: see [An existing site](build-apps/11-existing-site.md).

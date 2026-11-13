@@ -34,9 +34,10 @@ export const SETTINGS_SECTIONS = [
   'notifications',
   'voice',
   'takes',
-  'accounts',
   'claude',
   'codex',
+  'accounts',
+  'smart',
   'skills',
   'safe',
   'browser',
@@ -45,6 +46,7 @@ export const SETTINGS_SECTIONS = [
   'connections',
   'design',
   'extensions',
+  'plugins',
   'beta',
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];

@@ -205,6 +205,20 @@ func (b *MemoryBus) Publish(orgID, kind string, data any) {
 	}
 }
 
+// PublishLocal gives an event to this process's streams only, not to the other replicas: for what every replica makes
+// by itself for its own listeners (the usage ticks), which the others would otherwise hear twice.
+func (b *MemoryBus) PublishLocal(orgID, kind string, data any) {
+	var aud Audience
+	if a, ok := data.(Audienced); ok {
+		aud = a.EventAudience()
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	b.publish(orgID, kind, raw, aud)
+}
+
 // publish gives an event to this process's streams and ring, under an id of this process, and returns where the
 // other replicas are told of it.
 func (b *MemoryBus) publish(orgID, kind string, raw json.RawMessage, aud Audience) func(relayMsg) {

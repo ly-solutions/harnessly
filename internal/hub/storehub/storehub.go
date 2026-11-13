@@ -56,6 +56,9 @@ type Grant struct{ See, Edit, Own bool }
 type Design interface {
 	StoreView(ctx context.Context, m store.Machine) (map[string]Grant, error)
 	RecordFromStore(ctx context.Context, m store.Machine, project string, ownerFile []byte) (bool, error)
+	// ClosedUnrecorded: a project the hub has no row for reaches no machine (HUB_DESIGN_UNRECORDED=closed, GitHub #83);
+	// false keeps it open, as before.
+	ClosedUnrecorded() bool
 }
 
 // viewCache is how long a machine's view of the library is kept before it is read again.
@@ -244,6 +247,11 @@ func (s *Store) AppsRoom(ctx context.Context, spaceID string) (*filestore.Store,
 
 // AppsSpaces are the spaces whose apps collection has a room.
 func (s *Store) AppsSpaces(ctx context.Context) ([]string, error) {
+	return s.spacesOf(ctx, filestore.KindApps)
+}
+
+// spacesOf are the spaces whose collection of a kind has a room.
+func (s *Store) spacesOf(ctx context.Context, kind string) ([]string, error) {
 	rooms, err := s.srv.Meta().Rooms(ctx)
 	if err != nil {
 		return nil, err
@@ -251,10 +259,10 @@ func (s *Store) AppsSpaces(ctx context.Context) ([]string, error) {
 	var out []string
 	for _, room := range rooms {
 		switch {
-		case room == filestore.KindApps && s.legacy != "":
+		case room == kind && s.legacy != "":
 			out = append(out, s.legacy)
-		case strings.HasPrefix(room, filestore.KindApps+"-"):
-			out = append(out, strings.TrimPrefix(room, filestore.KindApps+"-"))
+		case strings.HasPrefix(room, kind+"-"):
+			out = append(out, strings.TrimPrefix(room, kind+"-"))
 		}
 	}
 	return out, nil
@@ -562,12 +570,15 @@ func (s *Store) appsFilter(ctx context.Context, m store.Machine, acc *filestore.
 
 // filter limits a machine to the design projects its person has a role in: the files of another person's
 // project never reach a machine that has nothing to do with it, and a write to a project the person may not edit is
-// refused. Paths outside a project folder (the shelves under .folders) and projects the hub has no row for are open.
+// refused. Paths outside a project folder (the shelves under .folders) and projects the hub has no row for are open;
+// with closed unrecorded projects (GitHub #83) the files of a project without a row reach no machine, but a machine may
+// still write into its folder: that is how a new project starts, its owner file records it.
 func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Access) error {
 	view, scope, err := s.view(ctx, m)
 	if err != nil {
 		return err
 	}
+	closed := s.design.ClosedUnrecorded()
 	acc.Scope = scope
 	acc.Sees = func(p string) bool {
 		id, ok := projectOf(p)
@@ -575,7 +586,10 @@ func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Acce
 			return true
 		}
 		g, known := view[id]
-		return !known || g.See
+		if !known {
+			return !closed
+		}
+		return g.See
 	}
 	acc.Writes = func(p string) bool {
 		if foreignFolder(p) {
@@ -673,6 +687,10 @@ func (s *Store) view(ctx context.Context, m store.Machine) (map[string]Grant, st
 	sort.Strings(ids)
 	h := sha256.New()
 	_, _ = h.Write([]byte("design-view/v1\x00"))
+	// Closing the unrecorded projects changes what every machine sees: a new scope makes them read the library again.
+	if s.design.ClosedUnrecorded() {
+		_, _ = h.Write([]byte("unrecorded:closed\x00"))
+	}
 	for _, id := range ids {
 		g := v[id]
 		fmt.Fprintf(h, "%s:%t:%t\n", id, g.See, g.Edit)

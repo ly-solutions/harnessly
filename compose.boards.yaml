@@ -28,6 +28,9 @@ services:
       HUB_BOARDS_URL: http://boards:${BOARDS_PORT:-8081}
       HUB_BOARDS_PUBLIC_URL: *boards-url
       HUB_BOARDS_TOKEN: ${BOARDS_TOKEN:-boards-trial-token-change-me}
+      # Where the machines take the «Доски» app's package from; empty: the service's public repository, branch main.
+      HUB_BOARDS_APP_REPO: ${BOARDS_APP_REPO:-}
+      HUB_BOARDS_APP_BRANCH: ${BOARDS_APP_BRANCH:-}
     depends_on:
       - boards
 

@@ -8,6 +8,7 @@
 package wire
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -91,6 +92,16 @@ type MachineHealth struct {
 	Level  HealthLevel   `json:"level"`
 	Since  Ms            `json:"since"`
 	Issues []HealthIssue `json:"issues"`
+	// Stall says what an "io" issue is made of; absent without one.
+	Stall *HealthStall `json:"stall,omitempty"`
+}
+
+// HealthStall is what the machine knows of a stall, a load its processors do not explain: the network folders whose
+// server stopped answering (their mount points; empty when none did) and the programs with the most tasks waiting,
+// most first (their short names; empty when none could be read).
+type HealthStall struct {
+	Mounts  []string `json:"mounts"`
+	Waiting []string `json:"waiting"`
 }
 
 // HealthIssue is one metric past its line: warn or critical, never ok.
@@ -194,6 +205,10 @@ type Conversation struct {
 	// Apps are the ids of the installed apps turned on in this chat (internal/apps): the agent of the chat gets their
 	// profiles. Absent when none is on.
 	Apps []string `json:"apps,omitempty"`
+	// View is how the person left this chat's window — the full screen it was on, where the chat stood by it, the right
+	// pane and the place in the feed (web/app/next/stores/chat-view.ts): a JSON object the page writes whole and reads
+	// back on any device. The runtime keeps it as it is; absent when none was kept.
+	View json.RawMessage `json:"view,omitempty"`
 	// PendingModel is a change of model or effort the person asked for that the agent has not taken yet: the runtime
 	// holds it and applies it at the first moment the agent can (see PendingModel). Absent when none waits.
 	PendingModel *PendingModel `json:"pendingModel,omitempty"`
@@ -543,6 +558,31 @@ type RuntimeSettings struct {
 	// Delegation is what agents may do with the chats they delegate; absent is DefaultDelegation, and a PUT without it
 	// keeps what was set.
 	Delegation *DelegationSettings `json:"delegation,omitempty"`
+	// NoticeSummary is the model that sums up a finished turn for the «готово» notification; absent is
+	// «Авто»: the chat's own provider and its cheap model. A PUT without it keeps what was set.
+	NoticeSummary *NoticeSummaryModel `json:"noticeSummary,omitempty"`
+}
+
+// NoticeSummaryOff as NoticeSummaryModel.Provider turns the summaries off; NoticeSummaryAuto picks the default (a PUT
+// that leaves the field out keeps the old one, so «back to Авто» has to be said).
+const (
+	NoticeSummaryOff  = "off"
+	NoticeSummaryAuto = "auto"
+)
+
+// NoticeSummaryModel picks the model of a turn's summary: Provider is claude, codex, NoticeSummaryOff or NoticeSummaryAuto; Model is one of
+// the provider's models, "" for the provider's cheap one.
+type NoticeSummaryModel struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+}
+
+// Off: the summaries are turned off.
+func (m *NoticeSummaryModel) Off() bool { return m != nil && m.Provider == NoticeSummaryOff }
+
+// Auto: nothing picked, the chat's provider and its cheap model.
+func (m *NoticeSummaryModel) Auto() bool {
+	return m == nil || m.Provider == "" || m.Provider == NoticeSummaryAuto
 }
 
 // DelegationSettings bound the agents' delegation: how many chats one conversation may have delegated (not deleted),
@@ -1894,6 +1934,14 @@ type ConversationTestCmd struct {
 	Test bool   `json:"test"`
 }
 
+// ConversationViewCmd keeps how the person left a conversation's window (see Conversation.View): the whole object, the
+// last write wins. An empty object clears it.
+type ConversationViewCmd struct {
+	OpID string          `json:"opId"`
+	ID   string          `json:"id"`
+	View json.RawMessage `json:"view"`
+}
+
 // ConversationAppsCmd sets the apps turned on in a conversation: the whole list, in the order the person turned them
 // on. An empty list turns them all off.
 type ConversationAppsCmd struct {
@@ -2117,6 +2165,7 @@ func (ConversationRenameCmd) Op() Op    { return OpConversationRename }
 func (ConversationPinCmd) Op() Op       { return OpConversationPin }
 func (ConversationAppsCmd) Op() Op      { return OpConversationApps }
 func (ConversationTestCmd) Op() Op      { return OpConversationTest }
+func (ConversationViewCmd) Op() Op      { return OpConversationView }
 func (ConversationRetitleCmd) Op() Op   { return OpConversationRetitle }
 func (ConversationSummarizeCmd) Op() Op { return OpConversationSummarize }
 func (ConversationMoveCmd) Op() Op      { return OpConversationMove }
@@ -2157,6 +2206,7 @@ func (c ConversationRenameCmd) OpKey() string    { return c.OpID }
 func (c ConversationPinCmd) OpKey() string       { return c.OpID }
 func (c ConversationAppsCmd) OpKey() string      { return c.OpID }
 func (c ConversationTestCmd) OpKey() string      { return c.OpID }
+func (c ConversationViewCmd) OpKey() string      { return c.OpID }
 func (c ConversationRetitleCmd) OpKey() string   { return c.OpID }
 func (c ConversationSummarizeCmd) OpKey() string { return c.OpID }
 func (c ConversationMoveCmd) OpKey() string      { return c.OpID }
@@ -2243,6 +2293,8 @@ const (
 	// GET/PUT /api/v2/runtime-settings say after how long.
 	FeatureTerminalStop Feature = "terminal-stop"
 	FeatureAppsHub      Feature = "apps-hub"
+	// FeatureChatView: conversation.view keeps how the person left a chat's window (Conversation.View), for any device.
+	FeatureChatView Feature = "chat-view"
 	// FeatureRewind: rewind and rewind.undo go on from before one of the person's messages, GET .../rewind?entryId=
 	// says what that would do and GET .../rewinds/{n}/turns shows what a rewind left behind.
 	FeatureRewind Feature = "rewind"
@@ -2266,7 +2318,7 @@ const (
 )
 
 // Features is every Feature, in the schema's order.
-var Features = []Feature{FeatureQueue, FeatureSteer, FeatureQuestions, FeaturePermissions, FeatureBackground, FeatureModel, FeatureVoice, FeatureFiles, FeatureCheckpoints, FeatureDesignly, FeatureSearch, FeatureVault, FeaturePush, FeatureTerminal, FeatureMachine, FeatureApps, FeatureSettings, FeatureDrafts, FeatureQueueMove, FeatureAppsHub, FeatureTerminalStop, FeatureRewind, FeatureFork, FeatureHandoff, FeatureAutoContinue, FeatureMade, FeatureAgentBrowser, FeatureSnapshotAfter}
+var Features = []Feature{FeatureQueue, FeatureSteer, FeatureQuestions, FeaturePermissions, FeatureBackground, FeatureModel, FeatureVoice, FeatureFiles, FeatureCheckpoints, FeatureDesignly, FeatureSearch, FeatureVault, FeaturePush, FeatureTerminal, FeatureMachine, FeatureApps, FeatureSettings, FeatureDrafts, FeatureQueueMove, FeatureAppsHub, FeatureTerminalStop, FeatureRewind, FeatureFork, FeatureHandoff, FeatureAutoContinue, FeatureMade, FeatureAgentBrowser, FeatureSnapshotAfter, FeatureChatView}
 
 // Reach is whether the cluster hears a machine; standalone it is always online.
 type Reach string
@@ -2292,17 +2344,20 @@ const (
 // HealthLevels is every HealthLevel, in the schema's order (worse later).
 var HealthLevels = []HealthLevel{HealthOK, HealthWarn, HealthCritical}
 
-// HealthMetric is what a health issue is about: the data folder's disk, memory (with swap-in), sustained CPU.
+// HealthMetric is what a health issue is about: the data folder's disk, memory (with swap-in), sustained CPU, or tasks
+// that wait for a disk or the network while the CPU is idle.
 type HealthMetric string
 
 const (
 	HealthDisk HealthMetric = "disk"
 	HealthMem  HealthMetric = "mem"
 	HealthCPU  HealthMetric = "cpu"
+	// HealthIO: the load is high while the processors stand idle, so the tasks wait for a disk or the network.
+	HealthIO HealthMetric = "io"
 )
 
 // HealthMetrics is every HealthMetric, in the schema's order.
-var HealthMetrics = []HealthMetric{HealthDisk, HealthMem, HealthCPU}
+var HealthMetrics = []HealthMetric{HealthDisk, HealthMem, HealthCPU, HealthIO}
 
 // AgentInstallStatus is whether an agent CLI can run on a machine.
 type AgentInstallStatus string
@@ -2889,6 +2944,7 @@ const (
 	OpConversationPin       Op = "conversation.pin"
 	OpConversationApps      Op = "conversation.apps"
 	OpConversationTest      Op = "conversation.test"
+	OpConversationView      Op = "conversation.view"
 	OpConversationRetitle   Op = "conversation.retitle"
 	OpConversationSummarize Op = "conversation.summarize"
 	OpConversationMove      Op = "conversation.move"
@@ -2917,7 +2973,7 @@ const (
 )
 
 // Ops is every Op, in the schema's order.
-var Ops = []Op{OpSend, OpCancel, OpRetry, OpPromote, OpAnswer, OpDecide, OpInterrupt, OpQueueResume, OpSeen, OpConversationCreate, OpConversationRename, OpConversationPin, OpConversationApps, OpConversationTest, OpConversationMove, OpConversationDelete, OpConversationRestore, OpConversationResume, OpModel, OpBgStop, OpProjectCreate, OpProjectUpdate, OpFavGroupCreate, OpFavGroupRename, OpFavGroupDelete, OpFavGroupMove, OpFavPlace, OpGoal, OpConversationRetitle, OpConversationSummarize, OpDraftSet, OpQueueMove, OpTerminalStop, OpRewind, OpRewindUndo, OpConversationFork, OpConversationHandoff, OpConversationMerge, OpLimit}
+var Ops = []Op{OpSend, OpCancel, OpRetry, OpPromote, OpAnswer, OpDecide, OpInterrupt, OpQueueResume, OpSeen, OpConversationCreate, OpConversationRename, OpConversationPin, OpConversationApps, OpConversationTest, OpConversationView, OpConversationMove, OpConversationDelete, OpConversationRestore, OpConversationResume, OpModel, OpBgStop, OpProjectCreate, OpProjectUpdate, OpFavGroupCreate, OpFavGroupRename, OpFavGroupDelete, OpFavGroupMove, OpFavPlace, OpGoal, OpConversationRetitle, OpConversationSummarize, OpDraftSet, OpQueueMove, OpTerminalStop, OpRewind, OpRewindUndo, OpConversationFork, OpConversationHandoff, OpConversationMerge, OpLimit}
 
 // PromoteTo is where promote moves a queued message.
 type PromoteTo string

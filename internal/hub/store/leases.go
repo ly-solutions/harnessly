@@ -19,3 +19,10 @@ WHERE job_leases.holder = excluded.holder OR job_leases.lease_until <= excluded.
 	n, err := res.RowsAffected()
 	return n == 1, err
 }
+
+// ReleaseLease gives up holder's lease of the job `name`, so another replica takes it at its next try instead of
+// waiting for the lease to run out. A lease held by somebody else is left alone.
+func (s Store) ReleaseLease(ctx context.Context, name, holder string) error {
+	_, err := s.q.Exec(ctx, `DELETE FROM job_leases WHERE name = ? AND holder = ?`, name, holder)
+	return err
+}

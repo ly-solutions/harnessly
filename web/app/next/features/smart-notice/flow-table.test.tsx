@@ -306,11 +306,16 @@ describe('putting one away, and the last one leaving', () => {
     const view = render(<SmartNotice {...p} />);
     fireEvent.keyDown(screen.getByText('Open chat'), { key: 'Backspace' });
     expect(p.onHide).toHaveBeenCalledTimes(1);
-    expect(host().dataset.rise).toBe('next');
+    // The next one comes forward at once with its line, not waiting for the page to make it the front.
+    expect(host().dataset.promote).toBe('');
     view.rerender(<SmartNotice {...p} open={false} items={items.slice(1)} />);
+    // The page made it the front: the shape lands where the plate stands.
+    expect(host().dataset.promote).toBeUndefined();
+    expect(host().dataset.fling).toBeUndefined();
     act(() => vi.advanceTimersByTime(RISE_MS));
     // The move is over: no state of it is left on the plate, and no plate keeps a look of its own written on it.
     expect(host().dataset.rise).toBeUndefined();
+    expect(host().dataset.land).toBeUndefined();
     expect(host().dataset.paging).toBeUndefined();
     for (const el of host().querySelectorAll<HTMLElement>('.hx-sn__shape, .hx-sn__plate, .hx-sn__tint'))
       expect(el.style.opacity).toBe('');

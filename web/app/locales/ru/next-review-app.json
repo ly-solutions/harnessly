@@ -80,9 +80,9 @@
   "next.reviewApp.mr.approve": "Одобрить",
   "next.reviewApp.mr.approveDone": "MR одобрен",
   "next.reviewApp.mr.asDraft": "Черновиком",
-  "next.reviewApp.mr.connectOwn": "Подключить свой {forge}",
-  "next.reviewApp.mr.connectText": "Отвечать, ставить «Решено» и одобрять можно только от вашего имени — подключите свой {forge}.",
-  "next.reviewApp.mr.connectToWrite": "Чтобы отвечать, подключите свой {forge}",
+  "next.reviewApp.mr.connectOwn": "Добавить личный токен {forge}",
+  "next.reviewApp.mr.connectText": "{forge} подключён общим доступом машины — он только читает. Отвечать, ставить «Решено» и одобрять можно от вашего имени: добавьте личный токен.",
+  "next.reviewApp.mr.connectToWrite": "{forge} подключён только на чтение. Чтобы отвечать, добавьте личный токен",
   "next.reviewApp.mr.create": "Создать MR",
   "next.reviewApp.mr.created": "MR создан",
   "next.reviewApp.mr.denied": "{forge} отказал: у токена нет прав на это действие",
@@ -175,5 +175,7 @@
   "next.reviewApp.ai.formatAll": "Ответь только этим блоком (JSON): points — {who, why} по участникам, sum — вывод, replies — варианты общего ответа.",
   "next.reviewApp.githubDown": "GitHub не ответил — в списках только GitLab.",
   "next.reviewApp.githubDenied": "GitHub отказал токену — проверьте подключение GitHub.",
-  "next.reviewApp.openFull": "Открыть в «Ревью кода»"
+  "next.reviewApp.collapse": "Свернуть — вернуться в чат",
+  "next.reviewApp.openFull": "Развернуть на всё окно",
+  "next.reviewApp.workTitle": "Работа чата"
 }

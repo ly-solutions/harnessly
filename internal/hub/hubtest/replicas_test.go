@@ -19,11 +19,14 @@ import (
 
 const replicaSecret = "secretsecretsecretsecret"
 
+// replicaKey is the HUB_SECRET_KEY the replicas share (they would refuse to start with a key file each).
+const replicaKey = "keykeykeykeykeykeykeykeykeykeykeykey"
+
 // replicas starts two hubs on one database, the way two pods of the deployment share one Postgres.
 func replicas(t *testing.T) (a, b *hubtest.Stack) {
 	t.Helper()
-	a = hubtest.New(t, hubtest.Env("HUB_REPLICAS", "on"), hubtest.Env("HUB_REPLICA_SECRET", replicaSecret))
-	b = hubtest.New(t, hubtest.WithDB(a.DB), hubtest.Env("HUB_REPLICAS", "on"), hubtest.Env("HUB_REPLICA_SECRET", replicaSecret))
+	a = hubtest.New(t, hubtest.Env("HUB_REPLICAS", "on"), hubtest.Env("HUB_REPLICA_SECRET", replicaSecret), hubtest.Env("HUB_SECRET_KEY", replicaKey))
+	b = hubtest.New(t, hubtest.WithDB(a.DB), hubtest.Env("HUB_REPLICAS", "on"), hubtest.Env("HUB_REPLICA_SECRET", replicaSecret), hubtest.Env("HUB_SECRET_KEY", replicaKey))
 	return a, b
 }
 

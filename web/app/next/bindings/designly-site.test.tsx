@@ -9,8 +9,9 @@ const open = vi.fn();
 // The real openPreview (it stamps the slot); only the runtime call under it is faked.
 vi.mock('@/next/core/net/runtime-json', () => ({
   postJson: (body: unknown) => body,
-  runtimeJson: (_m: string, _path: string, body: { slot: number; path: string }) =>
-    open(body.slot, body.path),
+  // The ask to put a project into the hub's store is not a slot opening: it is answered apart.
+  runtimeJson: (_m: string, path: string, body: { slot: number; path: string }) =>
+    path.endsWith('/design/store-push') ? Promise.resolve({ ok: true }) : open(body.slot, body.path),
 }));
 vi.mock('@/next/bindings/pane-stage', () => ({
   usePaneChatStage: () => ({ stage: null, chat: null }),
@@ -38,6 +39,9 @@ vi.mock('@/next/features/designly/api', async (original) => ({
   ...(await original<typeof import('@/next/features/designly/api')>()),
   keptLibrary: () => kept,
   fetchLibrary: () => Promise.resolve(shown),
+  // The hub's store has no copy of anything here: a machine without the project asks it too, and that read
+  // must not pass for a slot opening.
+  fetchStoreLibrary: () => Promise.resolve({ designs: [], layout: { folders: [], placed: {}, systems: {} } }),
 }));
 vi.mock('@/next/features/designly/access/api', async (original) => ({
   ...(await original<typeof import('@/next/features/designly/access/api')>()),
@@ -171,6 +175,20 @@ describe('DesignlySite page switch', () => {
     await click('a');
     expect(open).toHaveBeenCalledTimes(1);
     expect(src()).toBe(`${ORIGIN}/a/d1/p/a.html`);
+  });
+
+  it('shows the page of a slot by path at once: its key is in the address, there is nothing to enter', async () => {
+    const PATH_ORIGIN = 'https://hub.example/m/abc/__pv/1-0123456789abcdef0123456789abcdef';
+    open.mockImplementation(() =>
+      Promise.resolve({ slot: 1, origin: PATH_ORIGIN, enterUrl: `${PATH_ORIGIN}/favicon.ico`, byPath: true }),
+    );
+    mount();
+    await act(async () => {});
+    expect(enterSrc()).toBeNull();
+    expect(src()).toBe(`${PATH_ORIGIN}/a/d1/p/a.html`);
+    await click('b');
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(src()).toBe(`${PATH_ORIGIN}/a/d1/p/b.html`);
   });
 
   it('shows the page when the entering frame never loads', async () => {

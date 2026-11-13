@@ -699,7 +699,7 @@ const OTHERS = OTHER_VIEWS.map(choiceOf);
 const MACHINE_NOTICES = [MACHINE_VIEW, ...OTHER_VIEWS].flatMap(({ machine }) => {
   const alert = alertOf(machine, false);
   return alert && machine.health
-    ? [{ id: machine.id, name: machine.name, alert, since: machine.health.since }]
+    ? [{ id: machine.id, name: machine.name, alert, since: machine.health.since, urgent: true }]
     : [];
 });
 

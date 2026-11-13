@@ -57,7 +57,7 @@ describe('the merge requests under a finished task', () => {
     expect(mrPlace('https://example.com/x')).toBe('https://example.com/x');
   });
 
-  it('opens a change in the pane or the review app, and leaves with its exit', () => {
+  it('takes the screen with Review and opens the pane aside, and without the screen Review opens the pane; and leaves with its exit', () => {
     vi.useFakeTimers();
     const onOpen = vi.fn();
     const onReview = vi.fn();
@@ -66,9 +66,10 @@ describe('the merge requests under a finished task', () => {
     expect(screen.getByText('A merge request is ready to look at')).toBeTruthy();
     expect(screen.getByText('acme/runtime !12')).toBeTruthy();
     fireEvent.click(screen.getByText('Review'));
-    expect(onOpen).toHaveBeenCalledWith(mrs[0].output);
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Code review' }));
     expect(onReview).toHaveBeenCalledWith(MR);
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Open aside, in the right pane' }));
+    expect(onOpen).toHaveBeenCalledWith(mrs[0].output);
 
     rerender(<MrDone mrs={null} onOpen={onOpen} onReview={onReview} />);
     expect(container.querySelector('.hx-mrdone')?.getAttribute('data-state')).toBe('closing');

@@ -46,3 +46,27 @@ func TestProfileOnSignal(t *testing.T) {
 	}
 	t.Fatal("no profiles after SIGUSR1")
 }
+
+// The CPU profile of a signal lands beside its set and goes with it when the set is pruned.
+func TestCPUProfileIsWrittenBesideTheSet(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	stamp, err := writeProfiles(dir, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCPUProfile(dir, stamp, 20*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(filepath.Join(dir, "cpu-"+stamp+".pprof")); err != nil || st.Size() == 0 {
+		t.Fatalf("cpu profile: %v", err)
+	}
+	for i := 1; i <= profileSets; i++ {
+		if _, err := writeProfiles(dir, at.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cpu-"+stamp+".pprof")); !os.IsNotExist(err) {
+		t.Fatalf("the pruned set left its cpu profile: %v", err)
+	}
+}

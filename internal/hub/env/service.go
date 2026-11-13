@@ -56,12 +56,14 @@ type Deps struct {
 	Recommended bool
 	// Install are the installation's values the machines get with every app item (InstallValues).
 	Install map[string]string
+	// Apps are the platform's apps every organization gets while their service has an address (BuiltInApps); nil: none
+	// (HUB_ENV_APPS=off).
+	Apps []BuiltInApp
 }
 
 // Service is the environment and the catalog of the organizations.
 type Service struct {
-	recommended bool
-	install     map[string]string
+	builtIn builtIns
 	// applyDelay is the package's applyDelay when the service was made: a test changes that and puts it back while the
 	// service's routines may still read it.
 	applyDelay time.Duration
@@ -78,7 +80,7 @@ type Service struct {
 
 // New makes the service.
 func New(d Deps) *Service {
-	s := &Service{db: d.DB, gate: d.Gate, feat: d.Features, pub: d.Publisher, changed: d.Changed, reg: d.Reg, log: d.Log, now: d.Now, recommended: d.Recommended, install: d.Install, applyDelay: applyDelay}
+	s := &Service{db: d.DB, gate: d.Gate, feat: d.Features, pub: d.Publisher, changed: d.Changed, reg: d.Reg, log: d.Log, now: d.Now, builtIn: builtIns{recommended: d.Recommended, apps: d.Apps, install: d.Install}, applyDelay: applyDelay}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -167,9 +169,10 @@ type world struct {
 	install map[string]string
 }
 
-func loadWorld(ctx context.Context, st store.Store, o store.Org, recommended bool) (*world, error) {
+// loadWorld reads an organization; b is what the platform itself puts into it.
+func loadWorld(ctx context.Context, st store.Store, o store.Org, b builtIns) (*world, error) {
 	w := &world{org: o, teams: map[string][]store.Team{}, teamByID: map[string]store.Team{}, tenantBy: map[string]store.Space{},
-		items: map[string]store.CatalogItem{}}
+		items: map[string]store.CatalogItem{}, install: b.install}
 	var err error
 	if w.tenants, err = st.SpacesByOrg(ctx, o.ID); err != nil {
 		return nil, err
@@ -201,9 +204,14 @@ func loadWorld(ctx context.Context, st store.Store, o store.Org, recommended boo
 	if w.presets, err = st.EnvPresetsOfOrg(ctx, o.ID); err != nil {
 		return nil, err
 	}
-	if recommended {
+	if b.recommended {
 		w.addRecommended()
 	}
+	off, err := builtInAppsOff(ctx, st, o.ID, b)
+	if err != nil {
+		return nil, err
+	}
+	w.addBuiltInApps(b, off)
 	w.choices = map[string]map[string]map[string]bool{}
 	if len(w.groups) > 0 {
 		for _, sp := range w.tenants {

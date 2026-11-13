@@ -197,20 +197,22 @@ func (m AppMR) Validate() error {
 // request's labels, `priority` and `kind` the tracker's own words, `parent` the epic a task belongs to. `createdAt`,
 // `updatedAt` and `closedAt` (resolved, merged or closed; null while open) are milliseconds.
 type AppRow struct {
-	Key       string       `json:"key"`
-	ID        string       `json:"id"`
-	Title     string       `json:"title"`
-	URL       string       `json:"url"`
-	State     *string      `json:"state"`
-	Flag      *AppFlag     `json:"flag"`
-	Tone      *AppTone     `json:"tone"`
-	Project   *string      `json:"project"`
-	Person    *string      `json:"person"`
-	Target    *string      `json:"target"`
-	CreatedAt int64        `json:"createdAt"`
-	UpdatedAt int64        `json:"updatedAt"`
-	ClosedAt  *int64       `json:"closedAt"`
-	Author    *string      `json:"author"`
+	Key       string   `json:"key"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	URL       string   `json:"url"`
+	State     *string  `json:"state"`
+	Flag      *AppFlag `json:"flag"`
+	Tone      *AppTone `json:"tone"`
+	Project   *string  `json:"project"`
+	Person    *string  `json:"person"`
+	Target    *string  `json:"target"`
+	CreatedAt int64    `json:"createdAt"`
+	UpdatedAt int64    `json:"updatedAt"`
+	ClosedAt  *int64   `json:"closedAt"`
+	Author    *string  `json:"author"`
+	// Avatar is the author's picture as the page loads it: a route of this runtime, never the code host's address.
+	Avatar    *string      `json:"avatar"`
 	Assignees []string     `json:"assignees"`
 	Reviewers []string     `json:"reviewers"`
 	Me        []AppRole    `json:"me"`

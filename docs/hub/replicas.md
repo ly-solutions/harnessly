@@ -89,6 +89,11 @@ On SIGTERM a replica does not cut what it serves:
 
 Both waits are 0 without `HUB_REPLICAS`: a single process has nowhere to send its machines and stops at once.
 
+Between the old link's end and the new one's entry in `machine_links` a machine is held by no replica for a moment. A
+request for it then waits up to 3 s for the next link instead of answering 502 «offline», but only when the machine's
+link ended within the last 5 s (given up by a replica that stops, or a lease run out); a machine away for longer is
+answered at once (`link.Registry.Await`).
+
 ## What crosses between replicas
 
 - **Event streams.** What one replica tells its streams (a space's events, the workspace page's pokes, an
@@ -106,11 +111,51 @@ Both waits are 0 without `HUB_REPLICAS`: a single process has nowhere to send it
 - **A link the directory did not take.** The entry is tried three times; a link that still has none is closed, and the
   agent dials again.
 
+## Background jobs: one leader
+
+Every replica takes and renews the lease `hub-leader` of the table `job_leases` every 5 s (`store.TakeLease`, a lease of
+15 s; package `internal/hub/leader`). The one that holds it runs the jobs that must happen once; the others wait. A
+holder that could not renew for 10 s stops leading by itself, before the lease is anybody's, so two replicas never lead
+at once; a clean stop gives the lease up at once, and a killed replica's runs out within 15 s. The log says
+`leader: this replica leads the background jobs` and, per job, `leader: job started` / `leader: job stopped, the lead
+moved`: with two pods each job name is started on one of them at a time.
+
+| job | where it runs | why |
+|---|---|---|
+| offline prompts and offline chats (`proxy` outbox) | leader | a machine's messages are handed over in order, one at a time |
+| comments not yet handed over (`docs` sweep) | leader | each comment is delivered once |
+| machine operations (resume, upkeep) | leader | one watch per operation; a watch this process already follows is not started twice |
+| automations dispatch, eval, history sweep, sites sweep, efficiency collector, merge request source | leader | they write the same rows or call the outside world |
+| organizations' signal checks every five minutes (`analytics`) | leader | the checks a replica triggers itself (a machine went offline) run there |
+| usage ticks of the live analytics | every replica, for its own streams only | they are not relayed: the others would get them twice |
+| environment and budget pushes (`env`, `limits`) | every replica, for its own links | a replica pushes to the machines it holds; a change made on another one reaches them at the next pass (60 s) |
+| design access sweep, extension checks, documents services' health, design view cache | every replica | their state is per process, or the rows they take are taken once |
+| housekeeping (sessions, tickets, uploads), the seeds at start (`HUB_SWITCHES`, efficiency markers) | every replica | deletes and upserts that give the same result twice |
+
+## The data folder
+
+With the flag the replicas do not share `HUB_DATA_DIR`: each has a folder of its own (an `emptyDir` in Kubernetes).
+What the hub keeps there and what it means for replicas:
+
+| file | |
+|---|---|
+| `secret_key` | the key the hub seals with (stored SSH keys, the store's and the sites' secrets) when `HUB_SECRET_KEY` is not set. Every replica must have the same: set `HUB_SECRET_KEY`, or mount the same file from a Secret. A replica without either refuses to start (it would make a key of its own) |
+| `app-token.pem` | the key apps' tokens are signed with (`HUB_APP_TOKEN`). Mount the same file on every replica (or point `HUB_APP_TOKEN_KEY_FILE` at it); without the file a replica derives it from `HUB_SECRET_KEY`, and without that refuses to start |
+| `hub.db` | the SQLite file: replicas need Postgres |
+| `store/` | the files of the store unless `HUB_STORE_S3_*` sends them to a bucket: replicas need the bucket |
+| `sites/` | the sites' files unless `HARNESSLY_SITES_S3_*` (or an upstream) holds them |
+| `design-view/` | a cache of design projects made from the store, filled again on demand: per replica |
+
+A hub that moves from one pod with a volume to replicas: copy `secret_key` and `app-token.pem` into a Secret first
+(the same bytes: `HUB_SECRET_KEY` derives a different key), check that `store/` and `sites/` are empty, then drop the
+volume.
+
 ## What is still in the process
 
 The abuse limits count per replica (the real ceiling is the number of replicas times the limit), and the caches are
-per replica. A machine's last reported state (`machines.info`) is read, changed and written by the replica that holds
-its link, without a version.
+per replica: each fills its own from the database, and a change made on one replica reaches the cache of the other
+when that entry expires. A machine's last reported state
+(`machines.info`) is read, changed and written by the replica that holds its link, without a version.
 
 ## Migration
 

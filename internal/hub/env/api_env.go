@@ -14,6 +14,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
 	"github.com/ly-solutions/harnessly/internal/hub/orgs"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
+	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
 
 // req is one request in an organization: who asks, what the organization holds and what the person may.
@@ -36,11 +37,10 @@ func (s *Service) open(r *http.Request, st store.Store, p *auth.Principal, featu
 	if err := s.feature(ctx, o.ID, feature); err != nil {
 		return nil, err
 	}
-	w, err := loadWorld(ctx, st, o, s.recommended)
+	w, err := loadWorld(ctx, st, o, s.builtIn)
 	if err != nil {
 		return nil, err
 	}
-	w.install = s.install
 	return &req{ctx: ctx, st: st, p: p, w: w, rt: newRights(ctx, st, p), s: s}, nil
 }
 
@@ -231,6 +231,9 @@ func (q *req) row(e store.EnvEntry, edit bool, c cover, use *usageIndex, rs []En
 	}
 	row := EntryItem{EntryID: e.ID, ItemID: it.ID, Kind: it.Kind, Name: it.Name, Hint: it.Hint, Audience: audienceView(e.Audience),
 		Pinned: e.Pinned, Enabled: e.Enabled, GroupID: e.GroupID, Position: e.Position}
+	if it.Kind == store.CatalogApp {
+		row.BuiltIn, row.Off = hubproto.IsBuiltInEnvItem(it.ID), appOff(it.Source)
+	}
 	row.LockedReason = lockedReason(edit, above, e)
 	row.Locked = row.LockedReason != nil
 	if use.has {

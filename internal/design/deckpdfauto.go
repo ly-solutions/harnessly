@@ -36,6 +36,36 @@ var (
 	deckPdfWalkMax = 5000
 )
 
+// deckPdfCanFor is how long the keeper takes its person's right to edit a deck as asked. The right is read through
+// the kits (a kit for viewing only makes its draft a deck to look at), and asking it for every marked deck every
+// deckPdfEvery read and checked every kit's seal over and over: megabytes of JSON a minute at rest. A
+// right taken away is noticed by the keeper this much later, which costs at most one more PDF of the deck.
+const deckPdfCanFor = 30 * time.Second
+
+type deckPdfEdit struct {
+	at  time.Time
+	can bool
+}
+
+// keeperCanEdit is Can(id, RoleEdit) as the keeper last asked it, asked again after deckPdfCanFor.
+func (l *Library) keeperCanEdit(id string, now time.Time) bool {
+	keep := l.deckPdfs()
+	keep.mu.Lock()
+	e, ok := keep.edits[id]
+	keep.mu.Unlock()
+	if since := now.Sub(e.at); ok && since >= 0 && since < deckPdfCanFor {
+		return e.can
+	}
+	e = deckPdfEdit{at: now, can: l.Can(id, RoleEdit)}
+	keep.mu.Lock()
+	if keep.edits == nil {
+		keep.edits = map[string]deckPdfEdit{}
+	}
+	keep.edits[id] = e
+	keep.mu.Unlock()
+	return e.can
+}
+
 // deckPdfDeck is the keeper's memory of one deck.
 type deckPdfDeck struct {
 	staleSince time.Time
@@ -50,6 +80,8 @@ type deckPdfDeck struct {
 type deckPdfKeep struct {
 	mu    sync.Mutex
 	decks map[string]*deckPdfDeck
+	// edits is the keeper's own memory of whether its person may edit a deck another runtime marked, under mu.
+	edits map[string]deckPdfEdit
 	// revs is the store's word on each deck (deckStoreRev), under revMu with the rest below.
 	revMu sync.Mutex
 	revs  map[string]deckStoreRevAt
@@ -602,7 +634,7 @@ func (l *Library) keepDeckPdfsOnce(now time.Time) {
 			continue
 		}
 		// Through a store with leases any machine whose person may edit the deck keeps it; else the one named.
-		if owner, on := l.deckPdfOwner(id); on && (owner == me || l.deckPdfShared() && l.Can(id, RoleEdit)) {
+		if owner, on := l.deckPdfOwner(id); on && (owner == me || l.deckPdfShared() && l.keeperCanEdit(id, now)) {
 			kept[id] = true
 			l.keepDeckPdf(id, now)
 		}
@@ -612,6 +644,11 @@ func (l *Library) keepDeckPdfsOnce(now time.Time) {
 	for id := range keep.decks {
 		if !kept[id] {
 			delete(keep.decks, id)
+		}
+	}
+	for id, e := range keep.edits {
+		if now.Sub(e.at) >= deckPdfCanFor {
+			delete(keep.edits, id)
 		}
 	}
 	keep.mu.Unlock()

@@ -19,10 +19,11 @@ import SmartNotice, {
   type TSmartDetail,
   type TSmartKind,
 } from '@/next/features/smart-notice/smart-notice';
-import { pinLocale, type TLang } from '@/next/i18n';
+import { pinLocale, t, type TLang } from '@/next/i18n';
 import { NOTICE_PLACES, type TNoticePlace } from '@/next/stores/notices';
 import { ToastHost, toast } from '@/next/ui/toast';
-import Drops from '@/next/features/smart-notice/drops';
+import NoticeStack from '@/next/features/smart-notice/stack';
+import MachineMore from '@/next/features/smart-notice/machine-more';
 import { fly, snap } from '@/next/features/smart-notice/fly';
 import { looksSecret } from '@/next/features/smart-notice/looks-secret';
 import {
@@ -146,7 +147,9 @@ const SAMPLES: Record<TSample, Omit<ISmartItem, 'key' | 'at' | 'until'> & { deta
     chatId: null,
     icon: 'hard-drive',
     title: 'dev-machine',
-    text: 'Машина не справляется',
+    text: 'Память почти кончилась — занято 15 из 16 ГБ · больше всего занимает vite',
+    machine: { id: 'dev-machine', metric: 'mem', waiting: [] },
+    urgent: true,
     detail: {
       k: 'machine',
       text: 'Машине не хватает памяти — чаты могут отвечать медленно.',
@@ -300,6 +303,12 @@ const Gallery = () => {
   const [mainKey, setMainKey] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [place, setPlace] = useState<TNoticePlace>(FIRST_PLACE);
+  // Swept off the stack in the column, or «Очистить всё».
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  const dismiss = useCallback(
+    (keys: readonly string[]) => setDismissed((was) => new Set([...was, ...keys])),
+    [],
+  );
   const [hidden, setHidden] = useState<ReadonlySet<string>>(
     () => new Set(params.get('set') === 'drops' ? items.map((i) => i.key) : []),
   );
@@ -369,7 +378,7 @@ const Gallery = () => {
   );
   const live = items.filter((i) => !hidden.has(i.key) && (!NEWS.has(i.kind) || onClock.has(i.key)));
   const drops = items
-    .filter((i) => hidden.has(i.key) && !NEWS.has(i.kind))
+    .filter((i) => hidden.has(i.key) && !NEWS.has(i.kind) && !dismissed.has(i.key))
     .map((item) => {
       const detail = SAMPLES[item.sample].detail;
       const what = detail.k === 'code' ? detail.why : detail.k === 'permission' ? detail.command : item.text;
@@ -396,6 +405,17 @@ const Gallery = () => {
         delete el.dataset.arriving;
       });
     });
+  };
+  // The machine's card opened in place: the sample's own detail, a stop is a toast.
+  const machineMore = () => {
+    const detail = SAMPLES.machine.detail;
+    return detail.k === 'machine' ? (
+      <MachineMore
+        detail={detail}
+        stopping={null}
+        onStop={(key) => toast('dev-machine', { description: `stop ${key}` })}
+      />
+    ) : null;
   };
   const backItem = (key: string, from: DOMRect | null, view: HTMLElement | null) => {
     setHidden((was) => {
@@ -561,7 +581,24 @@ const Gallery = () => {
           <b>Сабагенты</b>
           <p>Проверка вёрстки · 2 мин</p>
         </section>
-        <Drops drops={drops} now={now} onBack={backItem} />
+        <NoticeStack
+          drops={drops.filter((d) => d.item.kind !== SMART_KIND.machine)}
+          now={now}
+          label={t('next.smart.drops.title')}
+          onBack={backItem}
+          onOpenChat={() => undefined}
+          onDismiss={dismiss}
+        />
+        <div className="hx-ng__below">
+          <NoticeStack
+            drops={drops.filter((d) => d.item.kind === SMART_KIND.machine)}
+            now={now}
+            label={t('next.smart.stack.machine')}
+            onBack={backItem}
+            onDismiss={dismiss}
+            renderAnswer={machineMore}
+          />
+        </div>
       </aside>
       <SmartNotice
         items={live}

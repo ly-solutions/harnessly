@@ -39,6 +39,8 @@ export interface OrgMachine {
   name: string;
   /** Whose it is; null for a shared one. */
   ownerName: string | null;
+  /** The owner's user id when the hub says it (the card leaves them out of the people a machine is handed to). */
+  ownerId?: string | null;
   /** What it is for («сборки и e2e»); null when nobody wrote it. */
   purpose: string | null;
   kind: 'personal' | 'shared';
@@ -202,6 +204,9 @@ export interface MovePlan {
   kept: string[];
 }
 
+/** What happens to the chats the machine copied for its previous owner: `move` hands them over, `keep` leaves them. */
+export type OwnerHistory = 'move' | 'keep';
+
 export interface MachinesApi {
   /** A dry run: the plan of moving the machine to the tenant, nothing changes. */
   planMoveMachine(id: string, tenantId: string, teamId?: string): Promise<MovePlan>;
@@ -222,6 +227,8 @@ export interface MachinesApi {
   renameMachine(id: string, name: string): Promise<MachineDetail>;
   /** `DELETE /api/machines/{id}`: its key stops working and it leaves the list (the owner of the tenant's space). */
   removeMachine(id: string): Promise<void>;
+  /** `POST /api/machines/{id}/owner`: the owner of the machine's space makes a member of it the machine's own owner. */
+  assignMachineOwner(id: string, userId: string, history: OwnerHistory): Promise<MachineDetail>;
   /** Where «Открыть» leads: the address of the machine's runtime (`GET /api/machines/{id}/open`). */
   openMachine(id: string): Promise<{ url: string }>;
   /** `POST /api/machines/{id}/trust`: the tenant's owner lets the hub open this machine on its own origin. */

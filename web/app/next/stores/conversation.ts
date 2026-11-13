@@ -94,6 +94,11 @@ export const useFedClients = (conv: ConvId | null): ReadonlySet<ClientId> =>
   useKey(fedStore, conv) ?? NO_CLIENTS;
 const NO_CLIENTS: ReadonlySet<ClientId> = new Set();
 
+/** How many times the person asked for the chat anew («Перезагрузить чат»): what reads the chat from elsewhere than
+ *  the machine's channel (the cluster's copy) reads it again. */
+export const reloadStore = createKeyedStore<ConvId, number>();
+export const useReloads = (conv: ConvId | null): number => useKey(reloadStore, conv) ?? 0;
+
 export const key = (conv: ConvId, id: string): string => `${conv} ${id}`;
 const isLive = (id: EntryId) => id.startsWith('live:');
 

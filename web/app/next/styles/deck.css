@@ -3241,3 +3241,10 @@
   opacity: 0.65;
   font-size: 11px;
 }
+/* «Стиль» of a video with no theme chosen yet: its scenes are in their own look. */
+.hx-deck-own {
+  margin: -2px 0 8px;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  line-height: 1.4;
+}

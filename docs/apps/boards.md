@@ -81,6 +81,20 @@ Where:
 - **A server:** a name of its own with TLS in front, `https://boards.example.com`. The service allows the hub's address
   to frame it; add the machines' origins yourself when their pages embed it.
 
+## The app on the machines
+
+«Доски» is a built-in app: once the hub has the service's address, every organization has it, on for everybody, with
+nothing to add in «Окружение» ([Built-in apps](../hub/environment.md#built-in-apps)). Each machine installs the
+package at its next setup and shows the app in «Приложения».
+
+- A person turns it off for themselves on their machine; an organization's admin turns it off for everybody in
+  «Окружение» («Выключено у всех»); `HUB_ENV_APPS=off` on the hub leaves the built-in apps out everywhere.
+- The package is the folder `harnessly-app` of `https://github.com/ly-solutions/boards`, branch `main`. Machines that cannot reach it
+  take it from a mirror: `HUB_BOARDS_APP_REPO` (an https address) and `HUB_BOARDS_APP_BRANCH` (a branch or a tag) on the hub;
+  with Helm, in `extraEnv`.
+- An organization that already has an `app` item of its own for the same package keeps it: the machines get that one
+  and not the built-in.
+
 ## Check that the app is there
 
 1. The service answers: `curl -fsS <address>/healthz` (the process) and `<address>/readyz` (its storage).

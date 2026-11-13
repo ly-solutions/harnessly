@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -283,5 +284,53 @@ func TestTaskCardWithoutConnectionsIsUnchanged(t *testing.T) {
 	h := &Handlers{S: New(Config{}), Session: func(*http.Request) bool { return true }}
 	if code, out := serve(h.Task, "/task?key=JR-2"); code != 400 || out["error"] != "Unsupported key" {
 		t.Fatalf("%d %v", code, out)
+	}
+}
+
+// A bare key that matches the deployment's task-key pattern is read through the person's connection first, as for
+// the tracker app and link previews (GitHub #78): without a deployment token the card was a no-token error although
+// the connection could serve the issue. A key the connection does not know still opens from the deployment's tracker.
+func TestTaskCardBareKeyPrefersThePersonsConnection(t *testing.T) {
+	setFakeIssues(t, fakeIssues(), nil)
+	key := regexp.MustCompile(`^JR-[0-9]+$`)
+	t.Setenv("YOUTRACK_TOKEN", "")
+	cs, _ := connService(t)
+	h := &Handlers{S: New(Config{Connections: cs, TaskKey: key}), Session: func(*http.Request) bool { return true }}
+	if code, task := serve(h.Task, "/task?key=JR-2"); code != 200 || task["title"] != "Child" {
+		t.Fatalf("via the connection: %d %v", code, task)
+	}
+	if code, out := serve(h.Task, "/task?key=JR-77"); code != 404 || out["error"] != TaskNotFound {
+		t.Fatalf("unknown to the connection, no deployment token: %d %v", code, out)
+	}
+
+	// Only the deployment's tracker (no connection of the person's): the key keeps its own read, a no-token answer
+	// here, never the connection branch.
+	env := connections.EnvConn{Conn: connections.Conn{ID: "env-tracker", Kind: connections.YouTrack, BaseURL: "https://tracker.example.com",
+		Capabilities: []connections.Capability{connections.Issues}}}
+	cs2 := connections.New(t.TempDir(), memSecrets{}, nil, env)
+	h2 := &Handlers{S: New(Config{Connections: cs2, TrackerURL: "https://tracker.example.com", TaskKey: key}),
+		Session: func(*http.Request) bool { return true }}
+	if code, out := serve(h2.Task, "/task?key=JR-2"); code != 503 || out["error"] != TaskNoToken {
+		t.Fatalf("via the deployment's tracker: %d %v", code, out)
+	}
+
+	// Both: a key the person's connection has no issue for is read from the deployment's tracker.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/issues/JR-9" {
+			_, _ = w.Write([]byte(`{"idReadable":"JR-9","summary":"From the deployment","customFields":[]}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("YOUTRACK_TOKEN", "tracker-secret")
+	cs3, _ := connService(t)
+	h3 := &Handlers{S: New(Config{Connections: cs3, Transport: tlsTo(srv), TrackerURL: "https://tracker.example.com", TaskKey: key}),
+		Session: func(*http.Request) bool { return true }}
+	if code, task := serve(h3.Task, "/task?key=JR-2"); code != 200 || task["title"] != "Child" {
+		t.Fatalf("both, the connection's key: %d %v", code, task)
+	}
+	if code, task := serve(h3.Task, "/task?key=JR-9"); code != 200 || task["title"] != "From the deployment" {
+		t.Fatalf("both, the deployment's key: %d %v", code, task)
 	}
 }

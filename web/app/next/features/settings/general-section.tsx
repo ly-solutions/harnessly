@@ -1,6 +1,7 @@
 // «General»: the window, how the field sends, the work of the machine, and the account. The look (theme, palette, text
 // size) is «Оформление» (appearance-section.tsx); the Enter key is the person's setting and follows them to every
 // device.
+import { markOf, type TChangedMarks } from '@/next/features/settings/changed-mark';
 import { LANGUAGE_NAMES, parseLanguage, type TLanguage } from '@/platform/languages';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Group, LinkRow, MenuRow, SegRow, SwitchRow } from '@/next/features/settings/rows';
@@ -11,7 +12,9 @@ import {
   DELEGATION_MAX_CHILDREN,
   IDLE_STOPS,
   type DelegationSettings,
+  type AgentModel,
   type IdleStop,
+  type NoticeSummaryModel,
   type OnOff,
 } from '@/next/protocol/v2';
 
@@ -21,10 +24,25 @@ export const FEED_ROWS = [
   'design',
   'doc',
   'mr',
-  'mrDone',
   'stand',
   'file',
 ] as const satisfies readonly TShownKind[];
+
+/** The values of the summary model's menu: `auto`, `off`, or `provider:model`. */
+export const SUMMARY_AUTO = 'auto';
+export const SUMMARY_OFF = 'off';
+export const summaryValue = (m: NoticeSummaryModel | null): string => {
+  if (!m || m.provider === 'auto') return SUMMARY_AUTO;
+  if (m.provider === 'off') return SUMMARY_OFF;
+  return `${m.provider}:${m.model ?? ''}`;
+};
+export const summaryFromValue = (value: string): NoticeSummaryModel | null => {
+  if (value === SUMMARY_AUTO) return null;
+  if (value === SUMMARY_OFF) return { provider: 'off' };
+  const [provider, ...rest] = value.split(':');
+  const model = rest.join(':');
+  return { provider: provider === 'codex' ? 'codex' : 'claude', ...(model ? { model } : {}) };
+};
 
 export const THEMES = ['light', 'dark', 'system'] as const;
 export type ThemeChoice = (typeof THEMES)[number];
@@ -59,6 +77,8 @@ export interface IGeneralSectionProps {
     canSignOut: boolean;
   };
   /** When the runtime stops a terminal that stands idle; null when the machine cannot, so the row is not there. */
+  /** The rows an agent has just changed, by the setting's catalog key. */
+  marks: TChangedMarks;
   idleStop: IdleStop | null;
   /** Whether a chat held on its usage limit goes on by itself at the reset; null when the runtime has no such switch. */
   limitContinue: OnOff | null;
@@ -66,6 +86,10 @@ export interface IGeneralSectionProps {
   restartContinue: OnOff | null;
   /** What the machine's agents may delegate; null when the machine cannot say, so the group is not there. */
   delegation: DelegationSettings | null;
+  /** The model of the turn summaries; null: «Авто». Meaningful only with `summaryModels`. */
+  noticeSummary: NoticeSummaryModel | null;
+  /** The machine's models by provider, for the summary model's menu; null when the machine cannot set it. */
+  summaryModels: Readonly<Record<'claude' | 'codex', readonly AgentModel[]>> | null;
   /** The keys of the rows waiting for the machine. */
   busy: ReadonlySet<string>;
   onEnterSends: (on: boolean) => void;
@@ -77,6 +101,7 @@ export interface IGeneralSectionProps {
   onLimitContinue: (on: boolean) => void;
   onRestartContinue: (on: boolean) => void;
   onDelegation: (value: DelegationSettings) => void;
+  onNoticeSummary: (value: NoticeSummaryModel | null) => void;
   onSignOut: () => void;
   /** «Обновления» of a machine a hub carries (update-group.tsx); null on any other machine. */
   updates?: ReactNode;
@@ -122,6 +147,7 @@ const GeneralSection = ({
   languages,
   onLanguage,
   account,
+  marks,
   idleStop,
   limitContinue,
   restartContinue,
@@ -136,6 +162,9 @@ const GeneralSection = ({
   onRestartContinue,
   delegation,
   onDelegation,
+  noticeSummary,
+  summaryModels,
+  onNoticeSummary,
   onSignOut,
   updates = null,
   checks = null,
@@ -200,6 +229,7 @@ const GeneralSection = ({
             label: t(`next.settings.general.idleStop.${value}`),
           }))}
           busy={busy.has('idleStop')}
+          mark={markOf(marks, 'runtime.idleStop')}
           onPick={onIdleStop}
         />
       )}
@@ -209,6 +239,7 @@ const GeneralSection = ({
           hint={t('next.settings.general.limitContinue.hint')}
           on={limitContinue === 'on'}
           busy={busy.has('limitContinue')}
+          mark={markOf(marks, 'runtime.limitContinue')}
           onChange={onLimitContinue}
         />
       )}
@@ -218,7 +249,28 @@ const GeneralSection = ({
           hint={t('next.settings.general.restartContinue.hint')}
           on={restartContinue === 'on'}
           busy={busy.has('restartContinue')}
+          mark={markOf(marks, 'runtime.restartContinue')}
           onChange={onRestartContinue}
+        />
+      )}
+      {summaryModels !== null && (
+        <MenuRow
+          label={t('next.settings.general.noticeSummary')}
+          hint={t('next.settings.general.noticeSummary.hint')}
+          value={summaryValue(noticeSummary)}
+          choices={[
+            { value: SUMMARY_AUTO, label: t('next.settings.general.noticeSummary.auto'), sub: null },
+            { value: SUMMARY_OFF, label: t('next.settings.general.noticeSummary.off'), sub: null },
+            ...(['claude', 'codex'] as const).flatMap((provider) =>
+              summaryModels[provider].map((m) => ({
+                value: `${provider}:${m.id}`,
+                label: m.label,
+                sub: provider === 'claude' ? 'Claude' : 'Codex',
+              })),
+            ),
+          ]}
+          busy={busy.has('noticeSummary')}
+          onPick={(value) => onNoticeSummary(summaryFromValue(String(value)))}
         />
       )}
     </Group>
@@ -231,6 +283,7 @@ const GeneralSection = ({
           value={delegation.maxChildren}
           choices={DELEGATION_MAX_CHILDREN.map((value) => ({ value, label: String(value) }))}
           busy={busy.has('delegation')}
+          mark={markOf(marks, 'runtime.delegation.maxChildren')}
           onPick={(maxChildren) => onDelegation({ ...delegation, maxChildren })}
         />
         <SwitchRow
@@ -238,6 +291,7 @@ const GeneralSection = ({
           hint={t('next.settings.delegation.anyChatHint')}
           on={delegation.anyChat}
           busy={busy.has('delegation')}
+          mark={markOf(marks, 'runtime.delegation.anyChat')}
           onChange={(anyChat) => onDelegation({ ...delegation, anyChat })}
         />
       </Group>

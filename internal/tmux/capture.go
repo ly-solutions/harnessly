@@ -22,7 +22,16 @@ func (t *Tmux) CaptureHistory(name string, lines int) (string, bool) {
 	return t.capture(name, "-p", "-S", "-"+strconv.Itoa(lines))
 }
 
+// captureSlots bounds the tmux processes started for screens at once: a burst of looks while no control connection
+// is up must not take an OS thread and a fork each.
+var captureSlots = make(chan struct{}, 4)
+
 func (t *Tmux) capture(name string, flags ...string) (string, bool) {
+	if out, ok, handled := t.watchedCapture(name, flags); handled {
+		return out, ok
+	}
+	captureSlots <- struct{}{}
+	defer func() { <-captureSlots }()
 	r := t.on(name, append(append([]string{"capture-pane"}, flags...), "-t", name)...)
 	if r.err != nil {
 		return "", false

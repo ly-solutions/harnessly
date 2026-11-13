@@ -107,6 +107,7 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"eval_batches", byMachine},
 	{"eval_schedules", byMachine},
 	{"automation_runs", byMachine + ` OR rule_id IN (SELECT id FROM automation_rules WHERE ` + byMachine + `)`},
+	{"automation_timers", `rule_id IN (SELECT id FROM automation_rules WHERE ` + byMachine + `)`},
 	{"automation_rules", byMachine},
 	{"history_entries", byMachine},
 	{"history_turns", byMachine},

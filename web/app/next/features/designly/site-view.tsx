@@ -79,7 +79,7 @@ import {
 } from '@/next/features/designly/board-error';
 import SiteDevtools from '@/next/features/designly/site-devtools';
 import type { IStyleItem } from '@/next/features/designly/element-style';
-import { fromFrame } from '@/next/features/designly/bridge-origin';
+import { GUEST_ORIGIN, frameOrigin, fromFrame } from '@/next/features/designly/bridge-origin';
 import { AnchorContext, createAnchorStore, type IAnchorItem } from '@/next/features/designly/note-anchor';
 import { useDomBridge } from '@/next/features/designly/use-dom-bridge';
 import TourAnchor, { TOUR_ANCHOR } from '@/next/features/tour/tour-anchor';
@@ -681,8 +681,10 @@ const SiteView = ({
   const frameOf = () => {
     const frame = frameRef.current;
     if (!frame || src === null) return null;
-    // A guest's board has an opaque origin (its sandbox): nothing to name, the window itself is what is trusted.
-    return { frame, origin: guest ? '*' : new URL(src, window.location.href).origin };
+    // A guest's board and one in a slot by path have an opaque origin (their sandbox): nothing to name, the window
+    // itself is what is trusted.
+    const origin = guest ? GUEST_ORIGIN : frameOrigin(src);
+    return origin === null ? null : { frame, origin };
   };
   /** The slot's window and origin once its page has loaded, or null before. */
   const slotOf = () => (loadedKey.current === `${src}#${reloadKey}` ? frameOf() : null);

@@ -475,6 +475,17 @@ describe('v2 runtime settings', () => {
     expect(
       parsePage.runtimeSettings({ idleStop: '2h', limitContinue: 'on', restartContinue: 'off' }),
     ).toEqual({ idleStop: '2h', limitContinue: 'on', restartContinue: 'off' }));
+  it('read the model of the turn summaries', () =>
+    expect(
+      parsePage.runtimeSettings({
+        idleStop: '1h',
+        noticeSummary: { provider: 'codex', model: 'gpt-5-mini' },
+      }),
+    ).toEqual({ idleStop: '1h', noticeSummary: { provider: 'codex', model: 'gpt-5-mini' } }));
+  it('refuse a summary provider the runtime does not know', () =>
+    expect(() =>
+      parsePage.runtimeSettings({ idleStop: '1h', noticeSummary: { provider: 'gemini' } }),
+    ).toThrow(ProtocolError));
   it('read the settings of an older runtime without them', () =>
     expect(parsePage.runtimeSettings({ idleStop: '1h' })).toEqual({ idleStop: '1h' }));
   it('refuse a switch that is neither on nor off', () =>

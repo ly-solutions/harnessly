@@ -388,6 +388,130 @@
 .hx-paste__more:hover {
   color: var(--hx-fg-1);
 }
+
+/* A service block of the message (features/chat/markup.ts): a quiet card, its head says what it is; a long body folds
+   and opens in place, both ways animated. */
+.hx-mk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-1);
+  margin-block: var(--hx-space-1);
+  padding: var(--hx-space-2) var(--hx-space-3);
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-md);
+  background: color-mix(in oklab, var(--hx-fg-1) 3%, transparent);
+  font-size: var(--hx-text-sm);
+}
+.hx-mk[data-tone='error'] {
+  border-color: color-mix(in oklab, var(--hx-danger) 40%, var(--hx-border));
+}
+.hx-mk__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.hx-mk__icon {
+  flex: none;
+  color: var(--hx-fg-3);
+}
+.hx-mk[data-tone='ok'] .hx-mk__icon {
+  color: var(--hx-success);
+}
+.hx-mk[data-tone='error'] .hx-mk__icon {
+  color: var(--hx-danger);
+}
+.hx-mk[data-kind='task'] .hx-mk__icon[data-i='loader-circle'] {
+  animation: hx-spin 1.4s linear infinite;
+}
+.hx-mk__label {
+  flex: none;
+  color: var(--hx-fg-2);
+  font-weight: 500;
+}
+.hx-mk[data-kind='shell'] .hx-mk__label,
+.hx-mk[data-kind='command'] .hx-mk__label {
+  font-family: var(--hx-font-mono);
+  color: var(--hx-accent);
+}
+.hx-mk__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--hx-fg-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-mk[data-kind='shell'] .hx-mk__title {
+  font-family: var(--hx-font-mono);
+}
+.hx-mk__copy {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--hx-dur-fast, 120ms) ease-out;
+}
+.hx-mk:hover .hx-mk__copy,
+.hx-mk:focus-within .hx-mk__copy {
+  opacity: 1;
+}
+.hx-mk__fold {
+  display: grid;
+  grid-template-rows: minmax(4.5em, 0fr);
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.hx-mk[data-open='true'] .hx-mk__fold {
+  grid-template-rows: 1fr;
+}
+.hx-mk__body {
+  min-height: 0;
+  overflow: hidden;
+  color: var(--hx-fg-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.hx-mk[data-open='true'] .hx-mk__body {
+  mask-image: none;
+}
+.hx-mk__body[data-mono='true'] {
+  font-family: var(--hx-font-mono);
+  font-size: var(--hx-text-xs);
+}
+.hx-mk__path {
+  overflow: hidden;
+  color: var(--hx-fg-3);
+  font-family: var(--hx-font-mono);
+  font-size: var(--hx-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-mk__more {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hx-fg-3);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  cursor: pointer;
+}
+.hx-mk__more:hover {
+  color: var(--hx-fg-1);
+}
+.hx-mk__chev {
+  transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.hx-mk[data-open='true'] .hx-mk__chev {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-mk__fold,
+  .hx-mk__chev {
+    transition: none;
+  }
+}
 .hx-msg-user {
   display: flex;
   flex-direction: column;

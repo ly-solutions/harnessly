@@ -30,6 +30,9 @@ services:
       HUB_ARTIFACTS_PUBLIC_URL: *docs-url
       HUB_ARTIFACTS_TOKEN: ${DOCS_TOKEN:-docs-trial-token-change-me}
       HUB_ARTIFACTS_ACCESS_TOKEN: ${DOCS_ACCESS_TOKEN:-}
+      # Where the machines take the «Документы» app's package from; empty: the service's public repository, branch main.
+      HUB_ARTIFACTS_APP_REPO: ${DOCS_APP_REPO:-}
+      HUB_ARTIFACTS_APP_BRANCH: ${DOCS_APP_BRANCH:-}
     depends_on:
       - artifacts
 

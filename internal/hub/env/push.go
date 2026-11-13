@@ -32,7 +32,7 @@ func MachineItems(w *world, spaceID, teamID, owner string, setup bool, ex Extra)
 	if teamID != "" {
 		person.Teams = []string{teamID}
 	}
-	eff := Resolve(w.resolverItems(), w.resolverEntries(), person)
+	eff := w.resolve(person)
 	order := scriptOrder(eff)
 	out := []hubproto.EnvItem{}
 	for _, e := range eff {
@@ -136,6 +136,8 @@ type PushDeps struct {
 	Recommended bool
 	// Install: the installation's values for the apps (Deps.Install).
 	Install map[string]string
+	// Apps: the platform's apps (Deps.Apps).
+	Apps []BuiltInApp
 }
 
 // Pusher keeps the environment lists of the machines current: it computes each machine's list, sends env.set when the
@@ -160,9 +162,8 @@ type Pusher struct {
 	mu   sync.Mutex
 	held map[string]string // machine with the environment feature → the hash it holds
 	// setup is whether a machine, at its last hello, had the feature environment.setup; a machine absent has not said yet.
-	setup       map[string]bool
-	recommended bool
-	install     map[string]string
+	setup   map[string]bool
+	builtIn builtIns
 	// extra: the kinds beyond the setup the machine does (environment.claude, environment.apps).
 	extra map[string]Extra
 	// newRuns are the times a machine started runs of its own, for the hourly bound.
@@ -172,7 +173,7 @@ type Pusher struct {
 
 // NewPusher starts the pusher.
 func NewPusher(d PushDeps) *Pusher {
-	p := &Pusher{recommended: d.Recommended, install: d.Install, db: d.DB, reg: d.Reg, feat: d.Features, log: d.Log, now: d.Now, every: d.Every, pub: d.Publisher, kick: make(chan struct{}, 1), held: map[string]string{}, setup: map[string]bool{}, extra: map[string]Extra{}, newRuns: map[string][]time.Time{}}
+	p := &Pusher{builtIn: builtIns{recommended: d.Recommended, apps: d.Apps, install: d.Install}, db: d.DB, reg: d.Reg, feat: d.Features, log: d.Log, now: d.Now, every: d.Every, pub: d.Publisher, kick: make(chan struct{}, 1), held: map[string]string{}, setup: map[string]bool{}, extra: map[string]Extra{}, newRuns: map[string][]time.Time{}}
 	if p.log == nil {
 		p.log = slog.Default()
 	}
@@ -322,15 +323,24 @@ func (p *Pusher) world(ctx context.Context, st store.Store, spaceOrg string, wor
 		return w, nil
 	}
 	var w *world
-	if p.feat != nil && p.feat.On(ctx, spaceOrg, FeatureEnv) {
+	switch {
+	case p.feat != nil && p.feat.On(ctx, spaceOrg, FeatureEnv):
 		o, err := st.OrgByID(ctx, spaceOrg)
 		if err != nil {
 			return nil, err
 		}
-		if w, err = loadWorld(ctx, st, o, p.recommended); err != nil {
+		if w, err = loadWorld(ctx, st, o, p.builtIn); err != nil {
 			return nil, err
 		}
-		w.install = p.install
+	case p.builtIn.hasApps():
+		// «Окружение» is off for the organization: its machines still get the platform's apps, and nothing else.
+		o, err := st.OrgByID(ctx, spaceOrg)
+		if err != nil {
+			return nil, err
+		}
+		if w, err = bareWorld(ctx, st, o, p.builtIn); err != nil {
+			return nil, err
+		}
 	}
 	worlds[spaceOrg] = w
 	return w, nil

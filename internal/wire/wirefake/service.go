@@ -891,6 +891,8 @@ func (s *Service) Do(ctx context.Context, device string, cmd wire.Command) wire.
 		return s.edit(c.ID, func(cv *conv) { cv.rec.Pinned = c.Pinned })
 	case wire.ConversationTestCmd:
 		return s.edit(c.ID, func(cv *conv) { cv.rec.Test = c.Test })
+	case wire.ConversationViewCmd:
+		return s.edit(c.ID, func(cv *conv) { cv.rec.View = c.View })
 	case wire.ConversationAppsCmd:
 		return s.edit(c.ID, func(cv *conv) { cv.rec.Apps = append([]string(nil), c.Apps...) })
 	case wire.ConversationMoveCmd:

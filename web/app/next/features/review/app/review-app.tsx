@@ -258,8 +258,16 @@ const ReviewApp = ({
   const [filter, setFilter] = useState('');
   const [whole, setWhole] = useState(false);
   const [tab, setTab] = useState<TPanelTab>('overview');
-  // The panel is open on a wide screen and called on a narrow one; the choice is per visit.
-  const [panel, setPanel] = useState(() => window.innerWidth >= SHEET_BELOW);
+  // The panel is open on a wide screen and called on a narrow one. In a pane (`expand`) it starts folded, so the diff is
+  // all there is; what the person chose on a wide screen is remembered.
+  const [panel, setPanel] = useState(
+    () => window.innerWidth >= SHEET_BELOW && (prefs.panel ?? expand === undefined),
+  );
+  const togglePanel = () => {
+    const next = !panel;
+    setPanel(next);
+    if (window.innerWidth >= SHEET_BELOW) setReviewPrefs({ panel: next });
+  };
 
   const [since, setSince] = useState(false);
   const fresh = useMemo(() => source.files.filter((f) => !viewed(f)), [source.files, viewed]);
@@ -635,7 +643,7 @@ const ReviewApp = ({
             size="sm"
             variant="ghost"
             aria-pressed={panel}
-            onClick={() => setPanel(!panel)}
+            onClick={togglePanel}
           />
         </div>
         <div className="hx-rvapp__diff">

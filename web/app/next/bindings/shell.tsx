@@ -62,7 +62,7 @@ import { BrowserLoginAskHost } from '@/next/bindings/browser-login-asks';
 import { SecretAskHost } from '@/next/bindings/safe-asks';
 import { useNotices } from '@/next/bindings/notices';
 import { useTurnSummaries } from '@/next/bindings/turn-summary';
-import SmartNoticeHost from '@/next/bindings/smart-notice';
+import SmartNoticeHost, { noticeQuiet } from '@/next/bindings/smart-notice';
 import { setHistoryPerson } from '@/next/stores/notice-history';
 import { CHAT_SCOPES, messageGroups, recentChats, searchChats } from '@/next/features/search/search-chats';
 import { APP_ROW, appSearchGroup } from '@/next/features/search/app-rows';
@@ -88,6 +88,8 @@ import {
   useRailMode,
 } from '@/next/bindings/rail';
 import { usePaneOpen } from '@/next/bindings/pane-open';
+import { useChatScreen } from '@/next/bindings/use-chat-screen';
+import { useChatViewSync } from '@/next/bindings/use-chat-view-sync';
 import ChatStage from '@/next/features/shell/chat-stage';
 import QuietChat from '@/next/bindings/quiet-chat';
 import { PHONE_QUERY } from '@/next/features/shell/gestures';
@@ -259,6 +261,7 @@ const paneConvOf = (
 /** The screens that take the whole window, where the sidebar starts folded. */
 const railModeOf = (route: TRoute) =>
   route.kind === ROUTE.app ||
+  (route.kind === ROUTE.review && route.url !== undefined) ||
   route.kind === ROUTE.site ||
   route.kind === ROUTE.appDoc ||
   route.kind === ROUTE.kit
@@ -332,6 +335,10 @@ const Shell = ({ owner }: IShellProps) => {
   // An app, a design, an app's document and a kit take the whole window: the sidebar there keeps its own choice,
   // folded until the person opens it (rail.ts).
   useRailMode(railModeOf(route));
+  // A chat opens on the full screen it was left on.
+  useChatScreen(route);
+  // …and keeps its view on the machine, for the person's other devices.
+  useChatViewSync(route);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notifications, setNotifications] = useState<INotificationsState | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -430,7 +437,7 @@ const Shell = ({ owner }: IShellProps) => {
   // A design's chat keeps its terminal in its own column, under its field: the design's view gives the slot.
   const [termSlot, setTermSlot] = useState<HTMLElement | null>(null);
   const term = useAgentTerminal(route.kind === ROUTE.chat ? (record ?? null) : (designRecord ?? null));
-  const bg = useChatBackground(stageId && isConvId(stageId) ? stageId : null, chatMachine, now);
+  const bg = useChatBackground(stageId && isConvId(stageId) ? stageId : null, chatMachine, now, openChat);
   const present = stageId !== null && chatMachine !== null;
 
   // The machine of the open chat holds the open conversation's channel. With the one list of every machine,
@@ -978,6 +985,7 @@ const Shell = ({ owner }: IShellProps) => {
         onOpenChat={openChat}
         onOpenMachine={() => setMachineReveal((n) => n + 1)}
         onOpenSettings={() => openScreen({ kind: ROUTE.settings, section: 'notifications' })}
+        quiet={noticeQuiet(railModeOf(route) === RAIL_MODE.full, phone && drawerOpen)}
         onOpenCenter={() => {
           // The bell over the chat, or the one of the side menu when no chat is open.
           const header = document.querySelector<HTMLElement>('.hx-header__bell');
@@ -1215,6 +1223,8 @@ const Shell = ({ owner }: IShellProps) => {
           url={route.url ?? null}
           chat={route.chat ?? null}
           wt={route.wt ?? null}
+          open={designOpeners}
+          toolPane={pane.header}
           onOpenDrawer={() => setDrawerOpen(true)}
         />
       )}

@@ -17,12 +17,16 @@ import {
   formatTime,
   JUMP_SECONDS,
   MEDIA_ACTION,
+  MEDIA_FAILURE,
   MEDIA_KIND,
   mediaActionOf,
+  mediaFailureOf,
+  mediaReachable,
   movedFromStart,
   nextRate,
   tenthOf,
   VOLUME_STEP,
+  type TMediaFailure,
   type TMediaKind,
   type TRate,
   nextMark,
@@ -130,7 +134,7 @@ const MediaPlayer = ({
   const [rate, setRate] = useState<TRate>(1);
   const [full, setFull] = useState(false);
   const [idle, setIdle] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<TMediaFailure | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [previewOn, setPreviewOn] = useState(false);
   const [mark, setMark] = useState<IMediaMark | null>(null);
@@ -303,7 +307,7 @@ const MediaPlayer = ({
       // A video whose picture the browser cannot decode loads as sound alone: a black frame is no player.
       if (element instanceof HTMLVideoElement) {
         if (element.videoWidth === 0) {
-          setFailed(true);
+          setFailure(MEDIA_FAILURE.format);
           return;
         }
         root.current?.style.setProperty('--ar', String(element.videoWidth / element.videoHeight));
@@ -336,10 +340,29 @@ const MediaPlayer = ({
     onWaiting: () => setWaiting(true),
     onPlaying: () => setWaiting(false),
     onCanPlay: () => setWaiting(false),
-    onError: () => setFailed(true),
+    // The element says only that it has nothing to play: the address is asked again to tell a file that did not load
+    // from one the browser cannot play.
+    onError: () => {
+      const code = media.current?.error?.code ?? null;
+      void mediaReachable(src).then((reachable) => setFailure(mediaFailureOf(code, reachable)));
+    },
   };
 
-  if (failed)
+  if (failure === MEDIA_FAILURE.load)
+    return (
+      <div className="hx-media__failed" role="status">
+        <Icon name={video ? 'film' : 'music'} />
+        <span className="hx-media__failed-title">{t('next.media.cantLoad')}</span>
+        <button
+          type="button"
+          className="hx-media__failed-save hx-media__failed-retry"
+          onClick={() => setFailure(null)}
+        >
+          {t('next.media.retry')}
+        </button>
+      </div>
+    );
+  if (failure === MEDIA_FAILURE.format)
     return (
       <div className="hx-media__failed" role="status">
         <Icon name={video ? 'film' : 'music'} />

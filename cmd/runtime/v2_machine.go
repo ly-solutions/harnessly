@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -358,6 +359,9 @@ type liveMachine struct {
 	offers func(wire.Provider) []wire.ProfileOffer
 	// codexConfig is Codex's config.toml, whose approval_policy is a Codex chat's default when the runtime skips nothing.
 	codexConfig string
+	// claudeSettings is Claude Code's settings.json, whose permissions.defaultMode "bypassPermissions" makes a Claude
+	// chat's default bypass.
+	claudeSettings string
 	// skip is the runtime's dangerouslySkipPermissions, the permission mode a chat that names none starts in; nil says
 	// nothing of it.
 	skip func() bool
@@ -479,7 +483,7 @@ func (m *liveMachine) refresh() {
 	if m.skip != nil {
 		skip := m.skip()
 		for i := range agents {
-			agents[i].DefaultPermission = defaultPermissionOf(agents[i].Provider, skip, m.codexConfig)
+			agents[i].DefaultPermission = defaultPermissionOf(agents[i].Provider, skip, m.codexConfig, m.claudeSettings)
 		}
 	}
 	m.mu.Lock()
@@ -600,22 +604,36 @@ func (m *liveMachine) run(ctx context.Context) {
 var codexNeverAsksRE = regexp.MustCompile(`(?m)^\s*approval_policy\s*=\s*["']never["']`)
 
 // defaultPermissionOf is the permission mode a chat that names none starts in: bypass when the runtime skips
-// permissions; a Claude chat asks (the launch says so); a Codex chat runs on its config.toml, which asks unless its
-// approval_policy is "never" (read before its first table).
-func defaultPermissionOf(p wire.Provider, skip bool, codexConfig string) wire.PermissionMode {
+// permissions; a Claude chat asks unless its settings.json makes bypassPermissions the defaultMode (another defaultMode
+// does not decide: the launch names ask); a Codex chat runs on its config.toml, which asks unless its approval_policy
+// is "never" (read before its first table).
+func defaultPermissionOf(p wire.Provider, skip bool, codexConfig, claudeSettings string) wire.PermissionMode {
 	if skip {
 		return wire.PermissionBypass
 	}
-	if p != wire.ProviderCodex || codexConfig == "" {
-		return wire.PermissionAsk
-	}
-	raw, err := os.ReadFile(codexConfig)
-	if err != nil {
-		return wire.PermissionAsk
-	}
-	head, _, _ := strings.Cut(string(raw), "\n[")
-	if codexNeverAsksRE.MatchString(head) {
-		return wire.PermissionBypass
+	switch {
+	case p == wire.ProviderClaude && claudeSettings != "":
+		raw, err := os.ReadFile(claudeSettings)
+		if err != nil {
+			return wire.PermissionAsk
+		}
+		var settings struct {
+			Permissions struct {
+				DefaultMode string `json:"defaultMode"`
+			} `json:"permissions"`
+		}
+		if json.Unmarshal(raw, &settings) == nil && settings.Permissions.DefaultMode == "bypassPermissions" {
+			return wire.PermissionBypass
+		}
+	case p == wire.ProviderCodex && codexConfig != "":
+		raw, err := os.ReadFile(codexConfig)
+		if err != nil {
+			return wire.PermissionAsk
+		}
+		head, _, _ := strings.Cut(string(raw), "\n[")
+		if codexNeverAsksRE.MatchString(head) {
+			return wire.PermissionBypass
+		}
 	}
 	return wire.PermissionAsk
 }

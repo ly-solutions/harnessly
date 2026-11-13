@@ -270,7 +270,8 @@
       .hx-inside__it[data-s='run'] .hx-inside__m,
       .hx-setup__spin,
       .hx-deck__spin,
-      .hx-deck__spin[data-corner='1']
+      .hx-deck__spin[data-corner='1'],
+      .hx-mk[data-kind='task'] .hx-mk__icon[data-i='loader-circle']
     ) {
     animation-duration: 2.4s !important;
     animation-iteration-count: infinite !important;

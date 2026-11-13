@@ -17,7 +17,7 @@
               {
                 "key": "ABC-12", "id": "ABC-12", "title": "An epic on the person", "url": "https://tracker.example.com/issue/ABC-12",
                 "state": "In Progress", "flag": null, "tone": "accent", "project": null, "person": "Ann Lee", "target": null,
-                "createdAt": 1790000000000, "updatedAt": 1792800000000, "closedAt": null, "author": "Bob Ray",
+                "createdAt": 1790000000000, "updatedAt": 1792800000000, "closedAt": null, "author": "Bob Ray", "avatar": null,
                 "assignees": ["Ann Lee"], "reviewers": [], "me": ["assignee"], "labels": ["repo:api"], "priority": "Major", "kind": "Epic",
                 "parent": null, "progress": {"done": 1, "total": 2},
                 "children": [
@@ -34,7 +34,7 @@
               {
                 "key": "ABC-14", "id": "ABC-14", "title": "A subtask in work", "url": "https://tracker.example.com/issue/ABC-14",
                 "state": "In Progress", "flag": null, "tone": "accent", "project": null, "person": "Ann Lee", "target": null,
-                "createdAt": 1791000000000, "updatedAt": 1792700000000, "closedAt": null, "author": "Bob Ray",
+                "createdAt": 1791000000000, "updatedAt": 1792700000000, "closedAt": null, "author": "Bob Ray", "avatar": null,
                 "assignees": ["Ann Lee"], "reviewers": [], "me": ["assignee"], "labels": [], "priority": "Normal", "kind": "Feature",
                 "parent": {"id": "ABC-12", "title": "An epic on the person", "url": "https://tracker.example.com/issue/ABC-12"},
                 "progress": null, "children": [], "mr": null
@@ -57,7 +57,7 @@
                 "key": "https://gitlab.example.com/team/api/-/merge_requests/502", "id": "!502", "title": "A merge request to review",
                 "url": "https://gitlab.example.com/team/api/-/merge_requests/502", "state": "opened", "flag": "review", "tone": "accent",
                 "project": "api", "person": "Bob Ray", "target": "main", "createdAt": 1792700000000, "updatedAt": 1792810000000, "closedAt": null,
-                "author": "Bob Ray", "assignees": [], "reviewers": ["Ann Lee"], "me": ["reviewer"], "labels": ["backend"], "priority": null, "kind": null,
+                "author": "Bob Ray", "avatar": "/api/v2/link-meta/forge-avatar?src=https%3A%2F%2Fgitlab.example.com%2Fuploads%2F-%2Fsystem%2Fuser%2Favatar%2F7%2Favatar.png", "assignees": [], "reviewers": ["Ann Lee"], "me": ["reviewer"], "labels": ["backend"], "priority": null, "kind": null,
                 "parent": null, "progress": null, "children": [],
                 "mr": {"source": "feature/refunds", "draft": false, "conflicts": false, "needsRebase": false, "ready": true, "unresolved": false, "comments": 3,
                   "pipeline": "success", "approvals": {"given": 1, "required": 2}}

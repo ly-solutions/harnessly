@@ -631,13 +631,20 @@ func (s *Service) transport(id string) *http.Transport {
 	}
 	t := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			l := s.reg.Get(id)
+			l := s.reg.Await(ctx, id)
 			if l == nil {
 				return nil, errOffline
 			}
 			dctx, cancel := context.WithTimeout(ctx, dialTimeout)
 			defer cancel()
 			c, err := l.OpenConn(dctx)
+			if errors.Is(err, link.ErrClosed) {
+				// The link ended under the dial (its replica stops and sent the machine to another one): once more
+				// over the machine's next link, if it comes within the handover wait.
+				if next := s.reg.Await(dctx, id); next != nil && next != l {
+					c, err = next.OpenConn(dctx)
+				}
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -711,7 +718,7 @@ func (s *Service) forward(w http.ResponseWriter, r *http.Request, u store.User, 
 	if staleOn && (s.reg.Get(m.ID) == nil || s.stale.isDown(m.ID, s.now())) && s.serveStale(w, staleKey) {
 		return
 	}
-	if s.reg.Get(m.ID) == nil {
+	if s.reg.Await(r.Context(), m.ID) == nil {
 		// The machine's own settings are read from the hub's copy while it is away.
 		if !s.serveSettingsCopy(w, r, m.ID) {
 			s.offline(w, r)

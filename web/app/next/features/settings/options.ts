@@ -65,7 +65,7 @@ const CLAUDE_GROUPS: readonly IOptionGroup[] = [
         key: 'permissionMode',
         kind: ROW_KIND.menu,
         choices: CHOICES.list,
-        values: ['default', 'acceptEdits', 'plan'],
+        values: ['default', 'acceptEdits', 'plan', 'bypassPermissions'],
         fallback: 'default',
       },
       { key: 'sandbox', kind: ROW_KIND.switch, fallback: false },

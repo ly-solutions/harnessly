@@ -74,8 +74,19 @@ type hookEntry struct {
 	Hooks   []hookCommand `json:"hooks"`
 }
 
+// shScript runs one of our hook scripts with sh, and does nothing when the file is gone. A bare `sh "missing"` exits
+// with 2, and Claude Code reads exit 2 of UserPromptSubmit as «block the prompt»: one script the CLI cannot see (a
+// moved data folder, a sandbox, an update rewriting it) would then refuse every message of the chat.
+func shScript(script, args string) string {
+	cmd := `[ ! -f "` + script + `" ] || sh "` + script + `"`
+	if args != "" {
+		cmd += " " + args
+	}
+	return cmd
+}
+
 func budgetCommand(script, hook string, timeout int) hookCommand {
-	return hookCommand{Type: "command", Command: `sh "` + script + `" claude ` + hook, Timeout: timeout}
+	return hookCommand{Type: "command", Command: shScript(script, "claude "+hook), Timeout: timeout}
 }
 
 // orderedHooks writes the hooks object in HookEvents order.
@@ -124,7 +135,7 @@ func HookSettings(c HookSettingsConfig) []byte {
 	}
 	hooks := orderedHooks{}
 	for _, e := range HookEvents {
-		status := `sh "` + c.StatusHook + `" ` + e.Event
+		status := shScript(c.StatusHook, e.Event)
 		if c.StatusCLI != "" {
 			status = c.StatusCLI + " " + e.Event + " 2>/dev/null || " + status
 		}
@@ -145,7 +156,7 @@ func HookSettings(c HookSettingsConfig) []byte {
 			name  string
 			entry []hookEntry
 		}{"PermissionRequest", []hookEntry{{Matcher: "", Hooks: []hookCommand{
-			{Type: "command", Command: `sh "` + c.PermissionHook + `"`, Timeout: PermissionHookTimeout}}}}})
+			{Type: "command", Command: shScript(c.PermissionHook, ""), Timeout: PermissionHookTimeout}}}}})
 	}
 	if c.BudgetHook != "" {
 		hooks = append(hooks, struct {
@@ -169,7 +180,7 @@ func HookSettings(c HookSettingsConfig) []byte {
 		CrossSessionInbound string `json:"crossSessionInbound"`
 	}{Hooks: hooks, CrossSessionInbound: "accept"}
 	settings.StatusLine.Type = "command"
-	settings.StatusLine.Command = `sh "` + c.Statusline + `"`
+	settings.StatusLine.Command = shScript(c.Statusline, "")
 	settings.Permissions.Allow = allow
 	compact, err := marshalNoEscape(settings)
 	if err != nil {

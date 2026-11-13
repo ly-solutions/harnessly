@@ -3,13 +3,14 @@ package machines
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
-// The machine's health: whether its disk, memory or CPU is about to break the work on it. The runtime judges it itself,
+// The machine's health: whether its disk, memory, CPU or a stall (stall.go) is about to break the work on it. The runtime judges it itself,
 // so every page and the cluster read one verdict: the smart notice, the sidebar's card and the Machine tab say the same.
 // Each metric keeps its own level with a margin to leave it, so a value on the line does not flap; CPU and swap-in are
 // judged over a window, never one sample; and a level is said only once it held: a short burst (the load of a busy
@@ -36,6 +37,15 @@ type healthTable struct {
 	cpuWindow              time.Duration
 	// Swap-in is the rate over the last swapWindow.
 	swapWindow time.Duration
+	// A stall: the load per core the processors do not explain (their busy share over stallWindow is below
+	// stallBusyPct); it is left below stallExitFactor of its line, or once the processors are busy past stallBusyExitPct.
+	stallWarnPerCore, stallCriticalPerCore float64
+	stallExitFactor                        float64
+	stallBusyPct, stallBusyExitPct         float64
+	stallWindow                            time.Duration
+	// A network mount is silent once it was asked and has not answered for mountSilentAfter; the waiting programs are
+	// looked at every waitingEvery.
+	mountSilentAfter, waitingEvery time.Duration
 	// A metric comes to a worse level once it held riseAfter, and back to a better one once that held fallAfter.
 	riseAfter, fallAfter time.Duration
 }
@@ -56,6 +66,15 @@ var HealthLimits = healthTable{
 	swapWindow:     30 * time.Second,
 	riseAfter:      20 * time.Second,
 	fallAfter:      time.Minute,
+
+	stallWarnPerCore:     2,
+	stallCriticalPerCore: 4,
+	stallExitFactor:      0.75,
+	stallBusyPct:         50,
+	stallBusyExitPct:     65,
+	stallWindow:          30 * time.Second,
+	mountSilentAfter:     30 * time.Second,
+	waitingEvery:         30 * time.Second,
 }
 
 // HealthDeps is what the health reads; tests give it a /proc and a disk of their own.
@@ -66,6 +85,8 @@ type HealthDeps struct {
 	Now  func() time.Time
 	// Disk is the total and free (available to the user) bytes of the filesystem of path.
 	Disk func(path string) (total, free float64, err error)
+	// Cores is the number of processors the load is judged against; zero: the machine's own.
+	Cores int
 }
 
 type cpuAt struct {
@@ -95,6 +116,12 @@ type HealthMonitor struct {
 	swap   []swapAt
 	level  wire.HealthLevel
 	since  time.Time
+	// The stall as the figures say it now (nil while there is none), the network mounts as last seen, and the
+	// programs that wait with the moment they were looked at.
+	stalled   *wire.HealthStall
+	mounts    map[string]*mountSeen
+	waiting   []string
+	waitingAt time.Time
 }
 
 func NewHealthMonitor(d HealthDeps) *HealthMonitor {
@@ -106,6 +133,9 @@ func NewHealthMonitor(d HealthDeps) *HealthMonitor {
 	}
 	if d.Disk == nil {
 		d.Disk = diskBytes
+	}
+	if d.Cores == 0 {
+		d.Cores = runtime.NumCPU()
 	}
 	return &HealthMonitor{d: d, levels: map[wire.HealthMetric]wire.HealthLevel{}, said: map[wire.HealthMetric]*heldLevel{}}
 }
@@ -139,6 +169,7 @@ func (h *HealthMonitor) Sample() wire.MachineHealth {
 			if pct, ok := h.cpuOverWindow(now, ticks); ok {
 				h.levels[wire.HealthCPU] = cpuLevel(pct, h.levels[wire.HealthCPU])
 			}
+			h.stall(now, ticks)
 		}
 	}
 	for _, m := range wire.HealthMetrics {
@@ -240,6 +271,13 @@ func (h *HealthMonitor) verdict(now time.Time) wire.MachineHealth {
 		h.level, h.since = out.Level, now
 	}
 	out.Since = h.since.UnixMilli()
+	if s := h.said[wire.HealthIO]; s == nil || s.said == wire.HealthOK {
+		if h.levels[wire.HealthIO] == wire.HealthOK || h.levels[wire.HealthIO] == "" {
+			h.stalled = nil
+		}
+	} else if h.stalled != nil {
+		out.Stall = h.stalled
+	}
 	return out
 }
 

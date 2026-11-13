@@ -185,5 +185,15 @@
   "next.apppage.mentions": "Finds its own things with «@»: {title}",
   "next.apppage.missing": "There is no such app on your machine or in the catalogs.",
   "next.apppage.tab.about": "Overview",
-  "next.apppage.tab.journal": "Journal"
+  "next.apppage.tab.journal": "Journal",
+  "next.appdown.doc": "The document can't be opened right now",
+  "next.appdown.docs": "Documents can't be opened right now",
+  "next.appdown.board": "The board can't be opened right now",
+  "next.appdown.boards": "Boards can't be opened right now",
+  "next.appdown.docText": "The text is safe. Try again in a minute.",
+  "next.appdown.boardText": "The drawing is safe. Try again in a minute.",
+  "next.appdown.homeText": "Everything is in place. Try again in a minute.",
+  "next.appmain.back": "Back",
+  "next.appmain.home": "Home",
+  "next.appmain.collapse": "Collapse"
 }

@@ -729,3 +729,40 @@ func TestHashedNotServedAfterRevoke(t *testing.T) {
 		t.Fatalf("after the revoke: %d", w.Code)
 	}
 }
+
+// GitHub #83: a snapshot that keeps unrecorded projects closed leaves a project without a row only to the machine's own
+// person, and only when no owner file names someone else; a project with a row follows its row as before.
+func TestClosedUnrecordedLeavesProjectsToTheMachinesPerson(t *testing.T) {
+	root := t.TempDir()
+	for id, owner := range map[string]string{"norow": otherNone, "norow-v1": otherV1, "norow-mine": mineV2, "teamed": otherV2} {
+		makeProject(t, root, id, id, owner)
+	}
+	l := accessLibrary(t, root)
+	me, _ := l.Identity()
+	guest, _ := l.IdentityOf("o.orlov@example.com")
+	snap := snapshot(map[string]Grant{}, map[string]string{"teamed": "view"})
+	snap.Unrecorded = UnrecordedClosed
+	if err := l.SetAccess(snap); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		label, id string
+		who       Identity
+		want      Role
+	}{
+		{"the machine's person, no owner file", "norow", me, RoleEdit},
+		{"the machine's person, someone else's owner file", "norow-v1", me, RoleNone},
+		{"the machine's person, their own owner file", "norow-mine", me, RoleOwner},
+		{"another person, no owner file", "norow", guest, RoleNone},
+		{"a row: its team level", "teamed", me, RoleView},
+	} {
+		if got := l.RoleOf(c.id, c.who, accessNow); got != c.want {
+			t.Errorf("%s: role of %s = %q, want %q", c.label, c.id, got, c.want)
+		}
+	}
+	bad := snap
+	bad.Unrecorded = "ajar"
+	if err := bad.Validate(); err == nil {
+		t.Fatal("an unknown rule for unrecorded projects was taken")
+	}
+}

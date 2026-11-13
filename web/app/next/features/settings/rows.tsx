@@ -41,20 +41,24 @@ interface IRowProps {
   busy?: boolean;
   /** The setting cannot be changed from here: the row is shown dimmed, its hint says why. */
   off?: boolean;
+  /** An agent has just changed the setting: the row is lit and says what it was (a ChangedMark). */
+  mark?: ReactNode;
   children: ReactNode;
 }
 
-export const Row = ({ type, label, hint, busy = false, off = false, children }: IRowProps) => (
+export const Row = ({ type, label, hint, busy = false, off = false, mark, children }: IRowProps) => (
   <div
     className="hx-set__row"
     data-type={type}
     data-busy={busy || undefined}
     data-off={off || undefined}
+    data-changed={mark ? true : undefined}
     aria-busy={busy || undefined}
   >
     <div className="hx-set__row-text">
       <span className="hx-set__row-label">{label}</span>
       {hint && <span className="hx-set__row-hint">{hint}</span>}
+      {mark}
     </div>
     <Spin />
     {children}
@@ -170,11 +174,12 @@ interface ISwitchRowProps {
   hint?: string | null;
   on: boolean;
   busy?: boolean;
+  mark?: ReactNode;
   onChange: (on: boolean) => void;
 }
 
-export const SwitchRow = ({ label, hint, on, busy, onChange }: ISwitchRowProps) => (
-  <Row type="switch" label={label} hint={hint} busy={busy}>
+export const SwitchRow = ({ label, hint, on, busy, mark, onChange }: ISwitchRowProps) => (
+  <Row type="switch" label={label} hint={hint} busy={busy} mark={mark}>
     <Switch label={label} checked={on} onChange={onChange} />
   </Row>
 );
@@ -186,6 +191,7 @@ interface ISegRowProps<V extends string | number> {
   choices: readonly { value: V; label: string; icon?: string }[];
   busy?: boolean;
   off?: boolean;
+  mark?: ReactNode;
   onPick: (value: V) => void;
 }
 
@@ -196,9 +202,10 @@ export const SegRow = <V extends string | number>({
   choices,
   busy,
   off,
+  mark,
   onPick,
 }: ISegRowProps<V>) => (
-  <Row type="seg" label={label} hint={hint} busy={busy} off={off}>
+  <Row type="seg" label={label} hint={hint} busy={busy} off={off} mark={mark}>
     <SegControl label={label} value={value as V} choices={choices} onPick={onPick} disabled={off} />
   </Row>
 );
@@ -210,11 +217,12 @@ interface IMenuRowProps {
   choices: readonly IChoice[];
   busy?: boolean;
   off?: boolean;
+  mark?: ReactNode;
   onPick: (value: string | number | null) => void;
 }
 
-export const MenuRow = ({ label, hint, value, choices, busy, off, onPick }: IMenuRowProps) => (
-  <Row type="menu" label={label} hint={hint} busy={busy} off={off}>
+export const MenuRow = ({ label, hint, value, choices, busy, off, mark, onPick }: IMenuRowProps) => (
+  <Row type="menu" label={label} hint={hint} busy={busy} off={off} mark={mark}>
     <MenuControl label={label} value={value} choices={choices} onPick={onPick} disabled={off} />
   </Row>
 );

@@ -233,6 +233,21 @@ func codexEntries(path string) []entry {
 // question the agent asks.
 var allowWord = locale.T("Allow", "Разрешить")
 
+// doneWord starts the words of a finished turn's notification.
+var doneWord = locale.T("Done — ", "Готово — ")
+
+// FullAnswer is the whole text of the answer a finished turn's notification is about, as the transcript's tail has it;
+// ok is false for a turn that failed or left no answer.
+func FullAnswer(e status.Entry) (string, bool) {
+	if e.JSONLPath == "" || e.LastEvent.Has() && e.LastEvent.Val.Name == "stop-failure" {
+		return "", false
+	}
+	if e.AgentProviderID.Value() == agents.Codex {
+		return answerFrom(codexEntries(e.JSONLPath))
+	}
+	return answerFrom(claudeEntries(e.JSONLPath))
+}
+
 func questionFrom(entries []entry) (string, bool) {
 	for i := len(entries) - 1; i >= 0; i-- {
 		switch e := entries[i]; e.kind {
@@ -385,7 +400,7 @@ func BuildMessage(tabID string, e status.Entry, kind, tagPrefix string, now time
 	} else if failed {
 		body = locale.Pick("Error — ", "Ошибка — ") + detail
 	} else {
-		body = locale.Pick("Done — ", "Готово — ") + detail
+		body = doneWord.String() + detail
 	}
 	provider := agents.Claude
 	if codexTab {

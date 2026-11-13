@@ -313,6 +313,9 @@ func (s *Service) patchCatalog(w http.ResponseWriter, r *http.Request, p *auth.P
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
+	if a, ok := s.builtIn.builtInApp(r.PathValue("itemId")); ok {
+		return s.patchBuiltInApp(w, r, p, a, in)
+	}
 	var out store.CatalogItem
 	var q *req
 	var touched bool

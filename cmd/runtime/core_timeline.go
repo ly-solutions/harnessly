@@ -50,7 +50,7 @@ func timelineConfigFromEnv(dataDir string) timelineConfig {
 
 func (c *core) newTimeline(cfg timelineConfig) *timeline.Server {
 	home := c.cfg.Home
-	checks := preflight.New(home)
+	checks := preflight.Shared(home)
 	claudeDet := claude.NewDetector(home)
 	claudeDet.Installed = func() bool { return checks.Runtime().Claude.Installed }
 	codexDet := codex.NewDetector(home)

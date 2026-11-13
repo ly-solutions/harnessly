@@ -1,10 +1,11 @@
 // The stage (the board's .pr-stage and .pr-slot): the slide on screen is its board in a frame drawn at the board's own
 // size and scaled to the slot, so the board lays out exactly as it will be shown, printed and recorded. Turning to
-// another slide loads its board in a second frame over the first and fades it in when it has loaded, then drops the
-// old one. The boards of the slides next to the one on screen are loaded ahead in frames nobody sees: a turn
-// to one of them shows a frame that is already drawn, and the one just left stays loaded for the turn back. The frames
-// keep their order in the page (an iframe moved in the DOM loads again), which of them is on top is the stylesheet's
-// (`data-top`). The slot's width is the stylesheet's (`--sw`); a ResizeObserver hands the scale to CSS as `--deck-k`.
+// another slide loads its board in a second frame over the first and fades it in when it has loaded. The boards of the
+// other slides are loaded ahead in frames nobody sees, the neighbours first, then the rest a few at a time
+// (warm.ts): a turn to one of them shows a frame that is already drawn, and a slide once loaded stays loaded for the turn
+// back. The frames keep their order in the page (an iframe moved in the DOM loads again), which of them is on top is the
+// stylesheet's (`data-top`). The slot's width is the stylesheet's (`--sw`); a ResizeObserver hands the scale to CSS as
+// `--deck-k`.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { readDeckMessage } from '@/next/features/designly/deck/bridge';
 import { t } from '@/next/i18n';
@@ -12,6 +13,7 @@ import Icon from '@/next/ui/icon';
 import { PRESENCE, usePresence } from '@/next/ui/presence';
 import { deckScale } from '@/next/features/designly/deck/layout';
 import { DECK_HOLD, type TDeckHold } from '@/next/features/designly/deck/deck-making';
+import { nextToWarm } from '@/next/features/designly/deck/warm';
 
 /** The crossfade, ms (the stage's 480 ms motion). */
 export const DECK_FADE_MS = 480;
@@ -65,7 +67,7 @@ interface IFrame {
   painted: boolean;
   /** Loaded and drawn, or did not say so in time: the frame fades in over the one under it. */
   shown: boolean;
-  /** Put in the page as a neighbour of the slide on screen, before its turn. */
+  /** Out of sight before its turn (put in the page ahead, or on screen before and left): its turn is a short fade. */
   ahead: boolean;
   /** What the board said when it was drawn while nobody looked (its size and steps), for its turn. */
   ready: IDeckReady | null;
@@ -89,10 +91,15 @@ export interface IDeckStageProps {
   hold: TDeckHold | null;
   /** The board on screen's frame, for the bridge. */
   frameRef: RefObject<HTMLIFrameElement | null>;
-  /** The addresses of the boards next to the one on screen: loaded ahead, out of sight. */
+  /** The addresses of the other boards in the order they are loaded ahead, out of sight (warm.ts); a frame of an address
+   *  not here is dropped once the slide on screen is in. */
   ahead?: readonly string[];
+  /** Whether the frames of `ahead` that are not in the page yet are loaded now (not while a recording runs). */
+  warm?: boolean;
   /** A frame loaded ahead finished loading: the deck tells it its mode, so that it says when it is drawn. */
   onAhead?: (frame: HTMLIFrameElement, src: string) => void;
+  /** The slide on screen turned away from: its frame stays loaded out of sight. */
+  onAway?: (frame: HTMLIFrameElement, src: string) => void;
   /** A board that was drawn ahead comes on screen: what it said then, as if it said it now. */
   onReady?: (ready: IDeckReady) => void;
   /** A frame finished loading its board. */
@@ -117,7 +124,9 @@ const DeckStage = ({
   hold,
   frameRef,
   ahead = [],
+  warm = true,
   onAhead,
+  onAway,
   onReady,
   onLoad,
   painted,
@@ -141,7 +150,7 @@ const DeckStage = ({
   const [leaving, setLeaving] = useState<string | null>(null);
   const [seenSrc, setSeenSrc] = useState(src);
   const cur = src === null ? undefined : frames.find((f) => f.src === src);
-  // The neighbours are loaded once the slide on screen is drawn, so that they do not take its network and processor.
+  // The others are loaded once the slide on screen is drawn, so that they do not take its network and processor.
   const aheadKey = ahead.join('\n');
   const onScreen = frames.some((f) => f.src === src && f.shown);
   // A new address brings its frame (or the one loaded ahead for it) on top; the one that was on top stays under it.
@@ -149,13 +158,14 @@ const DeckStage = ({
   if (src !== null && src !== seenSrc) {
     setSeenSrc(src);
     if (frames.find((f) => f.src === seenSrc)?.shown) setLeaving(seenSrc);
-    next = cur
+    const turned = cur
       ? frames.map((f) => (f.src === src ? { ...f, shown: f.loaded && f.painted } : f))
       : [...frames, fresh(src, false)];
+    next = turned.map((f) => (f.src === seenSrc ? { ...f, ahead: true } : f));
   } else if (src !== null && !cur) {
     next = [...frames, fresh(src, false)];
-  } else if (onScreen) {
-    const missing = ahead.filter((a) => a !== src && !frames.some((f) => f.src === a));
+  } else if (onScreen && warm) {
+    const missing = nextToWarm(ahead, frames, src);
     if (missing.length > 0) next = [...frames, ...missing.map((a) => fresh(a, true))];
   }
   if (next !== frames) setFrames(next);
@@ -173,7 +183,8 @@ const DeckStage = ({
     if (top && !top.shown)
       setFrames((list) => list.map((f) => (f.src === src ? { ...f, painted: true, shown: f.loaded } : f)));
   }
-  // The frames' windows by address: a board loaded ahead says it is drawn to nobody on the page's bridge.
+  // The frames' windows by address: a board loaded ahead says it is drawn to nobody on the page's bridge. What a board
+  // said is kept for its next turn whichever frame it is, the one on screen too: a slide turned back to was drawn then.
   const elements = useRef(new Map<string, HTMLIFrameElement>());
   const srcNow = useRef(src);
   useEffect(() => {
@@ -184,9 +195,10 @@ const DeckStage = ({
         if (said?.k !== 'ready') return;
         const ready = { w: said.w, h: said.h, steps: said.steps };
         setFrames((list) =>
-          list.map((f) =>
-            f.src === address && f.src !== srcNow.current ? { ...f, painted: true, ready } : f,
-          ),
+          list.map((f) => {
+            if (f.src !== address) return f;
+            return f.src === srcNow.current ? { ...f, ready } : { ...f, painted: true, ready };
+          }),
         );
         return;
       }
@@ -194,12 +206,16 @@ const DeckStage = ({
     window.addEventListener('message', listen);
     return () => window.removeEventListener('message', listen);
   }, []);
-  // A slide turned to whose board was loaded and drawn ahead: its mode and size are told as the slide on screen's.
+  // A slide turned to whose board was loaded already (ahead, or on screen before): its mode and size are told as the
+  // slide on screen's.
   const promoted = useRef<string | null>(null);
   useEffect(() => {
+    const away = srcNow.current;
+    const left = away === null ? undefined : elements.current.get(away);
+    if (left && away !== null && away !== src) onAway?.(left, away);
     srcNow.current = src;
     const frame = frames.find((f) => f.src === src);
-    if (!frame?.ahead || !frame.loaded || promoted.current === src) return;
+    if (!frame?.loaded || promoted.current === src) return;
     promoted.current = src;
     onLoad();
     if (frame.ready) onReady?.(frame.ready);
@@ -227,8 +243,8 @@ const DeckStage = ({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waiting, src]);
-  // Once the new slide is in, the one under it goes (or, if it is a neighbour, stays loaded out of sight), and the
-  // frames that are neither on screen nor a neighbour are dropped.
+  // Once the new slide is in, the one under it goes (or, if it is among `ahead`, stays loaded out of sight), and the
+  // frames that are neither on screen nor among `ahead` are dropped.
   useEffect(() => {
     if (!settled) return;
     const timer = setTimeout(() => {

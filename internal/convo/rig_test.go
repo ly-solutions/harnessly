@@ -136,7 +136,11 @@ type fakeLauncher struct {
 	err      error
 	// resumeErr is what Resume answers; nil resumes.
 	resumeErr error
+	// ended are the sessions EndSession was asked to end.
+	ended []string
 }
+
+func (l *fakeLauncher) EndSession(session string) { l.ended = append(l.ended, session) }
 
 func (l *fakeLauncher) Launch(req LaunchRequest) error {
 	l.launched = append(l.launched, req)

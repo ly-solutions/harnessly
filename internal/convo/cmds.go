@@ -1,7 +1,9 @@
 package convo
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strconv"
@@ -96,6 +98,8 @@ func (c *conv) do(device string, cmd wire.Command, now time.Time) wire.CmdResult
 	case wire.ConversationTestCmd:
 		c.rec.Test = m.Test
 		return c.recResult(now)
+	case wire.ConversationViewCmd:
+		return c.setView(m.View, now)
 	case wire.ConversationAppsCmd:
 		return c.setApps(m.Apps, now)
 	case wire.ConversationMoveCmd:
@@ -176,6 +180,24 @@ func (c *conv) recResult(now time.Time) wire.CmdResult {
 	r := wire.Accepted(wire.ChannelConvs, c.convsSeq())
 	r.Rev = &rev
 	return r
+}
+
+// setView keeps the view the page wrote (Conversation.View). The same view is no change: the answer is accepted and
+// nothing goes to the other devices; an empty object clears it.
+func (c *conv) setView(view json.RawMessage, now time.Time) wire.CmdResult {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(view, &obj) != nil {
+		return wire.Refused(wire.RefuseBadRequest)
+	}
+	var next json.RawMessage
+	if len(obj) > 0 {
+		next = append(json.RawMessage(nil), view...)
+	}
+	if bytes.Equal(c.rec.View, next) {
+		return wire.Accepted(wire.ChannelConvs, c.convsSeq())
+	}
+	c.rec.View = next
+	return c.recResult(now)
 }
 
 // setApps turns on the apps of the list and off the others. A running agent that can take the change as it runs
@@ -290,7 +312,9 @@ func (c *conv) send(m wire.SendCmd, now time.Time) wire.CmdResult {
 				c.change(rc, now)
 			}
 		}
-		c.freshLaunch(now)
+		if !c.relaunchEmpty(now) {
+			c.freshLaunch(now)
+		}
 		c.pump(now)
 	}
 	if c.lostTmux() {

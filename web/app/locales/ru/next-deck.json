@@ -319,5 +319,6 @@
   "next.deck.toolbar.shorterAsk": "Сократи текст на слайде {n}: {label}",
   "next.deck.toolbar.shorterToast": "Агент сокращает текст — правка придёт новой версией",
   "next.deck.toolbar.size": "Размер",
-  "next.deck.toolbar.toChat": "В чат"
+  "next.deck.toolbar.toChat": "В чат",
+  "next.deck.style.ownLook": "Тема не выбрана: у сцен своё оформление"
 }

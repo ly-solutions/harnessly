@@ -4,6 +4,7 @@
 // there. While the machine is asked the rows are bars; neither set up, or GitLab not answering, says so, with the way to
 // fix it.
 import { useState, type KeyboardEvent } from 'react';
+import { BRAND_MARK } from '@/next/features/connections/brand-marks';
 import { agoText } from '@/next/features/apps/model';
 import { appNote, Note, PageSkeleton } from '@/next/features/apps/list';
 import {
@@ -18,11 +19,39 @@ import {
   type IGithubList,
   type THomeTab,
 } from '@/next/features/review/app/home';
-import type { AppFeed } from '@/next/protocol/v2';
+import type { AppFeed, AppRow } from '@/next/protocol/v2';
 import { Button } from '@/next/ui/button';
 import Icon from '@/next/ui/icon';
 import Segmented from '@/next/ui/segmented';
 import { t } from '@/next/i18n';
+
+/** The author's avatar; the first letter of the name while there is none or it did not load. */
+const Face = ({ row }: { row: AppRow }) => {
+  const [failed, setFailed] = useState<string | null>(null);
+  const src = row.avatar !== null && row.avatar !== failed ? row.avatar : null;
+  return (
+    <span className="hx-rvhome__face" aria-hidden="true">
+      {src === null ? (
+        initialOf(row.author)
+      ) : (
+        <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(src)} />
+      )}
+    </span>
+  );
+};
+
+const SOURCE_MARK = { GitHub: BRAND_MARK.github, GitLab: BRAND_MARK.gitlab } as const;
+
+/** Where the row lives, as the code host's mark: shown once both hosts are in the lists. */
+const SourceMark = ({ source }: { source: keyof typeof SOURCE_MARK }) => (
+  <span className="hx-rvhome__src" role="img" aria-label={source} title={source}>
+    <svg viewBox="0 0 24 24" fill="currentColor" focusable="false" aria-hidden="true">
+      {SOURCE_MARK[source].d.map((d) => (
+        <path key={d} d={d} />
+      ))}
+    </svg>
+  </span>
+);
 
 export type THomeFeed =
   | { k: 'loading' }
@@ -95,9 +124,7 @@ const List = ({
           return (
             <li key={row.key}>
               <button type="button" className="hx-rvhome__row" onClick={() => onOpen(row.url)}>
-                <span className="hx-rvhome__face" aria-hidden="true">
-                  {initialOf(row.author)}
-                </span>
+                <Face row={row} />
                 <span className="hx-rvhome__text">
                   <span className="hx-rvhome__title">{row.title}</span>
                   <span className="hx-rvhome__meta">
@@ -106,7 +133,7 @@ const List = ({
                       .join(' · ')}
                   </span>
                 </span>
-                {withGithub && <span className="hx-rvhome__src">{sourceOf(row)}</span>}
+                {withGithub && <SourceMark source={sourceOf(row)} />}
                 {note && (
                   <span className="hx-rvhome__note" data-tone={row.tone ?? undefined}>
                     {note}

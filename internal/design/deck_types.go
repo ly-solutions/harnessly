@@ -83,6 +83,10 @@ type DeckSettings struct {
 	Style  *DeckStyle `json:"style"`
 	Theme  string     `json:"theme"`
 	Font   string     `json:"font"`
+	// Picked: the theme and font were chosen (in «Стиль», by the agent's PUT or from a company template). A deck's boards
+	// link deck-theme.css from the start; a video's scenes carry their own look until one is chosen, so «Стиль» marks
+	// nothing for a video that is not Picked.
+	Picked bool `json:"picked,omitempty"`
 	// Themes are the deck's own themes; absent: the built-in ones (DefaultDeckThemes).
 	Themes []DeckTheme `json:"themes,omitempty"`
 }

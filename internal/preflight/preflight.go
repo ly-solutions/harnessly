@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,8 +26,12 @@ import (
 var cmdTimeout = 5 * time.Second
 
 const (
-	runtimeTTL     = 30 * time.Second
-	codexTTL       = 60 * time.Second
+	runtimeTTL = 30 * time.Second
+	// loginTTL is how long an agent CLI's sign-in is taken as asked: `claude auth status` and `codex login status`
+	// start a node CLI, a second or two of a core each, and a minute's cache in each of seven Checkers had them
+	// running all the time. The answer is asked again at once when the CLI's binary or a file that keeps
+	// its sign-in changed (loginStamp), and after Invalidate.
+	loginTTL       = 10 * time.Minute
 	minTmuxVersion = 2.9
 	maxOutput      = 1 << 20
 )
@@ -88,13 +93,44 @@ type Checker struct {
 	at       time.Time
 	inflight chan struct{}
 
-	codexMu sync.Mutex
-	codex   *Codex
-	codexAt time.Time
+	codexMu    sync.Mutex
+	codex      *Codex
+	codexAt    time.Time
+	codexStamp string
 
-	claudeMu sync.Mutex
-	claude   *Claude
-	claudeAt time.Time
+	claudeMu    sync.Mutex
+	claude      *Claude
+	claudeAt    time.Time
+	claudeStamp string
+}
+
+var shared sync.Map // home → *Checker
+
+// Shared is the process's one Checker of a home: its answers are kept once, not once per part of the runtime that
+// asks (each New has a cache of its own, and each cache started the CLIs again).
+func Shared(home string) *Checker {
+	if c, ok := shared.Load(home); ok {
+		return c.(*Checker)
+	}
+	c, _ := shared.LoadOrStore(home, New(home))
+	return c.(*Checker)
+}
+
+// loginStamp is the size and time of the CLI's binary along path and of the files that keep its sign-in: while it
+// stands, what the CLI said of its sign-in stands.
+func loginStamp(name, path string, files ...string) string {
+	if bin, err := lookPath(name, path); err == nil {
+		files = append(files, bin)
+	}
+	var b strings.Builder
+	for _, f := range files {
+		if st, err := os.Stat(f); err == nil {
+			fmt.Fprintf(&b, "%d.%d;", st.Size(), st.ModTime().UnixNano())
+		} else {
+			b.WriteString("-;")
+		}
+	}
+	return b.String()
 }
 
 func New(home string) *Checker {
@@ -391,15 +427,21 @@ func (c *Checker) claudeProbe(path string) Claude {
 	return r
 }
 
-// claudeStatus is kept for a minute on its own, like Codex's: it starts the CLI, which may reach for the network.
+// claudeStatus is kept for loginTTL on its own, like Codex's: it starts the CLI, which may reach for the network.
 func (c *Checker) claudeStatus(path string) Claude {
 	c.claudeMu.Lock()
 	defer c.claudeMu.Unlock()
-	if c.claude != nil && time.Since(c.claudeAt) < codexTTL {
+	// Not settings.json: the runtime writes it itself (its status line, its hooks), and each write would ask again.
+	files := []string{filepath.Join(c.Home, ".claude", ".credentials.json")}
+	if c.AuthDir != "" {
+		files = append(files, filepath.Join(c.AuthDir, ".credentials.json"))
+	}
+	stamp := loginStamp("claude", path, files...)
+	if c.claude != nil && time.Since(c.claudeAt) < loginTTL && stamp == c.claudeStamp {
 		return *c.claude
 	}
 	r := c.claudeProbe(path)
-	c.claude, c.claudeAt = &r, time.Now()
+	c.claude, c.claudeAt, c.claudeStamp = &r, time.Now(), stamp
 	return r
 }
 
@@ -437,15 +479,20 @@ func (c *Checker) claudeConfigured() bool {
 	return false
 }
 
-// codexStatus is kept for a minute on its own, as the previous runtime kept it.
+// codexStatus is kept for loginTTL on its own.
 func (c *Checker) codexStatus(path string) Codex {
 	c.codexMu.Lock()
 	defer c.codexMu.Unlock()
-	if c.codex != nil && time.Since(c.codexAt) < codexTTL {
+	dir := c.getenv("CODEX_HOME")
+	if dir == "" {
+		dir = filepath.Join(c.Home, ".codex")
+	}
+	stamp := loginStamp("codex", path, filepath.Join(dir, "auth.json"), filepath.Join(dir, "config.toml"))
+	if c.codex != nil && time.Since(c.codexAt) < loginTTL && stamp == c.codexStamp {
 		return *c.codex
 	}
 	r := c.probeCodex(path)
-	c.codex, c.codexAt = &r, time.Now()
+	c.codex, c.codexAt, c.codexStamp = &r, time.Now(), stamp
 	return r
 }
 

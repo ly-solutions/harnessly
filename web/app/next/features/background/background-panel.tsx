@@ -9,7 +9,7 @@
 // A stop waits for the runtime: the row says «Останавливаем…» until the task's own event ends it. Each group's name
 // carries its icon, and the person's fold is kept per browser (the commands start folded). Under the recap stand the
 // pictures the agent looked at (shots-strip.tsx).
-import { forwardRef, useCallback, useState, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { BackgroundTask, Recap, Shot } from '@/next/protocol/v2';
 import { orderAgents, splitAgents } from '@/next/features/background/agent-order';
 import { isWorkflow, progressOf, workflowName } from '@/next/features/workflows/run';
@@ -61,6 +61,8 @@ export interface IBackgroundPanelProps {
   onHide?: () => void;
   /** What stands under the groups: the one-time codes the chat's commands wait for (features/safe/code-asks.tsx). */
   codes?: ReactNode;
+  /** What stands apart under the column, not in it (the machine in trouble): it follows the column's height. */
+  below?: ReactNode;
 }
 
 const OVER_WORD = {
@@ -221,10 +223,38 @@ const Group = ({ group, label, rows, head, rest, renderRow }: IGroupProps) => {
   );
 };
 
+/** How far under the column what stands below it goes: the column's height and a gap while it is shown, nothing while
+ *  it is not. Written into a variable the stylesheet moves it by (a transform, no layout). */
+const BELOW_GAP_PX = 8;
+/** The column gone for less than this (a reconnect, a chat's state read again) does not move what stands below it:
+ *  the card would jump up and back down. */
+const BELOW_HOLD_MS = 1500;
+const useBelow = (
+  aside: HTMLElement | null,
+  below: RefObject<HTMLDivElement | null>,
+  on: boolean,
+  there: boolean,
+) => {
+  useEffect(() => {
+    const el = below.current;
+    if (!el) return;
+    if (!aside || !on) {
+      const timer = window.setTimeout(() => el.style.setProperty('--hx-side-h', '0px'), BELOW_HOLD_MS);
+      return () => window.clearTimeout(timer);
+    }
+    const put = () => el.style.setProperty('--hx-side-h', `${aside.offsetHeight + BELOW_GAP_PX}px`);
+    put();
+    const observer = new ResizeObserver(put);
+    observer.observe(aside);
+    return () => observer.disconnect();
+  }, [aside, below, on, there]);
+};
+
 const BackgroundPanel = forwardRef<HTMLElement, IBackgroundPanelProps>(
-  ({ tasks, recap, shots, shotSrc, shown, now, stopping, onStop, onHide, codes }, ref) => {
+  ({ tasks, recap, shots, shotSrc, shown, now, stopping, onStop, onHide, codes, below }, ref) => {
     const phone = usePhone();
     const [aside, setAside] = useState<HTMLElement | null>(null);
+    const belowRef = useRef<HTMLDivElement | null>(null);
     const setRef = useCallback(
       (node: HTMLElement | null) => {
         setAside(node);
@@ -234,6 +264,7 @@ const BackgroundPanel = forwardRef<HTMLElement, IBackgroundPanelProps>(
       [ref],
     );
     useSheetDrag(aside, () => onHide?.(), phone && shown && onHide !== undefined);
+    useBelow(aside, belowRef, shown && !phone, Boolean(below));
     const agents = tasks.filter((x) => x.kind === 'subagent');
     const flows = orderAgents(tasks.filter((x) => x.kind === 'workflow'));
     const commands = tasks.filter((x) => x.kind === 'command');
@@ -270,6 +301,11 @@ const BackgroundPanel = forwardRef<HTMLElement, IBackgroundPanelProps>(
           ))}
           {codes}
         </aside>
+        {below && (
+          <div ref={belowRef} className="hx-side-below">
+            {below}
+          </div>
+        )}
       </>
     );
   },

@@ -1,6 +1,7 @@
 package link
 
 import (
+	"context"
 	"slices"
 	"sort"
 	"sync"
@@ -72,6 +73,35 @@ func (r *Registry) Get(machineID string) *Link {
 		return r.cluster.lookup(machineID)
 	}
 	return nil
+}
+
+// Await is Get that, for a machine whose link ended a moment ago on any replica (the replica stopped and asked it to
+// dial again), waits up to handoverWait for the next link instead of answering nil at once. A machine that is simply
+// away is answered nil at once, as Get does.
+func (r *Registry) Await(ctx context.Context, machineID string) *Link {
+	if l := r.Get(machineID); l != nil || r.cluster == nil {
+		return l
+	}
+	if !r.cluster.handingOver(machineID) {
+		return nil
+	}
+	deadline := time.NewTimer(handoverWait)
+	defer deadline.Stop()
+	tick := time.NewTicker(handoverPoll)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-deadline.C:
+			return nil
+		case <-tick.C:
+		}
+		r.cluster.forget(machineID) // a «nobody» seen a moment ago must not hide the new holder
+		if l := r.Get(machineID); l != nil {
+			return l
+		}
+	}
 }
 
 // local is the live link this process holds.

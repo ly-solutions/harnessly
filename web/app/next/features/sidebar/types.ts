@@ -16,6 +16,8 @@ export const CHAT_STATUS = {
   waitingMachine: 'waiting-machine',
   /** The agent hit its plan's usage limit; the chat waits for the reset and goes on by itself or by the person's word. */
   limited: 'limited',
+  /** Free itself, but a chat it delegated is still at work: it waits for its delegated chats. */
+  delegated: 'delegated',
 } as const;
 export type TChatStatus = (typeof CHAT_STATUS)[keyof typeof CHAT_STATUS];
 
@@ -123,8 +125,10 @@ export interface IMachineAlert {
   key: string;
   icon: string;
   text: string;
-  /** What runs short first: the smart notice says it in words. */
-  metric: 'disk' | 'mem' | 'cpu';
+  /** What runs short first: the smart notice says it in words. `io`: programs wait for a disk or the network. */
+  metric: 'disk' | 'mem' | 'cpu' | 'io';
+  /** The programs that wait the most, when the machine says them (a stall); absent otherwise. */
+  waiting?: readonly string[];
 }
 
 export interface IMachineCard {

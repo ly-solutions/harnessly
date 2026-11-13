@@ -35,6 +35,13 @@ const (
 	// its hooks say when it starts to work or goes, and a message or a hook wakes its actor at once. A runtime holds a
 	// hundred and more such chats, and each look is a few tmux calls.
 	LookResting = 15 * time.Second
+	// LookGone is how often a chat whose agent is gone, stopped or failed to start is looked at: only to see whether its
+	// session came back or went.
+	LookGone = 10 * time.Second
+	// LookAbsent is how often a stopped chat, or one whose launch failed, is looked at once a look found no tmux session
+	// of it: a runtime holds hundreds of them, and a look every ten seconds each was a goroutine, a listing and a read
+	// of the transcript's size for a session that is not there.
+	LookAbsent = 5 * time.Minute
 	// LookStarting is how often a starting agent's pane is looked at: the moment it can take the first message is
 	// noticed by its screen (BootSettle) when the SessionStart hook is late or lost, so a look a second apart made the
 	// first message wait up to a second more for nothing. A look is two tmux calls (pane info, capture) off the actor and
@@ -92,8 +99,15 @@ func (c *conv) lookEvery() time.Duration {
 			return LookResting
 		}
 		return 3 * LookEvery
-	case wire.StateStopped, wire.StateGone, wire.StateLaunchFailed:
-		return 10 * LookEvery
+	case wire.StateStopped, wire.StateLaunchFailed:
+		if c.looked && !c.probe.Session {
+			// No tmux session, and the last look saw none: nothing there can change by itself. A message or a hook
+			// wakes the actor and changes the state, and with it the pace.
+			return LookAbsent
+		}
+		return LookGone
+	case wire.StateGone:
+		return LookGone
 	}
 	return LookEvery
 }
@@ -142,6 +156,7 @@ type conv struct {
 	bootAt    time.Time
 	bootFirst time.Time
 	probe     Probe
+	looked    bool // a look has come back: probe is what it saw, not the zero value
 
 	// promptAsked is when the agent's hook said it waits on a person, until a card stands for that.
 	promptAsked time.Time
@@ -200,6 +215,17 @@ type conv struct {
 	// stoppedAtRestart: the agent had exited when the runtime went down, and nothing has been seen of it since (the
 	// state is unknown until a look); resumableAtRestart is what its stopped state said of a session to resume.
 	stoppedAtRestart, resumableAtRestart bool
+	// bgAtStop: the background work the agent waited for when the runtime went down (its BgAgents then); lostAtWork:
+	// the agent was lost while at work and has not gone on since (convFile.LostAtWork).
+	bgAtStop   int
+	lostAtWork bool
+	// restartBg: the agent lost at work had a free prompt and waited for background work (the word says so).
+	restartBg bool
+	// relaunchedLost: the chat launched its agent again once after a launch cut short with its tmux (relaunchLost).
+	relaunchedLost bool
+	// emptyLost: an empty chat whose tmux was gone for good, left waiting instead of launched (relaunchLost); its
+	// first message launches it.
+	emptyLost bool
 	// startUp: the agent was hot when the runtime went down and is not running now, so the chat resumes it once a
 	// look has found it cold; startGate: that resume takes one of the few places of a start (life.go).
 	startUp, startGate bool
@@ -500,9 +526,10 @@ func (c *conv) input(in agentstate.Input, now time.Time) {
 		c.pump(now)
 	}
 	if p := c.box.Paused(); p != nil && (p.Reason == wire.PausedAgentGone && c.rec.State.K != wire.StateGone ||
-		p.Reason == wire.PausedResumeBlocked && agentUp(c.rec.State.K)) {
-		// The pause was for an agent that is gone; one that is back (found again, a restart) takes its queue — or, held
-		// on its usage limit, waits for the reset.
+		(p.Reason == wire.PausedResumeBlocked || p.Reason == wire.PausedLaunchFailed) && agentUp(c.rec.State.K)) {
+		// The pause was for an agent that is gone, or that could not be brought back; one that is back (found
+		// again, a restart, started by hand in its terminal) takes its queue — or, held on its usage limit, waits for
+		// the reset.
 		if c.rec.Limited != nil {
 			c.change(c.box.Pause(wire.PausedLimited, now), now)
 		} else if ch, ok := c.box.Resume(now); ok {
@@ -550,6 +577,10 @@ func (c *conv) effects(effects []agentstate.Effect, before wire.AgentState, now 
 			c.pump(now)
 		case agentstate.PauseQueue:
 			c.change(c.box.Pause(e.Pause, now), now)
+			if e.Pause == wire.PausedLaunchFailed && before.K == wire.StateStarting && c.rec.State.K == wire.StateLaunchFailed {
+				c.change(c.box.ReturnLostFirst(before.Since, now), now)
+				c.endHungLaunch()
+			}
 		case agentstate.PromptSubmitted:
 			c.change(c.box.PromptSubmittedAs(c.promptHash, c.rec.State.TurnID, before.K == wire.StateWorking, now), now)
 		case agentstate.TurnStarted:
@@ -643,6 +674,7 @@ func (c *conv) endTurn(id string, st wire.TurnStatus, failure *wire.TurnFailure,
 	c.throttle.Reset()
 	c.lastTurn()
 	c.notifyTurnEnded()
+	c.summarizeEnded(now)
 }
 
 // lastTurn keeps the record's summary of the newest turn.
@@ -1075,7 +1107,7 @@ func (c *conv) lostTmux() bool {
 // seeing acts on a look: the agent gone or exited, a menu up, busy or quiet.
 func (c *conv) seeing(s seen, now time.Time) {
 	defer c.restartDue(now)
-	c.probe = s.probe
+	c.probe, c.looked = s.probe, true
 	cold := c.coldAtRestart && !c.probe.Session
 	c.coldAtRestart = false
 	switch {
@@ -1101,17 +1133,25 @@ func (c *conv) seeing(s seen, now time.Time) {
 		return
 	case !c.probe.Session && c.lostTmux() && (c.rec.AgentSessionID != "" || c.rec.TranscriptPath != "") && ms(now)-c.rec.State.Since >= TmuxLostFor.Milliseconds():
 		// The pane has not come back: the session is gone for good, and the agent resumes on its session like a stopped
-		// one (the resume makes the tmux session again).
+		// one (the resume makes the tmux session again). One that was at work goes on by itself.
 		c.input(agentstate.Input{K: agentstate.Shell, Resumable: true}, now)
+		c.goOnLost(now)
+		return
+	case !c.probe.Session && c.lostTmux() && ms(now)-c.rec.State.Since >= TmuxLostFor.Milliseconds():
+		// Gone for good while its agent was still being launched (a machine update took tmux down): there is
+		// no session to resume, and the chat stayed «агента нет» for good. It is launched again, its first prompt with it.
+		c.relaunchLost(now)
 		return
 	case !c.probe.Session:
 		if c.rec.State.K != wire.StateStarting {
+			c.markLostAtWork(now)
 			c.input(agentstate.Input{K: agentstate.Gone, GoneReason: wire.GoneTmuxLost}, now)
 		}
 		return
 	case c.lostTmux():
 		// The pane was taken for lost (tmux that failed to answer twice) and is there after all: the agent is back,
 		// unchecked, and the queue paused for it goes on.
+		c.lostAtWork = false
 		c.input(agentstate.Input{K: agentstate.Restart}, now)
 	case c.probe.Shell && c.rec.State.K == wire.StateStarting:
 		if ms(now)-c.rec.State.Since >= LaunchNoAgent.Milliseconds() {
@@ -1764,6 +1804,88 @@ func (c *conv) resume(now time.Time) {
 	c.input(agentstate.Input{K: agentstate.LaunchRequested}, now)
 }
 
+// relaunchLost launches again the agent of a chat whose launch was cut short with its tmux: the first prompt the agent
+// never took goes back to the head of the queue, and the launch goes as a failed first launch's does (freshLaunch).
+func (c *conv) relaunchLost(now time.Time) {
+	if c.relaunchedLost {
+		// Once per runtime: a launch that cannot get a session either is the person's to retry («Продолжить отправку»),
+		// not a loop of launches.
+		c.input(agentstate.Input{K: agentstate.Gone, GoneReason: wire.GoneTmuxLost}, now)
+		return
+	}
+	c.relaunchedLost = true
+	if c.box.LostFirst() == "" && c.box.Head() == "" {
+		// Nothing was ever written to it and nothing waits: a launch would only open another tab with an empty agent,
+		// which the next start of the runtime took for a chat of its own (13.11: a score of empty chats after each
+		// machine update). It stays without an agent, and its first message launches it (relaunchEmpty).
+		c.emptyLost = true
+		c.input(agentstate.Input{K: agentstate.Gone, GoneReason: wire.GoneTmuxLost}, now)
+		return
+	}
+	if p := c.box.Paused(); p != nil && p.Reason == wire.PausedAgentGone {
+		ch, _ := c.box.Resume(now)
+		c.change(ch, now)
+	}
+	if id := c.box.LostFirst(); id != "" {
+		ch, _ := c.box.Retry(id, nil, now)
+		c.change(ch, now)
+	}
+	// Through the states of a launch that failed: freshLaunch takes only such a chat.
+	c.input(agentstate.Input{K: agentstate.LaunchRequested}, now)
+	c.input(agentstate.Input{K: agentstate.LaunchFailed, Failure: wire.LaunchFailedNoProcess}, now)
+	c.freshLaunch(now)
+}
+
+// relaunchEmpty launches the agent of an empty chat relaunchLost left waiting, now that a message is in its line.
+func (c *conv) relaunchEmpty(now time.Time) bool {
+	if !c.emptyLost || c.box.Head() == "" {
+		return false
+	}
+	c.emptyLost, c.relaunchedLost = false, false
+	c.relaunchLost(now)
+	return true
+}
+
+// firstLaunch: the agent never got as far as keeping a session, so there is nothing to resume.
+func (c *conv) firstLaunch() bool {
+	return c.rec.AgentSessionID == "" && c.rec.TranscriptPath == ""
+}
+
+// endSession ends the tmux session a failed launch left, where the launcher can.
+func (c *conv) endSession(session string) {
+	if e, ok := c.d.Launcher.(SessionEnder); ok && session != "" {
+		c.d.Log.Info("the session of a failed launch is ended", "conv", c.rec.ID, "session", session)
+		e.EndSession(session)
+	}
+}
+
+// endHungLaunch ends the session of a first launch whose prompt box never showed while no agent was in its pane (a
+// shell that hung on its rc file, a folder that stopped answering): left alone, the shell runs the launch line when it
+// comes back, and that agent works with no chat. A launch whose agent is up in the pane is left to come up late, and
+// one whose agent exited keeps its pane, which says why.
+func (c *conv) endHungLaunch() {
+	if c.rec.State.Reason != string(wire.LaunchFailedNoPromptBox) || !c.firstLaunch() || !c.looked || !c.probe.Session || c.probe.Foreground {
+		return
+	}
+	c.endSession(c.rec.Session)
+}
+
+// leftAlive: the session of the launch that failed still has its agent in the pane. A second launch beside it would
+// give the chat two agents, each taking its messages; what the session holds otherwise is ended.
+func (c *conv) leftAlive() bool {
+	if c.rec.Session == "" || c.d.Machine == nil {
+		return false
+	}
+	pr := c.d.Machine.Probe(c.rec.Session)
+	if pr.Session && pr.Foreground {
+		return true
+	}
+	if pr.Session {
+		c.endSession(c.rec.Session)
+	}
+	return false
+}
+
 // freshLaunch starts the agent anew for a conversation whose first launch failed: it has no session to resume (the
 // agent never got as far as keeping one), so the queue's pause, which only a running agent lifts, would hold the
 // messages for good. «Continue sending», a retry and a new message all come here: the pause of the failed launch is
@@ -1771,7 +1893,7 @@ func (c *conv) resume(now time.Time) {
 // conversation starts. Nothing happens for any other state, a conversation with a session (that one is resumed) or a
 // queue paused by the person.
 func (c *conv) freshLaunch(now time.Time) {
-	if c.d.Launcher == nil || c.rec.State.K != wire.StateLaunchFailed || c.rec.AgentSessionID != "" || c.rec.TranscriptPath != "" {
+	if c.d.Launcher == nil || c.rec.State.K != wire.StateLaunchFailed || !c.firstLaunch() {
 		return
 	}
 	if p := c.box.Paused(); p != nil {
@@ -1781,7 +1903,14 @@ func (c *conv) freshLaunch(now time.Time) {
 		ch, _ := c.box.Resume(now)
 		c.change(ch, now)
 	}
+	alive := c.leftAlive()
 	c.input(agentstate.Input{K: agentstate.LaunchRequested}, now)
+	if alive {
+		// The agent of the failed launch is in its pane after all: it is waited for as a starting one, and takes the
+		// line when its box shows. No second session is made.
+		c.d.Log.Info("the agent of a failed launch is still in its pane; waited for, not launched again", "conv", c.rec.ID)
+		return
+	}
 	req := LaunchRequest{ID: c.rec.ID, Cwd: c.rec.Cwd, Provider: c.rec.Provider, Model: c.rec.Model, Apps: c.rec.Apps}
 	if head := c.box.Head(); head != "" {
 		ch, carried := c.box.Carry(head, now)
@@ -1875,7 +2004,9 @@ func (c *conv) releaseQuietFeed(now time.Time) {
 // limit, a restart, a wait, a gate, the coalesced record, the title), and a message or a hook turns the actor at once.
 func (c *conv) clockEvery() time.Duration {
 	switch c.rec.State.K {
-	case wire.StateStopped, wire.StateGone, wire.StateLaunchFailed, wire.StateIdle, wire.StateReady:
+	case wire.StateStopped, wire.StateGone, wire.StateLaunchFailed:
+		return LookGone
+	case wire.StateIdle, wire.StateReady:
 		return c.lookEvery()
 	}
 	return LookEvery

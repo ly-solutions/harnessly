@@ -104,6 +104,10 @@ func (s *Service) runProvider(ctx context.Context, m store.Machine, op store.Mac
 
 // watch asks the provider how an operation goes until it ends.
 func (s *Service) watch(m store.Machine, op store.MachineOp, ref provider.OpRef, after func(context.Context)) {
+	if _, dup := s.watching.LoadOrStore(op.ID, true); dup {
+		return
+	}
+	defer s.watching.Delete(op.ID)
 	ctx := context.Background()
 	started := s.now()
 	fails := 0
@@ -429,6 +433,9 @@ func (s *Service) ResumeOps(ctx context.Context) {
 		return
 	}
 	for _, op := range ops {
+		if _, ok := s.watching.Load(op.ID); ok {
+			continue // a watch of this process follows it already
+		}
 		m, err := s.db.S().MachineByID(ctx, op.MachineID)
 		if err != nil || m.RevokedAt != nil {
 			s.finishOp(ctx, store.Machine{ID: op.MachineID}, op.ID, store.OpFailed, "машины больше нет")

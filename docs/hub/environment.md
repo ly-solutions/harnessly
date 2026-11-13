@@ -322,6 +322,51 @@ version from the same files is «уже стоит». A trusted app is never ins
 - **In the menu**: an app of the environment whose manifest targets `app` stands in the sidebar's «Приложения» for
   everybody, without turning it on in a chat; a person who turned it off for themselves does not see it there.
 
+### Built-in apps
+
+«Доски» and «Документы» are apps of the platform itself: every organization has them with no setting up, as `app`
+items of the organization's layer, **while the hub has the address of their service** (`HUB_BOARDS_URL`,
+`HUB_ARTIFACTS_URL`; see [Boards](../apps/boards.md) and [Documents](../apps/documents.md)). A hub without the address
+of a service has no item for it. They are on for everybody and not pinned.
+
+| Item | Item id | App id | Needs | Package by default |
+| --- | --- | --- | --- | --- |
+| Доски | `builtin-app-boards` | `harnessly.boards` | `HUB_BOARDS_URL` | `https://github.com/ly-solutions/boards`, branch `main`, folder `harnessly-app` |
+| Документы | `builtin-app-docs` | `harnessly.docs` | `HUB_ARTIFACTS_URL` | `https://github.com/ly-solutions/artifacts`, branch `main`, folder `harnessly-app` |
+
+Like «Рекомендованное», the items and their entries (`builtin-entry-app-…`) live in the code
+(`internal/hub/env/builtinapps.go`), not in the database; an entry shows `lockedReason: "built_in"`, and a row of
+`GET …/env` has `builtIn: true` and `off`.
+
+- **Where the package comes from.** `HUB_BOARDS_APP_REPO` / `HUB_BOARDS_APP_BRANCH` and `HUB_ARTIFACTS_APP_REPO` /
+  `HUB_ARTIFACTS_APP_BRANCH` name another repository (https) and a branch or a tag of it; the folder is always
+  `harnessly-app`. A closed network names its mirrors here ([Closed network](../self-host/closed-network.md)). The
+  default is the branch `main` of the service's own repository, not a tag: the package's version is in its manifest,
+  a machine installs it anew only when the version or the files change, and the package has to match the service the
+  installation runs. Name a tag in `…_APP_BRANCH` to hold a version.
+- **A person** turns an app off for themselves on their machine («Приложения», or the settings), as any app of the
+  environment that is not pinned. The hub's personal switch (`PUT /api/me/env/{itemId}`) answers 409 `built_in` for a
+  platform's item, and `GET /api/me/env` lists it with `canToggle: false`.
+- **The organization** turns one off for everybody with the same «Выключено у всех» as its own apps:
+  `PATCH /api/orgs/{org}/catalog/builtin-app-boards` with `{"source": {"off": true}}` (an organization's admin; in
+  «Окружение», the item's card). It is the one thing an organization changes in the item: a name, a hint or an archive
+  in the request answers 409 `built_in`. The choice is kept as a row of `org_features` (`env.app.boards`,
+  `env.app.docs`; no row means on), which is not one of the hub's flags and is not listed among them. The machines get
+  the item with `source.off`, so the app stays installed with its data and is not there for anybody.
+- **The hub** leaves them out everywhere with `HUB_ENV_APPS=off`; an organization then puts the apps in with `app`
+  items of its own.
+- **No doubles.** When the list of a person or a machine has an `app` item of the organization's own for the same
+  package (the same repository address, compared without case, a trailing `/` or `.git`, and the same folder), the
+  platform's item is left out: the organization's wins, with its pin, its audience and its switch. On the machine one
+  app is one install: the organization's own item of the same app id takes the install over from the platform's item
+  (and the platform's gives way to it), and an item that replaced another keeps the install, its settings and the
+  person's switch.
+- **Without «Окружение».** The machines of an organization whose `env` flag is off get the platform's apps and
+  nothing else of the environment; such an organization has no screen to turn them off, only the hub's switch.
+  A machine of a space that is in no organization gets no list, as before.
+- **Older agents.** An item goes only to a machine whose hello has `environment.apps`; the list of any other machine,
+  and its hash, are what they were.
+
 ## Calls of the tools
 
 The usage feed ([usage.md](usage.md)) writes a `tool` record per session, UTC day, tool kind and tool name as the
@@ -548,6 +593,9 @@ status, the steps with their logs; removed after 14 days).
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `HUB_ENV_RECOMMENDED` | `on` | `off` leaves the platform's group «Рекомендованное» out of every organization (see «Recommended») |
+| `HUB_ENV_APPS` | `on` | `off` leaves the platform's apps «Доски» and «Документы» out of every organization (see «Built-in apps») |
+| `HUB_BOARDS_APP_REPO`, `HUB_BOARDS_APP_BRANCH` | the boards service's public repository, `main` | where the machines take the «Доски» package from: an https address of a repository with the folder `harnessly-app`, and a branch or a tag |
+| `HUB_ARTIFACTS_APP_REPO`, `HUB_ARTIFACTS_APP_BRANCH` | the documents service's public repository, `main` | the same for «Документы» |
 | `HUB_ENV_FEATURES` | empty | comma list of `env` (the layers, `/me/env`, the machines' lists), `catalog` (the catalog endpoints) or `all`; empty: both off, the endpoints answer `404 not_enabled`, no machine is sent anything |
 
 The endpoints also follow `HUB_ORGS`. Per-organization switches are not in the base yet (there is no `org_features`), so
@@ -557,6 +605,10 @@ the flag is for the whole hub. `HUB_USAGE_INGEST=on` is needed for the numbers.
 
 - A member's own additions from the catalog (not only switching off) have no storage.
 - Personal switches are not applied to a machine's list; machines get the team's list.
+- The hub's personal switch does not take a platform's item (409 `built_in`): its storage is by catalog item, and the
+  platform's items are not in the catalog. A person turns a platform's app off on their machine.
+- The hub compares an organization's own app with a platform's by the package's place, not by the app id (it does not
+  read manifests); two packages of one app id from different places meet on the machine, where the organization's wins.
 - Tool names of sessions already in an agent's facts cache appear after their transcript is parsed again.
 - Codex chats do not get the list, nor «Рекомендованное» (Codex's `~/.codex/config.toml` is not written).
 - Turning the flag off leaves the machines with their last list.

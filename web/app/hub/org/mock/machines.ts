@@ -260,6 +260,7 @@ const build = (s: Seed, role: MockCtx['role'], now: number): OrgMachine => {
     id: s.id,
     name: s.name,
     ownerName: s.owner ?? null,
+    ownerId: s.owner ? person(s.owner).id : null,
     purpose: s.purpose ?? null,
     kind: s.owner ? 'personal' : 'shared',
     tenantId: s.tenant[0],
@@ -469,6 +470,14 @@ export const machinesMock = (ctx: MockCtx): MachinesApi => {
         throw new OrgApiError('invalid_request', 'Название — от 1 до 60 символов');
       put({ ...m, name: next });
       return later(detail(get(id)), 400);
+    },
+    assignMachineOwner: async (id, userId) => {
+      const m = get(id);
+      need(m, true);
+      const to = PEOPLE.find((p) => p.id === userId);
+      if (!to) throw new OrgApiError('invalid_request', 'Человек должен быть участником пространства машины');
+      put({ ...m, ownerName: to.name, ownerId: to.id, kind: 'personal' });
+      return later(detail(get(id)), 500);
     },
     planMoveMachine: async (id, tenantId) => later(movePlan(get(id), tenantId), 250),
     moveMachine: async (id, tenantId) => {

@@ -1,0 +1,119 @@
+/* An error in one line: headline and reason, the status code as one quiet label, the raw text folded under
+   «Details» (features/chat/error-line.tsx). It stands inside the turn's end, a notice and a tool's card. */
+.hx-err {
+  display: inline;
+  min-width: 0;
+}
+.hx-err__text {
+  overflow-wrap: anywhere;
+}
+.hx-err__code {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--hx-border-strong);
+  border-radius: var(--hx-radius-full);
+  font-size: var(--hx-text-xs);
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--hx-fg-2);
+  white-space: nowrap;
+}
+.hx-err__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--hx-fg-3);
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: baseline;
+  transition: color 160ms ease;
+}
+.hx-err__more:hover,
+.hx-err__more:focus-visible {
+  color: var(--hx-fg-1);
+}
+.hx-err__more > .hx-icon {
+  transition: transform 320ms var(--hx-ease-out);
+}
+.hx-err__more[aria-expanded='true'] > .hx-icon {
+  transform: rotate(90deg);
+}
+
+/* The fold opens and closes by its grid row, the way a tool's output does; the raw text fades with it. */
+.hx-err__fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 420ms var(--hx-ease-out),
+    visibility 0s linear 420ms;
+}
+.hx-err[data-open] > .hx-err__fold {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows 420ms var(--hx-ease-out),
+    visibility 0s;
+}
+.hx-err__clip {
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+}
+.hx-err__raw {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px 6px 8px 12px;
+  border-radius: var(--hx-radius-sm);
+  background: var(--hx-bg-hover);
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+.hx-err[data-open] .hx-err__raw {
+  opacity: 1;
+  transition-delay: 80ms;
+}
+.hx-err__pre {
+  flex: 1;
+  min-width: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--hx-font-mono);
+  font-size: var(--hx-text-xs);
+  line-height: 18px;
+  color: var(--hx-fg-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.hx-err__raw > .hx-turnacts__btn {
+  flex: none;
+}
+
+/* In the turn's end the line follows «Turn interrupted ·» in the same grey. */
+.hx-turnend__why > .hx-err {
+  color: var(--hx-fg-3);
+}
+/* In a failed tool's card it takes the place of the output. */
+.hx-tool__out > .hx-err {
+  display: block;
+  padding: 0 12px;
+  font-size: var(--hx-text-sm);
+  line-height: 20px;
+  color: var(--hx-fg-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hx-err__fold,
+  .hx-err__raw,
+  .hx-err__more > .hx-icon {
+    transition: none;
+  }
+}

@@ -58,6 +58,11 @@
   "next.smart.machine.mem": "Машине не хватает памяти — чаты могут отвечать медленно.",
   "next.smart.machine.cpu": "Процессор занят до предела — чаты могут отвечать медленно.",
   "next.smart.machine.disk": "На диске почти не осталось места — работа может встать.",
+  "next.smart.machine.io": "Программы ждут диск или сеть, хотя процессор свободен — чаты и команды могут зависать.",
+  "next.smart.machine.waits": "ждут: {names}",
+  "next.smart.machine.waiting": "ждёт диск или сеть",
+  "next.smart.machine.top.mem": "больше всего занимает {name}",
+  "next.smart.machine.top.cpu": "больше всего нагружает {name}",
   "next.smart.machine.heaviest": "Тяжелее всего сейчас:",
   "next.smart.machine.agents": "Агенты",
   "next.smart.machine.agentsBusy": {
@@ -126,5 +131,13 @@
   "next.notices.settings.key.open.hint": "Когда ничего не ждёт — открывает историю",
   "next.notices.settings.key.none": "Не задана",
   "next.notices.settings.summary": "Итог хода",
-  "next.notices.settings.summary.hint": "2–4 строки о сделанном. Пишет самая дешёвая модель, расход — в тратах машины"
+  "next.notices.settings.summary.hint": "2–4 строки о сделанном. Пишет самая дешёвая модель, расход — в тратах машины",
+  "next.smart.stack.collapse": "Свернуть",
+  "next.smart.stack.clearAll": "Очистить всё",
+  "next.smart.stack.more": "ещё {n}",
+  "next.smart.stack.expand": "Показать все: {n}",
+  "next.smart.stack.openChat": "Открыть чат",
+  "next.smart.stack.remove": "Убрать",
+  "next.smart.stack.machine": "Машина",
+  "next.smart.stack.details": "Подробнее"
 }

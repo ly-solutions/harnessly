@@ -118,6 +118,8 @@ func newV2Live(d deps, c *core) *v2Live {
 	features = append(features, wire.FeatureMachine)
 	// The Apps screen says for each app whether this machine reads it, so it is always offered.
 	features = append(features, wire.FeatureApps, wire.FeatureAppsHub)
+	// A chat keeps how the person left its window (conversation.view), so another device opens it the same way.
+	features = append(features, wire.FeatureChatView)
 	// The Settings screen reads the agent CLIs' files of this machine, which are there to read or to make.
 	features = append(features, wire.FeatureSettings)
 	// The composers' drafts are kept here for every device of the person (draft.set, drafts.json).
@@ -157,6 +159,7 @@ func newV2Live(d deps, c *core) *v2Live {
 	if c.agents != nil {
 		v.machine.skip = c.agents.claude.SkipPermissions
 		v.machine.codexConfig = filepath.Join(d.Home, ".codex", "config.toml")
+		v.machine.claudeSettings = filepath.Join(env("CLAUDE_CONFIG_DIR", filepath.Join(d.Home, ".claude")), "settings.json")
 	}
 	v.hub = wire.NewHub(v.machine)
 	v.tm = &v2Tmux{tm: c.cfg.Tmux, term: c.cfg.Term, guard: chatGuard}
@@ -169,7 +172,7 @@ func newV2Live(d deps, c *core) *v2Live {
 		publisher.browser = d.BrowserTools.Access
 	}
 	// The terminals are stopped by tmux and /proc; without tmux there is nothing to stop.
-	runtimeSettings := &wire.FileRuntimeSettings{Path: filepath.Join(d.DataDir, "v2", "runtime-settings.json")}
+	runtimeSettings := runtimeSettingsFor(d.DataDir)
 	idleFloor, pressureFloor := sleepFloors(c.cfg.Hooks.Sleep)
 	var terminals convo.Terminals
 	if c.cfg.Tmux != nil {
@@ -188,10 +191,12 @@ func newV2Live(d deps, c *core) *v2Live {
 	}
 	moveStore := openMoveStore(d)
 	titler := newV2Titler(os.Getenv("RUNTIME_SIDE_CHAT_CONFIG"), agentEnvDir(d.DataDir))
+	summarizer := newV2Summarizer(titler, filepath.Join(d.DataDir, "v2", "turn-summaries"))
+	summarizer.models = v.machine.modelsOf
 	var noticesRT atomic.Pointer[convo.Runtime]
 	notices := newChatNotices(c, &noticesRT)
 	v.rt = convo.New(convo.Deps{Notify: notices.notice, Moves: moveStore, Index: index, Digest: digest, ExportDir: filepath.Join(d.DataDir, "v2", "chat-exports"), AgentSession: ses.Find, MachineID: v2Machine, Publisher: publisher, Machine: v.tm, Launcher: v.starter, Input: codexInputOf(c), Handoffs: handoffs,
-		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{Index: c.transcripts}, Transcripts: c.transcripts, Shots: &shots.Reader{Index: c.transcripts}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir, imagesDir(d), codexImagesDir(d)}, Titler: titler.Title, Summarizer: newV2Summarizer(titler, filepath.Join(d.DataDir, "v2", "turn-summaries")).Summarize, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
+		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{Index: c.transcripts}, Transcripts: c.transcripts, Shots: &shots.Reader{Index: c.transcripts}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir, imagesDir(d), codexImagesDir(d)}, Titler: titler.Title, Summarizer: summarizer.Summarize, SummaryModel: func() *wire.NoticeSummaryModel { return runtimeSettings.RuntimeSettings().NoticeSummary }, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
 		Terminals: terminals, IdleStop: func() time.Duration { return runtimeSettings.RuntimeSettings().IdleStop.After() },
 		IdleFloor: idleFloor, MemoryShort: memoryShort, PressureStop: pressureFloor, LegacyLife: !sessionOwnerOn(os.Getenv),
 		TerminalOff: chatGuard.Off,
@@ -219,7 +224,8 @@ func newV2Live(d deps, c *core) *v2Live {
 	v.work = newChatWork(v)
 	v.srv.Work = v.work.Reg
 	if terminals != nil {
-		v.srv.RuntimeSettings = runtimeSettings
+		// What the page saves goes into the journal of the settings' changes.
+		v.srv.RuntimeSettings = journaledRuntimeSettings{inner: runtimeSettings, dataDir: d.DataDir}
 	}
 	v.srv.Sessions = ses.List
 	if dictation != nil {
@@ -547,6 +553,10 @@ func (v *v2Live) importTabs() int {
 			}
 		}
 	}
+	fresh = slices.DeleteFunc(fresh, func(t convo.ImportTab) bool { return v.nothingToTakeOver(t, queues) })
+	if len(fresh) == 0 {
+		return 0
+	}
 	n := v.rt.Import(fresh, queues)
 	v.importProjects()
 	if svc != nil {
@@ -557,6 +567,18 @@ func (v *v2Live) importTabs() int {
 		}
 	}
 	return n
+}
+
+// nothingToTakeOver: the tab is an agent tab left behind with nothing in it, no agent session, no transcript, no
+// queued message and no tmux session either. A chat made of it would be empty, and its launch would make a new tab,
+// which the next start of the runtime found left behind in its turn: each update of the machine added a score of empty
+// «Claude Code» chats (13.11).
+func (v *v2Live) nothingToTakeOver(t convo.ImportTab, queues map[string][]outbox.LegacyItem) bool {
+	if t.AgentSessionID != "" || t.TranscriptPath != "" || len(queues[t.ID]) > 0 {
+		return false
+	}
+	tm := v.c.cfg.Tmux
+	return t.Session == "" || tm != nil && !tm.HasSession(t.Session)
 }
 
 // importProjects puts the conversations Legacy's organizer has in a project into that project, once each.
@@ -875,15 +897,64 @@ func (l *v2Launcher) start(req convo.LaunchRequest, chosen *agents.Launch, promp
 		return
 	}
 	rt.LaunchStep(req.ID, wire.StepPrompt)
+	prev, _ := rt.Record(req.ID)
 	_ = rt.Attach(req.ID, found.Tab.SessionName, "", "")
+	if prev.Session != "" && prev.Session != found.Tab.SessionName {
+		l.dropLeftTab(req.ID, prev.Session)
+	}
 }
 
-// defaultPermission is the permission mode of a chat that names none: the runtime's dangerouslySkipPermissions.
-func (l *v2Launcher) defaultPermission() wire.PermissionMode {
-	if a := l.v.c.agents; a != nil && a.claude.SkipPermissions != nil && a.claude.SkipPermissions() {
-		return wire.PermissionBypass
+var _ convo.SessionEnder = (*v2Launcher)(nil)
+
+// EndSession ends the tmux session of a launch that failed, beside the actor: its shell and whatever it started go
+// with it. The tab stays for the chat's next launch to take out of the layout (dropLeftTab).
+func (l *v2Launcher) EndSession(session string) {
+	tm := l.v.c.cfg.Tmux
+	if tm == nil || session == "" {
+		return
 	}
-	return wire.PermissionAsk
+	safego.Go("end failed launch", func() {
+		tm.KillSession(session)
+		agent.Log("info", "v2: the session of a failed launch is ended", agent.F{K: "session", V: session})
+	})
+}
+
+// dropLeftTab takes out of the layout the tab a chat left for the new one its relaunch made, once its tmux session is
+// gone: no chat holds it any more, and the next start of the runtime took it for a chat of its own (13.11). A tab whose
+// session still runs is left alone: its agent may be at work.
+func (l *v2Launcher) dropLeftTab(conv, session string) {
+	c := l.v.c
+	if c.cfg.Tmux == nil || c.cfg.Tmux.HasSession(session) {
+		return
+	}
+	if owner := l.v.rt.ConvOfSession(session); owner != "" && owner != conv {
+		return
+	}
+	ws, pane, tab, ok := c.cfg.Tmux.ParseSessionName(session)
+	if !ok {
+		return
+	}
+	if err := c.store.RemoveTab(ws, pane, tab); err != nil {
+		return
+	}
+	if m := c.manager(); m != nil {
+		m.RemoveTab(tab)
+	}
+	agent.Log("info", "v2: the tab a relaunched chat left is taken out of the layout", agent.F{K: "session", V: session})
+}
+
+// defaultPermission is the permission mode of a Claude chat that names none: bypass when the runtime's
+// dangerouslySkipPermissions is on or Claude Code's settings.json makes bypassPermissions its defaultMode.
+func (l *v2Launcher) defaultPermission() wire.PermissionMode {
+	skip := false
+	if a := l.v.c.agents; a != nil && a.claude.SkipPermissions != nil {
+		skip = a.claude.SkipPermissions()
+	}
+	settings := ""
+	if l.v.machine != nil {
+		settings = l.v.machine.claudeSettings
+	}
+	return defaultPermissionOf(wire.ProviderClaude, skip, "", settings)
 }
 
 // KeepModes writes the fast and permission modes the chat now runs in into its tab's launch.
@@ -907,6 +978,16 @@ func (l *v2Launcher) Resume(conv wire.Conversation) error {
 	}
 	if err := profileKeyGone(l.v.profiles, conv); err != nil {
 		return err
+	}
+	// A tab that forgot its agent's session takes it from the chat's record: the resume line is built from the tab, and
+	// without the id the chat could not be resumed at all.
+	if adopted, err := c.store.AdoptAgentSession(conv.Session, state.Provider(conv.Provider), conv.AgentSessionID, conv.TranscriptPath); err != nil {
+		return err
+	} else if adopted {
+		agent.Log("warn", "v2: the tab had lost its agent's session; taken from the chat's record", agent.F{K: "session", V: conv.Session})
+		if m := c.manager(); m != nil {
+			m.AdoptSession(tab, conv.AgentSessionID)
+		}
 	}
 	// The apps on in the chat come back with it: the tab's launch is what the resume reads (internal/apps).
 	if err := c.store.SetTabLaunchApps(conv.Session, conv.Apps); err != nil {

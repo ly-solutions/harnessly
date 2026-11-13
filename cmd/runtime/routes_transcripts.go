@@ -150,7 +150,7 @@ func (c *core) transcriptRoutes(f *gate.Gate, d deps) []gate.Route {
 		usageAnswer = usageRoute(d, authorized).Answer
 	}
 	pages := &stats.Route{Home: d.Home, DataDir: d.DataDir, ConfigFile: d.ConfigFile, Authorized: authorized,
-		CwdRewrites: stats.ParseCwdRewrites(os.Getenv("RUNTIME_STATS_CWD_REWRITES")), ShellPath: preflight.New(d.Home).ShellPath}
+		CwdRewrites: stats.ParseCwdRewrites(os.Getenv("RUNTIME_STATS_CWD_REWRITES")), ShellPath: preflight.Shared(d.Home).ShellPath}
 	var routes []gate.JSONRoute
 	for name, answer := range pages.Routes() {
 		routes = append(routes, gate.JSONRoute{

@@ -3,7 +3,15 @@ import { useRef, useState } from 'react';
 
 import { orgErrorText } from '../../../org/api/errors';
 
-import type { MovePlan, OrgMachine, ResourcePlan, RestartWhat, RestartWhen } from '../../../org/api/machines';
+import type {
+  MovePlan,
+  OrgMachine,
+  OwnerHistory,
+  PersonRef,
+  ResourcePlan,
+  RestartWhat,
+  RestartWhen,
+} from '../../../org/api/machines';
 import { useOrg } from '../../../org/context';
 import { movePlanLines } from '../../../org/screens/machines/format';
 import { Btn, Dialog, Icon } from '../../ui';
@@ -248,6 +256,113 @@ export const Move = ({
   );
 };
 
+const HISTORY: readonly { id: OwnerHistory; label: string; hint: string }[] = [
+  {
+    id: 'move',
+    label: 'Перенести прежние чаты',
+    hint: 'чаты, которые машина уже передала хабу, станут чатами нового владельца',
+  },
+  {
+    id: 'keep',
+    label: 'Оставить прежнему владельцу',
+    hint: 'новому владельцу достанется только то, что придёт с этого момента',
+  },
+];
+
+/** Handing the machine to another member of its space (`POST /api/machines/{id}/owner`): who, what happens to the chats, a confirm. */
+export const Owner = ({
+  m,
+  people,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  m: OrgMachine;
+  /** Why the hub refused the last try. */
+  error?: string | null;
+  /** The members of the machine's space the card knows. */
+  people: readonly PersonRef[];
+  onClose: () => void;
+  /** Hands the machine over; true once the hub did, the dialog then closes. */
+  onConfirm: (userId: string, history: OwnerHistory) => Promise<boolean>;
+}) => {
+  const targets = people.filter((p) => p.id !== m.ownerId);
+  const [userId, setUserId] = useState('');
+  const [history, setHistory] = useState<OwnerHistory>('move');
+  const [busy, setBusy] = useState(false);
+  const to = targets.find((p) => p.id === userId);
+  const go = async () => {
+    if (!to || busy) return;
+    setBusy(true);
+    try {
+      await onConfirm(to.id, history);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <span className="md-dlg__ic">
+        <Icon i="users" />
+      </span>
+      <h4>Передать {m.name}?</h4>
+      <p className="md-dlg__lead">
+        Машина сохранит id, ключ, настройки и чаты: ничего переустанавливать не нужно. Передать можно
+        участнику пространства машины.
+      </p>
+      <select
+        className="hx-set__input"
+        aria-label="Кому передать"
+        value={userId}
+        disabled={busy}
+        onChange={(e) => setUserId(e.target.value)}
+      >
+        <option value="">Выберите человека</option>
+        {targets.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <div className="hx-set__seg md-dlg__seg" role="radiogroup" aria-label="Что сделать с прежними чатами">
+        {HISTORY.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            className="hx-set__seg-item"
+            role="radio"
+            aria-checked={history === o.id}
+            disabled={busy}
+            onClick={() => setHistory(o.id)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="md-note">{HISTORY.find((o) => o.id === history)?.hint}.</p>
+      {to && (
+        <p className="md-dlg__lead">
+          {m.ownerName ? `Владелец ${m.ownerName} сменится на ${to.name}` : `Владельцем станет ${to.name}`}.
+          Действие попадёт в журнал аудита.
+        </p>
+      )}
+      {error && (
+        <p className="md-note tm-err" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="md-dlg__foot">
+        <Btn variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+          Отмена
+        </Btn>
+        <Btn variant="primary" size="sm" busy={busy} disabled={!to} onClick={() => void go()}>
+          Передать
+        </Btn>
+      </div>
+    </>
+  );
+};
+
 export const MachineDialogs = ({
   dlg,
   m,
@@ -257,8 +372,11 @@ export const MachineDialogs = ({
   onOff,
   onRemove,
   onMoved,
+  people,
+  ownerError,
+  onOwner,
 }: {
-  dlg: 'restart' | 'off' | 'remove' | 'move' | null;
+  dlg: 'restart' | 'off' | 'remove' | 'move' | 'owner' | null;
   m: OrgMachine;
   plan: ResourcePlan | null;
   onClose: () => void;
@@ -266,6 +384,9 @@ export const MachineDialogs = ({
   onOff: () => void;
   onRemove: () => void;
   onMoved: () => void;
+  people: readonly PersonRef[];
+  ownerError?: string | null;
+  onOwner: (userId: string, history: OwnerHistory) => Promise<boolean>;
 }) => (
   <>
     <Dialog inline open={dlg === 'restart'} onClose={onClose} label={`Перезапустить ${m.name}`}>
@@ -276,6 +397,9 @@ export const MachineDialogs = ({
     </Dialog>
     <Dialog inline open={dlg === 'move'} onClose={onClose} label={`Перенести ${m.name}`}>
       <Move m={m} onClose={onClose} onMoved={onMoved} />
+    </Dialog>
+    <Dialog inline open={dlg === 'owner'} onClose={onClose} label={`Передать ${m.name}`}>
+      <Owner m={m} people={people} error={ownerError} onClose={onClose} onConfirm={onOwner} />
     </Dialog>
     <Dialog inline open={dlg === 'off'} onClose={onClose} label={`Отключить ${m.name}`}>
       <Off m={m} plan={plan} onClose={onClose} onConfirm={onOff} />

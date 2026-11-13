@@ -231,6 +231,7 @@ secret; it exits with 2 and every problem it found when the settings are wrong. 
 | `HUB_DESIGN_SHARE_URL` | off | Origin of the [design guest links](design-access.md) (`https://share.example.com`, no path): a host of its own that points at the hub, never the hub's host. Without it links cannot be made |
 | `HUB_DESIGN_SHARE_ALIASES` | off | Former origins of the design guest links, comma-separated: `/s/<token>` on them redirects to `HUB_DESIGN_SHARE_URL`, anything else is 404. See [design access](design-access.md) |
 | `HUB_DESIGN_SHARE_DOCS` | off | `on`: document guest links (`/d/<token>`) also open on the share host and its aliases. See [design access](design-access.md) |
+| `HUB_DESIGN_DEFAULT_TEAM_LEVEL`, `HUB_DESIGN_UNRECORDED`, `HUB_DESIGN_REGISTER` | `edit`, `open`, off | Make design projects personal by default: the team level of new projects, whether a stored project without a row stays on its machine, and the start step that gives existing projects an owner. See [personal projects by default](design-access.md#personal-projects-by-default) |
 | `HUB_DESIGN_PLATFORM_API` | `/api/platform` | The runtime's platform prefix (`/api/<name>`) the hub uses for a machine whose page has not called the access API yet; must match the machines' `AGENT_RUNTIME_PLATFORM_API` |
 | `HUB_CONTAINER_IMAGE` | hidden | The image the «В контейнере» way runs; must be pullable by the machines |
 | `HUB_LOCAL_CODE_FILE` | off | Keep a registration code for the machine next to the hub (compose.hub.yaml); the file is `0600`, in a `0700` folder |

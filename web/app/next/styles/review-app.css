@@ -111,6 +111,12 @@
   color: var(--hx-primary-fg);
   font-size: var(--hx-text-sm);
   font-weight: var(--hx-weight-semibold);
+  overflow: hidden;
+}
+.hx-rvhome__face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .hx-rvhome__text {
   display: flex;
@@ -144,12 +150,14 @@
   color: var(--hx-warning);
 }
 .hx-rvhome__src {
+  display: grid;
   flex-shrink: 0;
-  padding: 1px 6px;
-  border: 1px solid var(--hx-border);
-  border-radius: var(--hx-radius-sm);
+  place-items: center;
   color: var(--hx-fg-3);
-  font-size: var(--hx-text-xs);
+}
+.hx-rvhome__src svg {
+  width: 14px;
+  height: 14px;
 }
 .hx-rvhome__warn {
   margin: 0 0 var(--hx-space-3);
@@ -355,10 +363,6 @@
   padding: var(--hx-space-6);
   color: var(--hx-fg-3);
   text-align: center;
-}
-/* The chat's field stands at the foot of the app's view (app-main.css): the foot of the diff makes room for it. */
-.hx-appmain__view:has(> .hx-appmain__island) .hx-rvapp__foot {
-  padding-bottom: 96px;
 }
 .hx-rvapp__wait {
   flex: 1;

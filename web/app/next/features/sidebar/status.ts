@@ -20,6 +20,46 @@ export const STATUS_LOOK: Record<Exclude<TChatStatus, 'none'>, IStatusLook> = {
   stopped: { icon: 'circle-stop', label: t('next.chatStatus.stopped') },
   'waiting-machine': { icon: 'pause', label: t('next.chatStatus.waitingMachine') },
   limited: { icon: 'clock', label: t('next.chatStatus.limited') },
+  delegated: { icon: 'workflow', label: t('next.chatStatus.delegated') },
+};
+
+/** The statuses of a delegated chat that keep its parent waiting for it. */
+const KEEPS_PARENT_WAITING: ReadonlySet<TChatStatus> = new Set([
+  CHAT_STATUS.thinking,
+  CHAT_STATUS.background,
+  CHAT_STATUS.question,
+  CHAT_STATUS.perm,
+  CHAT_STATUS.plan,
+  CHAT_STATUS.waitingMachine,
+  CHAT_STATUS.limited,
+  CHAT_STATUS.delegated,
+]);
+
+/**
+ * The list with a chat that has nothing of its own to show (`none`) marked `delegated` while a chat it delegated, at any
+ * depth, is still at work. Chats that do not change keep their identity, so the memoized rows stay as they are.
+ */
+export const withDelegationWait = <T extends { id: string; parentId?: string; status: TChatStatus }>(
+  chats: readonly T[],
+): readonly T[] => {
+  const byId = new Map(chats.map((chat) => [chat.id, chat]));
+  const waiting = new Set<string>();
+  for (const chat of chats) {
+    if (!KEEPS_PARENT_WAITING.has(chat.status)) continue;
+    const seen = new Set<string>([chat.id]);
+    for (let up = chat.parentId; up !== undefined && !seen.has(up); up = byId.get(up)?.parentId) {
+      seen.add(up);
+      waiting.add(up);
+    }
+  }
+  if (waiting.size === 0) return chats;
+  let changed = false;
+  const out = chats.map((chat) => {
+    if (chat.status !== CHAT_STATUS.none || !waiting.has(chat.id)) return chat;
+    changed = true;
+    return { ...chat, status: CHAT_STATUS.delegated };
+  });
+  return changed ? out : chats;
 };
 
 // The parts of a v2 Conversation (protocol/v2.ts) the status reads; structural, so the store's type fits as it is.

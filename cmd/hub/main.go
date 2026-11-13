@@ -190,6 +190,7 @@ func serve(ctx context.Context, cfg *config.Config, ready chan<- string, logOut 
 	defer stopBackground()
 	go hub.Run(bg)
 	go importDesignsAtStart(bg, cfg, hub.Design, log)
+	go registerDesignsAtStart(bg, cfg, hub.Design, hub.Store, log)
 
 	log.Info("hub started", "version", buildinfo.Version, "listen", ln.Addr().String(), "publicUrl", cfg.PublicURL,
 		"edition", cfg.Edition, "database", dbKind(cfg), "mail", mailer.Mode(), "runtime", runtimeMode(cfg))

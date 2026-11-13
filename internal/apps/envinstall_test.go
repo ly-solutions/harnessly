@@ -131,3 +131,47 @@ func TestEnvironmentAppTheOrganizationTurnedOffIsNotListedAndStaysInstalled(t *t
 		t.Fatalf("on again: %v", err)
 	}
 }
+
+// One app is one install whatever item brings it: an item that replaced another takes the install over with the
+// person's switch, and the organization's own item wins over the platform's.
+func TestEnvironmentAppFollowsTheItemThatBringsItNow(t *testing.T) {
+	r := newRegistry(t)
+	dir := versioned(t, "acme.kit", "1.0.0")
+	opt := func(item string, keep ...string) EnvInstallOptions {
+		return EnvInstallOptions{Link: "own", ItemID: item, HostVersion: TemplateVersion, Now: teamNow, Keep: keep}
+	}
+	if _, _, err := r.InstallForEnv(dir, opt("item-kit", "item-kit")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.MuteTeamApp("acme.kit", true); err != nil {
+		t.Fatalf("mute: %v", err)
+	}
+	// Two items of the organization's own for one app, both in the list: the second is refused as before.
+	if _, _, err := r.InstallForEnv(dir, opt("item-other", "item-kit", "item-other")); err == nil {
+		t.Fatal("a second item of the organization took the app")
+	}
+	// The platform's item beside the organization's: it gives way, and nothing changes.
+	if _, changed, err := r.InstallForEnv(dir, opt("builtin-app-kit", "item-kit", "builtin-app-kit")); !errors.Is(err, ErrEnvOwnItem) || changed {
+		t.Fatalf("the platform's item beside the organization's: %v %v", err, changed)
+	}
+	if !r.EnvHasItem("own", "item-kit") {
+		t.Fatal("the organization's item lost the app")
+	}
+	// The organization's item left the list: the platform's takes the install over, and the prune keeps it.
+	if _, changed, err := r.InstallForEnv(dir, opt("builtin-app-kit", "builtin-app-kit")); err != nil || !changed {
+		t.Fatalf("takeover: %v %v", err, changed)
+	}
+	if gone, err := r.PruneEnv("own", []string{"builtin-app-kit"}); err != nil || len(gone) != 0 {
+		t.Fatalf("prune after the takeover: %v %v", err, gone)
+	}
+	if all, err := r.ListAll(); err != nil || len(all) != 1 || !all[0].Muted {
+		t.Fatalf("the person's switch after the takeover: %v %+v", err, all)
+	}
+	// And back: the organization's own item takes it from the platform's while both are in the list.
+	if _, changed, err := r.InstallForEnv(dir, opt("item-kit", "item-kit", "builtin-app-kit")); err != nil || !changed {
+		t.Fatalf("the organization's item over the platform's: %v %v", err, changed)
+	}
+	if !r.EnvHasItem("own", "item-kit") || r.EnvHasItem("own", "builtin-app-kit") {
+		t.Fatal("the app is not the organization's item's")
+	}
+}

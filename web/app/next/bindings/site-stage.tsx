@@ -11,6 +11,7 @@ import { uploadSrc } from '@/next/commands/uploads';
 import ChatView, { type TChatOpeners } from '@/next/bindings/chat-view';
 import { openFileInChat } from '@/next/bindings/open-file-in-chat';
 import { keepLayout, keptLayout } from '@/next/features/designly/site-layout';
+import { noteLayoutKey } from '@/next/stores/chat-view';
 import type { IDockExtra } from '@/next/bindings/chat-dock';
 import { outgoingItem, useFeedItems } from '@/next/bindings/feed-items';
 import { useAgentLimits } from '@/next/bindings/use-limits';
@@ -460,6 +461,10 @@ export const useSiteStage = ({
   const [sview, setSview] = useState(false);
   // Where the chat stood open last: the folded one opens there again.
   const [opened, setOpened] = useState<TSiteMode>(kept?.opened ?? 'chat');
+  // The chat of this screen keeps its place with the chat's view on the machine (stores/chat-view.ts).
+  useEffect(() => {
+    if (keep && convId) noteLayoutKey(convId, key);
+  }, [keep, convId, key]);
   useEffect(() => {
     if (keep) keepLayout(key, { mode, min, dock, chatW, float, opened, chosen });
   }, [keep, key, mode, min, dock, chatW, float, opened, chosen]);

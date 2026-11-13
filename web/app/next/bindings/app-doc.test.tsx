@@ -36,6 +36,17 @@ vi.mock('@/next/features/app-views/app-frame', () => ({
     />
   ),
 }));
+// Sinopia's stage (the chat, its place, its field) has its own tests; here the document's page in it is what matters.
+vi.mock('@/next/bindings/site-stage', () => ({ useSiteStage: () => ({ conv: null }) }));
+vi.mock('@/next/features/app-main/app-stage', () => ({
+  default: (props: { title: string; lead?: React.ReactNode; frame: React.ReactNode }) => (
+    <div>
+      {props.lead}
+      <h1>{props.title}</h1>
+      {props.frame}
+    </div>
+  ),
+}));
 vi.mock('@/next/routes/routes', async (orig) => ({
   ...(await orig<typeof import('@/next/routes/routes')>()),
   goTo: vi.fn(),

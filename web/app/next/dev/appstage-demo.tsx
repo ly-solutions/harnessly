@@ -200,10 +200,8 @@ export const AppStageDemo = ({
   };
   return (
     <AppStage
-      title={app.title}
-      icon={app.icon}
-      object={home ? null : { title: app.object }}
-      onHome={() => setHome(true)}
+      title={home ? 'Главная' : app.object}
+      onBack={home ? undefined : () => setHome(true)}
       stage={stage}
       frame={kind === 'doc' ? <DemoDoc /> : <DemoBoard />}
       inspector={null}

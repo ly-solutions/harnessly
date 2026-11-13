@@ -346,6 +346,13 @@
   max-width: 340px;
   color: var(--hx-fg-2);
 }
+.hx-media__failed-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
 .hx-media__failed-save {
   color: var(--hx-fg-1);
   text-decoration: underline;

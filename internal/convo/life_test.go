@@ -384,3 +384,60 @@ func TestLostSessionForGoodResumesTheQueue(t *testing.T) {
 		t.Fatalf("queue still paused: %+v", q)
 	}
 }
+
+// A chat whose agent was still being launched when a machine update took tmux down (tab-fzpu9fsqb 13.11): no
+// session to resume, so it stayed «агента нет» for good. Its tmux gone for good, it is launched anew with its first
+// prompt, and no «go on» goes to an agent that never was.
+func TestLaunchCutWithTmuxLaunchesAgain(t *testing.T) {
+	r := newRig(t)
+	res := r.do(wire.ConversationCreateCmd{OpID: "c1", Cwd: "/w", Provider: wire.ProviderClaude,
+		First: &wire.FirstMessage{ClientID: "first", Text: "start here", AttachmentIDs: []string{}}})
+	r.id = r.made(res)
+	r.agentTakes()
+	if err := r.rt.Attach(r.id, "s1", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(time.Second)
+	r.sessionGone()
+	for range 40 {
+		r.tick(15 * time.Second)
+	}
+	if len(r.launcher.launched) != 2 {
+		t.Fatalf("launched %d times, state %+v, first %+v, queue %+v", len(r.launcher.launched), r.state(), r.message("first").State, r.snap().Queue)
+	}
+	if got := r.launcher.launched[1].First; got != "start here" {
+		t.Fatalf("launched again with %q, want the first prompt", got)
+	}
+	for _, m := range r.snap().Messages {
+		if m.Text == RestartContinueText {
+			t.Fatalf("«go on» sent to a chat with no session: %+v", m)
+		}
+	}
+}
+
+// An empty chat whose tmux is gone for good is not launched again by itself: each launch made another tab, which the
+// next start of the runtime took for a chat of its own (13.11, a score of empty chats per machine update). Its first
+// message launches it.
+func TestEmptyChatCutWithTmuxWaitsForItsFirstMessage(t *testing.T) {
+	r := newRig(t)
+	r.id = r.made(r.do(wire.ConversationCreateCmd{OpID: "c1", Cwd: "/w", Provider: wire.ProviderClaude}))
+	if err := r.rt.Attach(r.id, "s1", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	launched := len(r.launcher.launched)
+	r.tick(time.Second)
+	r.sessionGone()
+	for range 40 {
+		r.tick(15 * time.Second)
+	}
+	if n := len(r.launcher.launched); n != launched {
+		t.Fatalf("an empty chat launched again by itself: %d launches, state %+v", n, r.state())
+	}
+	r.send("m1", "hello", wire.ModeQueue)
+	if n := len(r.launcher.launched); n != launched+1 {
+		t.Fatalf("the first message did not launch the chat: %d launches, state %+v", n, r.state())
+	}
+	if got := r.launcher.launched[len(r.launcher.launched)-1].First; got != "hello" {
+		t.Fatalf("launched with %q, want the first message", got)
+	}
+}

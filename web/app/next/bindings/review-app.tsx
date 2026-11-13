@@ -1,46 +1,31 @@
 // The built-in «Ревью кода» app on the machine's data, /review: with no change named, its start (the merge requests the
 // machine's GitLab reads); `?url=` a merge request or commit read through the runtime's change view; `?chat=` alone the
 // work of that chat and the chats it delegated (its worktrees, read on their machines, or a pushed branch from GitLab
-// when the machine is off). A chat named by the address stands beside the review where the person put it — a column,
-// a window or only its field (on a screen narrower than 1600 the field, until the person moves it).
-import { useCallback, useEffect, useState } from 'react';
-import ChatView from '@/next/bindings/chat-view';
-import { ChatIsland } from '@/next/bindings/chat-island';
+// when the machine is off). It stands in Sinopia's stage (app-stage.tsx): the chat beside the review is the stage's, at
+// the left or the right, in a window or only its field, with the choice of the chat, kept for the review.
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { pageText } from '@/next/bindings/outcome';
 import { loadApps } from '@/next/features/apps/api';
-import AppMain from '@/next/features/app-main/app-main';
-import {
-  keepLayout,
-  PLACEMENT,
-  readLayout,
-  withPlacement,
-  type IAppLayout,
-} from '@/next/features/app-main/placement';
+import AppStage from '@/next/features/app-main/app-stage';
+import { startFolder } from '@/next/bindings/home-composer';
+import { useSiteStage } from '@/next/bindings/site-stage';
+import type { TChatOpeners } from '@/next/bindings/chat-view';
+import { useDefaultCwd } from '@/next/stores/projects';
 import ReviewHome, { type THomeFeed } from '@/next/features/review/app/review-home';
 import type { IGithubList } from '@/next/features/review/app/home';
 import { loadGithubPulls } from '@/next/legacy/code-review-api';
+import { changeTabName } from '@/next/legacy/change';
 import { MrStage, WorkStage } from '@/next/legacy/review-stages';
-import { hub } from '@/next/core/realtime/hub';
 import type { AppFeed, ConvId, MachineId } from '@/next/protocol/v2';
 import { goTo, ROUTE, routePath } from '@/next/routes/routes';
 import { hasFeature } from '@/next/stores/machines';
 import { useConversation, useConversationList } from '@/next/stores/conversations';
-import { createConversation, sendMessage } from '@/next/commands';
-import { toast } from '@/next/ui/toast';
 import { useTabTitle } from '@/next/stores/tabs';
-import { RoundButton } from '@/next/ui/button';
-import Icon from '@/next/ui/icon';
 import { t } from '@/next/i18n';
 
-const LAYOUT_KEY = 'hx-review-layout';
-/** Narrower than this, the chat starts as the field at the foot (the board's «Где чат»). */
-const ISLAND_BELOW = 1600;
 const CLOCK_MS = 60_000;
 
 const isConvId = (id: string): id is ConvId => id.startsWith('tab-');
-
-const firstLayout = (): IAppLayout =>
-  readLayout(LAYOUT_KEY, window.innerWidth < ISLAND_BELOW ? PLACEMENT.island : PLACEMENT.left);
 
 // ── the start ──
 
@@ -120,116 +105,90 @@ interface IReviewAppPageProps {
   chat: string | null;
   wt: string | null;
   onOpenDrawer: () => void;
+  open?: TChatOpeners;
+  /** The right pane of the chat, as beside a design. */
+  toolPane?: { open: boolean; onToggle: () => void } | null;
 }
 
-const ReviewAppPage = ({ machine: screen, url, chat, wt, onOpenDrawer }: IReviewAppPageProps) => {
+/** The review on the whole window in Sinopia's stage: the chat, its place and its switch are the stage's. */
+const ReviewStagePage = ({
+  machine: screen,
+  url,
+  chat,
+  wt,
+  onOpenDrawer,
+  open,
+  toolPane = null,
+}: IReviewAppPageProps) => {
   const conv = chat !== null && isConvId(chat) ? chat : null;
   const record = useConversation(conv);
   const machine = record?.machineId ?? screen;
-  const [layout, setLayout] = useState<IAppLayout>(firstLayout);
+  const chats = useConversationList(machine);
+  const defaultCwd = useDefaultCwd(machine);
   useTabTitle(
     routePath({ kind: ROUTE.review, ...(url ? { url } : {}), ...(chat ? { chat } : {}) }),
     t('next.reviewApp.title'),
   );
-  const place = useCallback((next: IAppLayout) => {
-    setLayout(next);
-    keepLayout(next, LAYOUT_KEY);
-  }, []);
-
-  const onChat = conv !== null && record !== undefined;
-  const chats = useConversationList(machine);
-  // A question about a merge request goes to the chat beside it; with none, a new chat starts where the latest chat of
-  // the machine works, with the question and the link as its first message, and stands beside the review.
-  const send = useCallback(
-    (message: string) => {
-      if (!url) return;
-      if (onChat && conv) {
-        sendMessage(machine, { conversationId: conv, text: message });
-        return;
-      }
-      const like = chats?.[0];
-      if (!like) {
-        toast(t('next.appmain.newChatFailed'), { tone: 'error' });
-        return;
-      }
-      void createConversation(machine, {
-        where: like.projectId ? { projectId: like.projectId } : { cwd: like.cwd },
-        provider: like.provider,
-        model: like.model,
-        first: { text: message },
-      }).conversation.then((made) => {
-        if (made) goTo({ kind: ROUTE.review, url, chat: made });
-        else toast(t('next.appmain.newChatFailed'), { tone: 'error' });
-      });
+  const [read, setRead] = useState<{ url: string; title: string; crumb: string } | null>(null);
+  const onRead = useCallback(
+    (info: { title: string; crumb: string }) => {
+      if (url) setRead({ url, ...info });
     },
-    [url, onChat, conv, machine, chats],
+    [url],
   );
+  const named = url && read?.url === url ? read : null;
+  const title = named?.title ?? (url ? changeTabName(url) : (record?.title ?? t('next.reviewApp.workTitle')));
+  const address = useMemo(
+    () => ({ kind: ROUTE.review, ...(url ? { url } : {}), ...(wt ? { wt } : {}) }) as const,
+    [url, wt],
+  );
+  const stage = useSiteStage({
+    machine,
+    design: url ? `review:${url}` : `review:chat:${conv ?? ''}`,
+    fromChat: conv,
+    dir: record?.cwd ?? startFolder(chats, machine, defaultCwd ?? null),
+    tied: [],
+    title,
+    pageUrl: '',
+    port: null,
+    onOpenDrawer,
+    open,
+    keep: true,
+    app: { address, onCreated: () => undefined },
+  });
+  const onChat = stage.conv ?? null;
+  const send = useCallback((message: string) => stage.ask?.(message), [stage]);
   const ask = useCallback(
     (text: string) => send(`${t('next.reviewApp.notes.msgQuestion')}\n${url ?? ''}\n\n${text}`),
     [send, url],
   );
-
-  if (!url && !conv) return <Home machine={machine} onOpenDrawer={onOpenDrawer} />;
-
-  const stage = url ? (
-    <MrStage url={url} ask={ask} send={send} chat={onChat ? conv : null} machine={machine} />
+  const frame = url ? (
+    <MrStage url={url} ask={ask} send={send} chat={onChat} machine={machine} onRead={onRead} />
   ) : (
     conv && <WorkStage machine={machine} chat={conv} wt={wt} />
   );
   return (
-    <AppMain
-      title={t('next.reviewApp.title')}
-      icon="git-pull-request"
-      chatTitle={onChat ? (record?.title ?? null) : null}
-      chatSwitch={onChat ? <span className="hx-rvapp__subtitle">{record?.title ?? ''}</span> : undefined}
-      lead={
-        <>
-          <button
-            type="button"
-            className="hx-head-btn hx-rv-menu"
-            aria-label={t('next.header.openMenu')}
-            onClick={onOpenDrawer}
-          >
-            <Icon name="menu" />
-          </button>
-          <RoundButton
-            icon="arrow-left"
-            label={t('next.reviewApp.toList')}
-            size="sm"
-            variant="ghost"
-            onClick={() => goTo({ kind: ROUTE.review })}
-          />
-        </>
-      }
-      placement={layout.placement}
-      float={layout.float}
-      onPlacement={(placement, section) => place(withPlacement(layout, placement, section))}
-      onFloat={(float) => place({ ...layout, float })}
-      menu={[]}
+    <AppStage
+      title={title}
+      crumb={named?.crumb}
+      // Back goes where the person came from: the chat the review stands beside, else the start.
+      onBack={conv ? undefined : () => goTo({ kind: ROUTE.review })}
+      backLabel={t('next.reviewApp.toList')}
+      onCollapse={conv ? () => goTo({ kind: ROUTE.chat, id: conv }) : undefined}
       stage={stage}
-      chat={
-        onChat ? (
-          <ChatView
-            key={conv}
-            conv={conv}
-            machine={machine}
-            onRetryLoad={() => hub.client(machine)?.reconnectNow()}
-            onShowBackground={() => goTo({ kind: ROUTE.chat, id: conv })}
-          />
-        ) : null
-      }
-      island={
-        onChat ? (
-          <ChatIsland
-            machine={machine}
-            conv={conv}
-            onExpand={() => place({ ...layout, placement: PLACEMENT.left })}
-          />
-        ) : null
-      }
+      frame={frame}
       inspector={null}
+      menu={[]}
+      toolPane={toolPane}
+      onOpenDrawer={onOpenDrawer}
     />
   );
+};
+
+const ReviewAppPage = (props: IReviewAppPageProps) => {
+  const conv = props.chat !== null && isConvId(props.chat) ? props.chat : null;
+  if (!props.url && !conv) return <Home machine={props.machine} onOpenDrawer={props.onOpenDrawer} />;
+  return <ReviewStagePage {...props} />;
 };
 
 export default ReviewAppPage;

@@ -162,7 +162,7 @@ func newCoreAgents(c coreAgentsConfig) *coreAgents {
 		alwaysApps: alwaysApps(apps.Open(c.DataDir)),
 		gpt:        gpt,
 		router:     router,
-		checker:    preflight.New(c.Home),
+		checker:    preflight.Shared(c.Home),
 		envDir:     c.EnvDir,
 		claudeAuth: claudeAuthOf(c.Home, c.EnvDir),
 		options:    options,

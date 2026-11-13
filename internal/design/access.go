@@ -56,7 +56,9 @@ func teamRole(level string) Role {
 //  3. the project has no row in the team table and its .owner.json names this runtime: owner (so a project just
 //     made, which the gateway has not registered yet, never hides from its maker);
 //  4. the team level of the snapshot;
-//  5. a project the snapshot has no row for and whose owner file is not v2 "private": edit (what existed before);
+//  5. a project the snapshot has no row for and whose owner file is not v2 "private": edit (what existed before) —
+//     when the snapshot keeps such projects closed, only for the machine's own person and only without an owner file
+//     naming someone else;
 //  6. nothing.
 func (l *Library) RoleOf(id string, who Identity, now time.Time) Role {
 	return l.capReadOnlyKit(id, l.roleOf(id, who, now))
@@ -68,7 +70,30 @@ func (l *Library) roleOf(id string, who Identity, now time.Time) Role {
 		return RoleEdit
 	}
 	projects, team := snap.section(who.PersonID, l.machinePerson())
-	return l.roleIn(projects, team, id, who, now)
+	r := l.roleIn(projects, team, id, who, now)
+	if r == RoleEdit && snap.Unrecorded == UnrecordedClosed {
+		if _, hasTeam := team[id]; !hasTeam {
+			if _, hasGrant := projects[id]; !hasGrant && !l.ownUnrecorded(id, who) {
+				return RoleNone
+			}
+		}
+	}
+	return r
+}
+
+// ownUnrecorded: a project the snapshot has no row for stays open, with closed unrecorded projects, to the machine's own
+// person when no owner file names someone else (work made on the machine before access existed).
+func (l *Library) ownUnrecorded(id string, who Identity) bool {
+	me := l.machinePerson()
+	mine := !who.Shared
+	if who.PersonID != "" || me != "" {
+		mine = who.PersonID != "" && who.PersonID == me
+	}
+	if !mine {
+		return false
+	}
+	owner, ok := l.ReadOwner(id)
+	return !ok || owner.Mine(who)
 }
 
 // machinePerson is the address of the machine's own person ("" when it cannot be told).

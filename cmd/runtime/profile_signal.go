@@ -8,6 +8,7 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -15,13 +16,38 @@ import (
 )
 
 // The runtime's memory, seen from inside: on SIGUSR1 it writes its heap, allocations and goroutines as pprof
-// profiles into <data dir>/debug and logs its memory statistics. A machine's root reads them with `go tool pprof`
+// profiles into <data dir>/debug, logs its memory statistics and samples its CPU for the next 30 s (cpu-<stamp>.pprof). A machine's root reads them with `go tool pprof`
 // (`kill -USR1 <pid>`), without a port to keep closed and without restarting what people work in.
 
 // profileSets is how many sets of profiles the folder keeps; older ones go.
 const profileSets = 3
 
 var profileNames = []string{"heap", "allocs", "goroutine"}
+
+// cpuProfileFor is how long the CPU is sampled after a SIGUSR1: where the runtime's own time goes at rest could not
+// be measured from outside (no pprof port, perf and ptrace are closed on the machines).
+const cpuProfileFor = 30 * time.Second
+
+var cpuProfiling atomic.Bool
+
+// writeCPUProfile samples the CPU for d into cpu-<stamp>.pprof beside the set of that stamp; one at a time.
+func writeCPUProfile(dir, stamp string, d time.Duration) error {
+	if !cpuProfiling.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer cpuProfiling.Store(false)
+	f, err := os.OpenFile(filepath.Join(dir, "cpu-"+stamp+".pprof"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := pprof.StartCPUProfile(f); err != nil {
+		return err
+	}
+	time.Sleep(d)
+	pprof.StopCPUProfile()
+	return nil
+}
 
 // profileOnSignal writes the profiles into dir on every SIGUSR1.
 func profileOnSignal(dir string) {
@@ -40,6 +66,11 @@ func profileOnSignal(dir string) {
 				agent.F{K: "heapAllocMB", V: m.HeapAlloc >> 20}, agent.F{K: "heapInuseMB", V: m.HeapInuse >> 20},
 				agent.F{K: "heapReleasedMB", V: m.HeapReleased >> 20}, agent.F{K: "sysMB", V: m.Sys >> 20},
 				agent.F{K: "numGC", V: m.NumGC}, agent.F{K: "goroutines", V: runtime.NumGoroutine()})
+			go func() {
+				if err := writeCPUProfile(dir, stamp, cpuProfileFor); err != nil {
+					agent.Log("warn", "cpu profile not written", agent.F{K: "error", V: err.Error()})
+				}
+			}()
 		}
 	}()
 }
@@ -81,7 +112,7 @@ func pruneProfiles(dir string) {
 	}
 	slices.Sort(stamps)
 	for len(stamps) > profileSets {
-		for _, name := range profileNames {
+		for _, name := range append([]string{"cpu"}, profileNames...) {
 			_ = os.Remove(filepath.Join(dir, name+"-"+stamps[0]+".pprof"))
 		}
 		stamps = stamps[1:]

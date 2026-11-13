@@ -56,6 +56,7 @@ type Service struct {
 	machines *machines.Service
 	// bus gets the live events (UseEvents); flags switch the signal checker on per organization (UseFeatures).
 	bus   events.Publisher
+	leads func() bool
 	flags features.Gate
 	// trig carries Trigger calls to RunLive.
 	trigMu sync.Mutex

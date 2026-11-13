@@ -14,11 +14,13 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
-// Trigger says which outside events a rule takes: the source that sent it and, optionally, fields the event must carry
-// with exactly these values.
+// Trigger says what starts a rule: an outside event of a source and, optionally, with fields of exactly these values;
+// or, instead (triggers.go), a schedule (source "schedule") or a wait for an event that did not come (source "wait").
 type Trigger struct {
-	Source string         `json:"source"`
-	Filter map[string]any `json:"filter,omitempty"`
+	Source   string         `json:"source"`
+	Filter   map[string]any `json:"filter,omitempty"`
+	Schedule *Schedule      `json:"schedule,omitempty"`
+	Wait     *Wait          `json:"wait,omitempty"`
 }
 
 // Limits keep a rule from running away. Quiet hours are in Moscow time (a fixed UTC+3) as in the platform it came from.
@@ -233,7 +235,9 @@ func (s *Service) deleteRule(ctx context.Context, id, owner string) (bool, error
 		}
 		n, _ := res.RowsAffected()
 		if gone = n > 0; gone {
-			_, err = t.Q().Exec(ctx, `DELETE FROM automation_runs WHERE rule_id = ?`, id)
+			if _, err = t.Q().Exec(ctx, `DELETE FROM automation_runs WHERE rule_id = ?`, id); err == nil {
+				_, err = t.Q().Exec(ctx, `DELETE FROM automation_timers WHERE rule_id = ?`, id)
+			}
 		}
 		return err
 	})

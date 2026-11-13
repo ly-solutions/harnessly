@@ -163,6 +163,13 @@ SECRETS (the safe of this machine: tokens and keys the person put in, outside th
                                     print the path of a short-lived file (0600) with the value, for a tool that wants
                                     a path. There is no command that prints a value.
 
+SETTINGS (harnessly's own settings, changed when the person asks you to)
+  harnessly settings list           every setting you may change: key, what it does, the values it takes, its value now
+  harnessly settings get KEY        one setting
+  harnessly settings set KEY VALUE --why "what the person asked for" [--wait 600]
+                                    change a setting. From the Settings window's chat it changes at once; from any other
+                                    chat the person confirms on a card and the command waits ("waiting": run it again).
+
 HEAVY CHECKS (the machine is shared with other agents and people's chats)
   harnessly heavy --help            go build/test, vitest, playwright, tsc and eslint wait for one of the machine's
                                     few slots; "the machine is busy" (exit 75) means go on without the check or
@@ -401,6 +408,19 @@ only checks and changes nothing. The script comes from --script, $HARNESSLY_INST
   --offline DIR      an offline bundle (scripts/make-offline-bundle.sh builds one); nothing is downloaded
   --check            look only
 Running it again updates in place and doubles nothing. Other options go to the script (install.sh --help).
+`,
+	"settings": `harnessly settings list|get|set
+
+harnessly's own settings, for when the person asks you to change one. Every change goes into the journal the Settings
+window shows: what changed, from what to what, and which chat's agent did it.
+
+  harnessly settings list
+  harnessly settings get runtime.idleStop
+  harnessly settings set runtime.idleStop 6h --why "asked to keep chats running longer"
+
+From the Settings window's own chat a change is made at once. From any other chat the person gets a card in the chat
+and the setting changes only after they say yes: the command waits (--wait seconds, 600 by default) and prints
+"changed", or "waiting" (run it again), or fails with "declined". Never change a setting the person did not ask for.
 `,
 	"connections": connectionsHelp,
 	"issues":      connectionsHelp,

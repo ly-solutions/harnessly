@@ -22,6 +22,15 @@ export interface IDropBack {
 
 const NONE: readonly IDrop[] = [];
 let drops: readonly IDrop[] = NONE;
+/** Swept off the stack or «Очистить всё»: not shown while it still waits (the notification centre keeps its row). */
+let dismissed: ReadonlySet<string> = new Set();
+/** What the column shows: the drops less the ones taken off the stack; the same list while nothing changed. */
+let visible: readonly IDrop[] = NONE;
+const refresh = () => {
+  const next = drops.filter((d) => !dismissed.has(d.item.key));
+  if (next.length === drops.length) visible = drops;
+  else visible = next.length === 0 ? NONE : next;
+};
 let back: IDropBack | null = null;
 const listeners = new Set<() => void>();
 const emit = () => {
@@ -47,14 +56,59 @@ const same = (a: readonly IDrop[], b: readonly IDrop[]) =>
 export const setDrops = (next: readonly IDrop[]) => {
   if (same(drops, next)) return;
   drops = next.length === 0 ? NONE : next;
+  // What is no longer waiting forgets it was taken off: if it waits again, it comes back.
+  const keys = new Set(drops.map((d) => d.item.key));
+  if ([...dismissed].some((k) => !keys.has(k)))
+    dismissed = new Set([...dismissed].filter((k) => keys.has(k)));
+  refresh();
+  emit();
+};
+
+/** Takes drops off the stack (a swipe, «Убрать», «Очистить всё»). */
+export const dismissDrops = (keys: readonly string[]) => {
+  if (keys.every((k) => dismissed.has(k))) return;
+  dismissed = new Set([...dismissed, ...keys]);
+  refresh();
   emit();
 };
 
 export const useDrops = (): readonly IDrop[] =>
   useSyncExternalStore(
     subscribe,
-    () => drops,
+    () => visible,
     () => NONE,
+  );
+
+/** Drops the notice is flying into: drawn hidden from their first frame until the flight lands, so they never show
+ *  their own entrance before it, nor play it again after it. */
+let arriving: ReadonlySet<string> = new Set();
+/** The longest a flight into a drop may take before the drop shows anyway, ms. */
+const ARRIVE_MAX_MS = 2000;
+
+/** The notice is put away into this drop by hand: the flight draws it until it lands. */
+export const markArriving = (key: string) => {
+  if (arriving.has(key)) return;
+  arriving = new Set([...arriving, key]);
+  emit();
+  // A flight that never ends (the tab hidden, the drop gone) does not leave the drop hidden.
+  setTimeout(() => landDrop(key), ARRIVE_MAX_MS);
+};
+
+/** The flight into the drop has landed (or found no drop to land in). */
+export const landDrop = (key: string) => {
+  if (!arriving.has(key)) return;
+  const next = new Set(arriving);
+  next.delete(key);
+  arriving = next;
+  emit();
+};
+
+/** True while the flight into this drop is on. */
+export const useDropArriving = (key: string): boolean =>
+  useSyncExternalStore(
+    subscribe,
+    () => arriving.has(key),
+    () => false,
   );
 
 /** A drop pressed: the notice takes it back, open. */

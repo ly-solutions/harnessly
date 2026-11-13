@@ -201,6 +201,28 @@ func (s *Store) StoreRecoveredAgentSession(sessionName string, p Provider, sessi
 	})
 }
 
+// AdoptAgentSession gives a tab that keeps no session of its agent the one its chat's record holds. A resume reads the
+// tab, and a tab whose agent was cut before a turn of it ended has neither a transcript path nor a history entry to
+// recover the id from, so its chat could not be resumed. A tab that keeps a session keeps it; adopted says
+// the tab was written.
+func (s *Store) AdoptAgentSession(sessionName string, p Provider, sessionID, jsonlPath string) (adopted bool, err error) {
+	if sessionID == "" {
+		return false, nil
+	}
+	err = s.mutateTab(sessionName, func(tab *jsvalue.Object) bool {
+		if v, _ := p.readField(tab, "sessionId"); v != nil && v != "" {
+			return false
+		}
+		p.write(tab, "sessionId", sessionID)
+		if jsonlPath != "" {
+			p.write(tab, "jsonlPath", jsonlPath)
+		}
+		adopted = true
+		return true
+	})
+	return adopted, err
+}
+
 // UpdateTabLastUserMessage stores the tab's last prompt (nil stores null).
 func (s *Store) UpdateTabLastUserMessage(sessionName string, message any) error {
 	return s.UpdateTabAgentState(sessionName, "", AgentState{LastUserMessage: &message})

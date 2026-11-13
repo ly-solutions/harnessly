@@ -1,6 +1,7 @@
 // The chat's merge requests under a finished task: when the agent is done and the chat opened or changed merge requests
-// (pull requests), one block lists them, each with «Ревью» (the change in the right pane) and «Открыть в «Ревью кода»»
-// (the whole screen). It leaves, with its exit, when a new task starts. The person turns it off in Settings → General.
+// (pull requests), one block lists them, each with «Ревью» (the review becomes the centre of the window, the chat
+// stays as its field and folds back) and a small «Сбоку» (the change in the right pane, the chat stays in the middle).
+// It leaves, with its exit, when a new task starts. The person turns it off in Settings → Plugins.
 import type { FeedItem, TurnOutput } from '@/next/features/chat/types';
 import { Button, RoundButton } from '@/next/ui/button';
 import Icon from '@/next/ui/icon';
@@ -43,9 +44,9 @@ export const mrPlace = (url: string): string => {
 interface IMrDoneProps {
   /** The chat's merge requests; null while a task runs (the block leaves). */
   mrs: readonly IDoneMr[] | null;
-  /** The change in the right pane. */
+  /** The change in the right pane, the chat stays as it is. */
   onOpen: (output: TurnOutput) => void;
-  /** The change in the «Ревью кода» app. */
+  /** The review as the centre of the window; without it «Ревью» opens the right pane. */
   onReview?: (url: string) => void;
 }
 
@@ -71,16 +72,16 @@ const MrDone = ({ mrs, onOpen, onReview }: IMrDoneProps) => {
               <span className="hx-mrdone__name">{mr.title}</span>
               <span className="hx-mrdone__place">{[mrPlace(mr.ref), from].filter(Boolean).join(' · ')}</span>
             </span>
-            <Button size="sm" icon="git-compare" onClick={() => onOpen(mr)}>
+            <Button size="sm" icon="git-compare" onClick={() => (onReview ? onReview(mr.ref) : onOpen(mr))}>
               {t('next.mrDone.review')}
             </Button>
             {onReview && (
               <RoundButton
-                icon="maximize-2"
-                label={t('next.mrDone.full')}
+                icon="panel-right"
+                label={t('next.mrDone.aside')}
                 size="sm"
                 variant="ghost"
-                onClick={() => onReview(mr.ref)}
+                onClick={() => onOpen(mr)}
               />
             )}
           </li>

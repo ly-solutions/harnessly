@@ -260,7 +260,13 @@ func openDB(t *testing.T) *store.DB {
 	ctx := context.Background()
 	dsn := os.Getenv("HUB_TEST_POSTGRES_URL")
 	if dsn == "" {
-		db, err := store.Open(ctx, "sqlite://"+filepath.Join(t.TempDir(), "hub.db"))
+		path := filepath.Join(t.TempDir(), "hub.db")
+		if tmpl := sqliteTemplate(); tmpl != nil {
+			if err := os.WriteFile(path, tmpl, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		db, err := store.Open(ctx, "sqlite://"+path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -438,4 +444,38 @@ func (p *Person) Join(spaceID string, guest *Person) {
 	if r := guest.Do("POST", "/api/invites/"+token+"/accept", map[string]any{}); r.Code != 200 {
 		p.S.T.Fatalf("accept: %s", r)
 	}
+}
+
+var (
+	templateOnce  sync.Once
+	templateBytes []byte
+)
+
+// sqliteTemplate is an empty hub database with every migration applied, made once a process: a test starts from a
+// copy of it and store.Open finds nothing left to migrate. Under -race the migrations took 2.5 s of every test
+// (140 tests of hub/proxy ran into go test's 10 minutes). nil when it could not be made; a test then
+// migrates a database of its own, as before.
+func sqliteTemplate() []byte {
+	templateOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "hubtest-template-")
+		if err != nil {
+			return
+		}
+		defer os.RemoveAll(dir)
+		path := filepath.Join(dir, "hub.db")
+		db, err := store.Open(context.Background(), "sqlite://"+path)
+		if err != nil {
+			return
+		}
+		// Close folds the write-ahead log into the file; a log left beside it means the file alone is not the whole
+		// database, and the template is not used.
+		if db.Close() != nil {
+			return
+		}
+		if _, err := os.Stat(path + "-wal"); err == nil {
+			return
+		}
+		templateBytes, _ = os.ReadFile(path)
+	})
+	return templateBytes
 }

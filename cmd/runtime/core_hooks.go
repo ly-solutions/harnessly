@@ -303,7 +303,7 @@ func newPusher(dataDir string, shared *push.Sender, h hookConfig) *push.Sender {
 
 // newSharedPusher is the process's one web push sender: one subscription store with one lock for every writer.
 func newSharedPusher(dataDir string, h hookConfig) *push.Sender {
-	return push.New(push.Config{Dir: dataDir, Subject: h.PushSubject, TagPrefix: h.PushTagPrefix, Log: coreLog})
+	return push.New(push.Config{Dir: dataDir, Subject: h.PushSubject, TagPrefix: h.PushTagPrefix, Log: coreLog, Summary: pushSummary{dataDir: dataDir}})
 }
 
 // resumeForQueue brings a gone agent back for a queued message: the session-process resume. A line that cannot be built

@@ -163,6 +163,11 @@ func (a *Access) Preview(requested string) Target {
 	if refused != nil {
 		return *refused
 	}
+	return previewOf(real)
+}
+
+// previewOf is the shown file at a resolved path the caller has allowed: of a type the viewer shows, within its size.
+func previewOf(real string) Target {
 	ext := lastDotExt(real)
 	contentType, video := PreviewType(ext)
 	if contentType == "" {

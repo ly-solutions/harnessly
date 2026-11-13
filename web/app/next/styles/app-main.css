@@ -12,393 +12,42 @@
 }
 
 /* ---- the page of an app ---- */
-.hx-appmain {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  animation: hx-appmain-in var(--hx-dur-lg) var(--hx-ease-out) backwards;
-}
 @keyframes hx-appmain-in {
   from {
     opacity: 0;
     transform: translateY(6px);
   }
 }
-.hx-appmain__bar {
+/* The address, as Sinopia's deck bar: the thing that is open, then its place. */
+.hx-appmain__addr {
   display: flex;
   align-items: center;
   gap: var(--hx-space-2);
-  min-height: var(--hx-header-h);
-  padding: 0 var(--hx-space-4);
-}
-/* The app's glyph, as on its card in the apps list, a step smaller. */
-.hx-appmain__tile {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--hx-radius-md);
-  background: var(--hx-accent-soft);
-  color: var(--hx-accent);
-}
-.hx-appmain__titles {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex: 0 1 auto;
   min-width: 0;
   margin-left: var(--hx-space-1);
+  font-size: var(--hx-text-sm);
+  white-space: nowrap;
 }
-/* Sinopia's chat switch, quiet under the name: the name is the largest thing on the page. */
-.hx-appmain__titles .hx-chatswitch {
-  max-width: 100%;
+.hx-appmain__addr > span,
+.hx-appmain__crumb {
+  color: var(--hx-fg-2);
 }
-.hx-appmain__titles .hx-chatswitch__btn {
-  height: 22px;
-  color: var(--hx-fg-3);
-  font-size: var(--hx-text-xs);
-  font-weight: var(--hx-weight-medium);
-}
-.hx-appmain__titles .hx-chatswitch__btn:hover,
-.hx-appmain__titles .hx-chatswitch__btn[aria-expanded='true'] {
-  color: var(--hx-fg-1);
-}
-.hx-appmain__titles .hx-chatswitch__menu {
-  top: calc(100% + 6px);
-  z-index: 30;
+.hx-appmain__crumb {
+  min-width: 0;
+  overflow: hidden;
+  font-style: normal;
+  text-overflow: ellipsis;
 }
 .hx-appmain__title {
   margin: 0;
   overflow: hidden;
-  font-size: var(--hx-text-xl);
-  font-weight: var(--hx-weight-semibold);
-  letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hx-appmain__body {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-.hx-appmain__stage {
-  position: relative;
-  flex: 1;
   min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.hx-appmain__view {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin: 0 var(--hx-space-4) var(--hx-space-4);
-  border: 1px solid var(--hx-border);
-  border-radius: var(--hx-radius-lg);
-  background: var(--hx-bg-raised);
-  overflow: hidden;
-}
-
-/* the chat as a column */
-.hx-appmain__col {
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  width: 380px;
-  min-height: 0;
-  margin: 0 0 var(--hx-space-4) var(--hx-space-4);
-  border: 1px solid var(--hx-border);
-  border-radius: var(--hx-radius-lg);
-  background: var(--hx-bg-stage);
-  overflow: hidden;
-  animation: hx-appmain-col-in var(--hx-dur-lg) var(--hx-ease-out) backwards;
-  transition:
-    opacity 240ms var(--hx-ease-out),
-    transform 240ms var(--hx-ease-out);
-}
-.hx-appmain__col[data-state='closing'] {
-  opacity: 0;
-  transform: translateX(-12px);
-  pointer-events: none;
-}
-@keyframes hx-appmain-col-in {
-  from {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-}
-
-/* the chat as a window over the app */
-.hx-appmain__float {
-  position: absolute;
-  z-index: 6;
-  left: var(--fx);
-  top: var(--fy);
-  width: var(--fw);
-  height: var(--fh);
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--hx-border-strong);
-  border-radius: var(--hx-radius-xl);
-  background: var(--hx-bg-stage);
-  box-shadow: var(--hx-shadow-window);
-  overflow: hidden;
-  animation: hx-appmain-pop-in var(--hx-dur-lg) var(--hx-ease-out) backwards;
-  transition:
-    opacity 240ms var(--hx-ease-out),
-    transform 240ms var(--hx-ease-out);
-}
-.hx-appmain__float[data-state='closing'] {
-  opacity: 0;
-  transform: scale(0.97);
-  pointer-events: none;
-}
-@keyframes hx-appmain-pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-}
-.hx-appmain__float-head {
-  display: flex;
-  align-items: center;
-  flex: none;
-  height: 40px;
-  padding: 0 var(--hx-space-4);
-  border-bottom: 1px solid var(--hx-border);
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-.hx-appmain__float-head:active {
-  cursor: grabbing;
-}
-.hx-appmain__float-title {
-  overflow: hidden;
   font-size: var(--hx-text-sm);
   font-weight: var(--hx-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hx-appmain__float-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* The window grows by any edge or corner: thin strips along the edges, squares at the corners, over what is inside
-   (the chat's field at the foot would cover them otherwise). The corner at the foot on the right shows a grip. */
-.hx-appmain__float-size {
-  position: absolute;
-  z-index: 20;
-  touch-action: none;
-}
-.hx-appmain__float-size[data-edge='n'],
-.hx-appmain__float-size[data-edge='s'] {
-  left: 14px;
-  right: 14px;
-  height: 6px;
-  cursor: ns-resize;
-}
-.hx-appmain__float-size[data-edge='e'],
-.hx-appmain__float-size[data-edge='w'] {
-  top: 14px;
-  bottom: 14px;
-  width: 6px;
-  cursor: ew-resize;
-}
-.hx-appmain__float-size[data-edge='n'] {
-  top: 0;
-}
-.hx-appmain__float-size[data-edge='s'] {
-  bottom: 0;
-}
-.hx-appmain__float-size[data-edge='e'] {
-  right: 0;
-}
-.hx-appmain__float-size[data-edge='w'] {
-  left: 0;
-}
-.hx-appmain__float-size[data-edge='ne'],
-.hx-appmain__float-size[data-edge='nw'],
-.hx-appmain__float-size[data-edge='se'],
-.hx-appmain__float-size[data-edge='sw'] {
-  width: 16px;
-  height: 16px;
-}
-.hx-appmain__float-size[data-edge='ne'] {
-  top: 0;
-  right: 0;
-  cursor: nesw-resize;
-}
-.hx-appmain__float-size[data-edge='nw'] {
-  top: 0;
-  left: 0;
-  cursor: nwse-resize;
-}
-.hx-appmain__float-size[data-edge='se'] {
-  right: 0;
-  bottom: 0;
-  cursor: nwse-resize;
-}
-.hx-appmain__float-size[data-edge='sw'] {
-  bottom: 0;
-  left: 0;
-  cursor: nesw-resize;
-}
-/* the grip: two short diagonal strokes in the corner */
-.hx-appmain__float-size[data-edge='se']::after {
-  content: '';
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 8px;
-  height: 8px;
-  background: linear-gradient(
-    135deg,
-    transparent 0 45%,
-    var(--hx-fg-3) 45% 55%,
-    transparent 55% 70%,
-    var(--hx-fg-3) 70% 80%,
-    transparent 80%
-  );
-  opacity: 0.6;
-}
-.hx-appmain__float-size[data-edge='se']:hover::after {
-  opacity: 1;
-}
-
-/* the chat's field alone, at the foot */
-.hx-appmain__island {
-  position: absolute;
-  z-index: 6;
-  left: 50%;
-  bottom: var(--hx-space-6);
-  width: min(600px, calc(100% - 2 * var(--hx-space-6)));
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: var(--hx-space-2);
-  animation: hx-appmain-island-in var(--hx-dur-lg) var(--hx-ease-out) backwards;
-  transition:
-    opacity 240ms var(--hx-ease-out),
-    transform 240ms var(--hx-ease-out);
-}
-.hx-appmain__island[data-state='closing'] {
-  opacity: 0;
-  transform: translate(-50%, 16px);
-  pointer-events: none;
-}
-@keyframes hx-appmain-island-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 16px);
-  }
-}
-.hx-appisland__last {
-  align-self: center;
-  max-width: 100%;
-  padding: 4px 12px;
-  border: 1px solid var(--hx-border);
-  border-radius: var(--hx-radius-full);
-  background: var(--hx-bg-raised);
-  color: var(--hx-fg-2);
-  font: inherit;
-  font-size: var(--hx-text-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.hx-appisland__box {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--hx-space-2);
-  padding: 6px;
-  border: 1px solid var(--hx-border-strong);
-  border-radius: 22px;
-  background: var(--hx-bg-raised);
-  box-shadow: var(--hx-shadow-md);
-}
-.hx-appisland__box:focus-within {
-  border-color: var(--hx-focus);
-}
-.hx-appisland__input {
-  flex: 1;
-  min-width: 0;
-  max-height: 132px;
-  padding: 8px 10px;
-  border: 0;
-  outline: 0;
-  resize: none;
-  background: transparent;
-  color: var(--hx-fg-1);
-  font: inherit;
-}
-
-/* the placement switch */
-.hx-appmain__modes {
-  position: relative;
-  display: flex;
-  padding: 3px;
-  border-radius: var(--hx-radius-full);
-  background: var(--hx-bg-hover);
-}
-.hx-appmain__glider {
-  position: absolute;
-  top: 3px;
-  left: calc(3px + var(--seg-i, 0) * 36px);
-  width: 36px;
-  height: 28px;
-  border-radius: var(--hx-radius-full);
-  background: var(--hx-bg-raised);
-  box-shadow: var(--hx-shadow-sm);
-  transition: left 320ms var(--hx-ease-out);
-}
-.hx-appmain__mode {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--hx-radius-full);
-  background: none;
-  color: var(--hx-fg-3);
-  cursor: pointer;
-  transition: color 200ms ease;
-}
-.hx-appmain__mode[aria-checked='true'] {
-  color: var(--hx-fg-1);
-}
-
-/* narrow: one column; the chat takes the room under the app, a window or the field floats as it does */
-@media (max-width: 760px) {
-  .hx-appmain__body {
-    flex-direction: column;
-  }
-  .hx-appmain__col {
-    order: 2;
-    width: auto;
-    height: 46%;
-    margin: 0 var(--hx-space-4) var(--hx-space-4);
-  }
-  .hx-appmain__float {
-    left: var(--hx-space-3);
-    top: auto;
-    bottom: var(--hx-space-3);
-    width: calc(100% - 2 * var(--hx-space-3));
-    height: 60%;
-  }
-}
-
 /* ---- the inspector under the view ---- */
 .hx-insp {
   flex: none;

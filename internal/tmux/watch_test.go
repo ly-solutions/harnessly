@@ -19,6 +19,7 @@ import (
 type fakeServer struct {
 	mu       sync.Mutex
 	lines    []string // the list-panes listing
+	screen   []string // what capture-pane prints; nil refuses it
 	commands []string
 	out      io.Writer // the connected client, nil when none
 	down     bool      // nothing listens
@@ -55,7 +56,16 @@ func (f *fakeServer) dial(string) (*control, error) {
 			if strings.HasPrefix(sc.Text(), "list-panes ") {
 				lines = slices.Clone(f.lines)
 			}
+			refused := false
+			if strings.HasPrefix(sc.Text(), "capture-pane ") {
+				lines, refused = slices.Clone(f.screen), f.screen == nil
+			}
 			f.mu.Unlock()
+			if refused {
+				tail := fmt.Sprintf(" 1700000000 %d 1\n", n)
+				_, _ = io.WriteString(outW, "%begin"+tail+"can't find pane\n%error"+tail)
+				continue
+			}
 			f.block(outW, n, lines)
 		}
 	}()
@@ -391,5 +401,94 @@ func TestRealWatchStartsNoServer(t *testing.T) {
 	}
 	if tm.HasSession(watchSession) {
 		t.Fatal("the client started a server")
+	}
+}
+
+// A look at a watched server's pane starts no tmux process: the screen comes over the control connection, as the
+// command would have printed it; without a connection the command is started as before.
+func TestWatchReadsAScreenOverTheConnection(t *testing.T) {
+	countedProc(t, "claude")
+	r := newWatchRig(t, WatchOptions{}, paneLine("nw-a", "claude", 7))
+	r.live(t)
+	captures := func() int {
+		r.fake.mu.Lock()
+		defer r.fake.mu.Unlock()
+		n := 0
+		for _, c := range r.fake.calls {
+			if slices.Contains(c.args, "capture-pane") {
+				n++
+			}
+		}
+		return n
+	}
+	r.server.mu.Lock()
+	r.server.screen = []string{"\x1b[2mhint\x1b[0m", "", "❯ "}
+	r.server.mu.Unlock()
+	for range 20 {
+		if got, ok := r.tm.CaptureStyled("nw-a"); !ok || got != "\x1b[2mhint\x1b[0m\n\n❯ \n" {
+			t.Fatalf("screen %q %v", got, ok)
+		}
+	}
+	r.server.mu.Lock()
+	asked := r.server.commands[len(r.server.commands)-1]
+	r.server.screen = nil
+	r.server.mu.Unlock()
+	if asked != "capture-pane -p -e -t 'nw-a'" {
+		t.Fatalf("asked %q", asked)
+	}
+	// tmux's own refusal (no such session) is the answer, not a reason to start the command.
+	if got, ok := r.tm.Capture("nw-gone"); ok || got != "" {
+		t.Fatalf("a refused capture: %q %v", got, ok)
+	}
+	if n, s := captures(), r.w.Stats(); n != 0 || s.Captures != 21 {
+		t.Fatalf("%d tmux processes for screens, stats %+v", n, s)
+	}
+	if _, ok := r.tm.watchedPanes(); !ok {
+		t.Fatal("a refused capture ended the connection")
+	}
+	// A name the command line cannot carry, and a server not listened to, are asked with a process.
+	r.tm.Capture("nw-it's")
+	r.w.Stop()
+	r.tm.Capture("nw-a")
+	if n := captures(); n != 2 {
+		t.Fatalf("%d tmux processes for screens without the connection", n)
+	}
+}
+
+// A real server prints the same screen over the connection as to a command of its own.
+func TestRealWatchCapturesWhatTheCommandPrints(t *testing.T) {
+	r := newRealRig(t)
+	tm := NewConfig(Config{Names: Names{Socket: r.main, Prefix: "hs-"}})
+	plain := NewConfig(Config{Names: Names{Socket: r.main, Prefix: "hs-"}})
+	if err := tm.CreateSession("hs-a", 80, 24, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := Watch(context.Background(), tm, WatchOptions{})
+	defer w.Stop()
+	waitFor(t, 20*time.Second, "the event client", func() bool { _, ok := tm.watchedPanes(); return ok })
+	if err := tm.SendLiteralThenEnter("hs-a", `printf '\033[1;31mкрасный\033[0m  %%end 1 2 3\n\n%%begin x\n'; sleep 600`); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 20*time.Second, "the printed lines", func() bool { s, _ := plain.Capture("hs-a"); return strings.Contains(s, "%begin x\n") })
+	for _, read := range []func(*Tmux) (string, bool){
+		func(t *Tmux) (string, bool) { return t.Capture("hs-a") },
+		func(t *Tmux) (string, bool) { return t.CaptureStyled("hs-a") },
+		func(t *Tmux) (string, bool) { return t.CaptureHistory("hs-a", 50) },
+	} {
+		over, ok := read(tm)
+		by, okBy := read(plain)
+		if !ok || !okBy || over != by {
+			t.Fatalf("over the connection %q (%v), by a command %q (%v)", over, ok, by, okBy)
+		}
+	}
+	if !strings.Contains(func() string { s, _ := tm.CaptureStyled("hs-a"); return s }(), "\x1b[1m\x1b[31mкрасный") {
+		s, _ := tm.CaptureStyled("hs-a")
+		t.Logf("styled screen %q", s)
+	}
+	if _, ok := tm.Capture("hs-none"); ok {
+		t.Fatal("a session that is not there was read")
+	}
+	if s := w.Stats(); s.Captures < 4 || s.Connects != 1 {
+		t.Fatalf("stats %+v", s)
 	}
 }

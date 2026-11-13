@@ -30,6 +30,8 @@ export const DEV_CODE = '123456';
 export interface Scenario {
   config?: Partial<Config>;
   signedIn: boolean;
+  /** The person is the administrator of the installation. */
+  admin?: boolean;
   /** Spaces of the person, and the machines of each. */
   spaces: { name: string; role: Role; step: OnboardingStep; machines: Machine[] }[];
   /** The provider servers do not answer from the machines (until a proxy is set). */
@@ -188,6 +190,7 @@ export class FakeHub {
       ...scenario.config,
     } as Config;
     this.user = scenario.signedIn ? this.newUser('anna@example.com') : null;
+    if (this.user && scenario.admin) this.user = { ...this.user, isAdmin: true };
     for (const s of scenario.spaces) {
       const space = this.addSpace(s.name, s.role, s.step);
       this.machines.set(
@@ -196,6 +199,36 @@ export class FakeHub {
       );
     }
   }
+
+  private switches = [
+    {
+      feature: 'own-work',
+      person: '*',
+      machine: '*',
+      enabled: true,
+      note: 'включено для всех в сентябре',
+      updatedBy: 'config:HUB_SWITCHES',
+      updatedAt: iso(-86400000 * 40),
+    },
+    {
+      feature: 'voice',
+      person: 'anna@example.com',
+      machine: '*',
+      enabled: true,
+      note: 'пробуем на одной',
+      updatedBy: 'anna@example.com',
+      updatedAt: iso(-3600000 * 5),
+    },
+    {
+      feature: 'voice',
+      person: '*',
+      machine: 'm_build1',
+      enabled: false,
+      note: '',
+      updatedBy: 'roman@example.com',
+      updatedAt: iso(-86400000 * 2),
+    },
+  ];
 
   private newUser(email: string): User {
     return { id: uid('u'), email, name: email.split('@')[0] ?? email, isAdmin: false, createdAt: iso(-1e9) };
@@ -342,6 +375,36 @@ export class FakeHub {
     if (method === 'POST' && path === '/api/auth/logout') {
       this.user = null;
       return undefined;
+    }
+
+    // rollout switches (administrator only)
+    if (path === '/api/admin/switches') {
+      if (!need().isAdmin) throw this.err(403, 'forbidden');
+      const key = (x: { feature?: unknown; person?: unknown; machine?: unknown }) =>
+        `${String(x.feature)}\u0000${String(x.person)}\u0000${String(x.machine)}`;
+      if (method === 'PUT') {
+        const row = {
+          feature: String(body.feature),
+          person: String(body.person),
+          machine: String(body.machine),
+          enabled: body.enabled === true,
+          note: String(body.note ?? ''),
+          updatedBy: this.user?.email ?? '',
+          updatedAt: iso(),
+        };
+        this.switches = [...this.switches.filter((x) => key(x) !== key(row)), row];
+        return undefined;
+      }
+      if (method === 'DELETE') {
+        const k = key({
+          feature: query.get('feature'),
+          person: query.get('person'),
+          machine: query.get('machine'),
+        });
+        this.switches = this.switches.filter((x) => key(x) !== k);
+        return undefined;
+      }
+      return { switches: this.switches };
     }
 
     // me

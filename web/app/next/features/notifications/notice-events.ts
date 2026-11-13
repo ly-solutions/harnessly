@@ -21,6 +21,8 @@ const WAITING = new Set<string>([CHAT_STATUS.question, CHAT_STATUS.perm, CHAT_ST
 export const noticeEventOf = (conv: Conversation, machineOnline: boolean): INoticeEvent | null => {
   const status = chatStatusOf(conv, machineOnline);
   if (status === CHAT_STATUS.none) return null;
+  // A delegated chat works unheard: it reaches the person only when it waits for them; its ends go to its parent agent.
+  if (conv.parentId !== undefined && !WAITING.has(status)) return null;
   const look = STATUS_LOOK[status];
   // Keyed by the gate that waits, not by when the state was stamped: a sync that stamps the same wait anew (another
   // copy of the record, a reconnect) is the same notice, not a new one that leaves and comes again.

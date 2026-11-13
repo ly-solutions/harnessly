@@ -71,6 +71,9 @@ func Explain(in ExplainInput) []ExplainLine {
 		how = "as a dev install of " + a.Source
 	}
 	add("machine", false, "installed %s %s, trust %s", a.Version, how, m.Trust)
+	if a.DevSourceGone() {
+		add("machine", true, "that folder is gone, so nothing of the app can load: run harnessly app dev <folder> again from where its source is now")
+	}
 	if in.HostVersion != "" && m.Harnessly != "" {
 		if rng, err := ParseRange(m.Harnessly); err == nil && !rng.Allows(in.HostVersion) {
 			add("machine", true, "this harnessly is %s, the app wants %s: it is not turned on until the host is updated", in.HostVersion, m.Harnessly)

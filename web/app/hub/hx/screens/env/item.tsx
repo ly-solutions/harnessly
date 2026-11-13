@@ -2,7 +2,9 @@
 import { useState } from 'react';
 
 import { Btn, Icon } from '../../ui';
+import { Seg } from './bits';
 import type { SheetCtx } from './ctx';
+import { Field } from './form';
 import { type Draft, type Fields, fromItem, KIND, nameOf, valid, viewLinesOf, viewOf } from './model';
 import { ItemForm } from './itemform';
 import { useTry } from './sandbox';
@@ -14,6 +16,50 @@ export const ItemBody = ({ ctx, entryId, edit }: { ctx: SheetCtx; entryId: strin
   const row = layer?.items.find((r) => r.entryId === entryId);
   const item = ctx.catalog?.find((c) => c.id === row?.itemId) ?? null;
   if (!layer || !row) return <div className="ev-sh__empty">Этого пункта уже нет</div>;
+  if (row.builtIn && row.kind === 'app') {
+    // An app of the platform: it is not in the organization's catalog, and an admin changes one thing in it.
+    const canSwitch = edit && ctx.role === 'admin';
+    return (
+      <>
+        <Title text={row.name} />
+        <dl className="ev-dl">
+          {[
+            ['Вид', KIND[row.kind].one],
+            ['Откуда', 'Встроено в платформу'],
+            ['Для людей', 'По желанию — человек может выключить у себя'],
+          ].map(([k, v]) => (
+            <div key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+        {canSwitch ? (
+          <Field
+            label="В организации"
+            hint="Выключенное пропадает из меню и у агента у всех; доски, документы и ссылки на них остаются"
+          >
+            <Seg
+              items={[
+                ['on', 'Включено'],
+                ['off', 'Выключено у всех'],
+              ]}
+              value={row.off ? 'off' : 'on'}
+              onChange={(v) => void ctx.actions.setAppOff(row, v === 'off')}
+              label="В организации"
+            />
+          </Field>
+        ) : (
+          <p className="ev-sh__note">
+            <Icon i="lock" size="sm" />
+            <span>
+              {row.off ? 'Выключено у всех в организации' : 'Выключить у всех может админ организации'}
+            </span>
+          </p>
+        )}
+      </>
+    );
+  }
   if (!item) {
     return (
       <>

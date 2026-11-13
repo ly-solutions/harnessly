@@ -38,9 +38,19 @@ describe('readAttached', () => {
     expect(read.refs.map((r) => r.id)).toEqual(['ABC-1']);
   });
 
-  it('leaves the words alone when the block is not at the end', () => {
+  it('reads the block inside the wrapper the agent CLI put round a dictated message', () => {
+    const text = `<pasted_content id="7">\n${block}\n</pasted_content id="7">`;
+    const read = readAttached(text);
+    expect(read.text).toBe('<pasted_content id="7">\nLook at these\n</pasted_content id="7">');
+    expect(read.refs.map((r) => r.id)).toEqual(['d1', 'https://docs.example.com/d/spec', 'src/app.ts']);
+  });
+
+  it('reads every block of a message that was a queue of them, wherever it stands', () => {
     const text = '<attached>\n<ref kind="file" id="a" title="a"/>\n</attached>\n\nand more words';
-    expect(readAttached(text)).toEqual({ text, refs: [] });
+    expect(readAttached(text)).toEqual({
+      text: 'and more words',
+      refs: [{ kind: 'file', id: 'a', title: 'a', target: 'a' }],
+    });
   });
 });
 

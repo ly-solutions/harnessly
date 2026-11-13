@@ -120,6 +120,9 @@ export const setConversationTest = (m: MachineId, id: ConvId, test: boolean) =>
 /** The installed apps turned on in a chat, the whole list: the runtime keeps exactly these (and stops a resting agent). */
 export const setConversationApps = (m: MachineId, id: ConvId, apps: string[]) =>
   runCommand(m, 'conversation.apps', { id, apps });
+/** How the person left the chat's window, the whole object; the last write wins, an empty object clears it. */
+export const setConversationView = (m: MachineId, id: ConvId, view: Record<string, unknown>) =>
+  runCommand(m, 'conversation.view', { id, view });
 export const moveConversation = (m: MachineId, id: ConvId, projectId: string | null) =>
   runCommand(m, 'conversation.move', { id, projectId });
 export const deleteConversation = (m: MachineId, id: ConvId, force = false) =>

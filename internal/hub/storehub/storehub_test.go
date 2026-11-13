@@ -40,6 +40,13 @@ type fakeDesign struct {
 	mu       sync.Mutex
 	view     map[string]map[string]Grant // machine → project → grant
 	recorded []string
+	closed   bool
+}
+
+func (d *fakeDesign) ClosedUnrecorded() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.closed
 }
 
 func (d *fakeDesign) StoreView(_ context.Context, m store.Machine) (map[string]Grant, error) {
@@ -70,7 +77,9 @@ func (d *fakeDesign) RecordFromStore(_ context.Context, m store.Machine, project
 	return true, nil
 }
 
-func TestTheStoreFiltersTheDesignLibraryByRole(t *testing.T) {
+// designStore serves a store over the fake design access and opens a sync client of the design library per machine.
+func designStore(t *testing.T, machines fakeMachines, design *fakeDesign) (*Store, func(machine string) *filesync.Client) {
+	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 	meta, err := filestore.OpenMetaStore(ctx, "sqlite://"+dir)
@@ -83,14 +92,6 @@ func TestTheStoreFiltersTheDesignLibraryByRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { blobs.Close() })
-	machines := fakeMachines{
-		"owner": {ID: "owner", Name: "vm-owner", SpaceID: "sp1"},
-		"mate":  {ID: "mate", Name: "vm-mate", SpaceID: "sp1"},
-	}
-	design := &fakeDesign{view: map[string]map[string]Grant{
-		"owner": {"secret": {See: true, Edit: true, Own: true}},
-		"mate":  {"secret": {See: false}},
-	}}
 	next := "owner"
 	st, err := Open(ctx, Options{Config: &config.Config{}, DB: machines, Key: []byte("0123456789abcdef0123456789abcdef"),
 		Meta: meta, Blobs: blobs, Design: design,
@@ -119,6 +120,20 @@ func TestTheStoreFiltersTheDesignLibraryByRole(t *testing.T) {
 		return filesync.NewClient(srv.URL+hubproto.StoreAPIPath, filestore.KindDesign,
 			func(context.Context, bool) (string, error) { return tok, nil }, nil)
 	}
+	return st, client
+}
+
+func TestTheStoreFiltersTheDesignLibraryByRole(t *testing.T) {
+	ctx := context.Background()
+	machines := fakeMachines{
+		"owner": {ID: "owner", Name: "vm-owner", SpaceID: "sp1"},
+		"mate":  {ID: "mate", Name: "vm-mate", SpaceID: "sp1"},
+	}
+	design := &fakeDesign{view: map[string]map[string]Grant{
+		"owner": {"secret": {See: true, Edit: true, Own: true}},
+		"mate":  {"secret": {See: false}},
+	}}
+	_, client := designStore(t, machines, design)
 	owner, mate := client("owner"), client("mate")
 
 	put := func(c *filesync.Client, path, body string) error {

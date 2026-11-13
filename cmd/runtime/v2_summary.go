@@ -37,7 +37,32 @@ type v2Summarizer struct {
 	// dir is where Claude runs and keeps the summaries' sessions.
 	dir string
 	// run is the CLI call; a test puts its own.
-	run func(ctx context.Context, p wire.Provider, prompt string) (string, error)
+	run func(ctx context.Context, p wire.Provider, model, prompt string) (string, error)
+	// models are the models the machine found for a provider; nil knows none.
+	models func(p wire.Provider) []wire.AgentModel
+}
+
+// claudeCheapModel is the model of Claude's summaries unless one is picked.
+const claudeCheapModel = "haiku"
+
+// modelFor is the model a summary is asked of: the picked one, else the provider's cheap one — Haiku for Claude, a
+// «mini» model of Codex if the machine has one, else "" (Codex's own default).
+func (s *v2Summarizer) modelFor(p wire.Provider, picked string) string {
+	if picked != "" {
+		return picked
+	}
+	if p != wire.ProviderCodex {
+		return claudeCheapModel
+	}
+	if s.models == nil {
+		return ""
+	}
+	for _, m := range s.models(p) {
+		if strings.Contains(strings.ToLower(m.ID), "mini") {
+			return m.ID
+		}
+	}
+	return ""
 }
 
 func newV2Summarizer(t *v2Titler, dir string) *v2Summarizer {
@@ -46,7 +71,7 @@ func newV2Summarizer(t *v2Titler, dir string) *v2Summarizer {
 	return s
 }
 
-func (s *v2Summarizer) Summarize(p wire.Provider, message string, replies []string) (string, error) {
+func (s *v2Summarizer) Summarize(p wire.Provider, model, message string, replies []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), summaryCallTimeout)
 	defer cancel()
 	select {
@@ -55,7 +80,7 @@ func (s *v2Summarizer) Summarize(p wire.Provider, message string, replies []stri
 		return "", ctx.Err()
 	}
 	defer func() { <-s.titler.slot }()
-	out, err := s.run(ctx, p, summaryPrompt(message, replies))
+	out, err := s.run(ctx, p, s.modelFor(p, model), summaryPrompt(message, replies))
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +142,7 @@ func cleanSummary(out string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (s *v2Summarizer) runCLI(ctx context.Context, p wire.Provider, prompt string) (string, error) {
+func (s *v2Summarizer) runCLI(ctx context.Context, p wire.Provider, model, prompt string) (string, error) {
 	var cmd *exec.Cmd
 	if p == wire.ProviderCodex {
 		dir, err := os.MkdirTemp("", "hs-summary-")
@@ -125,8 +150,11 @@ func (s *v2Summarizer) runCLI(ctx context.Context, p wire.Provider, prompt strin
 			return "", err
 		}
 		defer os.RemoveAll(dir)
-		cmd = exec.CommandContext(ctx, "codex", "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c",
-			`approval_policy="never"`, prompt)
+		args := []string{"exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", `approval_policy="never"`}
+		if model != "" {
+			args = append(args, "-m", model)
+		}
+		cmd = exec.CommandContext(ctx, "codex", append(args, prompt)...)
 		cmd.Env = withAgentEnv(os.Environ(), s.titler.envDir, agents.Codex)
 		cmd.Dir = dir
 	} else {
@@ -135,7 +163,7 @@ func (s *v2Summarizer) runCLI(ctx context.Context, p wire.Provider, prompt strin
 		}
 		rt := sidechat.ReadRuntime(s.titler.runtimeFile)
 		// The session is kept (no --no-session-persistence): its transcript is what the spend counts.
-		cmd = exec.CommandContext(ctx, rt.Binary, "--print", "--model", "haiku", "--tools", "",
+		cmd = exec.CommandContext(ctx, rt.Binary, "--print", "--model", model, "--tools", "",
 			"--strict-mcp-config", "--disable-slash-commands", "--settings", `{"disableAllHooks":true}`)
 		cmd.Env = sidechat.Env(withAgentEnv(os.Environ(), s.titler.envDir, agents.Claude), rt)
 		cmd.Stdin = strings.NewReader(prompt)

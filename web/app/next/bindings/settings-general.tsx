@@ -1,5 +1,6 @@
 // The Settings pages that are about the person and the fleet: «General», «Appearance», «Machines», «Apps».
 import { useAppsFeed, useSignIn } from '@/next/bindings/settings-data';
+import type { ISettingChangesHandle } from '@/next/bindings/settings-changes';
 import type { Pending } from '@/next/bindings/settings-agents';
 import AppearanceSection from '@/next/features/settings/appearance-section';
 import AppsSection from '@/next/features/settings/apps-section';
@@ -34,7 +35,7 @@ import { goTo, ROUTE } from '@/next/routes/routes';
 import { bootNext, shutdownNext } from '@/next/boot';
 import { appConfig, saveLanguage, type TLanguage } from '@/platform/config';
 import { offeredLanguages } from '@/platform/languages';
-import { hasFeature, useMachines } from '@/next/stores/machines';
+import { hasFeature, useMachine, useMachines } from '@/next/stores/machines';
 import { useDeadline } from '@/next/ui/use-deadline';
 import {
   DEFAULT_SETTINGS,
@@ -78,7 +79,7 @@ const savePerson = async (patch: Partial<PersonSettings>): Promise<void> => {
 };
 
 /** The runtime's own settings of the machine: null until it says, and on a runtime that has none of them. */
-const useRuntimeSettings = (machine: MachineId) => {
+const useRuntimeSettings = (machine: MachineId, stamp: string) => {
   const supported = hasFeature(machine, 'terminal-stop');
   // Kept with the machine it came from: another machine's value is not shown while this one's is read.
   const [read, setRead] = useState<{ machine: MachineId; value: RuntimeSettings } | null>(null);
@@ -91,7 +92,8 @@ const useRuntimeSettings = (machine: MachineId) => {
     return () => {
       live = false;
     };
-  }, [machine, supported]);
+    // `stamp` moves when the journal says a runtime setting changed (an agent's change, one taken back).
+  }, [machine, supported, stamp]);
   const value = supported && read?.machine === machine ? read.value : null;
   // Pessimistic: the row moves when the runtime has kept the new value. It is asked for the whole as it was read with
   // the one change; the settings it does not name are the runtime's to keep.
@@ -240,9 +242,11 @@ interface IGeneralPageProps {
   /** The name the sidebar shows for the person. */
   name: string;
   pending: Pending;
+  /** The journal of the settings' changes: the rows an agent has just changed are lit. */
+  changes: ISettingChangesHandle;
 }
 
-export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
+export const GeneralPage = ({ machine, name, pending, changes }: IGeneralPageProps) => {
   const me = useMe();
   const password = useSignIn(machine);
   const topTabs = useTopTabs();
@@ -250,7 +254,10 @@ export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
   const paneSites = usePaneSites();
   const browserAgent = useBrowserAgent();
   const feedKinds = useFeedKinds();
-  const runtime = useRuntimeSettings(machine);
+  const runtime = useRuntimeSettings(machine, changes.stampOf('runtime.'));
+  const machineView = useMachine(machine);
+  const modelsOf = (provider: 'claude' | 'codex') =>
+    machineView?.machine.agents.find((agent) => agent.provider === provider)?.models ?? [];
   const update = useUpdateInfo(machine);
   const machineChecks = useMachineChecks(machine);
   const baseSkipped = useBaseSkipped(machine);
@@ -263,6 +270,7 @@ export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
   const hint = email ?? (password ? t('next.settings.general.byPassword') : null);
   return (
     <GeneralSection
+      marks={changes.marks}
       enterSends={settings.enterSends}
       dayStartHour={settings.dayStartHour}
       topTabs={topTabs}
@@ -292,6 +300,8 @@ export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
       limitContinue={runtime.value?.limitContinue ?? null}
       restartContinue={runtime.value?.restartContinue ?? null}
       delegation={runtime.value ? (runtime.value.delegation ?? DEFAULT_DELEGATION) : null}
+      noticeSummary={runtime.value?.noticeSummary ?? null}
+      summaryModels={runtime.value ? { claude: modelsOf('claude'), codex: modelsOf('codex') } : null}
       busy={new Set(waiting.keys())}
       onEnterSends={(enterSends) => void run('enterSends', failure, () => savePerson({ enterSends }))}
       onDayStartHour={(dayStartHour) => void run('dayStartHour', failure, () => savePerson({ dayStartHour }))}
@@ -307,6 +317,11 @@ export const GeneralPage = ({ machine, name, pending }: IGeneralPageProps) => {
       }
       onDelegation={(delegation: DelegationSettings) =>
         void run('delegation', failure, () => runtime.save({ delegation }))
+      }
+      onNoticeSummary={(value) =>
+        void run('noticeSummary', failure, () =>
+          runtime.save(value ? { noticeSummary: value } : { noticeSummary: { provider: 'auto' } }),
+        )
       }
       updates={
         update.value ? (

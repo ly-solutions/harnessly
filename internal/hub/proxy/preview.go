@@ -71,6 +71,7 @@ func (s *Service) servePreviewOn(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 	prefix := "/m/" + id + "/__pv/"
+	framed := slotFrame(r)
 	clientIP := s.auth.ClientIP(r)
 	secure := s.cfg.Secure
 	rp := &httputil.ReverseProxy{
@@ -101,7 +102,7 @@ func (s *Service) servePreviewOn(w http.ResponseWriter, r *http.Request, id stri
 			if own {
 				slotHeaders(res.Header, s.slotFrameOrigins())
 			} else {
-				previewHeaders(res.Header)
+				previewHeaders(res.Header, framed)
 			}
 			return nil
 		},
@@ -124,16 +125,32 @@ var previewOriginHeaders = []string{"Clear-Site-Data", "Strict-Transport-Securit
 	"Cross-Origin-Opener-Policy", "Cross-Origin-Embedder-Policy", "Alt-Svc", "NEL", "Report-To", "Reporting-Endpoints", "Set-Login",
 	"Supports-Loading-Mode", "Accept-CH", "Critical-CH", "Speculation-Rules", "No-Vary-Search"}
 
+// slotFrame says the request is a frame's navigation from a cross-site context. Under a slot's prefix that context is
+// the slot's own page: sandboxed, its origin is opaque, so a link it follows and a frame it holds of another document of
+// its slot (a Storybook's canvas) both come in this way.
+func slotFrame(r *http.Request) bool {
+	return r.Header.Get("Sec-Fetch-Dest") == "iframe" && r.Header.Get("Sec-Fetch-Site") == "cross-site"
+}
+
 // previewHeaders enforce the slot's terms at the hub: the sandbox, no referrer, no word on the hub's origin, framed only
 // by the hub's own pages.
-func previewHeaders(h http.Header) {
+//
+// framed (slotFrame) lifts the last of them, and only it. A document inside a slot's page has that page among its
+// ancestors, and no frame-ancestors source names an opaque origin ('self', a host and * all refuse it), so with the
+// header the browser shows nothing of a nested document, for ever. Leaving it out gives away nothing the slot's key did
+// not: the answer still runs sandboxed without the hub's origin or session, the request still needed the key in its
+// address (128 random bits, new with every open, in no referrer), and a page that holds the key already reads the
+// slot's every answer with fetch. The runtime's own slots by path never had the header (cmd/runtime/preview_path.go).
+func previewHeaders(h http.Header, framed bool) {
 	for _, name := range previewOriginHeaders {
 		h.Del(name)
 	}
 	h.Add("Content-Security-Policy", previewSandbox)
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Content-Type-Options", "nosniff")
-	frameHeaders(h)
+	if !framed {
+		frameHeaders(h)
+	}
 }
 
 // targetCookies are the request's cookies a previewed target set (`__t_<tag>_…`): never the hub's session.

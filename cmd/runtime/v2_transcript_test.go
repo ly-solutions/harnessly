@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
@@ -29,5 +30,27 @@ func TestFollowedTranscript(t *testing.T) {
 		if got := followed(tc.rec, tc.session, tc.named); got != tc.want {
 			t.Errorf("%s: followed %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// Claude writes a new session's transcript after its prompt-submit hook: the look goes on until the file is there,
+// and gives up after its pauses.
+func TestLookForATranscriptNotWrittenYet(t *testing.T) {
+	pauses := []time.Duration{time.Millisecond, 2 * time.Millisecond, 3 * time.Millisecond}
+	var slept []time.Duration
+	sleep := func(d time.Duration) { slept = append(slept, d) }
+	looks := 0
+	appearsAt := func(n int) func() (string, bool) {
+		return func() (string, bool) {
+			looks++
+			return "/t.jsonl", looks >= n
+		}
+	}
+	if path, ok := lookFor(appearsAt(3), pauses, sleep); !ok || path != "/t.jsonl" || looks != 3 || len(slept) != 2 {
+		t.Fatalf("found %q %v after %d looks, slept %v", path, ok, looks, slept)
+	}
+	looks, slept = 0, nil
+	if _, ok := lookFor(appearsAt(10), pauses, sleep); ok || looks != 4 || len(slept) != 3 {
+		t.Fatalf("never written: %v after %d looks, slept %v", ok, looks, slept)
 	}
 }

@@ -4,7 +4,7 @@
 // The pane opening always takes it away, even when the person had opened it; the pane shutting gives back what the room
 // says. The header's button shows it or folds it, and a fold stays until the chat is changed. A stop goes to the
 // runtime as bg.stop and waits for it.
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useCodeAsks } from '@/next/bindings/code-asks';
 import { settled } from '@/next/bindings/outcome';
 import { stopBackground } from '@/next/commands';
@@ -14,20 +14,31 @@ import CodeAsks, { CODE_EXIT_MS, CODE_SENT, type TCodeSent } from '@/next/featur
 import { useRailRoom } from '@/next/features/background/rail-room';
 import type { IHeaderBackground } from '@/next/features/header/chat-header';
 import { machineApi } from '@/next/core/net/machine';
-import type { BackgroundTask, ConvId, MachineId, Shot } from '@/next/protocol/v2';
+import type { BackgroundTask, ConvId, Conversation, MachineId, Shot } from '@/next/protocol/v2';
 import { useBackground, useShots } from '@/next/stores/conversation';
 import { useConversation } from '@/next/stores/conversations';
 import { usePresentFlag } from '@/next/ui/presence';
+import { LEAVE_MS } from '@/next/features/notifications/motion';
 import { toast } from '@/next/ui/toast';
 import { usePhone } from '@/next/ui/use-media';
-import Drops from '@/next/features/smart-notice/drops';
-import { askDropBack, useDrops } from '@/next/stores/smart-drops';
+import NoticeStack from '@/next/features/smart-notice/stack';
+import { SMART_KIND } from '@/next/features/smart-notice/smart-notice';
+import { NOTIFICATION_KIND } from '@/next/features/notifications/kinds';
+import MachineDrop from '@/next/bindings/machine-drop';
+import { WaitBinding } from '@/next/bindings/notification-center';
+import { askDropBack, dismissDrops, useDrops, type IDrop } from '@/next/stores/smart-drops';
+import { useConversationList } from '@/next/stores/conversations';
 import { t } from '@/next/i18n';
+
+/** What is answered right in its card: a question's options, a permission's buttons (the rest opens its chat or the
+ *  smart notice). */
+const IN_PLACE: ReadonlySet<string> = new Set([SMART_KIND.question, SMART_KIND.permission]);
 
 export const useChatBackground = (
   conv: ConvId | null,
   machine: MachineId | null,
   now: number,
+  onOpenChat: (id: string) => void,
 ): { header: IHeaderBackground | null; panel: React.ReactNode; show: () => void } => {
   const tasks = useBackground(conv);
   const recap = useConversation(conv)?.recap ?? null;
@@ -42,11 +53,49 @@ export const useChatBackground = (
   const codes = conv ? codeAsks.asks.filter((a) => a.conv === conv) : [];
   // The column stays while the last card folds away, then leaves with it.
   const codesMounted = usePresentFlag(codes.length > 0, CODE_EXIT_MS * 2).mounted;
-  // What waits and was put away from the smart notice stands here as drops, whichever chat it is of.
-  const drops = useDrops();
+  // What waits and was put away from the smart notice stands here as a stack, whichever chat it is of; the machine's
+  // card stands apart, under the column, not among the chats.
+  const all = useDrops();
+  const drops = useMemo(() => all.filter((d) => d.item.kind !== SMART_KIND.machine), [all]);
+  const machineDrops = useMemo(() => all.filter((d) => d.item.kind === SMART_KIND.machine), [all]);
+  // The last card answered elsewhere flies off before the stack (and the column it keeps) goes.
+  const dropsMounted = usePresentFlag(drops.length > 0, LEAVE_MS).mounted;
+  const machineMounted = usePresentFlag(machineDrops.length > 0, LEAVE_MS).mounted;
+  const convs = useConversationList(null);
+  const byId = useMemo(() => new Map<string, Conversation>((convs ?? []).map((c) => [c.id, c])), [convs]);
+  const renderAnswer = useCallback(
+    (drop: IDrop, open: boolean, toggle: () => void) => {
+      const { item } = drop;
+      const chat = item.chatId ? byId.get(item.chatId) : undefined;
+      if (!chat || !IN_PLACE.has(item.kind)) return null;
+      return (
+        <WaitBinding
+          conv={chat}
+          item={{
+            id: item.key,
+            kind: NOTIFICATION_KIND.waiting,
+            icon: item.icon,
+            title: item.title,
+            text: item.text,
+            at: item.at,
+            unread: true,
+            chatId: item.chatId,
+          }}
+          open={open}
+          onToggle={toggle}
+          onOpenChat={() => onOpenChat(chat.id)}
+        />
+      );
+    },
+    [byId, onOpenChat],
+  );
+  // The machine's card says what is wrong right where it stands: no flight into the smart notice for the details.
+  const renderMachine = useCallback(
+    (drop: IDrop) => (drop.item.machine ? <MachineDrop machine={drop.item.machine} /> : null),
+    [],
+  );
   const phone = usePhone();
-  const has =
-    tasks.length > 0 || recap !== null || (shots?.length ?? 0) > 0 || codesMounted || drops.length > 0;
+  const has = tasks.length > 0 || recap !== null || (shots?.length ?? 0) > 0 || codesMounted || dropsMounted;
   // The pane opening takes back a column the person had opened (a fold they made stays); this runs in render, once per change.
   const [paneWas, setPaneWas] = useState(pane);
   if (pane !== paneWas) {
@@ -105,35 +154,56 @@ export const useChatBackground = (
     return res.value.refused === 'bad-code' ? CODE_SENT.bad : CODE_SENT.failed;
   };
 
-  const panel = has ? (
-    <BackgroundPanel
-      ref={setRail}
-      tasks={tasks}
-      recap={recap}
-      shots={shots}
-      shotSrc={shotSrc}
-      shown={shown}
-      now={now}
-      stopping={stopping}
-      onStop={onStop}
-      onHide={shown ? toggle : undefined}
-      codes={
-        <>
-          <Drops drops={drops} now={now} onBack={askDropBack} />
-          <CodeAsks
-            asks={codes}
-            now={now}
-            skew={codeAsks.skew}
-            onPut={putOne}
-            onCancel={async (ask) => {
-              if (machine) await cancelCode(machine, ask.id);
-            }}
-            onDone={(ask) => codeAsks.drop(ask.id)}
-          />
-        </>
-      }
-    />
-  ) : null;
+  const panel =
+    has || machineMounted ? (
+      <BackgroundPanel
+        ref={setRail}
+        tasks={tasks}
+        recap={recap}
+        shots={shots}
+        shotSrc={shotSrc}
+        shown={shown}
+        now={now}
+        stopping={stopping}
+        onStop={onStop}
+        onHide={shown ? toggle : undefined}
+        below={
+          machineMounted ? (
+            <NoticeStack
+              drops={machineDrops}
+              now={now}
+              label={t('next.smart.stack.machine')}
+              onBack={askDropBack}
+              onDismiss={dismissDrops}
+              renderAnswer={renderMachine}
+            />
+          ) : null
+        }
+        codes={
+          <>
+            <NoticeStack
+              drops={drops}
+              now={now}
+              label={t('next.smart.drops.title')}
+              onBack={askDropBack}
+              onOpenChat={onOpenChat}
+              onDismiss={dismissDrops}
+              renderAnswer={renderAnswer}
+            />
+            <CodeAsks
+              asks={codes}
+              now={now}
+              skew={codeAsks.skew}
+              onPut={putOne}
+              onCancel={async (ask) => {
+                if (machine) await cancelCode(machine, ask.id);
+              }}
+              onDone={(ask) => codeAsks.drop(ask.id)}
+            />
+          </>
+        }
+      />
+    ) : null;
 
   return { header, panel, show: () => setAsked({ conv, shown: true }) };
 };

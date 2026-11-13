@@ -223,6 +223,29 @@ export const MachineDrawer = ({
         )}
         {m.canAdmin && (
           <div className="md-sec">
+            <div className="md-sec__head">
+              <span className="md-sec__t">Владелец</span>
+              <button
+                type="button"
+                className="hb-add"
+                aria-disabled={locked}
+                onClick={() => {
+                  if (locked) return;
+                  card.clearError();
+                  url.setDlg('owner');
+                }}
+              >
+                Передать
+              </button>
+            </div>
+            <p className="md-acc-sum">{m.ownerName ?? 'Общая машина, владельца нет'}</p>
+            <p className="md-note">
+              Машина, подготовленная админом для сотрудника, становится его: с тем же id, ключом и чатами.
+            </p>
+          </div>
+        )}
+        {m.canAdmin && (
+          <div className="md-sec">
             <div className="md-sec__t">Перенести в другой тенант</div>
             <p className="md-note">
               Машина сохранит id и ключ. Перед переносом покажем, что изменится: команда, доступ и лимиты.
@@ -346,6 +369,13 @@ export const MachineDrawer = ({
         onMoved={() => {
           url.setDlg(null);
           onRemoved();
+        }}
+        people={d.candidates}
+        ownerError={card.error}
+        onOwner={async (userId, history) => {
+          const ok = await card.assignOwner(userId, history);
+          if (ok) url.setDlg(null);
+          return ok;
         }}
         onRemove={() => {
           url.setDlg(null);

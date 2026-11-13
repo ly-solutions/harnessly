@@ -130,7 +130,7 @@ func TestDeckSettingsAreMergedValidatedAndWrittenAsTheThemeCSS(t *testing.T) {
 		t.Fatalf("%d %v", code, out)
 	}
 	s, err := g.l.ReadDeckSettings("admin")
-	if err != nil || s.Minutes != 15 || *s.Slides != 8 || s.Tone != DeckToneBiz || s.Font != "serif" || s.Theme != "vi" || !s.Script {
+	if err != nil || s.Minutes != 15 || *s.Slides != 8 || s.Tone != DeckToneBiz || s.Font != "serif" || s.Theme != "vi" || !s.Script || !s.Picked {
 		t.Fatalf("%+v %v", s, err)
 	}
 	css := readFileT(t, filepath.Join(g.root, "admin", ProjectDirname, "deck-theme.css"))

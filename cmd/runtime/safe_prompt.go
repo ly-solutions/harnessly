@@ -13,6 +13,19 @@ import (
 
 // connectionsPromptBlock tells every agent where the person's trackers and wikis are and how to read them without
 // their tokens (Settings → Connections, internal/connections).
+// settingsPromptBlock tells every agent how harnessly's own settings are changed for the person.
+const settingsPromptBlock = `## harnessly's settings
+
+When the person asks you to change how harnessly itself behaves (when idle chats stop, which model writes the
+notification summaries, what agents may delegate), do it with the ` + "`harnessly settings`" + ` command, not by editing files:
+
+- ` + "`harnessly settings list`" + ` — every setting you may change: its key, what it does, the values it takes, its value now.
+- ` + "`harnessly settings set KEY VALUE --why \"what the person asked for\"`" + ` — changes it. In the Settings window's own chat
+  the change is made at once; in any other chat the person confirms it on a card and the command waits for the answer
+  ("waiting": run it again; "declined": do not propose it again).
+
+Change only what the person asked for, and tell them what changed: the old value and the new one.`
+
 const connectionsPromptBlock = `## Trackers and wikis (connections)
 
 The person's trackers, wikis and code hosts (Jira, Confluence, YouTrack, Linear, GitLab, GitHub, …) are connected in
@@ -48,7 +61,7 @@ func withSafe(on bool, dir string, prompt func(string) string) func(string) stri
 		if text != "" {
 			text += "\n\n"
 		}
-		text += secrets.PromptBlock() + "\n\n" + connectionsPromptBlock
+		text += secrets.PromptBlock() + "\n\n" + connectionsPromptBlock + "\n\n" + settingsPromptBlock
 		sum := sha256.Sum256([]byte(text))
 		target := filepath.Join(dir, "safe-"+hex.EncodeToString(sum[:])[:16]+".md")
 		if have, err := os.ReadFile(target); err == nil && string(have) == text {

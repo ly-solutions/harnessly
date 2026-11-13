@@ -311,5 +311,6 @@
   "next.deck.toolbar.shorterAsk": "Make the text of slide {n} shorter: {label}",
   "next.deck.toolbar.shorterToast": "The agent is shortening the text: the edit comes as a new version",
   "next.deck.toolbar.size": "Size",
-  "next.deck.toolbar.toChat": "To chat"
+  "next.deck.toolbar.toChat": "To chat",
+  "next.deck.style.ownLook": "No theme chosen: the scenes keep their own look"
 }

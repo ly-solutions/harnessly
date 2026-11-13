@@ -15,12 +15,12 @@
       "enum": [
         "queue", "steer", "questions", "permissions", "background", "model", "voice", "files", "checkpoints",
         "designly", "search", "vault", "push", "terminal", "machine", "apps", "settings", "drafts", "queue-move", "apps-hub", "terminal-stop", "rewind", "fork", "handoff",
-        "auto-continue", "made", "agent-browser", "snapshot-after"
+        "auto-continue", "made", "agent-browser", "snapshot-after", "chat-view"
       ]
     },
     "Reach": {"enum": ["online", "unreachable", "unknown"]},
     "HealthLevel": {"enum": ["ok", "warn", "critical"]},
-    "HealthMetric": {"enum": ["disk", "mem", "cpu"]},
+    "HealthMetric": {"enum": ["disk", "mem", "cpu", "io"]},
     "AgentInstallStatus": {"enum": ["ready", "missing", "login-required"]},
     "Effort": {"enum": ["low", "medium", "high", "xhigh", "max", "ultra"]},
     "GoalStatus": {"enum": ["active", "paused", "met"]},
@@ -187,7 +187,17 @@
         "idleStop": {"$ref": "#/$defs/IdleStop"},
         "limitContinue": {"$ref": "#/$defs/OnOff"},
         "restartContinue": {"$ref": "#/$defs/OnOff"},
-        "delegation": {"$ref": "#/$defs/DelegationSettings"}
+        "delegation": {"$ref": "#/$defs/DelegationSettings"},
+        "noticeSummary": {"$ref": "#/$defs/NoticeSummaryModel"}
+      }
+    },
+    "NoticeSummaryModel": {
+      "type": "object",
+      "required": ["provider"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"enum": ["claude", "codex", "off", "auto"]},
+        "model": {"type": "string"}
       }
     },
     "DelegationSettings": {
@@ -285,7 +295,7 @@
     "Op": {
       "enum": [
         "send", "cancel", "retry", "promote", "answer", "decide", "interrupt", "queue.resume", "seen",
-        "conversation.create", "conversation.rename", "conversation.pin", "conversation.apps", "conversation.test", "conversation.move",
+        "conversation.create", "conversation.rename", "conversation.pin", "conversation.apps", "conversation.test", "conversation.view", "conversation.move",
         "conversation.delete", "conversation.restore", "conversation.resume", "model", "bg.stop",
         "project.create", "project.update", "favorites.group.create", "favorites.group.rename", "favorites.group.delete",
         "favorites.group.move", "favorites.place", "goal", "conversation.retitle", "conversation.summarize", "draft.set", "queue.move", "terminal.stop", "rewind", "rewind.undo",
@@ -345,7 +355,17 @@
       "properties": {
         "level": {"$ref": "#/$defs/HealthLevel"},
         "since": {"type": "integer", "minimum": 0},
-        "issues": {"type": "array", "items": {"$ref": "#/$defs/HealthIssue"}}
+        "issues": {"type": "array", "items": {"$ref": "#/$defs/HealthIssue"}},
+        "stall": {"$ref": "#/$defs/HealthStall"}
+      }
+    },
+    "HealthStall": {
+      "type": "object",
+      "required": ["mounts", "waiting"],
+      "additionalProperties": false,
+      "properties": {
+        "mounts": {"type": "array", "items": {"type": "string"}},
+        "waiting": {"type": "array", "items": {"type": "string"}}
       }
     },
     "MachineRuntime": {
@@ -952,8 +972,8 @@
       "type": "object",
       "required": [
         "key", "id", "title", "url", "state", "flag", "tone", "project", "person", "target", "createdAt", "updatedAt",
-        "closedAt", "author", "assignees", "reviewers", "me", "labels", "priority", "kind", "parent", "progress",
-        "children", "mr"
+        "closedAt", "author", "avatar", "assignees", "reviewers", "me", "labels", "priority", "kind", "parent",
+        "progress", "children", "mr"
       ],
       "additionalProperties": false,
       "properties": {
@@ -971,6 +991,7 @@
         "updatedAt": {"type": "integer", "minimum": 0},
         "closedAt": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
         "author": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "avatar": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
         "assignees": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "reviewers": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "me": {"type": "array", "items": {"$ref": "#/$defs/AppRole"}},
@@ -1590,6 +1611,7 @@
         "goal": {"$ref": "#/$defs/Goal"},
         "launch": {"$ref": "#/$defs/Launch"},
         "apps": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 8},
+        "view": {"type": "object"},
         "recap": {"$ref": "#/$defs/Recap"},
         "pendingModel": {"$ref": "#/$defs/PendingModel"},
         "modelLog": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/ModelSwitch"}},
@@ -2936,6 +2958,16 @@
         "apps": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 8}
       }
     },
+    "Cmd_conversation_view": {
+      "type": "object",
+      "required": ["opId", "id", "view"],
+      "additionalProperties": false,
+      "properties": {
+        "opId": {"type": "string", "minLength": 1},
+        "id": {"$ref": "#/$defs/ConvId"},
+        "view": {"type": "object"}
+      }
+    },
     "Cmd_conversation_test": {
       "type": "object",
       "required": ["opId", "id", "test"],
@@ -3315,6 +3347,12 @@
           "type": "object",
           "required": ["op", "body"],
           "additionalProperties": false,
+          "properties": {"op": {"const": "conversation.view"}, "body": {"$ref": "#/$defs/Cmd_conversation_view"}}
+        },
+        {
+          "type": "object",
+          "required": ["op", "body"],
+          "additionalProperties": false,
           "properties": {"op": {"const": "conversation.move"}, "body": {"$ref": "#/$defs/Cmd_conversation_move"}}
         },
         {
@@ -3624,6 +3662,16 @@
           "properties": {
             "op": {"const": "conversation.test"},
             "body": {"$ref": "#/$defs/Cmd_conversation_test"},
+            "result": {"$ref": "#/$defs/CmdResult"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "body", "result"],
+          "additionalProperties": false,
+          "properties": {
+            "op": {"const": "conversation.view"},
+            "body": {"$ref": "#/$defs/Cmd_conversation_view"},
             "result": {"$ref": "#/$defs/CmdResult"}
           }
         },

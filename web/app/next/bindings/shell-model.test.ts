@@ -225,3 +225,35 @@ describe('a fleet across organizations', () => {
     ).not.toBe('Acme');
   });
 });
+
+// the case of 13.11 — a load in the hundreds on an idle processor is programs waiting for the network folder.
+describe('a stalled machine', () => {
+  afterEach(() => pinLocale(null));
+
+  it('is named by the folder that does not answer, not by the processor', () => {
+    pinLocale('ru');
+    const h: MachineHealth = {
+      ...health({ metric: 'io', level: 'critical' }),
+      stall: { mounts: ['/home/dev/projects'], waiting: ['git', 'node'] },
+    };
+    const alert = alertOf(loaded(h).machine, false);
+    expect(alert).toMatchObject({
+      metric: 'io',
+      text: 'Сетевая папка «projects» не отвечает — программы ждут её',
+      waiting: ['git', 'node'],
+    });
+  });
+
+  it('says programs wait for a disk or the network when no folder is known', () => {
+    pinLocale('ru');
+    const alert = alertOf(loaded(health({ metric: 'io', level: 'critical' })).machine, false);
+    expect(alert?.text).toBe('Программы ждут диск или сеть — процессор свободен');
+    expect(alert?.waiting).toEqual([]);
+  });
+
+  it('shows on the processor line of the card, which has no busy processor to show', () => {
+    pinLocale('ru');
+    const card = cardOf(loaded(health({ metric: 'io', level: 'warn' })), false);
+    expect(card.meters?.find((m) => m.id === 'cpu')?.reason).toBe('Программы ждут диск или сеть');
+  });
+});

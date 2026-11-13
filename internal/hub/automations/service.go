@@ -41,6 +41,8 @@ type Deps struct {
 	Links  Linker
 	Log    *slog.Logger
 	Now    func() time.Time
+	// Gate holds the schedule and wait triggers behind SwitchTriggers; nil: on for everyone.
+	Gate Gate
 }
 
 // Service serves the rules and runs and starts the runs.
@@ -53,10 +55,11 @@ type Service struct {
 	now    func() time.Time
 	prefix string
 	client *http.Client
+	gate   Gate
 }
 
 func New(d Deps) *Service {
-	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, links: d.Links, log: d.Log, now: d.Now, client: &http.Client{}}
+	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, links: d.Links, log: d.Log, now: d.Now, client: &http.Client{}, gate: d.Gate}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -171,10 +174,14 @@ func (s *Service) apply(ctx context.Context, r *Rule, b ruleBody) error {
 	switch {
 	case r.Name == "" || len(r.Name) > 120:
 		return invalid("Имя правила: от 1 до 120 символов")
-	case strings.TrimSpace(r.Trigger.Source) == "":
-		return invalid("Укажите источник события (trigger.source)")
 	case strings.TrimSpace(r.PromptTemplate) == "" || len(r.PromptTemplate) > 20000:
 		return invalid("Текст задачи: от 1 до 20000 символов")
+	}
+	if err := checkTrigger(&r.Trigger); err != nil {
+		return err
+	}
+	if b.Trigger != nil && r.Trigger.newKind() && !s.triggersOn(ctx, r.OwnerID) {
+		return httpx.New(http.StatusForbidden, "triggers_off", "Расписания и ожидания в автоматизациях пока включены не всем")
 	}
 	if err := validLimits(r.Limits); err != nil {
 		return err
@@ -348,12 +355,36 @@ func (s *Service) hook(w http.ResponseWriter, r *http.Request) error {
 	if b.Source == "" || b.Fingerprint == "" || len(b.Fingerprint) > 500 || json.Unmarshal(b.Event, &event) != nil || event == nil {
 		return invalid("Нужны source, fingerprint и event (объект)")
 	}
+	if reserved(b.Source) {
+		return invalid(`Источники "schedule" и "wait" хаб ставит сам`)
+	}
 	rules, err := s.rules(r.Context(), "", true)
 	if err != nil {
 		return err
 	}
 	results := []map[string]any{}
+	waits := []WaitOutcome{}
+	on := map[string]bool{}
 	for _, rule := range rules {
+		if rule.Trigger.Wait != nil {
+			v, seen := on[rule.OwnerID]
+			if !seen {
+				v = s.triggersOn(r.Context(), rule.OwnerID)
+				on[rule.OwnerID] = v
+			}
+			if !v {
+				continue
+			}
+			out, ok, err := s.onWait(r.Context(), rule, b.Source, event, b.Event)
+			if err != nil {
+				return err
+			}
+			if ok {
+				s.log.Info("automation event touched a wait", "rule", rule.ID, "armed", out.Armed, "cleared", out.Cleared)
+				waits = append(waits, out)
+			}
+			continue
+		}
 		if rule.Trigger.Source != b.Source || !matchesFilter(rule.Trigger.Filter, event) {
 			continue
 		}
@@ -364,7 +395,7 @@ func (s *Service) hook(w http.ResponseWriter, r *http.Request) error {
 		s.log.Info("automation event matched a rule", "rule", rule.ID, "queued", out.Queued, "reason", out.Reason)
 		results = append(results, map[string]any{"ruleId": rule.ID, "queued": out.Queued, "runId": out.RunID, "reason": out.Reason})
 	}
-	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"matched": len(results), "results": results})
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"matched": len(results), "results": results, "waits": waits})
 	return nil
 }
 

@@ -43,10 +43,7 @@ const stage = (over: Partial<ISiteStage> = {}): ISiteStage => ({
 });
 
 const props = (over: Partial<IAppStageProps> = {}): IAppStageProps => ({
-  title: 'Документы',
-  icon: 'file-text',
-  object: null,
-  onHome: vi.fn(),
+  title: 'Главная',
   stage: stage(),
   frame: <div data-testid="frame" />,
   inspector: null,
@@ -74,13 +71,21 @@ describe('an app in Sinopia’s stage', () => {
     expect((section as HTMLElement | null)?.style.getPropertyValue('--site-chat')).toBe('372px');
   });
 
-  it('names the open object beside the home, and goes home from it', () => {
-    const onHome = vi.fn();
-    render(<AppStage {...props({ object: { title: 'plan-x1' }, onHome })} />);
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'true']);
-    fireEvent.click(tabs[0] as HTMLElement);
-    expect(onHome).toHaveBeenCalledTimes(1);
+  it('names what is open with its place, never the app, and goes back from it', () => {
+    const onBack = vi.fn();
+    render(<AppStage {...props({ title: 'plan-x1', crumb: 'acme/runtime !12', onBack })} />);
+    expect(document.querySelector('.hx-appmain__title')?.textContent).toBe('plan-x1');
+    expect(document.querySelector('.hx-appmain__crumb')?.textContent).toBe('acme/runtime !12');
+    fireEvent.click(screen.getByRole('button', { name: /^(Back|Назад)$/ }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('folds a screen opened from a chat with its own «Collapse», not a back arrow', () => {
+    const onCollapse = vi.fn();
+    render(<AppStage {...props({ onBack: vi.fn(), onCollapse })} />);
+    expect(screen.queryByRole('button', { name: /^(Back|Назад)$/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^(Collapse|Свернуть)$/ }));
+    expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 
   it('offers the chat’s places when the chat is folded, and the right pane', () => {

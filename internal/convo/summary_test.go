@@ -1,6 +1,7 @@
 package convo
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 func TestTheLastTurnIsSummedUpOnceAndTheSummaryIsTheRecap(t *testing.T) {
 	r := newRig(t)
 	var asked []string
-	r.rt.d.Summarizer = func(_ wire.Provider, message string, replies []string) (string, error) {
+	r.rt.d.Summarizer = func(_ wire.Provider, _ string, message string, replies []string) (string, error) {
 		asked = append(asked, message+" | "+strings.Join(replies, " / "))
 		return "Сделал форму оплаты.\nЖдёт проверки.", nil
 	}
@@ -64,7 +65,10 @@ func TestSummarizeRefusesWhatIsNotTheLastFinishedTurn(t *testing.T) {
 		t.Fatalf("no summarizer: %+v", res)
 	}
 	calls := 0
-	r.rt.d.Summarizer = func(wire.Provider, string, []string) (string, error) { calls++; return "", errors.New("no claude") }
+	r.rt.d.Summarizer = func(wire.Provider, string, string, []string) (string, error) {
+		calls++
+		return "", errors.New("no claude")
+	}
 	other := strings.TrimSuffix(turn.ID, "1") + "9"
 	if res := r.do(wire.ConversationSummarizeCmd{OpID: "sm1", ID: r.id, TurnID: other}); res.R != wire.ResultRefused || res.Code != wire.RefuseBadRequest {
 		t.Fatalf("not the last turn: %+v", res)
@@ -74,5 +78,101 @@ func TestSummarizeRefusesWhatIsNotTheLastFinishedTurn(t *testing.T) {
 	}
 	if rec := r.record(); rec.Recap != nil {
 		t.Fatalf("no recap without a summary: %+v", rec.Recap)
+	}
+}
+
+// finishedTurn runs one turn to its end in the rig, with the summarizer counting what it was asked.
+func finishedTurn(r *rig, asked *[]string) {
+	r.rt.d.Summarizer = func(p wire.Provider, model, message string, replies []string) (string, error) {
+		*asked = append(*asked, string(p)+"/"+model)
+		return "Готово.", nil
+	}
+	r.named("first")
+	r.settle(wire.StateReady)
+	r.user("Сделай")
+	r.say("Сделал")
+	r.turnEnd()
+	r.tick(time.Second)
+}
+
+// the server sums a turn up when it ends, without the page asking; the page's ask after is a no-op.
+func TestAFinishedTurnIsSummedUpWithoutThePageAsking(t *testing.T) {
+	r := newRig(t)
+	var asked []string
+	finishedTurn(r, &asked)
+	if len(asked) != 1 || asked[0] != "claude/" {
+		t.Fatalf("asked: %v", asked)
+	}
+	if rec := r.record(); rec.Recap == nil || rec.Recap.Text != "Готово." {
+		t.Fatalf("recap: %+v", rec.Recap)
+	}
+	turn := r.record().LastTurn
+	if res := r.do(wire.ConversationSummarizeCmd{OpID: "sm", ID: r.id, TurnID: turn.ID}); res.R != wire.ResultAccepted || len(asked) != 1 {
+		t.Fatalf("the page's ask: %+v %v", res, asked)
+	}
+}
+
+func TestSummaryModelIsTheSettingsPick(t *testing.T) {
+	r := newRig(t)
+	r.rt.d.SummaryModel = func() *wire.NoticeSummaryModel {
+		return &wire.NoticeSummaryModel{Provider: "codex", Model: "gpt-5-mini"}
+	}
+	var asked []string
+	finishedTurn(r, &asked)
+	if len(asked) != 1 || asked[0] != "codex/gpt-5-mini" {
+		t.Fatalf("asked: %v", asked)
+	}
+}
+
+func TestSummaryOffAsksNobody(t *testing.T) {
+	r := newRig(t)
+	r.rt.d.SummaryModel = func() *wire.NoticeSummaryModel { return &wire.NoticeSummaryModel{Provider: wire.NoticeSummaryOff} }
+	var asked []string
+	finishedTurn(r, &asked)
+	if len(asked) != 0 {
+		t.Fatalf("asked: %v", asked)
+	}
+	turn := r.record().LastTurn
+	if res := r.do(wire.ConversationSummarizeCmd{OpID: "sm", ID: r.id, TurnID: turn.ID}); res.R != wire.ResultRefused || len(asked) != 0 {
+		t.Fatalf("the page's ask when off: %+v %v", res, asked)
+	}
+}
+
+func TestADelegatedChatIsNotSummedUp(t *testing.T) {
+	r := newRig(t)
+	r.named("first")
+	if err := r.rt.call(context.Background(), r.id, func(c *conv, now time.Time) {
+		parent := "tab-parent"
+		c.rec.ParentID = &parent
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	finishedTurn(r, &asked)
+	if len(asked) != 0 {
+		t.Fatalf("asked: %v", asked)
+	}
+}
+
+// The turn is summed up once: not again after a restart, which finds the recap on the record.
+func TestARestartDoesNotSumUpTheSameTurnAgain(t *testing.T) {
+	r := newRig(t)
+	var asked []string
+	finishedTurn(r, &asked)
+	if len(asked) != 1 {
+		t.Fatalf("asked: %v", asked)
+	}
+	summarizer := r.rt.d.Summarizer
+	r.rt.Stop()
+	r.rt = r.runtime()
+	r.rt.d.Summarizer = summarizer
+	if err := r.rt.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(time.Second)
+	r.tick(metaEvery)
+	turn := r.record().LastTurn
+	if res := r.do(wire.ConversationSummarizeCmd{OpID: "sm", ID: r.id, TurnID: turn.ID}); res.R != wire.ResultAccepted || len(asked) != 1 {
+		t.Fatalf("after the restart: %+v %v", res, asked)
 	}
 }

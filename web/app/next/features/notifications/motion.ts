@@ -24,7 +24,10 @@ export const useFlip = (container: RefObject<HTMLElement | null>, active: boolea
       before.current = new Map();
       return;
     }
-    const nodes = [...root.querySelectorAll<HTMLElement>('[data-flip]')];
+    // A row in a swipe or on its way out keeps its own move: a spring from here would pull it back into the list.
+    const nodes = [...root.querySelectorAll<HTMLElement>('[data-flip]')].filter(
+      (node) => node.dataset.swiping === undefined && node.dataset.leaving === undefined,
+    );
     const now = new Map<string, number>();
     const tops = nodes.map(
       (node) => node.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop,
@@ -79,19 +82,41 @@ export const useSwipe = (target: RefObject<HTMLElement | null>, enabled: boolean
     let wheelTimer = 0;
     let swallow = false;
 
-    const set = (x: number, animate: boolean) => {
-      el.style.transition = animate
-        ? `transform ${LEAVE_MS}ms var(--hx-ease-out), opacity ${LEAVE_MS}ms var(--hx-ease-out)`
-        : 'none';
-      el.style.transform = x === 0 ? '' : `translateX(${x}px)`;
-      el.style.opacity = x === 0 ? '' : String(Math.max(0.2, 1 - Math.abs(x) / el.offsetWidth));
+    // The row's width, read once as the gesture starts: a read after every write would lay the page out on each move.
+    let width = 0;
+    let frame = 0;
+    let shift = 0;
+    const paint = () => {
+      frame = 0;
+      el.style.transform = shift === 0 ? '' : `translateX(${shift}px)`;
+      el.style.opacity = shift === 0 ? '' : String(Math.max(0.2, 1 - Math.abs(shift) / width));
+    };
+    // The shift follows the gesture once a frame, however many moves a fast mouse or a trackpad sends in between.
+    const set = (x: number) => {
+      if (el.dataset.swiping === undefined) {
+        el.dataset.swiping = '';
+        el.style.transition = 'none';
+        el.style.willChange = 'transform, opacity';
+        width = el.offsetWidth || 1;
+      }
+      shift = x;
+      if (frame === 0) frame = requestAnimationFrame(paint);
+    };
+    const still = () => {
+      if (frame !== 0) cancelAnimationFrame(frame);
+      frame = 0;
+      el.style.willChange = '';
     };
     const back = () => {
+      still();
+      delete el.dataset.swiping;
       el.style.transition = `transform ${SPRING_MS}ms var(--nc-spring), opacity 200ms var(--hx-ease-out)`;
       el.style.transform = '';
       el.style.opacity = '';
     };
     const fly = (dir: number) => {
+      still();
+      el.dataset.swiping = '';
       el.style.transition = `transform ${LEAVE_MS}ms var(--hx-ease-out), opacity ${LEAVE_MS}ms var(--hx-ease-out)`;
       el.style.transform = `translateX(${dir * (el.offsetWidth + 24)}px)`;
       el.style.opacity = '0';
@@ -129,7 +154,7 @@ export const useSwipe = (target: RefObject<HTMLElement | null>, enabled: boolean
       speed = (e.clientX - last.x) / dt;
       last = { x: e.clientX, t: e.timeStamp };
       dx = mx;
-      set(dx, false);
+      set(dx);
     };
     const onUp = (e: PointerEvent) => {
       if (!start || e.pointerId !== start.id) return;
@@ -154,7 +179,7 @@ export const useSwipe = (target: RefObject<HTMLElement | null>, enabled: boolean
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       e.preventDefault();
       wheel -= e.deltaX;
-      set(wheel, false);
+      set(wheel);
       window.clearTimeout(wheelTimer);
       wheelTimer = window.setTimeout(() => {
         const shift = wheel;
@@ -171,6 +196,7 @@ export const useSwipe = (target: RefObject<HTMLElement | null>, enabled: boolean
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       window.clearTimeout(wheelTimer);
+      if (frame !== 0) cancelAnimationFrame(frame);
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);

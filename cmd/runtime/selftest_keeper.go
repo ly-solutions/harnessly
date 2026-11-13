@@ -316,6 +316,12 @@ func startKeeper(d deps) {
 	// Before any test of this run: what a runtime stopped in the middle of one left behind.
 	k.sweep("start")
 	go func() {
+		for {
+			time.Sleep(selftestLeftEvery)
+			k.sweepLeft()
+		}
+	}()
+	go func() {
 		time.Sleep(selftestAfterBoot)
 		for {
 			k.terminal()

@@ -261,8 +261,12 @@ func deckSettingsPatch(cur DeckSettings, patch map[string]json.RawMessage) (Deck
 			err = json.Unmarshal(raw, &s.Script)
 		case "theme":
 			err = json.Unmarshal(raw, &s.Theme)
+			s.Picked = true
 		case "font":
 			err = json.Unmarshal(raw, &s.Font)
+			s.Picked = true
+		case "picked":
+			err = json.Unmarshal(raw, &s.Picked)
 		case "style":
 			var st *DeckStyle
 			if err = json.Unmarshal(raw, &st); err == nil {
@@ -336,6 +340,7 @@ func BuildDeckSettings(in DeckInit) DeckSettings {
 			}
 			s.Themes = append([]DeckTheme{{ID: "tpl", Name: name, Vars: vars}}, DefaultDeckThemes()...)
 			s.Theme = "tpl"
+			s.Picked = true
 		}
 	}
 	return s

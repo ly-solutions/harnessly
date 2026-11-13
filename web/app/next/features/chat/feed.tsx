@@ -118,6 +118,8 @@ export interface IFeedProps extends THandlers {
   items: FeedItem[] | null;
   /** «Скопировать ссылку на чат» of the feed's menu. */
   onCopyChatLink?: () => void;
+  /** «Перезагрузить чат» of the feed's menu: the chat asked from its machine anew. */
+  onReloadChat?: () => void;
   /** The first load failed: the feed says so and offers to try again. */
   failed?: boolean;
   /** Why it did not load, in words. */
@@ -882,6 +884,7 @@ const Feed = (props: IFeedProps) => {
         lastAnswer={lastAnswer}
         onFork={props.onForkTurn}
         onCopyLink={props.onCopyChatLink}
+        onReloadChat={props.onReloadChat}
       />
     </div>
   );

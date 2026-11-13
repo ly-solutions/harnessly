@@ -231,6 +231,19 @@ export class RealtimeClient {
     this.sendSub(ch);
   }
 
+  /**
+   * «Перезагрузить чат»: a held channel is asked for whole on a new socket. Its cursor goes, so nothing of the old
+   * line is trusted; the caller forgets the channel's resume first, or the new socket would take the cursor from it.
+   */
+  reload(ch: Channel): void {
+    const sub = this.subs.get(ch);
+    if (sub) {
+      sub.cursor = null;
+      sub.resyncing = false;
+    }
+    this.reconnectNow();
+  }
+
   /** Resolves once the channel has shown seq (the effect of a command), or when it cannot any more. */
   waitSeq(ch: Channel, seq: number): Promise<'seen' | 'gone'> {
     const sub = this.subs.get(ch);

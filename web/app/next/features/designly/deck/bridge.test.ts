@@ -222,4 +222,16 @@ describe('the rest of the bridge', () => {
     postDeck(null, 'http://127.0.0.1:4100/', { type: 'tk:deck-step', n: 2 });
     expect(post).toHaveBeenCalledTimes(1);
   });
+
+  it('posts to a board in a slot by path at the only address its opaque origin receives at', () => {
+    const post = vi.fn();
+    const frame = { contentWindow: { postMessage: post } } as unknown as HTMLIFrameElement;
+    const key = '0123456789abcdef0123456789abcdef'; // gitleaks:allow (a test slot key, not a secret)
+    postDeck(frame, `https://hub.example/m/abc/__pv/1-${key}/a/acme/p/Cover.dc.html`, {
+      type: 'tk:deck',
+      on: true,
+      mode: 'edit',
+    });
+    expect(post).toHaveBeenCalledWith({ type: 'tk:deck', on: true, mode: 'edit' }, '*');
+  });
 });

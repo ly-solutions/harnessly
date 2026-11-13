@@ -260,12 +260,15 @@ func (r *Runtime) restore(f convFile) { r.wake(f, false) }
 func (r *Runtime) wake(f convFile, parked bool) *actor {
 	rec := f.Conv
 	rec.Session, rec.TranscriptPath, rec.AgentSessionID = f.Session, f.TranscriptPath, f.AgentSessionID
-	rec.BgAgents = 0 // the agent's tasks are read again after a start
+	// The agent's tasks are read again after a start; what it waited for when the runtime went down says it was at work.
+	bgAtStop := rec.BgAgents
+	rec.BgAgents = 0
 	if rec.SeenAt == 0 {
 		// A record from before seenAt was kept: what it had finished then was read, or every old chat would be unread.
 		rec.SeenAt = rec.LastActivityAt
 	}
 	c := newConv(&r.d, rec)
+	c.bgAtStop, c.lostAtWork = bgAtStop, f.LostAtWork
 	c.handoffArtifact, c.handoffArtifactClientID = f.HandoffArtifact, f.HandoffArtifactClientID
 	c.deletedAt = f.DeletedAt
 	c.rewinds, c.left = f.Rewinds, f.Left
@@ -901,7 +904,7 @@ func (c *conv) file() convFile {
 	return convFile{Conv: rec, Session: c.rec.Session, TranscriptPath: c.rec.TranscriptPath,
 		AgentSessionID: c.rec.AgentSessionID, HandoffArtifact: c.handoffArtifact,
 		HandoffArtifactClientID: c.handoffArtifactClientID, Outbox: c.box.State(), Questions: c.questions(), Permissions: c.permissions(),
-		DeletedAt: c.deletedAt, Rewinds: c.rewinds, Left: c.left, Rest: c.rest()}
+		DeletedAt: c.deletedAt, Rewinds: c.rewinds, Left: c.left, Rest: c.rest(), LostAtWork: c.lostAtWork}
 }
 
 // save writes the conversation when it changed, at most every SaveEvery; a conversation deleted longer than
@@ -1487,6 +1490,8 @@ func convOf(cmd wire.Command) string {
 	case wire.ConversationPinCmd:
 		return m.ID
 	case wire.ConversationTestCmd:
+		return m.ID
+	case wire.ConversationViewCmd:
 		return m.ID
 	case wire.ConversationAppsCmd:
 		return m.ID

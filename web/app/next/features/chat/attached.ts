@@ -4,8 +4,10 @@
 // chips, the words stay the person's own.
 import { REF_KINDS, type AttachmentRef, type MessageRef, type RefKind } from '@/next/protocol/v2';
 
-/** The block at the very end of a text, after a blank line or alone. */
-const BLOCK_RE = /(?:^|\n\n)<attached>\n([\s\S]*?)\n<\/attached>\s*$/;
+/** A block anywhere in the text: at its end as the runtime writes it, or inside a wrapper the agent's CLI put round the
+ *  whole message (a dictated text comes back as `<pasted_content>`), or several of a message that was a queue of them. */
+const BLOCK_RE = /(?:^|\n+)[ \t]*<attached>\n([\s\S]*?)\n<\/attached>[ \t]*(?=\n|$)/g;
+const blocksOf = (text: string): string[] => [...text.matchAll(BLOCK_RE)].map((m) => m[1]);
 const REF_RE = /^<ref kind="([a-z]+)" id="([^"]*)" title="([^"]*)"\/>/;
 /** A file the person uploaded with the message (attach.UploadItem): a file of the bubble, not a place. */
 const UPLOAD_RE = /^<ref kind="upload" id="([^"]*)" title="([^"]*)"\/>/;
@@ -31,17 +33,26 @@ const NONE: MessageRef[] = [];
 
 /** The words and the places of a text the runtime wrote; a text without the block is the words alone. */
 export const readAttached = (text: string): IAttachedRead => {
-  const m = BLOCK_RE.exec(text);
-  if (!m) return { text, refs: NONE };
-  const refs = m[1].split('\n').flatMap((line): MessageRef[] => {
-    const tag = REF_RE.exec(line);
-    if (!tag || !isRefKind(tag[1])) return [];
-    const kind = tag[1];
-    const id = unescape(tag[2]);
-    // The line's own words are the agent's; the id is where the page opens it again (a design has no target).
-    return [{ kind, id, title: unescape(tag[3]), target: kind === 'design' ? '' : id }];
-  });
-  return { text: text.slice(0, m.index).trimEnd(), refs };
+  const blocks = blocksOf(text);
+  if (blocks.length === 0) return { text, refs: NONE };
+  const refs = blocks
+    .join('\n')
+    .split('\n')
+    .flatMap((line): MessageRef[] => {
+      const tag = REF_RE.exec(line);
+      if (!tag || !isRefKind(tag[1])) return [];
+      const kind = tag[1];
+      const id = unescape(tag[2]);
+      // The line's own words are the agent's; the id is where the page opens it again (a design has no target).
+      return [{ kind, id, title: unescape(tag[3]), target: kind === 'design' ? '' : id }];
+    });
+  return {
+    text: text
+      .replace(BLOCK_RE, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+    refs,
+  };
 };
 
 /**
@@ -49,15 +60,18 @@ export const readAttached = (text: string): IAttachedRead => {
  * has no attachments of its own, and its files stay in the bubble by the block.
  */
 export const filesOf = (text: string, own: readonly AttachmentRef[]): AttachmentRef[] => {
-  const block = BLOCK_RE.exec(text);
-  if (!block) return [...own];
-  const named = block[1].split('\n').flatMap((line): AttachmentRef[] => {
-    const tag = UPLOAD_RE.exec(line);
-    if (!tag) return [];
-    const id = unescape(tag[1]);
-    if (own.some((file) => file.id === id)) return [];
-    return [{ id, name: unescape(tag[2]), kind: 'file', mime: 'application/octet-stream' }];
-  });
+  const blocks = blocksOf(text);
+  if (blocks.length === 0) return [...own];
+  const named = blocks
+    .join('\n')
+    .split('\n')
+    .flatMap((line): AttachmentRef[] => {
+      const tag = UPLOAD_RE.exec(line);
+      if (!tag) return [];
+      const id = unescape(tag[1]);
+      if (own.some((file) => file.id === id)) return [];
+      return [{ id, name: unescape(tag[2]), kind: 'file', mime: 'application/octet-stream' }];
+    });
   return [...own, ...named];
 };
 

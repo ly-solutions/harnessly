@@ -32,6 +32,9 @@ type snapshot struct {
 	Projects map[string]snapGrant  `json:"projects"`
 	Team     map[string]string     `json:"team"`
 	People   map[string]snapPerson `json:"people"`
+	// Unrecorded "closed": a project the snapshot has no row for is closed to everyone but the machine's own person
+	// (HUB_DESIGN_UNRECORDED=closed); absent, it is open as before.
+	Unrecorded string `json:"unrecorded,omitempty"`
 }
 
 const maxSnapPeople = 500
@@ -105,6 +108,9 @@ func (s *Service) build(ctx context.Context, m store.Machine) (snapshot, error) 
 		}
 	}
 	snap := snapshot{Enforce: true, Projects: map[string]snapGrant{}, Team: map[string]string{}, People: people}
+	if s.closed {
+		snap.Unrecorded = "closed"
+	}
 	if top, ok := people[machinePerson]; ok {
 		snap.Projects, snap.Team = top.Projects, top.Team
 	} else {

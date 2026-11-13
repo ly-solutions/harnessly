@@ -3,8 +3,9 @@
 import { gatewayPath, platformPath, runtimePath } from '@/next/core/net/machine';
 import { appConfig } from '@/platform/config';
 import { connectionStore } from '@/next/stores/connection';
+import { downloadHref } from '@/next/features/pane/download';
 export { DELIVERED_VIEW, deliveredViewOf, type DeliveredView } from '@/next/features/pane/delivered-kind';
-import type { MachineId } from '@/next/protocol/v2';
+import type { ConvId, MachineId } from '@/next/protocol/v2';
 
 const route = (m: MachineId, query: string) => runtimePath(platformPath(`/file-preview?${query}`), m);
 const enc = encodeURIComponent;
@@ -15,6 +16,13 @@ export const previewUrl = (m: MachineId, path: string) => {
   if (appConfig().centralUploads && connectionStore.get(m)?.k !== 'live')
     return `${gatewayPath('/uploads/delivered/by-path')}?${new URLSearchParams({ machine: m, path }).toString()}`;
   return route(m, `path=${enc(path)}`);
+};
+/** The file for the pane of a chat: read through the chat, under the rule its files are saved by, so a file
+ *  of the chat's folder opens wherever the folder lies (a project of the shared design library is none of the viewer's
+ *  places). A machine that is not live is answered as previewUrl says. */
+export const chatPreviewUrl = (m: MachineId, conv: ConvId, path: string) => {
+  if (appConfig().centralUploads && connectionStore.get(m)?.k !== 'live') return previewUrl(m, path);
+  return `${downloadHref(m, conv, [path])}&show=1`;
 };
 /** What the platform read of a handed-over file: under a hub the machine put its bytes into the hub's store by it. */
 export interface IKeptFile {

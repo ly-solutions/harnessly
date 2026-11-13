@@ -12,6 +12,8 @@ export class WordedError extends Error {
     readonly code: RefuseCode | 'network' | 'http' = 'http',
     /** Designly: a project made before the failure (its conversation did not start). */
     readonly projectId: string | null = null,
+    /** The HTTP status the refusal came with; null when nothing answered. */
+    readonly status: number | null = null,
   ) {
     super(message);
   }
@@ -56,12 +58,13 @@ export const wordedPage = async <T>(
     try {
       refusal = readRefusal(doc);
     } catch {
-      throw new WordedError(t('next.failure.http'));
+      throw new WordedError(t('next.failure.http'), 'http', null, res.status);
     }
     throw new WordedError(
       refusal.message || t(`next.refuse.${refusal.code}`),
       refusal.code,
       refusal.projectId ?? null,
+      res.status,
     );
   }
   try {

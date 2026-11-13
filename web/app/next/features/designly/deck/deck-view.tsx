@@ -105,6 +105,7 @@ import {
 import { useDeckComments } from '@/next/features/designly/deck/use-deck-comments';
 import { useDeckDictation } from '@/next/features/designly/deck/dictation';
 import { DICT } from '@/next/features/designly/deck/dictation-state';
+import { DECK_KEEP_MAX, DECK_KEEP_PHONE, warmOrder } from '@/next/features/designly/deck/warm';
 
 /** A pane at least this wide (px) shows the deck as its own page does: the panel, the strip on the left. */
 const DECK_PANE_WIDE_PX = 1100;
@@ -795,25 +796,30 @@ const DeckView = (props: IDeckViewProps) => {
   // The show and the recording uncover a slide's steps one by one; the editor shows them all.
   const tellMode = () => {
     post({ type: 'tk:tweaks-host', on: true, open: false });
+    post({ type: 'tk:deck-live', on: true });
     post({ type: 'tk:images', on: imagesOn, scale: frameScale(frameRef.current) });
     if (mode !== null) post({ type: 'tk:deck', on: true, mode });
     if (playing) post({ type: 'tk:deck-step', n: playStep });
   };
-  // The boards of the slides next to the one on screen are loaded ahead, once their slides are drawn; a
-  // recording takes the processor for itself. A board loaded ahead is told the mode, so that it says when it is drawn.
-  const aheadSrcs =
-    hold === null && screen !== DECK_SCREEN.rec
-      ? [index - 1, index + 1].flatMap((i) => {
-          const board = boards[i];
-          // A page the agent has not drawn yet (as the stage's own placeholder reads it) is not loaded ahead.
-          if (!board || deck?.slides.find((s) => s.path === board.path)?.blank === true) return [];
-          const address = props.frameSrc(board.path);
-          return address === null ? [] : [address];
-        })
-      : [];
+  // The boards of the other slides are loaded ahead once the slide on screen is drawn, its neighbours first,
+  // and stay loaded (warm.ts); a recording takes the processor for itself, and a slide being made holds the stage, so
+  // nothing new loads meanwhile. A board loaded ahead is told the mode, so that it says when it is drawn.
+  const aheadSrcs = warmOrder(boards.length, index)
+    .flatMap((i) => {
+      const board = boards[i];
+      // A page the agent has not drawn yet (as the stage's own placeholder reads it) is not loaded ahead.
+      if (!board || deck?.slides.find((s) => s.path === board.path)?.blank === true) return [];
+      const address = props.frameSrc(board.path);
+      return address === null ? [] : [address];
+    })
+    .slice(0, phone ? DECK_KEEP_PHONE : DECK_KEEP_MAX);
+  const warmAhead = hold === null && screen !== DECK_SCREEN.rec;
   const tellAhead = (frame: HTMLIFrameElement, address: string) => {
     if (mode !== null) postDeck(frame, address, { type: 'tk:deck', on: true, mode });
+    postDeck(frame, address, { type: 'tk:deck-live', on: false });
   };
+  const tellAway = (frame: HTMLIFrameElement, address: string) =>
+    postDeck(frame, address, { type: 'tk:deck-live', on: false });
   // The board is the stage's width shrunk to the stage: its buttons are told the scale again whenever the stage is resized.
   useEffect(() => {
     const frame = frameRef.current;
@@ -1005,7 +1011,9 @@ const DeckView = (props: IDeckViewProps) => {
         hold={hold}
         frameRef={frameRef}
         ahead={aheadSrcs}
+        warm={warmAhead}
         onAhead={tellAhead}
+        onAway={tellAway}
         onReady={(ready) => onBoard({ k: 'ready', ...ready })}
         onLoad={tellMode}
         painted={painted}

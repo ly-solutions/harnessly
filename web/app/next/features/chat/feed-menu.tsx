@@ -1,5 +1,6 @@
 // The feed's own menu (a right click or a two-finger tap in the chat): the answer under the pointer copied or
-// branched from, the chat's link, the right pane. Selected text, links, pictures and code fields keep the browser's
+// branched from, the chat's link, the right pane, and the two ways to start over when the link is in doubt: the chat
+// asked from its machine anew, or the whole page. Selected text, links, pictures and code fields keep the browser's
 // menu (ui/context-menu.tsx); a held finger selects text here, so it opens nothing.
 import { useKeyHint } from '@/next/features/keys/keys-help';
 import { runKeyAction } from '@/next/features/keys/use-keys';
@@ -31,9 +32,11 @@ interface IFeedMenuProps {
   lastAnswer: string | null;
   onFork?: (turnId: string) => Promise<unknown>;
   onCopyLink?: () => void;
+  /** The chat asked from its machine anew, the page staying as it is. */
+  onReloadChat?: () => void;
 }
 
-const FeedMenu = ({ menu, items, lastAnswer, onFork, onCopyLink }: IFeedMenuProps) => {
+const FeedMenu = ({ menu, items, lastAnswer, onFork, onCopyLink, onReloadChat }: IFeedMenuProps) => {
   const copyKey = useKeyHint('global.copyAnswer');
   const paneKey = useKeyHint('global.pane');
   const turn = turnAt(menu.target, items);
@@ -62,6 +65,15 @@ const FeedMenu = ({ menu, items, lastAnswer, onFork, onCopyLink }: IFeedMenuProp
       )}
       <MenuItem icon="panel-right" hint={paneKey} onClick={() => runKeyAction('global.pane')}>
         {t('next.feedMenu.pane')}
+      </MenuItem>
+      <MenuGap />
+      {onReloadChat && (
+        <MenuItem icon="refresh-cw" onClick={onReloadChat}>
+          {t('next.feedMenu.reloadChat')}
+        </MenuItem>
+      )}
+      <MenuItem icon="rotate-cw" onClick={() => window.location.reload()}>
+        {t('next.feedMenu.reloadPage')}
       </MenuItem>
     </PointMenu>
   );

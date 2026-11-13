@@ -118,6 +118,11 @@ gateway and its certificate must be reachable from the machine.
   `harnessly app validate ./folder --strict` says before that what is wrong; `harnessly app pack ./folder` writes
   `<id>-<version>.hlapp`; `harnessly app install ./file.hlapp` installs it. Sign the package so the other side knows whose
   it is (below).
+- **«Доски» and «Документы»** are built-in apps: the machines clone their packages from the services' public
+  repositories. Mirror the two repositories inside and name the mirrors on the hub — `HUB_BOARDS_APP_REPO`,
+  `HUB_ARTIFACTS_APP_REPO` (https), with `HUB_BOARDS_APP_BRANCH` / `HUB_ARTIFACTS_APP_BRANCH` for a branch or a tag —
+  or set `HUB_ENV_APPS=off` and give the apps from the team's catalog
+  ([Built-in apps](../hub/environment.md#built-in-apps)).
 - **An app's backend** is your service (`.mcp.json` with `type: http`): list its host in `internalHosts`; your CA gives
   the trust, and the app's own client certificate makes the call mutual TLS (below).
 

@@ -81,7 +81,12 @@ func (l *Library) serveMotionKit(w http.ResponseWriter, r *http.Request, pathnam
 	}
 	h := w.Header()
 	h.Set("ETag", f.etag)
-	h.Set("Cache-Control", "public, max-age=300")
+	cache := libRevalidate
+	// An address with its version never changes what it holds.
+	if v, ok := search(r.URL.Query(), libVersionParam); ok && v == strings.Trim(f.etag, `"`)[:12] {
+		cache = libImmutable
+	}
+	h.Set("Cache-Control", cache)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Type", f.typ)
 	h.Add("Vary", "Accept-Encoding")

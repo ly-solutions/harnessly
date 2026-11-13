@@ -38,10 +38,13 @@ hub's own sentence, which names the missing setting (`HUB_DOCS`, `HUB_ARTIFACTS_
 | `HUB_BOARD_COMMAND` | The name of the boards tool the agent is told to answer a comment with. Unset: `board`. |
 | `HUB_BOARDS_PUBLIC_URL`, `HUB_ARTIFACTS_PUBLIC_URL` | The services' addresses as machines and browsers reach them, `https://`. Unset: the same as `HUB_BOARDS_URL` / `HUB_ARTIFACTS_URL`. |
 
+| `HUB_ENV_APPS` | `on` (the default): every organization has the apps «Доски» and «Документы» while the hub has the address of their service. `off`: no built-in apps ([Built-in apps](environment.md#built-in-apps)). |
+| `HUB_BOARDS_APP_REPO`, `HUB_BOARDS_APP_BRANCH`, `HUB_ARTIFACTS_APP_REPO`, `HUB_ARTIFACTS_APP_BRANCH` | Where the machines take the two packages from, for a mirror in a closed network: an https address of a repository with the folder `harnessly-app`, and a branch or a tag. Unset: the services' public repositories, `main`. |
+
 The public addresses go to the machines with the environment's apps, as `${install:boardsUrl}` and
 `${install:artifactsUrl}` of their packages ([Your own server](../build-apps/03-backend.md#secrets-once-more)); the hub
 itself keeps calling `HUB_BOARDS_URL` / `HUB_ARTIFACTS_URL`, which may be an address inside the cluster. An installation
-without an address has no such app.
+without an address has no such app; with one, every organization has the app with no setting up.
 
 ### Rights for the documents service
 

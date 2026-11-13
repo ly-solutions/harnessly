@@ -125,6 +125,41 @@ func (k *keeper) sweep(when string) {
 	}
 }
 
+// selftestLeftAfter is past any scenario's term (agentSelftestLimit): a self-test's pane this old was left behind.
+const (
+	selftestLeftAfter = 10 * time.Minute
+	selftestLeftEvery = 5 * time.Minute
+)
+
+// leftSessions are the self-test's panes among names made more than selftestLeftAfter before now; created answers a
+// session's #{session_created}, and one it cannot tell of is not touched.
+func leftSessions(names []string, prefix string, now time.Time, created func(name string) (string, bool)) []string {
+	var out []string
+	for _, name := range selftestSessions(names, prefix) {
+		raw, ok := created(name)
+		at, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if ok && err == nil && at > 0 && now.Sub(time.Unix(at, 0)) > selftestLeftAfter {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// sweepLeft ends the self-test's panes a run did not close: its KillSession is one tmux command, and a loaded tmux
+// that did not answer it left a shell for hours.
+func (k *keeper) sweepLeft() {
+	tm := k.d.Tmux
+	left := leftSessions(tm.ListSessions(), tm.Names().Prefix, time.Now(), func(name string) (string, bool) {
+		return tm.Display(name, "#{session_created}")
+	})
+	for _, name := range left {
+		tm.KillSession(name)
+	}
+	if len(left) > 0 {
+		agent.Log("warn", "selftest leftovers ended", agent.F{K: "when", V: "left"}, agent.F{K: "panes", V: len(left)})
+	}
+}
+
 // stop is the runtime going down: a running scenario is cut short and its agent ended.
 func (k *keeper) stop() {
 	k.mu.Lock()

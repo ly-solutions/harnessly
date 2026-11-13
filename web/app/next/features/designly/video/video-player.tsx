@@ -8,6 +8,7 @@ import { formatMs } from '@/next/features/designly/deck/clock';
 import { t } from '@/next/i18n';
 import Icon from '@/next/ui/icon';
 import { videoFileHref } from '@/next/features/designly/video/api';
+import { frameOrigin, fromFrame } from '@/next/features/designly/bridge-origin';
 import { useBoardErrors } from '@/next/features/designly/use-board-errors';
 import { postVideo, readVideoMessage, type TVideoBoardMessage } from '@/next/features/designly/video/bridge';
 import {
@@ -90,9 +91,6 @@ const EXTERNAL_SEEK_MS = 250;
 const SLOTS: readonly TVideoSlotIndex[] = [0, 1];
 
 const nowMs = () => performance.now();
-
-const originOf = (src: string | null): string | null =>
-  src === null ? null : new URL(src, window.location.href).origin;
 
 const VideoPlayer = ({
   machine,
@@ -280,7 +278,8 @@ const VideoPlayer = ({
     for (const slot of SLOTS) {
       const win = frameRefs[slot].current?.contentWindow;
       if (!win || event.source !== win) continue;
-      if (event.origin !== originOf(slots[slot].src)) return;
+      const src = slots[slot].src;
+      if (src === null || !fromFrame(event, win, frameOrigin(src))) return;
       const read = readVideoMessage(event.data);
       if (read !== null) take(slot, read);
       return;

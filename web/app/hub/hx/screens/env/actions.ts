@@ -210,6 +210,21 @@ export const useActions = (
     return true;
   };
 
+  /** «Выключено у всех» of an app of the platform itself: the one thing an organization changes in it. */
+  const setAppOff = async (row: EnvEntryRow, off: boolean): Promise<void> => {
+    const set = (v: boolean) =>
+      run(async () => {
+        try {
+          await api.catalogPatch(org, row.itemId, { source: { off: v } });
+        } finally {
+          await refresh();
+        }
+        return true;
+      });
+    if (!(await set(off))) return;
+    notice.say(off ? `«${row.name}» выключено у всех` : `«${row.name}» снова у всех`, () => void set(!off));
+  };
+
   const pin = async (row: EnvEntryRow): Promise<void> => {
     const on = !row.pinned;
     const ok = await run(async () => {
@@ -436,6 +451,7 @@ export const useActions = (
     save,
     remove,
     pin,
+    setAppOff,
     reorder,
     copy,
     run,

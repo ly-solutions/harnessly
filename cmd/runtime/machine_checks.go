@@ -587,7 +587,7 @@ func ownVoice(dataDir string) func() *engine.Engine {
 func newMachineProbe(d deps, self *selfupdate.Updater) machineProbe {
 	tools := d.Tools
 	if tools == nil {
-		tools = preflight.New(d.Home)
+		tools = preflight.Shared(d.Home)
 	}
 	binDir := ""
 	if exe, err := os.Executable(); err == nil {

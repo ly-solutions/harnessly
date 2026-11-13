@@ -185,6 +185,22 @@ describe('VideoPlayer', () => {
     expect(toB).not.toHaveBeenCalled();
   });
 
+  it('hears a scene in a slot by path, whose sandbox makes it say null, and answers it at its window', () => {
+    const PV = `${ORIGIN}/m/m1/__pv/1-key`;
+    const { container } = render(
+      <VideoPlayer {...props({ src: `${PV}/first/s1.dc.html`, frameSrc: (path) => `${PV}/open/${path}` })} />,
+    );
+    const [a] = frames(container);
+    say(a.contentWindow, { type: 'tk:video-ready', moments: [] }, 'evil.test');
+    expect(frames(container)).toHaveLength(1);
+    say(a.contentWindow, { type: 'tk:video-ready', moments: [] }, 'null');
+    expect(frames(container)).toHaveLength(2);
+    const [, b] = frames(container);
+    const toB = vi.spyOn(b.contentWindow as Window, 'postMessage');
+    say(b.contentWindow, { type: 'tk:video-ready', moments: [] }, 'null');
+    for (const [, target] of toB.mock.calls) expect(target).toBe('*');
+  });
+
   it('shows the subtitle line of the scene in the live player', () => {
     const { container } = render(<VideoPlayer {...props({ time: 3500 })} />);
     expect(container.querySelector('.hx-video__sub')?.textContent).toBe('Two.');
