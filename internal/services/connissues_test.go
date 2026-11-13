@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -283,5 +284,29 @@ func TestTaskCardWithoutConnectionsIsUnchanged(t *testing.T) {
 	h := &Handlers{S: New(Config{}), Session: func(*http.Request) bool { return true }}
 	if code, out := serve(h.Task, "/task?key=JR-2"); code != 400 || out["error"] != "Unsupported key" {
 		t.Fatalf("%d %v", code, out)
+	}
+}
+
+// A bare key that matches the deployment's task-key pattern is still the person's connection to serve when one has
+// issues: without a deployment tracker the card was a no-token error, and a connection of the person's is primary
+// over the deployment's, as for the tracker app and link previews.
+func TestTaskCardBareKeyPrefersThePersonsConnection(t *testing.T) {
+	setFakeIssues(t, fakeIssues(), nil)
+	cs, _ := connService(t)
+	h := &Handlers{S: New(Config{Connections: cs, TaskKey: regexp.MustCompile(`^JR-[0-9]+$`)}),
+		Session: func(*http.Request) bool { return true }}
+	if code, task := serve(h.Task, "/task?key=JR-2"); code != 200 || task["title"] != "Child" {
+		t.Fatalf("via the connection: %d %v", code, task)
+	}
+	// Only the deployment's tracker (no connection of the person's): the key keeps its own read, a no-token
+	// answer here, never the connection branch.
+	env := connections.EnvConn{Conn: connections.Conn{ID: "env-tracker", Kind: connections.YouTrack, BaseURL: "https://tracker.example.com",
+		Capabilities: []connections.Capability{connections.Issues}}}
+	cs2 := connections.New(t.TempDir(), memSecrets{}, nil, env)
+	h2 := &Handlers{S: New(Config{Connections: cs2, TrackerURL: "https://tracker.example.com", TaskKey: regexp.MustCompile(`^JR-[0-9]+$`)}),
+		Session: func(*http.Request) bool { return true }}
+	code, out := serve(h2.Task, "/task?key=JR-2")
+	if code != 503 || out["error"] != TaskNoToken {
+		t.Fatalf("via the deployment's tracker: %d %v", code, out)
 	}
 }

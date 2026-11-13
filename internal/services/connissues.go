@@ -220,10 +220,13 @@ func (s *Service) connFeed(ctx context.Context, c connections.Conn) wire.AppFeed
 
 // ── task card ──
 
-// servesTracker says whether conn names the deployment's tracker for the card: none named, or its env connection.
+// servesTracker says whether conn names the deployment's tracker for the card: its env connection, or none named
+// while no connection of the person's has issues. With none named the person's own connection is primary over the
+// deployment's tracker, as for the tracker app and link previews, so its keys are read through it.
 func (s *Service) servesTracker(conn string) bool {
 	if conn == "" {
-		return true
+		_, personal := s.personalIssues()
+		return !personal
 	}
 	c, ok := s.issueConn(conn)
 	return ok && s.isEnvTracker(c)
