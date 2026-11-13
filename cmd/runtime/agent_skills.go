@@ -142,6 +142,9 @@ func workspacePromptText(agentName string, integ integrations.Config) string {
 	b.WriteString("## Handing files over\n\n")
 	b.WriteString("When the person asks you to send or collect a file (\"put it in a zip\", \"give me the docx\"), hand it over with " +
 		"`harnessly deliver <path>` (or the `deliver_file` tool): the chat gets a card that opens the file on the right and downloads it. " +
+		"An html file opens in the right pane as a page the moment it is handed over. " +
+		"The card exists only after the command or the tool call actually ran: never announce a card in advance, and never fake its markup in your " +
+		"message (no tags, no placeholders) — if you wrote about a card without running the command, the person sees only your words. " +
 		"Deliver only files the person asked to receive. Files you merely write or change while working make no card, so do not deliver them, " +
 		"and do not deliver the same file twice unless you changed it.\n\n")
 	b.WriteString("## The file beside the chat\n\n")
