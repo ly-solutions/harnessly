@@ -8,6 +8,7 @@ import { getPage } from '@/next/core/net/http';
 import { machineApi } from '@/next/core/net/machine';
 import { storeSink } from '@/next/core/realtime/apply';
 import { noteCentralCursor, waitsForCentral } from '@/next/core/realtime/central-first';
+import { forgetResume } from '@/next/core/realtime/cursors';
 import {
   browserEnv,
   RealtimeClient,
@@ -19,7 +20,7 @@ import {
 import { batch } from '@/next/core/store';
 import { holdConversation } from '@/next/stores/cache';
 import { onReconnectNow } from '@/next/stores/connection';
-import { ensureFeed, startEmptyFeed } from '@/next/stores/conversation';
+import { dropConversationData, ensureFeed, reloadStore, startEmptyFeed } from '@/next/stores/conversation';
 import { activeMachineStore, homeMachineStore } from '@/next/stores/machines';
 import { CAPS_QUERY, parsePage, type Channel, type ConvId, type MachineId } from '@/next/protocol/v2';
 
@@ -145,6 +146,22 @@ class Hub {
       release();
       unhold();
     };
+  }
+
+  /**
+   * «Перезагрузить чат»: what the page holds of the conversation goes (its feed, «Сейчас», the gates, the cursor), and
+   * the machine is asked for it whole on a new socket. The page itself stays; the chat draws its skeleton until the
+   * snapshot comes, so a line that is dead shows itself.
+   */
+  reloadConversation(m: MachineId, conv: ConvId): void {
+    const ch = `conv:${conv}` as Channel;
+    batch(() => {
+      forgetResume(m, ch);
+      dropConversationData(conv);
+      ensureFeed(conv, m);
+      reloadStore.set(conv, (reloadStore.get(conv) ?? 0) + 1);
+    });
+    this.clients.get(m)?.reload(ch);
   }
 
   /** A machine that joined the fleet while the page was open: its socket, and the page's place when it had none. */

@@ -327,3 +327,27 @@ func TestAResumeRefusedByABusyTerminalPausesTheQueueAndContinueTriesAgain(t *tes
 		t.Fatalf("state %+v", st)
 	}
 }
+
+// a resume that failed pauses the queue, and the pause does not outlive the failure: once the agent is seen
+// up again (the next resume worked, or it was started in its terminal), the queue goes on without «continue sending».
+func TestAFailedResumesPauseEndsWhenTheAgentIsUp(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	r.settle(wire.StateReady)
+	r.machine.probes["s1"] = Probe{Session: true, Shell: true, Resumable: true}
+	r.tick(time.Second)
+	if st := r.state(); st.K != wire.StateStopped || !st.Resumable {
+		t.Fatalf("state %+v", st)
+	}
+	r.launcher.resumeErr = fmt.Errorf("not resumed: no-session")
+	r.send("m1", "hello", wire.ModeQueue)
+	if p := r.record().Queue.Paused; p == nil || p.Reason != wire.PausedLaunchFailed {
+		t.Fatalf("paused %+v", p)
+	}
+	// The agent is back in its terminal, by no doing of the queue.
+	r.machine.probes["s1"] = Probe{Session: true, Foreground: true}
+	r.settle(wire.StateIdle)
+	if p := r.record().Queue.Paused; p != nil {
+		t.Fatalf("still paused with the agent up: %+v", p)
+	}
+}

@@ -63,6 +63,20 @@ func (s Store) LinkOf(ctx context.Context, machineID string, now time.Time) (Lin
 	return r, err == nil, err
 }
 
+// LinkLeftSince says whether the machine's link ended after since: given up by its holder (a replica that stops asks
+// its machines to dial another one) or with its lease run out, and nobody holds it now. Such a machine is likely on its
+// way to another replica within a second.
+func (s Store) LinkLeftSince(ctx context.Context, machineID string, since, now time.Time) (bool, error) {
+	var one int
+	err := s.q.QueryRow(ctx, `SELECT 1 FROM machine_links WHERE machine_id = ? AND (
+  (owner = '' AND updated_at > ?) OR (owner <> '' AND lease_until > ? AND lease_until <= ?))`,
+		machineID, Ms(since), Ms(since), Ms(now)).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // LiveLinks lists the machines whose link has a live lease.
 func (s Store) LiveLinks(ctx context.Context, now time.Time) ([]LinkRow, error) {
 	rows, err := s.q.Query(ctx, `SELECT machine_id, owner, addr, fence, lease_until FROM machine_links WHERE owner <> '' AND lease_until > ? ORDER BY machine_id`, Ms(now))

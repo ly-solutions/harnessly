@@ -17,7 +17,7 @@ func (c *conv) summarize(turnID string, now time.Time) wire.CmdResult {
 	if c.deletedAt != 0 {
 		return wire.Refused(wire.RefuseNotFound)
 	}
-	if c.d.Summarizer == nil {
+	if c.d.Summarizer == nil || c.summaryPick().Off() {
 		return wire.Refused(wire.RefuseUnsupported)
 	}
 	t := c.rec.LastTurn
@@ -36,9 +36,12 @@ func (c *conv) summarize(turnID string, now time.Time) wire.CmdResult {
 		return wire.Refused(wire.RefuseBadRequest) // the turn said nothing to sum up
 	}
 	c.summarized = turnID
-	summarizer, provider := c.d.Summarizer, c.rec.Provider
+	summarizer, provider, model := c.d.Summarizer, c.rec.Provider, ""
+	if pick := c.summaryPick(); !pick.Auto() {
+		provider, model = wire.Provider(pick.Provider), pick.Model
+	}
 	c.spawn(func() any {
-		text, err := summarizer(provider, message, replies)
+		text, err := summarizer(provider, model, message, replies)
 		if err != nil {
 			return err
 		}
@@ -52,6 +55,29 @@ func (c *conv) summarize(turnID string, now time.Time) wire.CmdResult {
 		c.applySummary(turnID, strings.TrimSpace(text))
 	})
 	return c.recResult(now)
+}
+
+func (c *conv) summaryPick() *wire.NoticeSummaryModel {
+	if c.d.SummaryModel == nil {
+		return nil
+	}
+	return c.d.SummaryModel()
+}
+
+// summarizeEnded sums up the turn that has just ended, without the page asking: the work runs in the
+// background and the record gets the recap when it is made. A delegated chat is not summed up — nobody reads its
+// «готово» — and nor is a turn that did not end done; the page's own ask stays as the fallback and finds the turn
+// asked already.
+func (c *conv) summarizeEnded(now time.Time) {
+	t := c.rec.LastTurn
+	if t == nil || t.Status != wire.TurnDone || c.rec.ParentID != nil || c.d.Summarizer == nil {
+		return
+	}
+	// summarize starts as a command does (it clears the marks of what was published); the turn may end inside another
+	// command, whose answer needs its marks.
+	mark, markConvs := c.mark, c.markConvs
+	c.summarize(t.ID, now)
+	c.mark, c.markConvs = mark, markConvs
 }
 
 // applySummary puts the turn's summary on the record, unless the chat moved on or Claude wrote a recap of its own after

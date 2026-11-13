@@ -108,6 +108,7 @@ type Library struct {
 	tabs       func() ([]Chat, bool)
 	identity   identityCache
 	hist       historyState
+	views      viewCopies
 	modes      modesState
 	sources    sourcesState
 	texts      sync.Map
@@ -119,6 +120,7 @@ type Library struct {
 	pageBuilds pageBuildState
 	// revs is the store's history when the library syncs with one (revisions.go); nil keeps the git history.
 	revs      atomic.Pointer[revisionsBox]
+	pusher    atomic.Pointer[storePusherBox]
 	pinMu     sync.Mutex
 	lastPin   string
 	lastPinAt time.Time

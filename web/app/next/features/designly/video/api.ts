@@ -4,6 +4,7 @@
 import { platformPath, runtimePath } from '@/next/core/net/machine';
 import { RuntimeError, postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { t } from '@/next/i18n';
+import { readOrSnapshot } from '@/next/features/designly/snapshot-read';
 import type { MachineId } from '@/next/protocol/v2';
 import {
   readVideoComment,
@@ -78,7 +79,7 @@ export const fetchVideo = async (
   artifact: string,
   signal?: AbortSignal,
 ): Promise<IVideoState> =>
-  must(readVideoState(await runtimeJson(m, video(`?${q({ artifact })}`), { signal, cache: 'no-store' })));
+  must(readVideoState(await readOrSnapshot(m, video(`?${q({ artifact })}`), { signal, cache: 'no-store' })));
 
 export const putVideoSettings = async (
   m: MachineId,

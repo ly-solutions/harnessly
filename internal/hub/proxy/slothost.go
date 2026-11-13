@@ -178,7 +178,8 @@ func (s *Service) slotFrameOrigins() []string {
 
 // slotHeaders are what the hub says on a slot host's answers whatever the app said: nothing that acts on the whole
 // origin from a target (HSTS, Clear-Site-Data and the like), no sandbox of the path mode (the origin is the slot's own),
-// framed only by the hub's pages, not for indexing and not for shared caches.
+// framed only by the hub's pages and by the slot itself, not for indexing and not for shared caches. 'self' is for a
+// document the slot's page holds in a frame of its own (a Storybook's canvas): that page is one of its ancestors too.
 func slotHeaders(h http.Header, ancestors []string) {
 	for _, name := range previewOriginHeaders {
 		h.Del(name)
@@ -195,11 +196,7 @@ func slotHeaders(h http.Header, ancestors []string) {
 			h.Add("Content-Security-Policy", p)
 		}
 	}
-	src := "'none'"
-	if len(ancestors) > 0 {
-		src = strings.Join(ancestors, " ")
-	}
-	h.Add("Content-Security-Policy", "frame-ancestors "+src)
+	h.Add("Content-Security-Policy", "frame-ancestors "+strings.Join(append([]string{"'self'"}, ancestors...), " "))
 	h.Set("X-Robots-Tag", "noindex, nofollow")
 	cc := h.Get("Cache-Control")
 	switch {
@@ -215,11 +212,8 @@ func (s *Service) slotClosed(w http.ResponseWriter, r *http.Request, he *httpx.E
 	s.log.Info("preview slot host refused", "status", he.Status, "code", he.Code, "path", httpx.SafePath(r.URL.Path))
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Header.Get("Sec-Fetch-Dest") == "iframe" {
-		src := "'none'"
-		if o := s.slotFrameOrigins(); len(o) > 0 {
-			src = strings.Join(o, " ")
-		}
-		serveFrameRefusalFor(w, r, he, src)
+		// 'self' as in slotHeaders: the frame may be one the slot's own page holds.
+		serveFrameRefusalFor(w, r, he, strings.Join(append([]string{"'self'"}, s.slotFrameOrigins()...), " "))
 		return
 	}
 	httpx.WriteError(w, r, he)

@@ -461,14 +461,33 @@
     });
   }
   var streaming = false;
+  // A deck's board out of sight (the host's tk:deck-live): no stream and no polling. A deck keeps all its slides loaded,
+  // and a browser opens six connections to a host over HTTP/1.1: a stream per slide would take them all and stall every
+  // other load. On screen again the board catches up and listens.
+  var quiet = false;
+  var stream = null;
+  var streamDead = false;
   function poll() {
+    var idle = document.hidden || quiet;
     var wait = streaming ? 5000 : 1000;
-    if (document.hidden) wait = 3000;
-    setTimeout(function () { (document.hidden ? Promise.resolve() : catchUp()).then(poll, poll); }, wait);
+    if (idle) wait = 3000;
+    setTimeout(function () { (idle ? Promise.resolve() : catchUp()).then(poll, poll); }, wait);
+  }
+  function setQuiet(on) {
+    if (guest || on === quiet) return;
+    quiet = on;
+    if (on) {
+      if (stream) { stream.close(); stream = null; }
+      streaming = false;
+      return;
+    }
+    catchUp().then(function () {}, function () {});
+    listen();
   }
   function listen() {
-    if (!window.EventSource) return;
+    if (!window.EventSource || stream || streamDead || quiet) return;
     var source = new EventSource('/__lib/events?a=' + encodeURIComponent(id));
+    stream = source;
     var failures = 0;
     source.onopen = function () { streaming = true; failures = 0; };
     source.onmessage = function (event) {
@@ -484,7 +503,10 @@
     source.onerror = function () {
       streaming = false;
       failures += 1;
-      if (failures >= 3) source.close();
+      if (failures < 3) return;
+      source.close();
+      streamDead = true;
+      if (stream === source) stream = null;
     };
   }
   if (!guest) {
@@ -2414,6 +2436,10 @@
     if (!parentWin || event.source !== parentWin || event.origin !== hostOrigin || !data || typeof data !== 'object' || typeof data.type !== 'string') return;
     if (data.type === 'tk:deck' && typeof data.on === 'boolean') {
       deckSet(data.on, DECK_MODES[data.mode] ? data.mode : 'edit');
+      return;
+    }
+    if (data.type === 'tk:deck-live' && typeof data.on === 'boolean') {
+      setQuiet(!data.on);
       return;
     }
     if (!deckOn) return;

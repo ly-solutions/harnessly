@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sort"
 	"time"
+
+	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
 
 // Environment installs: apps the organization's environment puts on the machine (an `app` item of the hub). The person
@@ -26,6 +28,9 @@ var (
 	ErrEnvLocked = errors.New("apps: the environment's app is pinned")
 	// ErrTrustedEnv: a trusted app is installed by hand, not by the environment.
 	ErrTrustedEnv = errors.New("apps: a trusted app is installed by hand, not by the environment")
+	// ErrEnvOwnItem: the app already comes with an item of the organization's own; the platform's item of the same app
+	// gives way to it.
+	ErrEnvOwnItem = errors.New("apps: the app comes with the organization's own item")
 )
 
 // EnvInstall is one app the environment installed.
@@ -145,6 +150,10 @@ type EnvInstallOptions struct {
 	Now         time.Time
 	// Install are the installation's values the hub gave with the item (${install:<name>} of the package).
 	Install map[string]string
+	// Keep are the app items of the list being applied. An app whose item is not among them is taken over by the item
+	// that brings it now (the organization replaced its item with another of the same app): the install, its settings
+	// and the person's switch stay.
+	Keep []string
 }
 
 // InstallForEnv installs the app in dir as the environment's. It reports changed false when the same version from the
@@ -180,11 +189,26 @@ func (r *Registry) InstallForEnv(dir string, opt EnvInstallOptions) (EnvInstall,
 		return EnvInstall{}, false, err
 	}
 	at := slices.IndexFunc(e.Installs, func(i EnvInstall) bool { return i.ID == m.ID })
+	moved := false
 	if at >= 0 && (e.Installs[at].Link != opt.Link || e.Installs[at].ItemID != opt.ItemID) {
-		return EnvInstall{}, false, fmt.Errorf("apps: %s already comes with another environment item", m.ID)
+		cur := e.Installs[at]
+		curBuiltIn, newBuiltIn := hubproto.IsBuiltInEnvItem(cur.ItemID), hubproto.IsBuiltInEnvItem(opt.ItemID)
+		switch {
+		case cur.Link != opt.Link:
+			return EnvInstall{}, false, fmt.Errorf("apps: %s already comes with another environment item", m.ID)
+		case !slices.Contains(opt.Keep, cur.ItemID), curBuiltIn && !newBuiltIn:
+			// The item that brought the app left the list, or it is the platform's and the organization has its own:
+			// the app is this item's from now on.
+			e.Installs[at].ItemID, moved = opt.ItemID, true
+		case newBuiltIn && !curBuiltIn:
+			// The organization's own item of the same app wins over the platform's.
+			return cur, false, ErrEnvOwnItem
+		default:
+			return EnvInstall{}, false, fmt.Errorf("apps: %s already comes with another environment item", m.ID)
+		}
 	}
 	if at >= 0 && e.Installs[at].Version == m.Version && e.Installs[at].Sum == sum {
-		if e.Installs[at].Locked == opt.Locked {
+		if e.Installs[at].Locked == opt.Locked && !moved {
 			return e.Installs[at], false, nil
 		}
 		e.Installs[at].Locked = opt.Locked

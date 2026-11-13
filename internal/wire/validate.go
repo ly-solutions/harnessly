@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -1071,6 +1072,21 @@ func (c ConversationSummarizeCmd) Validate() error {
 func (c ConversationPinCmd) Validate() error  { return byID(c.OpID, c.ID) }
 func (c ConversationTestCmd) Validate() error { return byID(c.OpID, c.ID) }
 
+// MaxConversationView is the most a chat's kept view may take, in bytes of JSON.
+const MaxConversationView = 16 << 10
+
+func (c ConversationViewCmd) Validate() error {
+	var obj map[string]json.RawMessage
+	var bad error
+	switch {
+	case len(c.View) > MaxConversationView:
+		bad = errors.New("view: too large")
+	case json.Unmarshal(c.View, &obj) != nil || obj == nil:
+		bad = errors.New("view: not a JSON object")
+	}
+	return errors.Join(byID(c.OpID, c.ID), bad)
+}
+
 // MaxConversationApps is how many apps one chat may have on at once.
 const MaxConversationApps = 8
 
@@ -1288,5 +1304,24 @@ func (s RuntimeSettings) Validate() error {
 	if d := s.Delegation; d != nil && (d.MaxChildren < 1 || d.MaxChildren > DelegationMaxChildren) {
 		errs = append(errs, errors.New("delegation.maxChildren: 1 to "+strconv.Itoa(DelegationMaxChildren)))
 	}
+	if n := s.NoticeSummary; n != nil {
+		errs = append(errs, n.Validate())
+	}
 	return errors.Join(errs...)
+}
+
+// Validate: a provider the runtime knows (or off), and a model id that is one word of a CLI argument.
+func (m NoticeSummaryModel) Validate() error {
+	switch m.Provider {
+	case NoticeSummaryOff, NoticeSummaryAuto, string(ProviderClaude), string(ProviderCodex):
+	default:
+		return errors.New("noticeSummary.provider: claude, codex, auto or off")
+	}
+	if (m.Provider == NoticeSummaryOff || m.Provider == NoticeSummaryAuto) && m.Model != "" {
+		return errors.New("noticeSummary.model: none with off or auto")
+	}
+	if len(m.Model) > 100 || strings.HasPrefix(m.Model, "-") || strings.ContainsAny(m.Model, " \t\r\n\"'`$;&|<>") {
+		return errors.New("noticeSummary.model: not a model id")
+	}
+	return nil
 }

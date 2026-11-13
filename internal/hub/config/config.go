@@ -206,6 +206,9 @@ type Config struct {
 	// DesignImport moves the designs' access from a cluster's gateway into the hub at start (HRN-880,
 	// docs/hub/design-access.md): HUB_DESIGN_IMPORT_GATEWAY=dry-run|apply.
 	DesignImport DesignImportConfig
+	// DesignAccess is how the hub records design projects (GitHub #83, docs/hub/design-access.md):
+	// HUB_DESIGN_DEFAULT_TEAM_LEVEL, HUB_DESIGN_UNRECORDED, HUB_DESIGN_REGISTER.
+	DesignAccess DesignAccessConfig
 	// FleetSites lets a fleet gateway mint narrow publishing sessions without registering its machines in the hub.
 	FleetSitesSecret string
 	FleetSitesSpace  string
@@ -383,6 +386,16 @@ type Config struct {
 	// EnvRecommended (HUB_ENV_RECOMMENDED, on by default) puts the platform's group «Рекомендованное» into every
 	// organization's environment (docs/hub/environment.md, «Recommended»); off leaves it out everywhere.
 	EnvRecommended bool
+	// EnvApps (HUB_ENV_APPS, on by default) puts the platform's apps «Доски» and «Документы» into every organization's
+	// environment while the hub has the address of their service (docs/hub/environment.md, «Built-in apps»); off
+	// leaves them out everywhere, and an organization puts them in with `app` items of its own.
+	EnvApps bool
+	// BoardsAppRepo, BoardsAppBranch, ArtifactsAppRepo and ArtifactsAppBranch (HUB_BOARDS_APP_REPO,
+	// HUB_BOARDS_APP_BRANCH, HUB_ARTIFACTS_APP_REPO, HUB_ARTIFACTS_APP_BRANCH) say where the machines take the two
+	// packages from: an https address of a repository with the folder harnessly-app, and a branch or a tag of it.
+	// Empty: the services' public repositories, branch main. A closed network names its mirrors here.
+	BoardsAppRepo, BoardsAppBranch       string
+	ArtifactsAppRepo, ArtifactsAppBranch string
 	// Machines holds the settings of the machine resources and access (machines.go).
 	Machines MachinesConfig
 	// Extensions holds the settings of the extension protocol (extensions.go).
@@ -407,6 +420,19 @@ type Features struct {
 type SitesS3 struct{ Endpoint, Region, Bucket, Prefix, AccessKey, SecretKey string }
 
 // StoreConfig is where the store keeps its revisions and contents.
+// DesignAccessConfig is how the hub records design projects and treats the ones it has no row for.
+type DesignAccessConfig struct {
+	// TeamLevel is the team level of a project the hub records (made, claimed, registered): none, view, comment or edit
+	// (HUB_DESIGN_DEFAULT_TEAM_LEVEL, edit by default). none makes every new project personal until its owner shares it.
+	TeamLevel string
+	// ClosedUnrecorded: a project the hub has no row for is closed to everyone but its machine's person, and its files
+	// reach no other machine (HUB_DESIGN_UNRECORDED=closed; open by default).
+	ClosedUnrecorded bool
+	// Register gives every project folder of the store's libraries that has no row an owner and the team level, at start:
+	// "" (off), dry-run (the report only) or apply (HUB_DESIGN_REGISTER).
+	Register string
+}
+
 // DesignImportConfig is the move of the designs' access from the gateway, run as a release step at start.
 type DesignImportConfig struct {
 	// Mode: "" (off), dry-run (the report only) or apply.
@@ -913,6 +939,20 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 	default:
 		bad("HUB_ENV_RECOMMENDED must be on or off")
 	}
+	switch strings.ToLower(def("HUB_ENV_APPS", "on")) {
+	case "on", "true", "1", "yes":
+		c.EnvApps = true
+	case "off", "false", "0", "no":
+	default:
+		bad("HUB_ENV_APPS must be on or off")
+	}
+	c.BoardsAppRepo, c.BoardsAppBranch = strings.TrimSpace(get("HUB_BOARDS_APP_REPO")), strings.TrimSpace(get("HUB_BOARDS_APP_BRANCH"))
+	c.ArtifactsAppRepo, c.ArtifactsAppBranch = strings.TrimSpace(get("HUB_ARTIFACTS_APP_REPO")), strings.TrimSpace(get("HUB_ARTIFACTS_APP_BRANCH"))
+	for _, u := range []struct{ name, v string }{{"HUB_BOARDS_APP_REPO", c.BoardsAppRepo}, {"HUB_ARTIFACTS_APP_REPO", c.ArtifactsAppRepo}} {
+		if u.v != "" && !strings.HasPrefix(u.v, "https://") {
+			bad("%s must be an https address of a repository, got %q", u.name, u.v)
+		}
+	}
 	switch strings.ToLower(def("HUB_HISTORY", "on")) {
 	case "on", "true", "1", "yes":
 		c.History = true
@@ -1407,6 +1447,36 @@ func (c *Config) loadSafe(lookup func(string) (string, bool), bad func(string, .
 	c.SafeRefPrefixes = vaultkv.SplitPrefixes(plain("HUB_SECRETS_REF_PREFIXES"))
 }
 
+// loadDesignAccess reads HUB_DESIGN_DEFAULT_TEAM_LEVEL, HUB_DESIGN_UNRECORDED and HUB_DESIGN_REGISTER.
+func (c *Config) loadDesignAccess(get func(string) string, bad func(string, ...any)) {
+	d := &c.DesignAccess
+	switch l := strings.ToLower(strings.TrimSpace(get("HUB_DESIGN_DEFAULT_TEAM_LEVEL"))); l {
+	case "":
+		d.TeamLevel = "edit"
+	case "none", "view", "comment", "edit":
+		d.TeamLevel = l
+	default:
+		bad("HUB_DESIGN_DEFAULT_TEAM_LEVEL must be none, view, comment or edit")
+	}
+	switch v := strings.ToLower(strings.TrimSpace(get("HUB_DESIGN_UNRECORDED"))); v {
+	case "", "open":
+	case "closed":
+		d.ClosedUnrecorded = true
+	default:
+		bad("HUB_DESIGN_UNRECORDED must be open or closed")
+	}
+	switch v := strings.ToLower(strings.TrimSpace(get("HUB_DESIGN_REGISTER"))); v {
+	case "", "off":
+	case "dry-run", "apply":
+		if c.Store.Off {
+			bad("HUB_DESIGN_REGISTER reads the store's libraries: it needs the store (HUB_STORE on)")
+		}
+		d.Register = v
+	default:
+		bad("HUB_DESIGN_REGISTER must be off, dry-run or apply")
+	}
+}
+
 // loadDesignImport reads HUB_DESIGN_IMPORT_*.
 func (c *Config) loadDesignImport(get func(string) string, bad func(string, ...any)) {
 	d := &c.DesignImport
@@ -1585,6 +1655,7 @@ func (c *Config) loadSites(get func(string) string, def func(string, string) str
 	}
 	c.loadStore(get, def, bad)
 	c.loadDesignImport(get, bad)
+	c.loadDesignAccess(get, bad)
 	c.loadAppToken(get, def, bad)
 	if c.SitesAbuseURL != "" {
 		if u, err := url.Parse(c.SitesAbuseURL); err != nil || (u.Scheme != "https" && u.Scheme != "http" && u.Scheme != "mailto") {

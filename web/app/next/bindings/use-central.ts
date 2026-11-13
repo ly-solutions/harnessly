@@ -5,7 +5,7 @@ import { adoptParkedMessages } from '@/next/commands/messages';
 import { startCentralBeat, type CentralBeat } from '@/next/bindings/central-beat';
 import { batch } from '@/next/core/store';
 import { pageClock } from '@/next/core/clock';
-import { applyConvSnapshot, feedStore, importCentralFeed } from '@/next/stores/conversation';
+import { applyConvSnapshot, feedStore, importCentralFeed, useReloads } from '@/next/stores/conversation';
 import { forgetResume } from '@/next/core/realtime/cursors';
 import {
   isMachineOff,
@@ -67,6 +67,8 @@ export function useCentralFeed(machine: MachineId, conv: ConvId): boolean {
   const connection = useConnection(machine);
   const kept = central.enabled && central.on.has(machine);
   const off = kept && central.off.has(machine) && connection?.k !== 'live';
+  // «Перезагрузить чат» dropped the feed: the copy is read again.
+  const reloads = useReloads(conv);
   useEffect(() => {
     if (!kept || !keepsHistory(machine)) return;
     let live = true;
@@ -112,6 +114,6 @@ export function useCentralFeed(machine: MachineId, conv: ConvId): boolean {
     return () => {
       live = false;
     };
-  }, [kept, off, machine, conv]);
+  }, [kept, off, machine, conv, reloads]);
   return off;
 }

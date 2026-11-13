@@ -64,6 +64,12 @@ type Deps struct {
 	// View reads a project from the hub's store for a guest link (internal/hub/designview); nil asks the
 	// machine as before.
 	View Viewer
+	// TeamLevel is the team level a project gets when the hub records it (made on a machine, claimed, registered):
+	// none, view, comment or edit. "" is edit, as before (HUB_DESIGN_DEFAULT_TEAM_LEVEL, GitHub #83).
+	TeamLevel string
+	// ClosedUnrecorded: a project the hub has no row for gives nobody a role, its files reach no other machine, and the
+	// runtimes are told so; false keeps it open to everyone who may open the machine (HUB_DESIGN_UNRECORDED=closed).
+	ClosedUnrecorded bool
 }
 
 type Service struct {
@@ -82,6 +88,8 @@ type Service struct {
 	shared      bool
 	view        Viewer
 	kits        *resaccess.Service
+	teamLevel   string
+	closed      bool
 
 	mu       sync.Mutex
 	serving  map[string]bool   // machines whose agent serves design-access
@@ -104,6 +112,10 @@ func New(d Deps) *Service {
 		transport: d.Transport, seal: newSealer(d.LinkKey), notice: d.Notice, shared: d.Shared, view: d.View, kits: d.Kits,
 		serving: map[string]bool{}, prefixes: map[string]string{}, timers: map[string]*time.Timer{},
 		events: map[string]*dayCount{}, tokens: map[string]cachedToken{}, budget: newBudget(),
+		teamLevel: roleEdit, closed: d.ClosedUnrecorded,
+	}
+	if l := strings.ToLower(strings.TrimSpace(d.TeamLevel)); teamLevelOK(l) {
+		s.teamLevel = l
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -127,6 +139,17 @@ func New(d Deps) *Service {
 		}
 	}
 	return s
+}
+
+// ClosedUnrecorded: a project the hub has no row for is closed to everyone (HUB_DESIGN_UNRECORDED=closed).
+func (s *Service) ClosedUnrecorded() bool { return s.closed }
+
+func teamLevelOK(l string) bool {
+	switch l {
+	case levelNone, roleView, roleComment, roleEdit:
+		return true
+	}
+	return false
 }
 
 // IsShareHost: the request is for the guest links' host.

@@ -48,21 +48,22 @@ func portalOrigins() []string {
 // serviceConfig is what the deployment names; empty values leave their routes to the old runtime.
 func serviceConfig(d deps) services.Config {
 	cfg := services.Config{
-		Home:          d.Home,
-		SecretDirs:    splitList(os.Getenv("RUNTIME_SECRET_CONFIG_DIRS")),
-		GitLabHosts:   splitList(os.Getenv("RUNTIME_GITLAB_HOSTS")),
-		GitLabAPI:     strings.TrimRight(os.Getenv("RUNTIME_GITLAB_API_ORIGIN"), "/"),
-		GitHubHost:    strings.TrimSpace(os.Getenv("RUNTIME_GITHUB_HOST")),
-		GitHubAPI:     strings.TrimRight(strings.TrimSpace(os.Getenv("RUNTIME_GITHUB_API")), "/"),
-		TrackerURL:    os.Getenv("RUNTIME_TRACKER_URL"),
-		TrackerHosts:  splitList(os.Getenv("RUNTIME_TRACKER_HOSTS")),
-		DocsHost:      os.Getenv("RUNTIME_DOCS_HOST"),
-		PortalOrigins: portalOrigins(),
-		ReaderHost:    os.Getenv("RUNTIME_PLATFORM_HOST"),
-		ReaderPath:    env("RUNTIME_DOCS_READER_PATH", "/agents/docs/"),
-		AvatarPath:    platformAPI + "/link-meta/avatar",
-		IconAgent:     os.Getenv("RUNTIME_ICON_USER_AGENT"),
-		OrganizerFile: os.Getenv("RUNTIME_ORGANIZER_FILE"),
+		Home:            d.Home,
+		SecretDirs:      splitList(os.Getenv("RUNTIME_SECRET_CONFIG_DIRS")),
+		GitLabHosts:     splitList(os.Getenv("RUNTIME_GITLAB_HOSTS")),
+		GitLabAPI:       strings.TrimRight(os.Getenv("RUNTIME_GITLAB_API_ORIGIN"), "/"),
+		GitHubHost:      strings.TrimSpace(os.Getenv("RUNTIME_GITHUB_HOST")),
+		GitHubAPI:       strings.TrimRight(strings.TrimSpace(os.Getenv("RUNTIME_GITHUB_API")), "/"),
+		TrackerURL:      os.Getenv("RUNTIME_TRACKER_URL"),
+		TrackerHosts:    splitList(os.Getenv("RUNTIME_TRACKER_HOSTS")),
+		DocsHost:        os.Getenv("RUNTIME_DOCS_HOST"),
+		PortalOrigins:   portalOrigins(),
+		ReaderHost:      os.Getenv("RUNTIME_PLATFORM_HOST"),
+		ReaderPath:      env("RUNTIME_DOCS_READER_PATH", "/agents/docs/"),
+		AvatarPath:      platformAPI + "/link-meta/avatar",
+		ForgeAvatarPath: forgeAvatarPath,
+		IconAgent:       os.Getenv("RUNTIME_ICON_USER_AGENT"),
+		OrganizerFile:   os.Getenv("RUNTIME_ORGANIZER_FILE"),
 	}
 	if re := os.Getenv("RUNTIME_TASK_KEY_RE"); re != "" {
 		if compiled, err := regexp.Compile(re); err == nil {
@@ -90,7 +91,7 @@ func handlersFor(d deps) (*services.Handlers, services.Config) {
 		return h, cfg
 	}
 	cfg.Connections = connectionsFor(d)
-	h := &services.Handlers{S: services.New(cfg), Session: d.SessionOK}
+	h := &services.Handlers{S: services.New(cfg), Session: d.SessionOK, ForgeHosts: func() []string { return forgeHosts(d) }}
 	servicesFor[d.CLI] = h
 	return h, cfg
 }
@@ -144,7 +145,7 @@ func routeAt(route string) func(*http.Request) bool {
 func bootstrapFor(d deps) *services.Bootstrap {
 	tools := d.Tools
 	if tools == nil {
-		tools = preflight.New(d.Home)
+		tools = preflight.Shared(d.Home)
 	}
 	return &services.Bootstrap{
 		DataDir:    d.DataDir,
@@ -228,7 +229,10 @@ func serviceBodyRoutes(d deps) []gate.BodyRoute {
 			next(w, r)
 		}
 	}
-	out := []gate.BodyRoute{{Slice: "services", Match: routeAt(platformAPI + "/favicon"), Serve: refusing(h.Favicon)}}
+	out := []gate.BodyRoute{
+		{Slice: "services", Match: routeAt(platformAPI + "/favicon"), Serve: refusing(h.Favicon)},
+		{Slice: "services", Match: routeAt(forgeAvatarPath), Serve: refusing(h.ForgeAvatar)},
+	}
 	if cfg.TrackerURL != "" {
 		out = append(out, gate.BodyRoute{Slice: "services", Match: routeAt(platformAPI + "/link-meta/avatar"), Serve: refusing(h.Avatar)})
 	}

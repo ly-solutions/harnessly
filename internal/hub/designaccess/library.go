@@ -97,7 +97,7 @@ func layoutKey(email string) string {
 func (s *Service) libraryRoute(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine) error {
 	lister, ok := s.view.(Librarian)
 	if !ok || m.SpaceID == "" {
-		return fail("not_found", "Хранилище дизайнов не подключено")
+		return fail("store_off", "Хранилище дизайнов не подключено")
 	}
 	ctx := r.Context()
 	t, err := s.read(ctx, m)

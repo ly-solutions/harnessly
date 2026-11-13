@@ -50,6 +50,13 @@ const acquireAttempts = 3
 const (
 	replicaPrefix = "/internal/replica/v1/"
 	lookupFresh   = time.Second
+
+	// handoverRecent is how fresh the end of a machine's link must be for a request to wait for its next one, and
+	// handoverWait how long it waits: a replica that stops asks its machines to dial again, and an agent does it
+	// within a second, so the request reaches the machine on the other replica instead of answering «offline».
+	handoverRecent = 5 * time.Second
+	handoverWait   = 3 * time.Second
+	handoverPoll   = 100 * time.Millisecond
 )
 
 // Cluster is this replica's membership.
@@ -213,6 +220,15 @@ func (c *Cluster) lookup(id string) *Link {
 	c.seen[id] = seenLink{l: l, at: time.Now()}
 	c.mu.Unlock()
 	return l
+}
+
+// handingOver says whether the machine's link ended a moment ago, so its next one is likely on the way.
+func (c *Cluster) handingOver(id string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	now := c.now()
+	left, err := c.DB.S().LinkLeftSince(ctx, id, now.Add(-handoverRecent), now)
+	return err == nil && left
 }
 
 func (c *Cluster) forget(id string) {

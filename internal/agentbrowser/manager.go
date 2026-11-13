@@ -146,6 +146,15 @@ func (m *Manager) Instance(ctx context.Context, id string) (*Instance, error) {
 	}
 	i := m.instances[id]
 	m.mu.Unlock()
+	if i != nil {
+		gone, err := m.dropLeftover(ctx, id, i)
+		if err != nil {
+			return nil, err
+		}
+		if gone {
+			i = nil
+		}
+	}
 	if i == nil {
 		// Profile callbacks and registry reads run outside the manager lock.
 		i = newInstance(m, id)
@@ -194,6 +203,33 @@ func (m *Manager) Instance(ctx context.Context, id string) (*Instance, error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// dropLeftover removes an instance a stop left behind. A stop marks the instance closing and takes it out of
+// the map last; one that gave up before that (its wait ran out on a loaded machine, or the host would not stop)
+// leaves a closing instance in the map, and every later call would be refused at once, for good. The caller
+// holds the profile's lock, so no stop is under way: a closing instance here is such a leftover. It is waited
+// to its end and forgotten, and the caller starts a new one.
+func (m *Manager) dropLeftover(ctx context.Context, id string, i *Instance) (bool, error) {
+	i.mu.Lock()
+	closing := i.closing
+	i.mu.Unlock()
+	if !closing {
+		return false, nil
+	}
+	select {
+	case <-i.done:
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-m.ctx.Done():
+		return false, cdp.ErrClosed
+	}
+	m.mu.Lock()
+	if m.instances[id] == i {
+		delete(m.instances, id)
+	}
+	m.mu.Unlock()
+	return true, nil
 }
 
 func (i *Instance) connect(ctx context.Context) (*cdp.Conn, error) {

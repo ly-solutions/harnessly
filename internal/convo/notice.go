@@ -28,8 +28,12 @@ type Notice struct {
 	Conv wire.Conversation
 }
 
-// Push says the notice is one the person gets on their devices.
+// Push says the notice is one the person gets on their devices. A delegated chat works unheard: it reaches the person
+// only when it waits for them (a question, a permission, a plan); its finished or failed turns go to its parent agent.
 func (n Notice) Push() bool {
+	if n.Conv.ParentID != nil {
+		return n.Kind == NoticeQuestion
+	}
 	return n.Kind == NoticeDone || n.Kind == NoticeFailed || n.Kind == NoticeQuestion
 }
 

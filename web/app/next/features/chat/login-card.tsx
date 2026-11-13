@@ -2,6 +2,7 @@
 // same login the Settings page runs (its link, its code), and then sends the person's message once more. Nobody has to
 // find out where the sign-in lives or what «/login» means.
 import { useState } from 'react';
+import { isLoginError } from '@/next/features/chat/error-text';
 import LoginPanel from '@/next/features/accounts/login-panel';
 import SeenAccounts from '@/next/features/accounts/seen-accounts';
 import type { ICredentialActions, LoginState } from '@/next/features/accounts/model';
@@ -12,11 +13,9 @@ import Icon from '@/next/ui/icon';
 import '@/next/styles/limit.css';
 import '@/next/styles/providers.css';
 
-/** What Claude Code and Codex print when their sign-in is gone: expired, revoked or never made. */
-const LOGIN_LOST =
-  /run \/login|login expired|not logged in|oauth token (has )?(expired|revoked)|authentication_error|(sign|log) ?in again|logged out|token could not be refreshed/i;
-
-export const isLoginLost = (text: string | null | undefined): boolean => !!text && LOGIN_LOST.test(text);
+/** What Claude Code and Codex print when their sign-in is gone: expired, revoked or never made. «Please run /login»
+ *  on a refusal that is not about the sign-in (a filter's or a network shield's 403) is not one: error-text.ts tells. */
+export const isLoginLost = (text: string | null | undefined): boolean => isLoginError(text);
 
 /** The card always offers a fresh login: the machine may still count the expired one as signed in. */
 const SIGNED_OUT: AgentAccount = { signedIn: false, method: null, plan: null, who: null };

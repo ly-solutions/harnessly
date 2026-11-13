@@ -31,7 +31,7 @@ func sessionRoutes(d deps) []gate.JSONRoute {
 	codex := sessions.NewCodexLister(d.Home)
 	tools := d.Tools
 	if tools == nil {
-		tools = preflight.New(d.Home)
+		tools = preflight.Shared(d.Home)
 	}
 	query := func(r *http.Request, name string) jscompat.Param {
 		return jscompat.Param{Values: jscompat.Query(r.URL.RawQuery)[name]}

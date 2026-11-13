@@ -477,8 +477,9 @@ func (s *Service) trackerFeed(ctx context.Context) wire.AppFeed {
 // ── GitLab ──
 
 type gitlabPerson struct {
-	Username string `json:"username"`
-	Name     string `json:"name"`
+	Username  string `json:"username"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatar_url"`
 }
 
 func (p gitlabPerson) name() *string { return or2(appText(p.Name), appText(p.Username)) }
@@ -646,6 +647,7 @@ func (s *Service) mrRow(mr gitlabMR, me string) (wire.AppRow, bool) {
 	if mr.Author != nil {
 		row.Author = mr.Author.name()
 		row.Person = row.Author
+		row.Avatar = s.forgeAvatarLink(mr.Author.AvatarURL)
 		if mine = mr.Author.Username == me; mine {
 			row.Me = append(row.Me, wire.RoleAuthor)
 		}

@@ -23,6 +23,8 @@ import { ContextCard } from '@/next/features/chat/handoff-card';
 import { PEER_DELIVERY, PeerCard, type TPeerDelivery } from '@/next/features/chat/peer-card';
 import { PictureCards, useNamedPictures, withoutPaths } from '@/next/features/chat/pictures';
 import { attachedOf, filesOf } from '@/next/features/chat/attached';
+import { splitMarkup, withImagePaths } from '@/next/features/chat/markup';
+import { MarkupBlock } from '@/next/features/chat/markup-block';
 import CopyButton from '@/next/features/chat/copy-button';
 import { RefChips } from '@/next/features/chat/ref-chips';
 
@@ -264,7 +266,7 @@ const UserMessage = ({
   // A sent message the feed still draws on its own (no turn shows it) fades away after a while; a turn's prompt stays.
   const fade = useSentFade(outgoing !== null && phase === MESSAGE_PHASE.sent, outgoing?.stateSince ?? 0);
   // The places the runtime wrote under the words (`<attached>`) are chips, never the block itself.
-  const placed = attachedOf(text, outgoing?.refs);
+  const placed = attachedOf(withImagePaths(text), outgoing?.refs);
   const files = filesOf(text, attachments);
   // A picture's path in the words (a paste of the old view) is the picture itself, without the path.
   const pictures = useNamedPictures(placed.text);
@@ -315,7 +317,17 @@ const UserMessage = ({
         {shown && (
           <div className="hx-bubble">
             {bubbleParts(shown, own || outgoing !== null).map((part) =>
-              part.pasted ? <Pasted key={part.key} text={part.text} /> : <p key={part.key}>{part.text}</p>,
+              part.pasted ? (
+                <Pasted key={part.key} text={part.text} />
+              ) : (
+                splitMarkup(part.text).map((piece) =>
+                  piece.block ? (
+                    <MarkupBlock key={part.key + piece.key} block={piece.block} />
+                  ) : (
+                    <p key={part.key + piece.key}>{piece.text}</p>
+                  ),
+                )
+              ),
             )}
           </div>
         )}

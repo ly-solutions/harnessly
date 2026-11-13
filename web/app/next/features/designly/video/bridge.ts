@@ -7,6 +7,7 @@
 // The headless side (the render, the check) talks to the same script through
 // `window.tkVideo = {v: 1, ready(): Promise, seek(ms): Promise<{same: boolean}>, audit(): Promise<issue[]>, moments()}`.
 
+import { frameOrigin } from '@/next/features/designly/bridge-origin';
 import type { IVideoTransition } from '@/next/features/designly/video/types';
 
 /** The scene's pixels: x, y, width, height. */
@@ -104,12 +105,13 @@ export const readVideoMessage = (data: unknown): TVideoBoardMessage | null => {
   return null;
 };
 
-/** Sends a message to the scene in a frame, to the frame's own origin only. */
+/** Sends a message to the scene in a frame, to the frame's own origin only (its window, when that is opaque). */
 export const postVideo = (
   frame: HTMLIFrameElement | null,
   src: string | null,
   message: TVideoHostMessage,
 ) => {
   if (!frame?.contentWindow || !src) return;
-  frame.contentWindow.postMessage(message, new URL(src, window.location.href).origin);
+  const origin = frameOrigin(src);
+  if (origin !== null) frame.contentWindow.postMessage(message, origin);
 };

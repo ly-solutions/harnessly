@@ -826,6 +826,21 @@ func (l *Library) servePublicStatic(w http.ResponseWriter, r *http.Request, f *o
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return false
 	}
+	// A recording is played and sought in: the browser asks for ranges of it.
+	if isMediaExt(ext) {
+		h := w.Header()
+		h.Set("Content-Type", typ)
+		h.Set("Cache-Control", cacheControl)
+		h.Set("X-Content-Type-Options", "nosniff")
+		if head {
+			h.Set("Content-Length", strconv.FormatInt(st.Size(), 10))
+			h.Set("Accept-Ranges", "bytes")
+			w.WriteHeader(http.StatusOK)
+			return true
+		}
+		http.ServeContent(w, r, "", st.ModTime(), f)
+		return true
+	}
 	version := FileVersion(st)
 	etag := `W/"` + version + `"`
 	h := w.Header()
@@ -977,4 +992,13 @@ func (l *Library) rememberPort(port int) {
 	}
 	_ = os.MkdirAll(l.cfg.DataDir, 0o700)
 	_ = os.WriteFile(filepath.Join(l.cfg.DataDir, ServerPortFile), []byte(strconv.Itoa(l.cfg.Port)+" "+strconv.Itoa(port)+"\n"), 0o600)
+}
+
+// isMediaExt: the file is a video, played with ranges.
+func isMediaExt(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".mp4", ".webm", ".mov":
+		return true
+	}
+	return false
 }

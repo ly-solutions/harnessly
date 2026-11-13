@@ -144,6 +144,9 @@ type Service struct {
 
 	// res is the state of the resources and operations side (resources.go).
 	res resState
+	// watching are the operations a watch of this process follows: ResumeOps, run again when this replica takes the
+	// lead over, leaves them to it.
+	watching sync.Map
 	// repl is the links that send their data as batches (repl.go).
 	repl replState
 

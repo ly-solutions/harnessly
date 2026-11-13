@@ -754,11 +754,13 @@ func (b *Box) Uncarry(ch *Change, now time.Time) {
 // the launch was to carry goes back to the line when the launch failed or the agent is gone.
 func (b *Box) Pause(reason wire.PauseReason, now time.Time) Change {
 	var ch Change
+	if reason == wire.PausedLaunchFailed || reason == wire.PausedAgentGone {
+		// Also when the queue already stands paused for this reason: the message the launch carried must not stay
+		// in-input with nothing left to take it.
+		b.Uncarry(&ch, now)
+	}
 	if b.paused != nil && b.paused.Reason == reason {
 		return ch
-	}
-	if reason == wire.PausedLaunchFailed || reason == wire.PausedAgentGone {
-		b.Uncarry(&ch, now)
 	}
 	b.paused = &wire.QueuePause{Reason: reason, At: now.UnixMilli()}
 	b.rev++
@@ -789,6 +791,40 @@ func (b *Box) Resume(now time.Time) (Change, bool) {
 func (b *Box) Paused() *wire.QueuePause { return b.paused }
 
 // Head is the client id of the message first in the line, "" for an empty line.
+// LostFirst is the first prompt of a launch that ended before the agent took it (failed, never typed): the message a
+// launch cut short by the machine owes the next one. Empty when there is none.
+func (b *Box) LostFirst() string {
+	for id, r := range b.recs {
+		if r.First && r.Message.State.K == wire.MsgFailed && r.TypedOffset == 0 {
+			return id
+		}
+	}
+	return ""
+}
+
+// ReturnLostFirst puts the first prompt of a launch back at the head of the line when it failed at or after since
+// without ever being typed: its term ran out before the launch was taken for failed, so Uncarry found it failed
+// already, and the next launch started the agent with an empty box. since is when that launch began; a
+// first prompt that failed before it is the person's to retry.
+func (b *Box) ReturnLostFirst(since wire.Ms, now time.Time) Change {
+	var ch Change
+	id := b.LostFirst()
+	r := b.recs[id]
+	if r == nil || b.flight != "" || r.Message.State.Code != wire.MsgFailedUnconfirmed || r.EndedAt < since {
+		return ch
+	}
+	r.Carried, r.Retyped = false, false
+	r.Tries, r.NextTry, r.Blocked, r.BlockedSince, r.WaitSince, r.EndedAt = 0, 0, 0, 0, now.UnixMilli(), 0
+	b.items = append([]string{id}, b.items...)
+	b.rev++
+	b.set(&ch, r, wire.MessageState{K: wire.MsgQueued, Position: 1, Reason: wire.QueuedBehind}, now)
+	ch.add(wire.QueueChangedEv{Queue: b.Queue()})
+	if b.paused != nil {
+		b.positions(&ch, wire.QueuedPaused, now)
+	}
+	return ch
+}
+
 func (b *Box) Head() string {
 	if len(b.items) == 0 {
 		return ""

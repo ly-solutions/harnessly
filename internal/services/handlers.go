@@ -24,6 +24,8 @@ type Handlers struct {
 	Session func(*http.Request) bool
 	// Now is the clock of the organizer's timestamps; nil is time.Now.
 	Now func() time.Time
+	// ForgeHosts are the hosts of the person's code host connections, whose avatars the avatar route also serves.
+	ForgeHosts func() []string
 }
 
 const jsonType = "application/json; charset=utf-8"
@@ -397,6 +399,37 @@ func (h *Handlers) Avatar(w http.ResponseWriter, r *http.Request) {
 	writeImage(w, r, img)
 }
 
+// ForgeAvatar: ?src=, the avatar of a code host's person at the address the host gave, any method.
+func (h *Handlers) ForgeAvatar(w http.ResponseWriter, r *http.Request) {
+	if _, ok := readBody(w, r); !ok {
+		return
+	}
+	if !h.Session(r) {
+		writeEmpty(w, 403)
+		return
+	}
+	src, ok := queryString(r, "src")
+	if !ok || src == "" {
+		writeEmpty(w, 400)
+		return
+	}
+	var hosts []string
+	if h.ForgeHosts != nil {
+		hosts = h.ForgeHosts()
+	}
+	img, err := h.S.ForgeAvatar(r.Context(), src, hosts)
+	if err != nil {
+		failed(w)
+		return
+	}
+	if img == nil {
+		w.Header().Set("Cache-Control", "private, max-age=300")
+		writeEmpty(w, 404)
+		return
+	}
+	writeImage(w, r, img)
+}
+
 // Favicon: ?host=, a public site's icon, any method.
 func (h *Handlers) Favicon(w http.ResponseWriter, r *http.Request) {
 	if _, ok := readBody(w, r); !ok {
@@ -442,6 +475,8 @@ func (h *Handlers) Task(w http.ResponseWriter, r *http.Request) {
 	var task *jsvalue.Object
 	var fail string
 	switch {
+	case ok && conn == "" && h.S.IsTaskKey(key):
+		task, fail = h.S.BareTask(r.Context(), key)
 	case ok && h.S.IsTaskKey(key) && h.S.servesTracker(conn):
 		task, fail = h.S.Task(r.Context(), key)
 	case ok && h.S.ConnTaskKey(conn, key):

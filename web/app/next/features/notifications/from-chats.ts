@@ -27,6 +27,8 @@ export const notificationsFromChats = (
     .flatMap((chat): INotification[] => {
       const kind = KIND_OF[chat.status];
       if (!kind || chat.status === CHAT_STATUS.none) return [];
+      // A delegated chat is heard only when it waits for the person.
+      if (chat.parentId !== undefined && kind !== NOTIFICATION_KIND.waiting) return [];
       const look = STATUS_LOOK[chat.status];
       return [
         {

@@ -307,3 +307,44 @@
 .hx-keptframe > .hx-consentstage {
   flex: 1;
 }
+
+/* A built-in app whose service is down (app-unavailable.tsx): an icon, one calm sentence and «Повторить», centred
+   where the view stands. The look follows the board «Открытый объект — приложение «Документы» и «Доски»». */
+.hx-appdown {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hx-space-2);
+  padding: 0 var(--hx-space-6);
+  text-align: center;
+  background: var(--hx-bg);
+}
+.hx-appdown__ico {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: var(--hx-space-2);
+  border-radius: 16px;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+}
+.hx-appdown__title {
+  margin: 0;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.hx-appdown__text {
+  max-width: 340px;
+  margin: 0;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-md);
+  line-height: 1.5;
+}
+.hx-appdown .hx-btn {
+  margin-top: var(--hx-space-3);
+}

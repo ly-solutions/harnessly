@@ -121,4 +121,9 @@ func TestLibraryWithoutTheStoreIsNotFound(t *testing.T) {
 	if !r.svc.ServeMachine(w, req, r.ownerU, r.owner) || w.Code != http.StatusNotFound {
 		t.Fatalf("without a store: %d %s", w.Code, w.Body.String())
 	}
+	// The page tells a store that is off from one with no copy by the code (GitHub #82).
+	var body struct{ Code string }
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Code != "store_off" {
+		t.Fatalf("without a store, the code: %q %v", body.Code, err)
+	}
 }

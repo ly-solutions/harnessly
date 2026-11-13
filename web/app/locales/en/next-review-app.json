@@ -80,9 +80,9 @@
   "next.reviewApp.mr.approve": "Approve",
   "next.reviewApp.mr.approveDone": "Approved",
   "next.reviewApp.mr.asDraft": "As a draft",
-  "next.reviewApp.mr.connectOwn": "Connect your {forge}",
-  "next.reviewApp.mr.connectText": "Replies, resolving and approvals go only in your name — connect your own {forge}.",
-  "next.reviewApp.mr.connectToWrite": "Connect your {forge} to reply",
+  "next.reviewApp.mr.connectOwn": "Add your own {forge} token",
+  "next.reviewApp.mr.connectText": "{forge} is connected through the machine’s shared access, which only reads. Replies, resolving and approvals go in your name: add your own token.",
+  "next.reviewApp.mr.connectToWrite": "{forge} is connected read-only. Add your own token to reply",
   "next.reviewApp.mr.create": "Create merge request",
   "next.reviewApp.mr.created": "Merge request created",
   "next.reviewApp.mr.denied": "{forge} refused: the token may not do this",
@@ -175,5 +175,7 @@
   "next.reviewApp.ai.formatAll": "Answer with this block only (JSON): points — {who, why} per participant, sum — the conclusion, replies — common answer variants.",
   "next.reviewApp.githubDown": "GitHub did not answer — the lists hold GitLab only.",
   "next.reviewApp.githubDenied": "GitHub refused the token — check the GitHub connection.",
-  "next.reviewApp.openFull": "Open in Code review"
+  "next.reviewApp.collapse": "Fold back to the chat",
+  "next.reviewApp.openFull": "Expand to the whole window",
+  "next.reviewApp.workTitle": "Chat work"
 }

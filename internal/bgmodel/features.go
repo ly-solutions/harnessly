@@ -1,0 +1,338 @@
+package bgmodel
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ly-solutions/harnessly/internal/extproviders"
+	"github.com/ly-solutions/harnessly/internal/locale"
+)
+
+// The background features a provider can be picked for.
+const (
+	// FeatureNotifySummary: the text of a finished turn's notification.
+	FeatureNotifySummary = "notify-summary"
+	// FeatureChatNow: «what is going on now» in a chat.
+	FeatureChatNow = "chat-now"
+	// FeatureNextStep: the hints of the next step.
+	FeatureNextStep = "next-step"
+	// FeatureMemory: the background memory.
+	FeatureMemory = "memory"
+)
+
+// Feature is one background feature as Settings lists it.
+type Feature struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	// Live: the feature already goes through the picked provider. One that is not live keeps the choice for the day
+	// it does.
+	Live bool `json:"live"`
+}
+
+// Features are the background features, in the order Settings lists them.
+func Features() []Feature {
+	return []Feature{
+		{ID: FeatureNotifySummary, Live: true,
+			Title:       locale.Pick("Notification summaries", "Сводки для уведомлений"),
+			Description: locale.Pick("One short line of what the agent did, in the notification of a finished turn.", "Одна короткая строка о том, что сделал агент, в уведомлении о законченном ходе.")},
+		{ID: FeatureChatNow,
+			Title:       locale.Pick("What is going on now", "Что сейчас происходит"),
+			Description: locale.Pick("The line above a working chat that says what the agent is busy with.", "Строка над работающим чатом: чем сейчас занят агент.")},
+		{ID: FeatureNextStep,
+			Title:       locale.Pick("Next-step hints", "Подсказки следующего шага"),
+			Description: locale.Pick("What to ask the agent next, offered under its answer.", "Что попросить у агента дальше: варианты под его ответом.")},
+		{ID: FeatureMemory,
+			Title:       locale.Pick("Background memory", "Фоновая память"),
+			Description: locale.Pick("What is worth remembering from a chat, picked out after it.", "Что стоит запомнить из чата: выбирается после разговора.")},
+	}
+}
+
+// ValidFeature says whether id is a background feature.
+func ValidFeature(id string) bool {
+	return slices.ContainsFunc(Features(), func(f Feature) bool { return f.ID == id })
+}
+
+// Choice is the provider and the model picked for a feature.
+type Choice struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+// String is the choice as one value: "<provider>/<model>".
+func (c Choice) String() string { return c.Provider + "/" + c.Model }
+
+// ParseChoice reads "<provider>/<model>" (a model's name may have slashes of its own).
+func ParseChoice(s string) (Choice, bool) {
+	provider, model, ok := strings.Cut(s, "/")
+	if !ok || provider == "" || model == "" {
+		return Choice{}, false
+	}
+	return Choice{Provider: provider, Model: model}, true
+}
+
+// Reasons a choice is refused.
+var (
+	ErrUnknownFeature  = errors.New("bgmodel: no such feature")
+	ErrUnknownProvider = errors.New("bgmodel: no such provider")
+	ErrBadModel        = errors.New("bgmodel: no model named")
+)
+
+// Store keeps the choices in a file: {"features": {"<id>": {"provider", "model"}}}. A feature that is not there is
+// «as now». A file that is missing or does not read is no choices.
+type Store struct {
+	Path string
+
+	mu sync.Mutex
+}
+
+type choicesFile struct {
+	Features map[string]Choice `json:"features"`
+}
+
+func (s *Store) load() map[string]Choice {
+	out := map[string]Choice{}
+	raw, err := os.ReadFile(s.Path)
+	if err != nil {
+		return out
+	}
+	var f choicesFile
+	if json.Unmarshal(raw, &f) != nil {
+		return out
+	}
+	for id, c := range f.Features {
+		if ValidFeature(id) && c.Provider != "" && c.Model != "" {
+			out[id] = c
+		}
+	}
+	return out
+}
+
+// All is every choice made, by feature.
+func (s *Store) All() map[string]Choice {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.load()
+}
+
+// Get is the choice of a feature; ok is false for «as now».
+func (s *Store) Get(feature string) (Choice, bool) {
+	c, ok := s.All()[feature]
+	return c, ok
+}
+
+// Set keeps the choice of a feature; nil puts it back to «as now». It answers what the choice was before.
+func (s *Store) Set(feature string, c *Choice) (before *Choice, err error) {
+	if !ValidFeature(feature) {
+		return nil, ErrUnknownFeature
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	all := s.load()
+	if was, ok := all[feature]; ok {
+		before = &was
+	}
+	if c == nil {
+		delete(all, feature)
+	} else {
+		all[feature] = *c
+	}
+	raw, err := json.MarshalIndent(choicesFile{Features: all}, "", "  ")
+	if err != nil {
+		return before, err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
+		return before, err
+	}
+	tmp := s.Path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		_ = os.Remove(tmp)
+		return before, err
+	}
+	if err := os.Rename(tmp, s.Path); err != nil {
+		_ = os.Remove(tmp)
+		return before, err
+	}
+	return before, nil
+}
+
+// Providers is the part of the providers' registry the features use.
+type Providers interface {
+	Get(id string) (extproviders.Provider, error)
+	Key(p extproviders.Provider) (string, error)
+}
+
+// Outcome is how a feature's last call went.
+type Outcome struct {
+	At int64 `json:"at"`
+	OK bool  `json:"ok"`
+	// Reason and Message say why it failed (Message in words for the person); empty when it went well.
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// Runner runs the features on the providers picked for them.
+type Runner struct {
+	Store     *Store
+	Providers Providers
+	Client    *Client
+	Now       func() time.Time
+	// Log is told of a call that failed: the feature falls back to what it did before, and this is its record.
+	Log func(feature string, c Choice, err error)
+
+	mu   sync.Mutex
+	last map[string]Outcome
+}
+
+func (r *Runner) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
+}
+
+// Picked says whether a provider is picked for the feature: false is «as now», and the feature does what it always
+// did without calling Run.
+func (r *Runner) Picked(feature string) bool {
+	if r == nil || r.Store == nil {
+		return false
+	}
+	_, ok := r.Store.Get(feature)
+	return ok
+}
+
+// Last is how each feature's last call went, by feature; a feature that was never called is not there.
+func (r *Runner) Last() map[string]Outcome {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]Outcome, len(r.last))
+	for k, v := range r.last {
+		out[k] = v
+	}
+	return out
+}
+
+func failureMessage(reason string) string {
+	switch reason {
+	case ReasonUnauthorized:
+		return locale.Pick("The provider did not accept the key.", "Провайдер не принял ключ.")
+	case ReasonUnreachable:
+		return locale.Pick("The provider's address did not answer.", "Адрес провайдера не ответил.")
+	case ReasonTimeout:
+		return locale.Pick("The provider took too long to answer.", "Провайдер отвечал слишком долго.")
+	case ReasonRateLimited:
+		return locale.Pick("The provider says there are too many requests.", "Провайдер говорит, что запросов слишком много.")
+	case ReasonNoProvider:
+		return locale.Pick("The provider picked for this is gone.", "Выбранного провайдера больше нет.")
+	case ReasonEmpty:
+		return locale.Pick("The model answered with nothing.", "Модель ответила пустотой.")
+	}
+	return locale.Pick("The provider answered with an error.", "Провайдер ответил ошибкой.")
+}
+
+func (r *Runner) record(feature string, c Choice, err error) {
+	out := Outcome{At: r.now().UnixMilli(), OK: err == nil}
+	if err != nil {
+		out.Reason = ReasonOf(err)
+		out.Message = failureMessage(out.Reason)
+		if r.Log != nil {
+			r.Log(feature, c, err)
+		}
+	}
+	r.mu.Lock()
+	if r.last == nil {
+		r.last = map[string]Outcome{}
+	}
+	r.last[feature] = out
+	r.mu.Unlock()
+}
+
+// Call is what a feature asks its model.
+type Call struct {
+	System    string
+	Prompt    string
+	MaxTokens int
+	Timeout   time.Duration
+}
+
+// Run asks the model picked for the feature. used is false when none is picked («as now»): the caller does what it
+// did before, and nothing was called. An error means the same for the caller, and is recorded (Last, Log).
+func (r *Runner) Run(ctx context.Context, feature string, call Call) (text string, used bool, err error) {
+	if r == nil || r.Store == nil {
+		return "", false, nil
+	}
+	choice, ok := r.Store.Get(feature)
+	if !ok {
+		return "", false, nil
+	}
+	text, err = r.run(ctx, choice, call)
+	r.record(feature, choice, err)
+	return text, true, err
+}
+
+func (r *Runner) run(ctx context.Context, choice Choice, call Call) (string, error) {
+	p, err := r.Providers.Get(choice.Provider)
+	if err != nil {
+		return "", &Error{Reason: ReasonNoProvider}
+	}
+	key, err := r.Providers.Key(p)
+	if err != nil {
+		return "", &Error{Reason: ReasonUnauthorized}
+	}
+	return r.Client.Complete(ctx, Request{BaseURL: p.BaseURL, API: p.API, Key: key, Model: choice.Model,
+		System: call.System, Prompt: call.Prompt, MaxTokens: call.MaxTokens, Timeout: call.Timeout})
+}
+
+// Pick keeps the choice of a feature after checking it: the provider is one of the registry and a model is named;
+// nil puts the feature back to «as now». It answers what the choice was before.
+func (r *Runner) Pick(feature string, c *Choice) (before *Choice, err error) {
+	if !ValidFeature(feature) {
+		return nil, ErrUnknownFeature
+	}
+	if c != nil {
+		c.Model = strings.TrimSpace(c.Model)
+		if c.Model == "" || len(c.Model) > extproviders.MaxModelID || strings.ContainsAny(c.Model, " \t\r\n") {
+			return nil, ErrBadModel
+		}
+		if _, err := r.Providers.Get(c.Provider); err != nil {
+			return nil, ErrUnknownProvider
+		}
+	}
+	return r.Store.Set(feature, c)
+}
+
+// Forget puts every feature that runs on a provider back to «as now»: the provider was removed. It answers the
+// features it changed.
+func (r *Runner) Forget(provider string) []string {
+	var changed []string
+	for feature, c := range r.Store.All() {
+		if c.Provider == provider {
+			if _, err := r.Store.Set(feature, nil); err == nil {
+				changed = append(changed, feature)
+			}
+		}
+	}
+	slices.Sort(changed)
+	return changed
+}
+
+// NotifySummary is the summary of a finished turn for its notification: one short line of what the agent did, from
+// the text of its answer. used is false for «as now».
+func (r *Runner) NotifySummary(ctx context.Context, answer string) (summary string, used bool, err error) {
+	system := locale.Pick(
+		"You write the text of a push notification about an AI agent's finished turn. Say in one short sentence (at most 140 characters) what was done or what the agent needs from the person. Answer in the language of the text. No markdown, no quotes, no preamble.",
+		"Ты пишешь текст пуш-уведомления о законченном ходе ИИ-агента. Одним коротким предложением (не длиннее 140 знаков) скажи, что сделано или что агенту нужно от человека. Отвечай на языке текста. Без разметки, без кавычек, без вступлений.")
+	text, used, err := r.Run(ctx, FeatureNotifySummary, Call{System: system, Prompt: answer, MaxTokens: 120, Timeout: 8 * time.Second})
+	if !used || err != nil {
+		return "", used, err
+	}
+	// One line, whatever the model made of it.
+	return strings.Join(strings.Fields(text), " "), true, nil
+}

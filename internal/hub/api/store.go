@@ -65,6 +65,8 @@ func (v designView) RecordFromStore(ctx context.Context, m store.Machine, projec
 	return v.d.RecordFromStore(ctx, m, project, ownerFile)
 }
 
+func (v designView) ClosedUnrecorded() bool { return v.d != nil && v.d.ClosedUnrecorded() }
+
 // kitAccess is the access model for UI kits, when resource access is on.
 func kitAccess(cfg *config.Config, db *store.DB, o Options) *resaccess.Service {
 	if !cfg.ResourceAccess {

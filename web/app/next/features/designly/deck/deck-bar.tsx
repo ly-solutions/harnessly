@@ -230,6 +230,14 @@ const DeckBar = (p: IDeckBarProps) => {
           />
           {download}
           <BarButton
+            k="share"
+            icon="link"
+            label={t('next.deck.bar.share')}
+            pressed={p.shareOn}
+            disabled={!p.onShare}
+            onClick={p.onShare}
+          />
+          <BarButton
             k="full"
             icon="maximize-2"
             label={t('next.deck.bar.full')}

@@ -27,7 +27,7 @@ const (
 	queuedFor = 24 * time.Hour
 )
 
-// Run starts the queued runs, one at a time, until ctx ends.
+// Run fires the schedules and waits that came due and starts the queued runs, one at a time, until ctx ends.
 func (s *Service) Run(ctx context.Context) {
 	if !s.Enabled() {
 		return
@@ -40,6 +40,7 @@ func (s *Service) Run(ctx context.Context) {
 			return
 		case <-t.C:
 		}
+		s.Fire(ctx)
 		s.Dispatch(ctx)
 	}
 }

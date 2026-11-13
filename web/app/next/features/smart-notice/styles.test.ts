@@ -26,7 +26,7 @@ const animationsOf = (css: string) =>
 
 describe('the smart notice stylesheet', () => {
   it('is found with its classes', () => {
-    expect(classesOf(own)).toContain('.hx-sn-drop');
+    expect(classesOf(own)).toContain('.hx-sn__plate');
   });
 
   it('shares no class with another stylesheet', () => {

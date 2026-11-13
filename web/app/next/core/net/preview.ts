@@ -12,6 +12,9 @@ export interface IPreviewSlot {
   origin: string;
   /** Works once and for a minute; after the first load the slot's cookie lets plain slot addresses in. */
   enterUrl: string;
+  /** A slot by path (`<appBase>/__pv/<n>-<key>`): its key is in every address, there is no cookie to enter for, and
+   *  `enterUrl` is only the plain address of `path`. */
+  byPath?: boolean;
 }
 
 /** A port of the machine, or a site (a stand) by its origin. */

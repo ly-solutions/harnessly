@@ -90,7 +90,7 @@ var (
 		{Key: OptFallbackModel, Kind: OptKindText, Pattern: modelName},
 		{Key: OptThinking, Kind: OptKindBool},
 		{Key: OptOutputStyle, Kind: OptKindText, Pattern: styleName},
-		{Key: OptPermissionMode, Kind: OptKindEnum, Enum: []string{"default", "acceptEdits", "plan"}, ReadExtra: []string{"bypassPermissions", "auto", "dontAsk"}},
+		{Key: OptPermissionMode, Kind: OptKindEnum, Enum: []string{"default", "acceptEdits", "plan", "bypassPermissions"}, ReadExtra: []string{"auto", "dontAsk"}},
 		{Key: OptSandbox, Kind: OptKindBool},
 		{Key: OptProjectMcp, Kind: OptKindBool},
 		{Key: OptCompactWindow, Kind: OptKindInt, Min: 100000, Max: 1000000},

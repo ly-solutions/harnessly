@@ -63,4 +63,14 @@ describe('what in a chat makes a notice', () => {
     expect(broken?.kind).toBe('failed');
     expect(limited?.key).not.toBe(broken?.key);
   });
+
+  it('is only a wait for a delegated chat: its finished or failed turns stay silent', () => {
+    const kid = (patch: Partial<Conversation>) =>
+      conv({ parentId: 'parent' as Conversation['id'], ...patch });
+    expect(noticeEventOf(kid({ lastTurn: turn({}) }), true)).toBe(null);
+    expect(noticeEventOf(kid({ lastTurn: turn({ status: 'failed' }) }), true)).toBe(null);
+    expect(
+      noticeEventOf(kid({ state: { k: 'waiting-question', since: 50, questionId: 'q' } }), true),
+    ).toMatchObject({ kind: 'waiting' });
+  });
 });

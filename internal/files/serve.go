@@ -87,7 +87,17 @@ func (a *Access) ServePreview(w http.ResponseWriter, r *http.Request, q Query) {
 		ServeFileDownload(w, r, t.Real)
 		return
 	}
-	t := a.Preview(requested)
+	servePreview(w, r, a.Preview(requested))
+}
+
+// ServeShown shows the file at a resolved path the caller has already allowed (a file of a chat's folder):
+// the same types, sizes, ranges and policy as ServePreview.
+func ServeShown(w http.ResponseWriter, r *http.Request, real string) {
+	w.Header().Set("Cache-Control", "no-store")
+	servePreview(w, r, previewOf(real))
+}
+
+func servePreview(w http.ResponseWriter, r *http.Request, t Target) {
 	if !t.OK {
 		WriteJSON(w, r, t.Status, Error(t.Text))
 		return

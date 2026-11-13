@@ -7,6 +7,7 @@ import DeckStage, { DECK_FADE_MS, type IDeckStageProps } from '@/next/features/d
 const A = 'https://slot.example/a.dc.html';
 const B = 'https://slot.example/b.dc.html';
 const C = 'https://slot.example/c.dc.html';
+const D = 'https://slot.example/d.dc.html';
 
 const frames = () => [...document.querySelectorAll<HTMLIFrameElement>('.hx-deck__frame')];
 const frameOf = (src: string) => frames().find((f) => f.getAttribute('src') === src);
@@ -28,11 +29,12 @@ const drawn = (src: string, steps = 0) => {
 describe('DeckStage', () => {
   const onLoad = vi.fn();
   const onAhead = vi.fn();
+  const onAway = vi.fn();
   const onReady = vi.fn();
   let frameRef: RefObject<HTMLIFrameElement | null>;
   let painted = 0;
 
-  const props = (src: string, ahead: string[]): IDeckStageProps => ({
+  const props = (src: string, ahead: string[], warm = true): IDeckStageProps => ({
     src,
     w: 1920,
     h: 1080,
@@ -40,14 +42,17 @@ describe('DeckStage', () => {
     hold: null,
     frameRef,
     ahead,
+    warm,
     onAhead,
+    onAway,
     onReady,
     onLoad,
     painted,
     error: null,
     onReload: () => undefined,
   });
-  const ui = (src: string, ahead: string[]) => <DeckStage {...props(src, ahead)} />;
+  const ui = (src: string, ahead: string[], warm = true) => <DeckStage {...props(src, ahead, warm)} />;
+  const srcs = () => frames().map((f) => f.getAttribute('src'));
 
   beforeEach(() => {
     vi.stubGlobal(
@@ -62,6 +67,7 @@ describe('DeckStage', () => {
     painted = 0;
     onLoad.mockClear();
     onAhead.mockClear();
+    onAway.mockClear();
     onReady.mockClear();
   });
   afterEach(() => {
@@ -115,6 +121,8 @@ describe('DeckStage', () => {
     expect(frameRef.current).toBe(ahead);
     expect(onLoad).toHaveBeenCalledTimes(1);
     expect(onReady).toHaveBeenCalledWith({ w: 1920, h: 1080, steps: 3 });
+    // The slide left goes quiet out of sight (no stream of its files).
+    expect(onAway).toHaveBeenCalledWith(frameOf(A), A);
     // The slide just left stays loaded for the turn back, and the next one comes after it.
     act(() => {
       vi.advanceTimersByTime(DECK_FADE_MS);
@@ -138,6 +146,59 @@ describe('DeckStage', () => {
     });
     // A is neither on screen nor a neighbour any more.
     expect(frames().map((f) => f.getAttribute('src'))).toEqual([B, C]);
+  });
+
+  it('loads the other slides after the neighbours, two at a time, each as soon as one before it has loaded', () => {
+    open([B, C, D]);
+    expect(srcs()).toEqual([A, B, C]);
+    fireEvent.load(frameOf(C)!);
+    expect(srcs()).toEqual([A, B, C, D]);
+    expect(frameOf(D)!.dataset.on).toBe('0');
+  });
+
+  it('keeps a slide once loaded: turned back to, it is on screen at once with what its board said', () => {
+    const view = open([B, C]);
+    drawn(A, 2);
+    const first = frameOf(A)!;
+    fireEvent.load(frameOf(B)!);
+    drawn(B);
+    fireEvent.load(frameOf(C)!);
+    view.rerender(ui(B, [A, C]));
+    act(() => {
+      vi.advanceTimersByTime(DECK_FADE_MS);
+    });
+    view.rerender(ui(C, [B, A]));
+    act(() => {
+      vi.advanceTimersByTime(DECK_FADE_MS);
+    });
+    expect(srcs()).toEqual([A, B, C]);
+    onLoad.mockClear();
+    onReady.mockClear();
+    view.rerender(ui(A, [B, C]));
+    // The same document as before, on screen without loading or waiting.
+    expect(frameOf(A)).toBe(first);
+    expect(first.dataset.on).toBe('1');
+    expect(first.dataset.top).toBe('1');
+    expect(first.dataset.quick).toBe('1');
+    expect(frameRef.current).toBe(first);
+    expect(onLoad).toHaveBeenCalledTimes(1);
+    expect(onReady).toHaveBeenCalledWith({ w: 1920, h: 1080, steps: 2 });
+  });
+
+  it('starts no new frame while warming is off, and keeps those it has', () => {
+    const view = open([B]);
+    fireEvent.load(frameOf(B)!);
+    drawn(B);
+    view.rerender(ui(A, [B, C], false));
+    expect(srcs()).toEqual([A, B]);
+    view.rerender(ui(B, [A, C], false));
+    act(() => {
+      vi.advanceTimersByTime(DECK_FADE_MS);
+    });
+    expect(srcs()).toEqual([A, B]);
+    expect(frameOf(B)!.dataset.on).toBe('1');
+    view.rerender(ui(B, [A, C]));
+    expect(srcs()).toEqual([A, B, C]);
   });
 
   it('waits for the board’s word that it is drawn when it was loaded ahead but not drawn yet', () => {

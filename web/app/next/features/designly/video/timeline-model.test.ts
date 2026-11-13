@@ -6,8 +6,10 @@ import {
   msToFrac,
   normalizeRange,
   pxToMs,
+  rulerTicks,
   sceneIndexAt,
   spanOfRange,
+  tickLabel,
   tileBoxes,
 } from '@/next/features/designly/video/timeline-model';
 import { scene } from '@/next/features/designly/video/test-scene';
@@ -91,5 +93,28 @@ describe('clampAnchor', () => {
     expect(clampAnchor(scenes[0], 3900, 6000)).toEqual({ t0: 3900, t1: null, changed: true });
     expect(clampAnchor(scenes[0], 1000, 6000)).toEqual({ t0: 1000, t1: 4000, changed: true });
     expect(clampAnchor(scenes[0], 9000, null)).toEqual({ t0: 4000, t1: null, changed: true });
+  });
+});
+
+describe('rulerTicks', () => {
+  it('picks a label step with room to read and marks between labels', () => {
+    // 51 s on 1000 px: 19.6 px a second, so labels every 5 s (98 px), a mark every second.
+    const ticks = rulerTicks(51000, 1000);
+    const majors = ticks.filter((t) => t.major).map((t) => t.ms);
+    expect(majors).toEqual([0, 5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000]);
+    expect(ticks.length).toBe(52);
+    expect(ticks[1]).toEqual({ ms: 1000, left: 1000 / 51000, major: false });
+  });
+  it('has nothing to draw without a width or a length', () => {
+    expect(rulerTicks(0, 1000)).toEqual([]);
+    expect(rulerTicks(5000, 0)).toEqual([]);
+  });
+});
+
+describe('tickLabel', () => {
+  it('writes m:ss and tenths under a second', () => {
+    expect(tickLabel(0)).toBe('0:00');
+    expect(tickLabel(65000)).toBe('1:05');
+    expect(tickLabel(1500)).toBe('0:01.5');
   });
 });

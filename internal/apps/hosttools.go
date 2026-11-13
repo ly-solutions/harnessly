@@ -418,6 +418,9 @@ func (t HostTools) open(a Installed, view string) *jsvalue.Object {
 	if pick == nil {
 		return refuse(a.ID + " has no such view for the pane")
 	}
+	if a.DevSourceGone() {
+		return refuse(devSourceGoneWords(a))
+	}
 	if t.Open == nil {
 		return refuse("this chat has no pane to open it in")
 	}
@@ -557,6 +560,10 @@ func (t HostTools) pageCall(ctx context.Context, a Installed, args *jsvalue.Obje
 	}
 	if !a.Manifest.Allows("tools.page") {
 		return refuse(a.ID + " does not offer page tools (no tools.page right)")
+	}
+	// A window of an install whose folder is gone never connects: say that, not «open the view and call again».
+	if a.DevSourceGone() {
+		return refuse(devSourceGoneWords(a))
 	}
 	v, _ := args.Get("tool")
 	tool, _ := v.(string)

@@ -123,11 +123,10 @@ func (s *Service) openMe(r *http.Request, st store.Store, p *auth.Principal, ref
 	if err != nil {
 		return nil, err
 	}
-	w, err := loadWorld(ctx, st, o, s.recommended)
+	w, err := loadWorld(ctx, st, o, s.builtIn)
 	if err != nil {
 		return nil, err
 	}
-	w.install = s.install
 	tms, err := st.TeamsOfUser(ctx, p.User.ID)
 	if err != nil {
 		return nil, err
@@ -148,7 +147,7 @@ func (s *Service) openMe(r *http.Request, st store.Store, p *auth.Principal, ref
 }
 
 func (m *me) effective() []Effective {
-	return Resolve(m.w.resolverItems(), m.w.resolverEntries(), m.person)
+	return m.w.resolve(m.person)
 }
 
 func (s *Service) meEnv(w http.ResponseWriter, r *http.Request, p *auth.Principal) error {
@@ -178,7 +177,7 @@ func (s *Service) meEnv(w http.ResponseWriter, r *http.Request, p *auth.Principa
 			scope = m.entryScope(e.EntryID)
 		}
 		out.Items = append(out.Items, MeItem{ItemID: e.ID, EntryID: e.EntryID, Kind: e.Kind, Name: e.Name, Hint: e.Hint, Layer: e.Layer, ScopeID: scope,
-			LayerTitle: m.w.layerTitle(e.Layer, scope), Pinned: e.Pinned, Off: e.Off, CanToggle: !e.Pinned, GroupID: e.GroupID})
+			LayerTitle: m.w.layerTitle(e.Layer, scope), Pinned: e.Pinned, Off: e.Off, CanToggle: !e.Pinned && !hubproto.IsBuiltInEnvItem(e.ID), GroupID: e.GroupID})
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -232,6 +231,11 @@ func (s *Service) putMeEnv(w http.ResponseWriter, r *http.Request, p *auth.Princ
 		}
 		if eff.Pinned {
 			return httpx.Conflict("locked", "Закреплено: выключить нельзя")
+		}
+		if hubproto.IsBuiltInEnvItem(itemID) {
+			// The platform's items are not rows of the catalog, and this switch is kept by catalog item. A person turns
+			// a platform's app off on their machine («Приложения»), a platform's group with the group's switch.
+			return httpx.Conflict("built_in", "Встроенное выключают на своей машине, в «Приложениях»")
 		}
 		was := m.person.Off[itemID]
 		if was != *in.Off {

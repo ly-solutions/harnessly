@@ -17,6 +17,8 @@ import SubsBlock from '@/next/features/subagents/subs-block';
 import WorkflowCard from '@/next/features/workflows/workflow-card';
 import PeerNotes from '@/next/features/chat/peer-note';
 import SystemNote, { SYSTEM_NOTE } from '@/next/features/chat/system-note';
+import ErrorLine, { errorHeadline } from '@/next/features/chat/error-line';
+import { parseErrorText } from '@/next/features/chat/error-text';
 import { parsePeerOut } from '@/next/features/chat/peer';
 import { PeerOutStep } from '@/next/features/chat/peer-card';
 import { parseAskCall } from '@/next/features/asks/parse';
@@ -144,6 +146,8 @@ const WholeOutput = ({ entry }: { entry: ToolEntry }) => {
   );
 };
 
+const MCP_PREFIX = 'mcp__';
+
 const ToolStep = memo(({ entry }: { entry: ToolEntry }) => {
   const [open, setOpen] = useState(false);
   const seen = useSeen(open);
@@ -152,6 +156,9 @@ const ToolStep = memo(({ entry }: { entry: ToolEntry }) => {
   const text = denial ? denial.reason : entry.output?.text;
   const guardText = denial === null ? null : guardLabel(denial, label);
   const has = Boolean(text);
+  // A failed MCP tool answers with an error text, not with output: one line of the reason, the raw text folded.
+  // It is taken apart only once the card was opened.
+  const error = entry.ok === false && !denial && text && entry.tool.startsWith(MCP_PREFIX) ? text : null;
   let meta = '';
   if (entry.ok === null) meta = t('next.tool.running');
   else if (entry.ok === false && !denial) meta = t('next.tool.failed');
@@ -191,11 +198,13 @@ const ToolStep = memo(({ entry }: { entry: ToolEntry }) => {
           <div>
             {seen && (
               <div className="hx-tool__out">
-                {text?.split('\n').map((line, index) => (
-                  <div key={index} className="hx-cmd__ln">
-                    {line}
-                  </div>
-                ))}
+                {error && <ErrorLine error={parseErrorText(error)} headline={null} />}
+                {!error &&
+                  text?.split('\n').map((line, index) => (
+                    <div key={index} className="hx-cmd__ln">
+                      {line}
+                    </div>
+                  ))}
                 {entry.output?.truncated && (
                   <div className="hx-cmd__ln" data-tone="dim">
                     {t('next.tool.truncated', {
@@ -300,10 +309,17 @@ const NOTICE_ICONS: Record<NoticeEntry['level'], TIconName> = {
   error: 'circle-alert',
 };
 
+/** A warning or an error is the agent's raw text of a failed call: it is taken apart; a plain note stays as written. */
+const NoticeText = ({ entry }: { entry: NoticeEntry }) => {
+  if (entry.level === 'info' || entry.detail === null) return <span>{entry.detail ?? entry.code}</span>;
+  const error = parseErrorText(entry.detail);
+  return <ErrorLine error={error} headline={errorHeadline(error)} />;
+};
+
 const Notice = ({ entry }: { entry: NoticeEntry }) => (
   <div className="hx-notice" data-level={entry.level}>
     <Icon name={NOTICE_ICONS[entry.level]} size="sm" />
-    <span>{entry.detail ?? entry.code}</span>
+    <NoticeText entry={entry} />
   </div>
 );
 

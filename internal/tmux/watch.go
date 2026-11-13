@@ -58,6 +58,7 @@ type WatchStats struct {
 	Reconciles int64 // of them, the ones at rest
 	Missed     int64 // listings at rest that found a change no event told of
 	Served     int64 // ReadAllPanes answered without a tmux command
+	Captures   int64 // screens read over the control connection, with no tmux process of their own
 }
 
 // Watcher keeps the control clients of a Tmux's servers.
@@ -68,7 +69,7 @@ type Watcher struct {
 	stop  context.CancelFunc
 	wg    sync.WaitGroup
 
-	connects, listings, reconciles, missed, served atomic.Int64
+	connects, listings, reconciles, missed, served, captures atomic.Int64
 }
 
 // watchers are the running Watchers by their Tmux.
@@ -116,7 +117,7 @@ func (w *Watcher) Stats() WatchStats {
 		return WatchStats{}
 	}
 	return WatchStats{Connects: w.connects.Load(), Listings: w.listings.Load(), Reconciles: w.reconciles.Load(),
-		Missed: w.missed.Load(), Served: w.served.Load()}
+		Missed: w.missed.Load(), Served: w.served.Load(), Captures: w.captures.Load()}
 }
 
 func (w *Watcher) log(level, msg string, kv ...any) {
@@ -201,6 +202,8 @@ type sockWatch struct {
 	// blind: tmux named a pane's program differently than /proc does, so a change of it may come with no event.
 	blind bool
 	panes map[string]PaneInfo
+	// conn is the connection while it is live: a screen is read over it (watchedCapture).
+	conn *control
 
 	// seen is what the last listing settled of each pane's program; only the serving goroutine touches it.
 	seen map[string]seenForeground
@@ -233,7 +236,7 @@ func (s *sockWatch) set(state int) {
 	s.mu.Lock()
 	s.state = state
 	if state != watchLive {
-		s.panes, s.blind = nil, false
+		s.panes, s.blind, s.conn = nil, false, nil
 	}
 	s.mu.Unlock()
 }
@@ -332,6 +335,14 @@ func (s *sockWatch) serve(ctx context.Context, c *control, connected func()) err
 		return err
 	}
 	connected()
+	s.mu.Lock()
+	s.conn = c
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.conn = nil
+		s.mu.Unlock()
+	}()
 	s.w.connects.Add(1)
 	s.w.log("info", "tmux: panes are followed by events", "socket", s.socket)
 
@@ -438,9 +449,53 @@ var (
 	errControlSlow = errors.New("tmux did not answer the control client in time")
 )
 
+// refusedError is tmux's own refusal of a command (%error): the connection is whole.
+type refusedError string
+
+func (e refusedError) Error() string { return "tmux: " + string(e) }
+
+// watchedCapture reads a pane's screen over the control connection of the server the session lives on, so a look
+// starts no tmux process (twenty of them a second at rest). handled is false when there is no live
+// connection or it failed: the caller asks tmux with a command of its own, as without a Watcher. A connection that
+// did not answer is ended, since its late answer would be taken for the next command's.
+func (t *Tmux) watchedCapture(name string, flags []string) (out string, ok, handled bool) {
+	w := t.watcher()
+	if w == nil || strings.ContainsAny(name, "'\n\r") {
+		return "", false, false
+	}
+	socket := t.SocketOf(name)
+	var c *control
+	for _, s := range w.socks {
+		if s.socket == socket {
+			s.mu.Lock()
+			c = s.conn
+			s.mu.Unlock()
+		}
+	}
+	if c == nil {
+		return "", false, false
+	}
+	lines, err := c.do("capture-pane " + strings.Join(flags, " ") + " -t '" + name + "'")
+	var refused refusedError
+	switch {
+	case err == nil:
+		w.captures.Add(1)
+		return strings.Join(lines, "\n") + "\n", true, true
+	case errors.As(err, &refused):
+		// No such session or pane: what the command would have failed with.
+		w.captures.Add(1)
+		return "", false, true
+	}
+	c.close()
+	return "", false, false
+}
+
 // control is one tmux client in control mode: commands go in as lines, each answered by a %begin … %end block, and
 // the server's notifications come between the blocks.
 type control struct {
+	// mu: one command at a time. The answers come in the order of the commands, and the screens are asked for by
+	// other goroutines than the one that lists the panes.
+	mu      sync.Mutex
 	in      io.Writer
 	replies chan controlReply
 	changed chan struct{} // a notification that the panes may have changed
@@ -521,7 +576,7 @@ func (c *control) reply() ([]string, error) {
 	select {
 	case r := <-c.replies:
 		if !r.ok {
-			return nil, errors.New("tmux: " + strings.Join(r.lines, " "))
+			return nil, refusedError(strings.Join(r.lines, " "))
 		}
 		return r.lines, nil
 	case <-c.gone:
@@ -541,6 +596,8 @@ func (c *control) reply() ([]string, error) {
 
 // do sends one command and waits for its answer.
 func (c *control) do(cmd string) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if _, err := io.WriteString(c.in, cmd+"\n"); err != nil {
 		return nil, errControlGone
 	}

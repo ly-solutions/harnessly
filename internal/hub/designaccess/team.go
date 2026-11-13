@@ -37,7 +37,7 @@ func (s *Service) serveStore(w http.ResponseWriter, r *http.Request, u store.Use
 
 func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine, rest string) error {
 	if s.view == nil || m.SpaceID == "" {
-		return fail("not_found", "Хранилище дизайнов не подключено")
+		return fail("store_off", "Хранилище дизайнов не подключено")
 	}
 	project, sub, _ := strings.Cut(strings.Trim(rest, "/"), "/")
 	if !projectIDRe.MatchString(project) {
@@ -92,7 +92,7 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 			return s.view.Serve(isolated(w), r, m.SpaceID, project, head, nil, nil, false)
 		case "f":
 			segs, ok := segments(file)
-			if !ok || strings.HasPrefix(segs[0], "__") && segs[0] != "__guest" && segs[0] != "__vendor" {
+			if !ok || !servedSegment(segs[0]) {
 				return fail("not_found", "Файл не найден")
 			}
 			return s.view.Serve(isolated(w), r, m.SpaceID, project, head, segs, nil, false)

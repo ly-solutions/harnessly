@@ -80,6 +80,8 @@ type Link struct {
 	embedded *filestore.Server
 	shared   func(dir string) bool
 	told     sync.Map
+	// running is the sync of each collection while it runs (collection → *filesync.Agent), for PushNow.
+	running sync.Map
 }
 
 // Decide is the kind of link the options call for, "" for none, and why.
@@ -356,7 +358,22 @@ func (l *Link) syncOnce(ctx context.Context, collection, dir string) error {
 		return err
 	}
 	defer a.Close()
+	l.running.Store(collection, a)
+	defer l.running.CompareAndDelete(collection, a)
 	return a.Run(ctx)
+}
+
+// ErrNotSyncing: no sync of the collection runs now (the store is not linked yet, or another runtime syncs the folder).
+var ErrNotSyncing = errors.New("the collection is not being synced now")
+
+// PushNow sends what changed under rel of a synced folder to the store at once, ahead of the watcher and the
+// periodic rescan: a project the page had to open from the machine is in the store for the next look.
+func (l *Link) PushNow(ctx context.Context, collection, rel string) error {
+	a, ok := l.running.Load(collection)
+	if !ok {
+		return ErrNotSyncing
+	}
+	return a.(*filesync.Agent).Scan(ctx, rel)
 }
 
 // designRefusalGroup names the paths of the design library the store refuses together: a write is judged by the

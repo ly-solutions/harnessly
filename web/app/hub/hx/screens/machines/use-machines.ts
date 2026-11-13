@@ -10,6 +10,7 @@ import type {
   MachineDetail,
   MachinesList,
   OrgMachine,
+  OwnerHistory,
   RestartWhat,
   RestartWhen,
 } from '../../../org/api/machines';
@@ -67,6 +68,8 @@ export interface MachineCard {
   remove: () => Promise<boolean>;
   resize: (to: { cores: number; ramGb: number; diskGb: number }) => Promise<boolean>;
   saveAccess: (mode: AccessMode, personIds: string[]) => Promise<boolean>;
+  /** Hands the machine to another member of its space; the answer is the card with the new owner. */
+  assignOwner: (userId: string, history: OwnerHistory) => Promise<boolean>;
 }
 
 export const useMachineCard = (id: string, onChanged: (m: OrgMachine) => void): MachineCard => {
@@ -201,6 +204,12 @@ export const useMachineCard = (id: string, onChanged: (m: OrgMachine) => void): 
         flying.current -= 1;
       }
     },
+    assignOwner: (userId, history) =>
+      act(
+        (d) => d,
+        () => api.assignMachineOwner(id, userId, history),
+        'владелец изменён',
+      ),
     resize: (to) =>
       act(
         (d) => withBusy(d, 'resize'),

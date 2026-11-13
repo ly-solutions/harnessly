@@ -2,6 +2,7 @@
 // the contract names or throws an ApiError carrying the contract's error code. The screens decide by `code`, never by
 // the message.
 import type { NetworkPolicy } from './network';
+import type { RolloutSwitch, SwitchKey, SwitchPut } from './switches';
 import type {
   AgentStatus,
   CLIStatus,
@@ -190,6 +191,12 @@ export const createApi = (fetcher: Fetcher = (input, init) => fetch(input, init)
       network: {
         get: () => get<NetworkPolicy>('/api/admin/network'),
         put: (policy: NetworkPolicy) => put<NetworkPolicy>('/api/admin/network', policy),
+      },
+      /** The rollout switches of the installation (docs/hub/rollout-switches.md). */
+      switches: {
+        list: () => get<{ switches: RolloutSwitch[] }>('/api/admin/switches'),
+        put: (row: SwitchPut) => put<void>('/api/admin/switches', row),
+        remove: (key: SwitchKey) => del('/api/admin/switches', key),
       },
     },
 

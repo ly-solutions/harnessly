@@ -1,5 +1,5 @@
 // The «Ревью кода» app on made-up data, for the eye and for screenshots: ?dev=reviewapp, &view=home|mr|heavy|nogitlab|
-// loading|offline|notes|mr|agent|mragent (&asking=1: the agent still going through it; &gl=shared: no own GitLab connection), &place=left|island|float (where the chat stands by an open change), &theme=light|dark, &lang=en|ru.
+// loading|offline|notes|mr|agent|mragent (&asking=1: the agent still going through it; &gl=shared: no own GitLab connection), &theme=light|dark, &lang=en|ru.
 // Never part of a production path.
 import '@/next/styles/order';
 import './apps-gallery.css';
@@ -8,8 +8,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from '@/platform/router';
 import { pinLocale } from '@/next/i18n';
 import { PortalContext } from '@/next/ui/portal';
-import AppMain from '@/next/features/app-main/app-main';
-import { PLACEMENTS, type TPlacement } from '@/next/features/app-main/placement';
 import ReviewApp from '@/next/features/review/app/review-app';
 import type { IGithubList } from '@/next/features/review/app/home';
 import ReviewHome, { type THomeFeed } from '@/next/features/review/app/review-home';
@@ -42,6 +40,7 @@ const row = (over: Partial<AppRow> & Pick<AppRow, 'id' | 'title'>): AppRow => ({
   updatedAt: NOW - HOUR,
   closedAt: null,
   author: 'Олег Лунин',
+  avatar: null,
   assignees: [],
   reviewers: [],
   me: [],
@@ -521,9 +520,6 @@ const ReviewAppGallery = () => {
   const dark = params.theme === 'dark';
   pinLocale(params.lang === 'en' ? 'en' : 'ru');
   const view = first(params.view) ?? 'home';
-  const [placement, setPlacement] = useState<TPlacement>(
-    PLACEMENTS.find((p) => p === first(params.place)) ?? 'island',
-  );
   const portal = useRef<HTMLDivElement>(null);
   const notes = useGalleryNotes();
   const mr = useGalleryMr(params.gl !== 'shared', params.host === 'github');
@@ -591,20 +587,7 @@ const ReviewAppGallery = () => {
               onOpenDrawer={() => {}}
             />
           ) : (
-            <AppMain
-              title={t('next.reviewApp.title')}
-              icon="git-pull-request"
-              chatTitle="Посмотри !318 Ромы"
-              placement={placement}
-              float={null}
-              onPlacement={setPlacement}
-              onFloat={() => {}}
-              menu={[]}
-              stage={stage}
-              chat={<p className="hx-rvhome__empty">Посмотрел все 8 файлов и сверил с HRN-1145.</p>}
-              island={<p className="hx-rvhome__empty">Спросить про этот MR</p>}
-              inspector={null}
-            />
+            stage
           )}
         </main>
         <div ref={portal} className="hx-portal" />

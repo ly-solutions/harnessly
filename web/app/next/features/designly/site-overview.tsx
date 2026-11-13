@@ -8,7 +8,7 @@
 // pointer leads: the others' answers to being moved are not passed on again.
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@/next/i18n';
-import { GUEST_ORIGIN, fromFrame } from '@/next/features/designly/bridge-origin';
+import { frameOrigin, fromFrame, GUEST_ORIGIN } from '@/next/features/designly/bridge-origin';
 import {
   OVERVIEW_GROUPS,
   syncedScroll,
@@ -84,7 +84,7 @@ export const Overview = ({
   /** The screen under the pointer: its scroll is the one the others follow. */
   const leader = useRef<string | null>(null);
   const scrollY = useRef(0);
-  const origin = src === null || guest ? GUEST_ORIGIN : new URL(src, window.location.href).origin;
+  const origin = src === null || guest ? GUEST_ORIGIN : (frameOrigin(src) ?? GUEST_ORIGIN);
   const latest = useRef({ onSpace, onPan });
   useEffect(() => {
     latest.current = { onSpace, onPan };

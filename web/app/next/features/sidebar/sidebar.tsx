@@ -74,15 +74,14 @@ import {
   type TChatStatus,
   type TSidebarView,
 } from '@/next/features/sidebar/types';
+import { withDelegationWait } from '@/next/features/sidebar/status';
 
-/** The delegated chats show under their parent, unless the person folded them, while one of them is in this state. */
+/** The delegated chats stay folded under their parent; they open by themselves only while one of them waits for the
+ *  person (a question, a permission, a plan), unless the person folded them. */
 const KIDS_SHOWN_BY: ReadonlySet<TChatStatus> = new Set([
-  CHAT_STATUS.thinking,
-  CHAT_STATUS.background,
   CHAT_STATUS.question,
   CHAT_STATUS.perm,
   CHAT_STATUS.plan,
-  CHAT_STATUS.waitingMachine,
 ]);
 
 const DAY_LABEL: Record<TDayGroup, string> = {
@@ -482,7 +481,7 @@ const ProfileButton = ({
 const Sidebar = ({
   brand,
   hubHref = null,
-  chats,
+  chats: chatsIn,
   projects,
   favorites = NO_FAVORITES,
   loadError,
@@ -511,6 +510,8 @@ const Sidebar = ({
   designs = null,
   ref,
 }: ISidebarProps) => {
+  // A chat free itself while its delegated chats work shows that it waits for them.
+  const chats = useMemo(() => (chatsIn === null ? null : withDelegationWait(chatsIn)), [chatsIn]);
   const railKey = useKeyHint('global.rail');
   const { pending, run } = usePendingList();
   const [renaming, setRenaming] = useState<{ id: string; saving: boolean } | null>(null);

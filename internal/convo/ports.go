@@ -117,6 +117,13 @@ type Launcher interface {
 	Resume(conv wire.Conversation) error
 }
 
+// SessionEnder is a Launcher that can end the tmux session of a launch that failed, with whatever still runs in it: a
+// shell that hung before the agent started runs the launch line when it comes back, and that agent has no chat
+// a launch made anew beside a session left alive gave one chat two agents.
+type SessionEnder interface {
+	EndSession(session string)
+}
+
 // ModeKeeper is a Launcher that keeps the fast and permission modes a chat last ran in on its tab, so the
 // next start of its agent, the runtime's own resume at startup too, starts in them again.
 type ModeKeeper interface {
@@ -286,7 +293,11 @@ type Deps struct {
 	Titler func(p wire.Provider, firstMessage, firstAnswer string) (string, error)
 	// Summarizer writes a few lines on what the agent did in a turn, from the person's message and the agent's replies
 	// (never the tools' input or output); nil writes none, and the notification keeps the start of the answer.
-	Summarizer func(p wire.Provider, message string, replies []string) (string, error)
+	// provider and model are the ones SummaryModel picked, else the chat's provider and ""; the implementation takes its
+	// cheap model for "".
+	Summarizer func(p wire.Provider, model, message string, replies []string) (string, error)
+	// SummaryModel is the setting of the summaries' model; nil is «Авто».
+	SummaryModel func() *wire.NoticeSummaryModel
 	// Worktree makes a git worktree for a conversation and returns its folder; nil: a git worktree off the HEAD of the
 	// repository the folder is in (a folder that is none is used as it is).
 	Worktree func(cwd, name string) (string, error)

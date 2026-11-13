@@ -112,22 +112,47 @@ interface ILatest {
   onStep: (dir: 1 | -1) => void;
 }
 
+/** The shape that moves: the shift is written on it, in properties that do not inherit (styles/smart-notice.css), so
+ *  a move restyles that one element and not everything the plate holds. */
+const shapeOf = (el: HTMLElement): HTMLElement => el.querySelector<HTMLElement>('.hx-sn__shape') ?? el;
+
 const showShift = (el: HTMLElement | null, now: ILatest, dx: number, dy: number, axis: 'x' | 'y' | null) => {
   if (!el) return;
   const away = now.edge === 'bottom' ? -dy : dy;
   // Sideways it goes one to one; up and down freely through a stack, otherwise only towards what it can become.
   const free = now.stacked && !now.open ? true : now.open ? away < 0 : true;
   const y = axis === 'y' ? rubber(dy, free) : 0;
-  el.dataset.drag = '';
-  el.style.setProperty('--sn-dx', `${axis === 'x' ? dx : 0}px`);
-  el.style.setProperty('--sn-dy', `${y}px`);
+  if (el.dataset.drag === undefined) el.dataset.drag = '';
+  const shape = shapeOf(el);
+  shape.style.setProperty('--sn-dx', `${axis === 'x' ? dx : 0}px`);
+  shape.style.setProperty('--sn-dy', `${y}px`);
 };
 
 export const clearShift = (el: HTMLElement | null) => {
   if (!el) return;
   delete el.dataset.drag;
-  el.style.removeProperty('--sn-dx');
-  el.style.removeProperty('--sn-dy');
+  const shape = shapeOf(el);
+  shape.style.removeProperty('--sn-dx');
+  shape.style.removeProperty('--sn-dy');
+};
+
+/** How long a plate brought forward by a throw waits for the page to make it the front before it settles anyway. */
+const PROMOTE_WAIT_MS = 1500;
+
+/**
+ * The page has made the plate brought forward by a throw the front: the shape is back where the plate stands, with
+ * the new line and no move of its own (the plate already made it).
+ */
+export const land = (el: HTMLElement | null) => {
+  if (!el) return;
+  clearShift(el);
+  delete el.dataset.fling;
+  delete el.dataset.promote;
+  delete el.dataset.rise;
+  el.dataset.land = '';
+  window.setTimeout(() => {
+    if (el.dataset.land !== undefined) delete el.dataset.land;
+  }, RISE_MS);
 };
 
 /** The next plate rises from the stack into the front: the shape plays hx-sn-rise once. */
@@ -155,14 +180,17 @@ const finishGesture = (
     const ms = flingMs(to - end.dx, end.vx);
     delete el.dataset.drag;
     el.style.setProperty('--sn-fling-ms', `${ms}ms`);
-    el.style.setProperty('--sn-dx', `${to}px`);
+    shapeOf(el).style.setProperty('--sn-dx', `${to}px`);
     el.dataset.fling = '';
     const stacked = now.stacked;
+    // The plate behind comes forward with the throw, its line already on it (styles/smart-notice.css), so the next one
+    // is there at once, however long the page takes to draw it as the front (land(), when it has).
+    if (stacked) el.dataset.promote = '';
     window.setTimeout(() => {
       el.style.removeProperty('--sn-fling-ms');
-      // The next plate takes the front from the stack; the last one leaves with the whole notice, still thrown.
-      if (stacked) rise(el, 1);
       now.onHide();
+      // Should the page never make another the front, the plate does not stay thrown.
+      if (stacked) window.setTimeout(() => el.dataset.promote !== undefined && land(el), PROMOTE_WAIT_MS);
     }, ms);
     return;
   }

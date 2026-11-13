@@ -59,6 +59,8 @@ type Config struct {
 	TaskKey *regexp.Regexp
 	// AvatarPath is the route that serves tracker avatars, as the page loads it.
 	AvatarPath string
+	// ForgeAvatarPath is the route that serves the avatars of code hosts' people, as the page loads it.
+	ForgeAvatarPath string
 	// IconAgent is the User-Agent of site icon requests.
 	IconAgent string
 	// OrganizerFile is the person's organizer.
@@ -80,6 +82,7 @@ type Service struct {
 	gitlab   *gitlabState
 	github   *githubState
 	meta     *linkMetaState
+	forge    *forgeAvatars
 	tasks    *taskState
 	icons    *iconState
 	apps     *appsState
@@ -103,6 +106,7 @@ func New(cfg Config) *Service {
 		gitlab:   newGitlabState(),
 		github:   newGithubState(),
 		meta:     newLinkMetaState(),
+		forge:    &forgeAvatars{seen: map[string]*avatar{}},
 		tasks:    newTaskState(),
 		icons:    newIconState(),
 		apps:     newAppsState(),

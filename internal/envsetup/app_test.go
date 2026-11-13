@@ -19,7 +19,7 @@ type fakeApps struct {
 	wants  []string
 }
 
-func (a *fakeApps) Install(dir, itemID string, locked bool, install map[string]string) (string, bool, []string, error) {
+func (a *fakeApps) Install(dir, itemID string, locked bool, install map[string]string, _ []string) (string, bool, []string, error) {
 	if _, err := os.Stat(filepath.Join(dir, "harnessly", "app.json")); err != nil {
 		return "", false, nil, err
 	}

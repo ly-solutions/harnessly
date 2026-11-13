@@ -114,6 +114,18 @@ export const AccountScreen = () => {
         </section>
       )}
 
+      {me.user.isAdmin && (
+        <section className="hub-section">
+          <h2 className="hub-section__t">{t('switches.title')}</h2>
+          <Note>{t('switches.entry')}</Note>
+          <p className="hub-note">
+            <Link to="/switches" className="hub-link">
+              {t('switches.open')}
+            </Link>
+          </p>
+        </section>
+      )}
+
       <section className="hub-section">
         <h2 className="hub-section__t">{t('account.methods')}</h2>
         <div className="hub-list">

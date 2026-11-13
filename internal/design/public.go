@@ -37,6 +37,10 @@ const (
 	PublicAppDir    = "_app"
 	PublicGuestDir  = "__guest"
 	PublicVendorDir = "__vendor"
+	// PublicLibDir holds what a snapshot needs to play without the machine: the motion kit (GSAP, the screen
+	// and tk scripts, the fonts) and the video runtime. The library serves them from its own build; a board of the
+	// snapshot is rewritten to ask for them here, under a version, so a browser keeps each for good.
+	PublicLibDir = "__lib"
 	// PublicRevDir answers the revision a new pinned link should hold (see PinRevision).
 	PublicRevDir = "__rev"
 	// PublicShareDir answers whether a link to the project may be made: the apps' checks of the share trigger ran and
@@ -548,6 +552,9 @@ func (a *API) servePublic(w http.ResponseWriter, r *http.Request, project string
 	case PublicMediaDir:
 		a.publicMediaServe(w, r, lib, project, scope, segments[1:])
 		return
+	case PublicLibDir:
+		a.publicLib(w, r, segments[1:], head)
+		return
 	case PublicVendorDir:
 		if len(segments) == 2 {
 			a.L.serveVendor(w, r, vendorPrefix+segments[1], head)
@@ -565,7 +572,7 @@ func (a *API) servePublic(w http.ResponseWriter, r *http.Request, project string
 		publicText(w, 404, "Not found")
 		return
 	}
-	f, st, file, ok := a.openPublic(lib, project, segments)
+	f, st, file, ok := a.openPublic(lib, project, viewSegments(a, lib, project, segments))
 	if !ok {
 		publicText(w, 404, "Not found")
 		return
@@ -598,7 +605,11 @@ func (a *API) servePublic(w http.ResponseWriter, r *http.Request, project string
 		}
 		prefix := strings.Repeat("../", len(segments)-1)
 		versioned := withAssetVersionsOf(jscompat.DecodeUTF8(src), filepath.Dir(file), root, lib.engineSwap(project), lib.kitMissing(project, root), nil)
+		versioned = lib.libAddressesAt(versioned, prefix)
 		body := []byte(withGuestClient(versioned, project, prefix+PublicGuestDir+"/client.js", prefix+PublicVendorDir+"/"))
+		if lib.IsVideo(project) {
+			body = []byte(lib.withVideoRuntime(string(body), prefix))
+		}
 		if len(body) > PublicFileLimit {
 			publicText(w, 404, "Not found")
 			return
@@ -620,6 +631,19 @@ func (a *API) servePublic(w http.ResponseWriter, r *http.Request, project string
 	if !a.L.servePublicStatic(w, r, f, st, file, typ, ext, policy, head) {
 		publicText(w, 404, "Not found")
 	}
+}
+
+// HRN-1262 with HRN-1258. A video's scene read from the hub (the store or the snapshot) plays as it does from the
+// machine: the runtime and the motion kit are served at the snapshot's __lib (publiclib.go), and the runtime finds its
+// fonts beside itself and the board script by its guest address.
+const guestMotionDir = "motion"
+
+// guestSceneRuntime is video-runtime.js for a scene off the machine: its fonts come from beside the script, and the
+// board script it tells apart by its address is the guest one.
+func guestSceneRuntime(src string) string {
+	src = strings.Replace(src, `link.href = '/__lib/motion/fonts.css';`,
+		`link.href = new URL('`+guestMotionDir+`/fonts.css', document.currentScript ? document.currentScript.src : location.href).href;`, 1)
+	return strings.Replace(src, `var LIB = '/__lib/client.js';`, `var LIB = '/`+PublicGuestDir+`/client.js';`, 1)
 }
 
 // withGuestClient puts the board script in guest mode at the head of a board; src is relative to the board, so it

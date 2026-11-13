@@ -96,6 +96,7 @@ interface IViewExtra {
   path?: string | null;
   /** The agent of the deck's chat is working. */
   busy?: boolean;
+  access?: { label: string; onOpen: () => void; manage?: boolean };
 }
 
 const view = (extra: IViewExtra = {}) =>
@@ -113,6 +114,7 @@ const view = (extra: IViewExtra = {}) =>
       onReload={() => undefined}
       pane={extra.pane ? { onBack: () => undefined } : undefined}
       stage={extra.busy === undefined ? undefined : stageOf(extra.busy)}
+      access={extra.access}
       maxed={false}
       onToggleMax={() => undefined}
       onOpenDrawer={() => undefined}
@@ -187,12 +189,22 @@ describe('deck shell', () => {
     const keys = [...document.querySelectorAll('.hx-deck__bar [data-k]')].map((el) =>
       el.getAttribute('data-k'),
     );
-    expect(keys).toEqual(['back', 'comment', 'download', 'full', 'more']);
+    expect(keys).toEqual(['back', 'comment', 'download', 'share', 'full', 'more']);
     expect(document.querySelector('.hx-deck__lmode')).not.toBeNull();
     key('f');
     expect(root().dataset.full).toBe('1');
     key('Escape');
     expect(root().dataset.full).toBe('0');
+  });
+
+  it('keeps «Поделиться» in the viewing bar: it opens the one share dialog', () => {
+    const onOpen = vi.fn();
+    view({ access: { label: 'Share', onOpen, manage: false } });
+    fireEvent.click(document.querySelector('[data-k="more"]')!);
+    fireEvent.click([...document.querySelectorAll('.hx-deck-menu .hx-deck-item')].at(-1)!);
+    expect(root().dataset.screen).toBe('link');
+    fireEvent.click(document.querySelector('[data-k="share"]')!);
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
   it('turns the slides with the arrows', () => {
@@ -204,7 +216,7 @@ describe('deck shell', () => {
     expect(onGo).toHaveBeenLastCalledWith('s1.dc.html');
   });
 
-  it('loads the neighbouring slides out of sight once the slide on screen is drawn, and not while a recording runs', () => {
+  it('loads the other slides out of sight once the slide on screen is drawn, the next one first', () => {
     view();
     const first = document.querySelector<HTMLIFrameElement>('.hx-deck__frame')!;
     expect(document.querySelectorAll('.hx-deck__frame')).toHaveLength(1);
@@ -215,8 +227,8 @@ describe('deck shell', () => {
     );
     expect(sources).toEqual([
       'https://slot.example/s2.dc.html',
-      'https://slot.example/s1.dc.html',
       'https://slot.example/s3.dc.html',
+      'https://slot.example/s1.dc.html',
     ]);
     expect(document.querySelectorAll('.hx-deck__frame[data-top="0"][data-on="0"]')).toHaveLength(2);
   });

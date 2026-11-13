@@ -1,7 +1,9 @@
-// The timeline (read-only in the MVP): a scene track of tiles sized by duration, a moments track (derived moments
-// dashed), the playhead, comment markers for moments and ranges, and a drag on the ruler that selects a range and offers
-// «Комментировать», «В чат» and «Повторять». A click on the ruler seeks.
+// The timeline: a ruler with the time, a scene track of tiles sized by duration (number, title, length), a moments
+// track (derived moments dashed), the playhead with its handle, comment markers for moments and ranges. A click or a
+// drag anywhere scrubs the playhead; a drag with Shift selects a range and offers «Комментировать», «В чат» and
+// «Повторять». A hover shows the time under the pointer.
 import {
+  useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -18,8 +20,10 @@ import {
   msToFrac,
   normalizeRange,
   pxToMs,
+  rulerTicks,
   sceneIndexAt,
   spanOfRange,
+  tickLabel,
   tileBoxes,
 } from '@/next/features/designly/video/timeline-model';
 import { useVideoComments } from '@/next/features/designly/video/use-video-comments';
@@ -236,11 +240,78 @@ const OverlayStrip = ({ overlay: o, scene, total, lane, selected, onDown, onMove
   );
 };
 
+/** What a pointer down on the track started: scrubbing the playhead, or (with Shift) selecting a range. */
+const DRAG = { scrub: 'scrub', range: 'range' } as const;
+type TDrag = (typeof DRAG)[keyof typeof DRAG];
+
 interface IDown {
   px: number;
   at: number;
   pointer: number;
+  mode: TDrag;
 }
+
+/** The track's width in px, kept as it resizes (the ruler picks its label step from it). */
+const useWidth = (ref: { current: HTMLElement | null }): number => {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setWidth(el.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+};
+
+/** A scene tile: its number and title, its length at the right when there is room. */
+const SceneTile = ({
+  scene,
+  index,
+  left,
+  width,
+  on,
+}: {
+  scene: IVideoScene;
+  index: number;
+  left: number;
+  width: number;
+  on: boolean;
+}) => {
+  const ref = useVars<HTMLDivElement>({ '--l': pct(left), '--w': pct(width) });
+  return (
+    <div
+      ref={ref}
+      className="hx-video-tl__tile"
+      data-on={on ? '1' : '0'}
+      title={`${index + 1}. ${scene.title} · ${clock(scene.dur)}`}
+    >
+      <span className="hx-video-tl__tile-n">{index + 1}</span>
+      <span className="hx-video-tl__tile-t">{scene.title}</span>
+      <span className="hx-video-tl__tile-d">{clock(scene.dur)}</span>
+    </div>
+  );
+};
+
+/** A labelled point on the track: the playhead's or the hover's time above the ruler. */
+const Flag = ({ cls, left, text }: { cls: string; left: number; text: string }) => {
+  const ref = useVars<HTMLDivElement>({ '--l': pct(left) });
+  return (
+    <div ref={ref} className={cls}>
+      <span>{text}</span>
+    </div>
+  );
+};
+
+const Tick = ({ left, major, label }: { left: number; major: boolean; label: string }) => {
+  const ref = useVars<HTMLDivElement>({ '--l': pct(left) });
+  return (
+    <div ref={ref} className="hx-video-tl__tick" data-major={major ? '1' : '0'}>
+      {major && <span>{label}</span>}
+    </div>
+  );
+};
 
 const VideoTimeline = ({
   machine,
@@ -259,46 +330,89 @@ const VideoTimeline = ({
 }: IVideoTimelineProps) => {
   const track = useRef<HTMLDivElement>(null);
   const down = useRef<IDown | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const frame = useRef<number | null>(null);
+  const pendingSeek = useRef<number | null>(null);
+  const [dragging, setDragging] = useState<TDrag | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
   const comments = useVideoComments(machine, id, video);
+  const width = useWidth(track);
   const total = video.durMs;
   const { scenes } = video;
 
   const tiles = tileBoxes(scenes, total);
   const dots = dotBoxes(scenes, total);
+  const ticks = rulerTicks(total, width);
   const current = sceneIndexAt(scenes, time);
+
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
 
   const msAt = (event: ReactPointerEvent<HTMLElement>): number => {
     const rect = track.current?.getBoundingClientRect();
     return rect ? pxToMs(event.clientX - rect.left, rect.width, total) : 0;
   };
+  // Scrubbing seeks once a frame: the player switches scenes, a seek per pointer event would queue them up.
+  const scrubTo = (ms: number) => {
+    pendingSeek.current = ms;
+    if (frame.current !== null) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = null;
+      if (pendingSeek.current !== null) onSeek(pendingSeek.current);
+      pendingSeek.current = null;
+    });
+  };
 
   const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
+    // A comment marker is a button of its own: its click seeks to the comment.
+    if ((event.target as HTMLElement).closest('button')) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    down.current = { px: event.clientX, at: msAt(event), pointer: event.pointerId };
+    const at = msAt(event);
+    const mode = event.shiftKey ? DRAG.range : DRAG.scrub;
+    down.current = { px: event.clientX, at, pointer: event.pointerId, mode };
+    if (mode === DRAG.scrub) {
+      onRange(null);
+      setDragging(DRAG.scrub);
+      scrubTo(at);
+    }
   };
   const onMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const at = msAt(event);
+    setHover(at);
     const d = down.current;
     if (!d || d.pointer !== event.pointerId) return;
-    if (!dragging && Math.abs(event.clientX - d.px) < DRAG_SLOP_PX) return;
-    setDragging(true);
-    onRange(normalizeRange(d.at, msAt(event), total));
+    if (d.mode === DRAG.scrub) {
+      scrubTo(at);
+      return;
+    }
+    if (dragging !== DRAG.range && Math.abs(event.clientX - d.px) < DRAG_SLOP_PX) return;
+    setDragging(DRAG.range);
+    onRange(normalizeRange(d.at, at, total));
   };
   const onUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const d = down.current;
     if (!d || d.pointer !== event.pointerId) return;
     down.current = null;
-    if (dragging) {
-      setDragging(false);
+    setDragging(null);
+    if (d.mode === DRAG.scrub) {
+      scrubTo(msAt(event));
       return;
     }
-    onRange(null);
-    onSeek(msAt(event));
+    // A Shift-click without a drag is a plain seek.
+    if (dragging !== DRAG.range) {
+      onRange(null);
+      onSeek(msAt(event));
+    }
   };
   const onKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowLeft') onSeek(Math.max(0, time - SEEK_STEP_MS));
     else if (event.key === 'ArrowRight') onSeek(Math.min(total, time + SEEK_STEP_MS));
+    else if (event.key === 'Home') onSeek(0);
+    else if (event.key === 'End') onSeek(total);
     else if (event.key === 'Escape' && range) onRange(null);
     else return;
     event.preventDefault();
@@ -331,6 +445,8 @@ const VideoTimeline = ({
     onRange(null);
   };
 
+  const showHover = hover !== null && dragging === null && Math.abs(hover - time) > total / 200;
+
   return (
     <section className="hx-video-tl" aria-label={t('next.video.timeline.label')}>
       <div
@@ -343,36 +459,44 @@ const VideoTimeline = ({
         aria-valuemax={total}
         aria-valuenow={time}
         aria-valuetext={clock(time)}
-        data-dragging={dragging ? '1' : '0'}
+        data-dragging={dragging ?? '0'}
         onPointerDown={onDown}
         onPointerMove={onMove}
+        onPointerLeave={() => setHover(null)}
         onPointerUp={onUp}
         onPointerCancel={onUp}
         onKeyDown={onKey}
       >
+        <div className="hx-video-tl__row" data-row="ruler" aria-hidden="true">
+          {ticks.map((tick) => (
+            <Tick key={tick.ms} left={tick.left} major={tick.major} label={tickLabel(tick.ms)} />
+          ))}
+        </div>
         <div className="hx-video-tl__row" data-row="scenes">
           {tiles.map((box) => (
-            <Placed
+            <SceneTile
               key={box.id}
-              cls="hx-video-tl__tile"
+              scene={scenes[box.index]}
+              index={box.index}
               left={box.left}
               width={box.width}
-              title={scenes[box.index].title}
-              data-on={box.index === current ? '1' : '0'}
+              on={box.index === current}
             />
           ))}
         </div>
-        <div className="hx-video-tl__row" data-row="moments">
-          {dots.map((dot) => (
-            <Placed
-              key={dot.key}
-              cls="hx-video-tl__dot"
-              left={dot.left}
-              title={dot.block}
-              data-derived={dot.derived ? '1' : '0'}
-            />
-          ))}
-        </div>
+        {dots.length > 0 && (
+          <div className="hx-video-tl__row" data-row="moments">
+            {dots.map((dot) => (
+              <Placed
+                key={dot.key}
+                cls="hx-video-tl__dot"
+                left={dot.left}
+                title={dot.block}
+                data-derived={dot.derived ? '1' : '0'}
+              />
+            ))}
+          </div>
+        )}
         {scenes[current] !== undefined && scenes[current].overlays.length > 0 && (
           <OverlayStrips
             editor={overlays}
@@ -410,8 +534,10 @@ const VideoTimeline = ({
             width={msToFrac(range.t1 - range.t0, total)}
           />
         )}
-        <Placed cls="hx-video-tl__head" left={msToFrac(time, total)} />
+        {showHover && <Flag cls="hx-video-tl__hover" left={msToFrac(hover, total)} text={clock(hover)} />}
+        <Flag cls="hx-video-tl__head" left={msToFrac(time, total)} text={clock(time)} />
       </div>
+      {!shown.value && <p className="hx-video-tl__hint">{t('next.video.timeline.hint')}</p>}
 
       {shown.value && (
         <div

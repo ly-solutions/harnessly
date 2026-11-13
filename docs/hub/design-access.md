@@ -6,8 +6,9 @@ pages) to someone without an account. The hub keeps these records; the machine's
 ## Who may do what
 
 - The person who makes a project owns it. A project not stored yet answers `edit` with no right to manage it.
-- A stored project is open to the space at team level `edit` until its owner changes that (`view`, `comment`, `edit`,
-  `none`). Editors may share; only the owner and managers change the team level and members.
+- A stored project is open to the space at the deployment's team level (`HUB_DESIGN_DEFAULT_TEAM_LEVEL`, `edit` by
+  default) until its owner changes that (`view`, `comment`, `edit`, `none`). Editors may share; only the owner and
+  managers change the team level and members.
 - Every member of the machine's space appears in the snapshot the hub pushes to the machine
   (`hubproto.OpDesignAccess`); a person missing there gets nothing on a known project. The snapshot is pushed when the
   machine connects, after every change (debounced), when grants run out, and every five minutes.
@@ -23,6 +24,25 @@ With the hub's store on (`HUB_STORE`, [store](store.md)) a project is the space'
 found under whichever machine of the space recorded it, the access dialog of any machine of the space changes the same
 rows, and every machine of the space gets the snapshot again after a change. The store gives a machine only the projects
 its person has a role in and takes its writes only to those they may edit.
+
+A project the store holds but the hub has no row for (made before the hub kept access, or on a machine that never
+reported it) is open to everyone of the space by default. `HUB_DESIGN_UNRECORDED=closed` turns that around: the store
+gives such a project to no other machine, and the runtime leaves it only to the machine's own person (unless its owner
+file names someone else). A new folder may still be written, so a machine can start a project before the hub records it.
+
+## Personal projects by default
+
+A deployment where people bring their own machines and expect each project to stay theirs until they share it:
+
+1. `HUB_DESIGN_DEFAULT_TEAM_LEVEL=none`: every project recorded from now on is personal (owner only) until its owner
+   opens it to the team. Projects recorded before keep their level.
+2. `HUB_DESIGN_REGISTER=dry-run` (needs the store): at start the hub walks the design library of every space and logs,
+   for each project without a row, who would own it (the person its owner file names when they may open the machine,
+   else the person of the machine that first wrote it), at which level, and what it could not settle. Nothing is
+   written.
+3. `HUB_DESIGN_REGISTER=apply`: the same, writing the rows (a `register` line in each project's log). A project with a
+   row is never touched, so the step can stay on; every start only adds what is new.
+4. `HUB_DESIGN_UNRECORDED=closed` once the report shows nothing left unregistered.
 
 ## Guest links
 
@@ -134,6 +154,9 @@ each project with what moved, each pair with its machine or why not. The agents 
 | `HUB_DESIGN_SHARE_ALIASES` | off | Comma-separated origins that used to carry the guest links (`https://old-share.example.com`). On them `GET`/`HEAD /s/<token>…` answers `307` to the same path on `HUB_DESIGN_SHARE_URL` (`no-store`, no referrer), everything else is `404`, so links already handed out keep opening. Needs `HUB_DESIGN_SHARE_URL`; an origin must differ from the hub's, the share origin and `HUB_APPS_GUEST_URL` |
 | `HUB_DESIGN_SHARE_DOCS` | off | `on`: a document's guest link (`/d/<token>`, needs documents and their access on) opens on the share host and its aliases too, under the address it was handed out at. The page sets its own sandbox and the hub's session is not on those origins. Needs `HUB_DESIGN_SHARE_URL` |
 | `HUB_DESIGN_PLATFORM_API` | hub | Platform prefix of the runtimes, default `/api/platform` |
+| `HUB_DESIGN_DEFAULT_TEAM_LEVEL` | `edit` | Team level of a newly recorded project: `none`, `view`, `comment` or `edit` |
+| `HUB_DESIGN_UNRECORDED` | `open` | `closed`: a stored project the hub has no row for goes to no other machine and only to its machine's person |
+| `HUB_DESIGN_REGISTER` | off | `dry-run` or `apply`: at start, give every stored project without a row an owner and report personal vs team. Needs `HUB_STORE` |
 | `HUB_DESIGN_IMPORT_GATEWAY` | hub | `dry-run` or `apply`: the move from the gateway at start; with `HUB_DESIGN_IMPORT_GATEWAY_URL` (its Postgres), `_SPACE`, `_TEAMS`, `_MACHINES`, `_DEFAULT_MACHINE` |
 | `AGENT_RUNTIME_PLATFORM_API` | machine | Where the agent reaches the runtime's platform API (default `<runtime>/api/platform`) |
 

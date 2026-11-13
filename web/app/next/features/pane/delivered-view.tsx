@@ -17,7 +17,7 @@ import LazyView from '@/next/ui/lazy-view';
 import MediaPlayer from '@/next/features/pane/media/media-player';
 import { SHEET_FILE } from '@/next/features/pane/sheet/sheet-api';
 import { MEDIA_KIND } from '@/next/features/pane/media/media-model';
-import { listZip, previewUrl, zipEntryUrl, type IZipList } from '@/next/features/pane/delivered';
+import { chatPreviewUrl, listZip, zipEntryUrl, type IZipList } from '@/next/features/pane/delivered';
 import { downloadHref } from '@/next/features/pane/download';
 import PaneHead, { Crumbs, type ICrumb } from '@/next/features/pane/pane-head';
 
@@ -132,7 +132,10 @@ const DeliveredView = ({ conv, machine, path, view, crumbs, onCrumb, tools }: ID
     view === DELIVERED_VIEW.video ||
     view === DELIVERED_VIEW.audio;
   const changes = useFileChanges(machine, path, reads);
-  const src = changes === 0 ? previewUrl(machine, path) : `${previewUrl(machine, path)}&v=${changes}`;
+  const src =
+    changes === 0
+      ? chatPreviewUrl(machine, conv, path)
+      : `${chatPreviewUrl(machine, conv, path)}&v=${changes}`;
   return (
     <div className="hx-tv hx-deliv" data-tool="disk" data-view={view}>
       <PaneHead lead={<Crumbs items={crumbs} onPick={onCrumb} />} tools={tools}>
@@ -176,7 +179,7 @@ const DeliveredView = ({ conv, machine, path, view, crumbs, onCrumb, tools }: ID
             props={{
               machine,
               path,
-              src: previewUrl(machine, path),
+              src: chatPreviewUrl(machine, conv, path),
               name,
               kind: /\.(?:csv|tsv)$/i.test(path) ? SHEET_FILE.csv : SHEET_FILE.xlsx,
               saveHref,
@@ -189,7 +192,7 @@ const DeliveredView = ({ conv, machine, path, view, crumbs, onCrumb, tools }: ID
         {view === DELIVERED_VIEW.docx && (
           <LazyView
             load={loadDocxView}
-            props={{ machine, path, src: previewUrl(machine, path), name, ...toFile }}
+            props={{ machine, path, src: chatPreviewUrl(machine, conv, path), name, ...toFile }}
             fallback={<span className="hx-sk hx-pdf__wait-sheet" />}
             title={t('next.docx.failed')}
           />
@@ -197,7 +200,7 @@ const DeliveredView = ({ conv, machine, path, view, crumbs, onCrumb, tools }: ID
         {view === DELIVERED_VIEW.pptx && (
           <LazyView
             load={loadPptxView}
-            props={{ machine, path, src: previewUrl(machine, path), name, ...toFile }}
+            props={{ machine, path, src: chatPreviewUrl(machine, conv, path), name, ...toFile }}
             fallback={<span className="hx-sk hx-pdf__wait-sheet" />}
             title={t('next.pptx.failed')}
           />

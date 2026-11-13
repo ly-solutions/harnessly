@@ -58,6 +58,11 @@
   "next.smart.machine.mem": "The machine is short of memory — chats may answer slowly.",
   "next.smart.machine.cpu": "The processor is maxed out — chats may answer slowly.",
   "next.smart.machine.disk": "The disk is almost full — work may stop.",
+  "next.smart.machine.io": "Programs are waiting for a disk or the network while the processor is idle — chats and commands may hang.",
+  "next.smart.machine.waits": "waiting: {names}",
+  "next.smart.machine.waiting": "waits for a disk or the network",
+  "next.smart.machine.top.mem": "{name} takes the most",
+  "next.smart.machine.top.cpu": "{name} loads it the most",
   "next.smart.machine.heaviest": "Heaviest right now:",
   "next.smart.machine.agents": "Agents",
   "next.smart.machine.agentsBusy": {
@@ -124,5 +129,13 @@
   "next.notices.settings.key.open.hint": "When nothing waits, opens the history",
   "next.notices.settings.key.none": "Not set",
   "next.notices.settings.summary": "Turn summary",
-  "next.notices.settings.summary.hint": "2–4 lines on what was done. The cheapest model writes them; the cost is in the machine's spend"
+  "next.notices.settings.summary.hint": "2–4 lines on what was done. The cheapest model writes them; the cost is in the machine's spend",
+  "next.smart.stack.collapse": "Show less",
+  "next.smart.stack.clearAll": "Clear all",
+  "next.smart.stack.more": "{n} more",
+  "next.smart.stack.expand": "Show all: {n}",
+  "next.smart.stack.openChat": "Open chat",
+  "next.smart.stack.remove": "Remove",
+  "next.smart.stack.machine": "Machine",
+  "next.smart.stack.details": "Details"
 }

@@ -36,7 +36,7 @@ func (ex *execution) app(i int) {
 		return
 	}
 	defer w.cleanup()
-	id, changed, missing, err := ex.r.Apps.Install(ex.hostPath(w.file), it.ItemID, it.Pinned, src.Install)
+	id, changed, missing, err := ex.r.Apps.Install(ex.hostPath(w.file), it.ItemID, it.Pinned, src.Install, ex.appItems())
 	switch {
 	case err != nil:
 		ex.fail(i, "приложение не поставлено: "+err.Error())
@@ -50,18 +50,23 @@ func (ex *execution) app(i int) {
 	}
 }
 
-// pruneApps takes off the environment's apps whose items left the list, after a full run on the machine itself.
-func (ex *execution) pruneApps() {
-	if ex.r.Apps == nil {
-		return
-	}
+// appItems are the app items of the list.
+func (ex *execution) appItems() []string {
 	keep := []string{}
 	for _, it := range ex.items {
 		if it.Kind == hubproto.EnvKindApp {
 			keep = append(keep, it.ItemID)
 		}
 	}
-	gone, err := ex.r.Apps.Prune(keep)
+	return keep
+}
+
+// pruneApps takes off the environment's apps whose items left the list, after a full run on the machine itself.
+func (ex *execution) pruneApps() {
+	if ex.r.Apps == nil {
+		return
+	}
+	gone, err := ex.r.Apps.Prune(ex.appItems())
 	if err != nil {
 		ex.r.logf("warn", "envsetup: the environment's apps not pruned", "error", err.Error())
 		return

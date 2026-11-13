@@ -63,3 +63,28 @@ func TestCleanSummaryKeepsFourPlainLinesWithoutCode(t *testing.T) {
 		t.Error("the prompt forbids commands and secrets")
 	}
 }
+
+func TestSummaryModelFallsBackToTheCheapOne(t *testing.T) {
+	s := newV2Summarizer(&v2Titler{}, t.TempDir())
+	s.models = func(p wire.Provider) []wire.AgentModel {
+		return []wire.AgentModel{{ID: "gpt-5"}, {ID: "gpt-5-mini"}}
+	}
+	for _, c := range []struct {
+		p      wire.Provider
+		picked string
+		want   string
+	}{
+		{wire.ProviderClaude, "", "haiku"},
+		{wire.ProviderClaude, "opus", "opus"},
+		{wire.ProviderCodex, "", "gpt-5-mini"},
+		{wire.ProviderCodex, "gpt-5", "gpt-5"},
+	} {
+		if got := s.modelFor(c.p, c.picked); got != c.want {
+			t.Errorf("modelFor(%s, %q) = %q, want %q", c.p, c.picked, got, c.want)
+		}
+	}
+	s.models = func(wire.Provider) []wire.AgentModel { return []wire.AgentModel{{ID: "gpt-5"}} }
+	if got := s.modelFor(wire.ProviderCodex, ""); got != "" {
+		t.Errorf("no mini: %q", got)
+	}
+}

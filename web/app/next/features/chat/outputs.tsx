@@ -12,7 +12,7 @@ import DeliveryCard from '@/next/features/chat/delivery-card';
 export type TShownKind = OutputKind | 'file' | 'mrDone';
 export type TShownKinds = Readonly<Record<TShownKind, boolean>>;
 
-/** Everything but the plain files: what the feed shows until the host says otherwise. */
+/** Everything but the plain files and the merge request card: what the feed shows until the host says otherwise. */
 export const SHOWN_BY_DEFAULT: TShownKinds = {
   artifact: true,
   design: true,
@@ -21,7 +21,7 @@ export const SHOWN_BY_DEFAULT: TShownKinds = {
   stand: true,
   delivery: true,
   file: false,
-  mrDone: true,
+  mrDone: false,
 } as const;
 
 export interface IOutputsContext {

@@ -303,6 +303,31 @@ func (s *Service) loadConnTask(ctx context.Context, c connections.Conn, key stri
 }
 
 // ConnTask is one issue of a connection for the card, kept and shared like Task. Callers check ConnTaskKey first.
+// BareTask reads a key that matches the deployment's task-key pattern with no connection named. A tracker the person
+// connected is primary over the deployment's, as for the tracker app and link previews; the other side is asked when
+// the first has no such issue or no access to it, so a deployment without a token of its own still shows the person's
+// issue, and a deployment key the person's tracker does not know still opens from the deployment's tracker.
+func (s *Service) BareTask(ctx context.Context, key string) (*jsvalue.Object, string) {
+	connFirst := s.ConnTaskKey("", key)
+	first, second := s.Task, func(ctx context.Context, key string) (*jsvalue.Object, string) {
+		return s.ConnTask(ctx, "", key)
+	}
+	if connFirst {
+		first, second = second, s.Task
+	}
+	task, fail := first(ctx, key)
+	if task != nil || (fail != TaskNotFound && fail != TaskNoToken) {
+		return task, fail
+	}
+	if !connFirst && !s.ConnTaskKey("", key) {
+		return task, fail
+	}
+	if connFirst && s.trackerToken() == "" {
+		return task, fail
+	}
+	return second(ctx, key)
+}
+
 func (s *Service) ConnTask(ctx context.Context, conn, key string) (*jsvalue.Object, string) {
 	c, ok := s.issueConn(conn)
 	if !ok {

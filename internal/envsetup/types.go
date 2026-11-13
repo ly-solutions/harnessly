@@ -130,8 +130,9 @@ func (r *Runner) exec(ctx context.Context, c Cmd) (int, error) {
 type Apps interface {
 	// Install puts the app in dir on the machine as the environment item's, with the installation's values the hub
 	// gave (${install:<name>}); changed is false when the same version from the same files is already there. missing
-	// are the values the app asks for and the hub has none of: the app is there but not configured.
-	Install(dir, itemID string, locked bool, install map[string]string) (id string, changed bool, missing []string, err error)
+	// are the values the app asks for and the hub has none of: the app is there but not configured. keep are the app
+	// items of the list: an app whose item left it is taken over by the item that brings it now.
+	Install(dir, itemID string, locked bool, install map[string]string, keep []string) (id string, changed bool, missing []string, err error)
 	// Has: the item's app is installed.
 	Has(itemID string) bool
 	// Prune takes off the environment's apps whose item is not among keep.

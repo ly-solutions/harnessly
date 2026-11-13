@@ -41,6 +41,9 @@ func (s RuntimeSettings) over(base RuntimeSettings) RuntimeSettings {
 	if s.Delegation == nil {
 		s.Delegation = base.Delegation
 	}
+	if s.NoticeSummary == nil {
+		s.NoticeSummary = base.NoticeSummary
+	}
 	return s
 }
 

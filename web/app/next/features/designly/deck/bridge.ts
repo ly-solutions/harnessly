@@ -3,6 +3,8 @@
 // selected, edited or dragged. The board is foreign code: every field is checked and clipped here, as in dom-bridge.ts.
 // Where a message may come from (the frame's window and origin) is the caller's check. No React here.
 
+import { frameOrigin } from '@/next/features/designly/bridge-origin';
+
 /** The board's pixels: x, y, width, height. */
 export type TDeckRect = [number, number, number, number];
 
@@ -27,7 +29,10 @@ export type TDeckHostMessage =
   /** Ends the edit in place (the phone sheet's «Готово», the host's Esc): the board says the text and deselects. */
   | { type: 'tk:deck-done' }
   /** The host draws its own bars: the library's boards bar and tweaks inside the board stay hidden. */
-  | { type: 'tk:tweaks-host'; on: true; open: false };
+  | { type: 'tk:tweaks-host'; on: true; open: false }
+  /** The board is on screen (it follows its files live) or kept loaded out of sight (no stream, no polling: a browser
+   *  has six connections to a host over HTTP/1.1, and a stream per kept slide would take them all). */
+  | { type: 'tk:deck-live'; on: boolean };
 
 export const DECK_PRESS = { ring: 'ring', cancel: 'cancel' } as const;
 export type TDeckPress = (typeof DECK_PRESS)[keyof typeof DECK_PRESS];
@@ -274,8 +279,9 @@ export const readPickedPoint = (data: unknown): [number, number] | null => {
   return x === null || y === null ? null : [x, y];
 };
 
-/** Sends a deck message to the board in a frame, to the frame's own origin only. */
+/** Sends a deck message to the board in a frame, to the frame's own origin only (its window, when that is opaque). */
 export const postDeck = (frame: HTMLIFrameElement | null, src: string | null, message: TDeckHostMessage) => {
   if (!frame?.contentWindow || !src) return;
-  frame.contentWindow.postMessage(message, new URL(src, window.location.href).origin);
+  const origin = frameOrigin(src);
+  if (origin !== null) frame.contentWindow.postMessage(message, origin);
 };

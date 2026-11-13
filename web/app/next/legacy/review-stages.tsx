@@ -98,9 +98,11 @@ interface IMrStageProps {
   machine?: MachineId;
   /** Opens the change in the «Ревью кода» app on the whole screen; absent in the app itself. */
   expand?: () => void;
+  /** Tells the screen's bar what is open once the change is read: its title and where it lives (project, number). */
+  onRead?: (read: { title: string; crumb: string }) => void;
 }
 
-export const MrStage = ({ url, ask, send, chat, machine, expand }: IMrStageProps) => {
+export const MrStage = ({ url, ask, send, chat, machine, expand, onRead }: IMrStageProps) => {
   const { view, retry } = useChangeView(url);
   const review = useMrReview(url, MR_IO);
   const quotes = useQuotes(chat ?? null);
@@ -124,6 +126,9 @@ export const MrStage = ({ url, ask, send, chat, machine, expand }: IMrStageProps
   );
   const agent = useAgentReview(url, io);
   const ready = view.k === 'ready' ? view.view : null;
+  useEffect(() => {
+    if (ready) onRead?.({ title: ready.title, crumb: `${ready.project.split('/').at(-1)} ${ready.ref}` });
+  }, [ready, onRead]);
   const source = useMemo(
     () => (ready && !ready.limited && ready.kind !== 'issue' ? changeViewSource(ready) : null),
     [ready],

@@ -261,6 +261,8 @@ func fileContent(file string, obj files.Object) wire.FileContent {
 // handed over when it lies in the conversation's folder or in the workspace's places (the viewer's roots), or a turn
 // of the conversation touched or delivered it, and is no secret. One file goes whole or in ranges, a folder or several
 // paths as one zip.
+// With &show=1 the one file is shown in place instead, as the viewer's file-preview shows it (its type, a video in
+// ranges): the viewer's own route knows no chat, so a file of a chat whose folder lies outside the places opens here.
 func (f *v2Files) ServeDownload(w http.ResponseWriter, r *http.Request, conv string) {
 	fail := func(status int, text string) { files.WriteJSON(w, r, status, files.Error(text)) }
 	root, err := f.root(conv)
@@ -295,6 +297,15 @@ func (f *v2Files) ServeDownload(w http.ResponseWriter, r *http.Request, conv str
 			return
 		}
 		items = append(items, it)
+	}
+	if q.Get("show") == "1" {
+		// The pane shows the file in place: one file, under the same rule as saving it.
+		if len(items) != 1 || items[0].Dir {
+			fail(http.StatusBadRequest, locale.Pick("One file is shown at a time", "Показывается один файл"))
+			return
+		}
+		files.ServeShown(w, r, items[0].Real)
+		return
 	}
 	if len(items) == 1 && !items[0].Dir {
 		files.ServeFileDownload(w, r, items[0].Real)

@@ -30,6 +30,15 @@ const (
 // UseEvents gives the service the organization's event bus; without it nothing is published.
 func (s *Service) UseEvents(p events.Publisher) { s.bus = p }
 
+// UseLeader makes the checks of every organization (at the start and every five minutes) run only while leads says
+// so: with several replicas, on the leader alone (docs/hub/replicas.md). The checks one replica triggers run there.
+func (s *Service) UseLeader(leads func() bool) { s.leads = leads }
+
+// localPublisher is a bus that can keep an event to this replica's streams (events.MemoryBus).
+type localPublisher interface {
+	PublishLocal(orgID, kind string, data any)
+}
+
 // UseFeatures gives the service the organizations' flags, which switch the signal checker on (ui.hx).
 func (s *Service) UseFeatures(g features.Gate) { s.flags = g }
 
@@ -168,7 +177,12 @@ func (s *Service) Tick(ctx context.Context, active []events.Listener) {
 		if l.Space != "" {
 			aud = events.Audience{Role: events.RoleLead, Space: l.Space, Only: true}
 		}
-		s.bus.Publish(l.OrgID, "usage.tick", events.For(aud, t))
+		// every replica ticks for the listeners of its own streams: what it relayed, the others would send twice
+		if lp, ok := s.bus.(localPublisher); ok {
+			lp.PublishLocal(l.OrgID, "usage.tick", events.For(aud, t))
+		} else {
+			s.bus.Publish(l.OrgID, "usage.tick", events.For(aud, t))
+		}
 	}
 }
 
@@ -201,7 +215,7 @@ func (s *Service) CheckOrg(ctx context.Context, orgID string) error {
 
 // checkAll runs CheckOrg for every organization that has the new interface on.
 func (s *Service) checkAll(ctx context.Context) {
-	if s.flags == nil {
+	if s.flags == nil || (s.leads != nil && !s.leads()) {
 		return
 	}
 	os, err := s.db.S().AllOrgs(ctx)

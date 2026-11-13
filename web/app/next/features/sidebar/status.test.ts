@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pinLocale } from '@/next/i18n';
-import { chatStatusOf, statusNoteOf, waitsForOf, type IStatusSource } from '@/next/features/sidebar/status';
-import { CHAT_STATUS } from '@/next/features/sidebar/types';
+import {
+  chatStatusOf,
+  statusNoteOf,
+  waitsForOf,
+  withDelegationWait,
+  type IStatusSource,
+} from '@/next/features/sidebar/status';
+import { CHAT_STATUS, type TChatStatus } from '@/next/features/sidebar/types';
 
 const base: IStatusSource = { state: { k: 'ready' }, gate: null, lastTurn: null, seenAt: 100 };
 
@@ -133,5 +139,33 @@ describe('a chat held on its usage limit', () => {
       'Ждёт сброса лимита',
     );
     expect(statusNoteOf(held, CHAT_STATUS.done, morning)).toBeNull();
+  });
+});
+
+describe('withDelegationWait', () => {
+  const row = (id: string, status: TChatStatus, parentId?: string) => ({ id, status, parentId });
+
+  it('marks a free parent, at any depth, while a chat it delegated works', () => {
+    const list = [
+      row('a', CHAT_STATUS.none),
+      row('b', CHAT_STATUS.none, 'a'),
+      row('c', CHAT_STATUS.thinking, 'b'),
+      row('d', CHAT_STATUS.done),
+    ];
+    const out = withDelegationWait(list);
+    expect(out.map((chat) => chat.status)).toEqual([
+      CHAT_STATUS.delegated,
+      CHAT_STATUS.delegated,
+      CHAT_STATUS.thinking,
+      CHAT_STATUS.done,
+    ]);
+    expect(out[3]).toBe(list[3]);
+  });
+
+  it('leaves a parent with a status of its own, and the list itself when nothing waits', () => {
+    const busy = [row('a', CHAT_STATUS.question), row('b', CHAT_STATUS.thinking, 'a')];
+    expect(withDelegationWait(busy)[0]?.status).toBe(CHAT_STATUS.question);
+    const quiet = [row('a', CHAT_STATUS.none), row('b', CHAT_STATUS.done, 'a')];
+    expect(withDelegationWait(quiet)).toBe(quiet);
   });
 });

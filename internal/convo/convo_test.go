@@ -1667,3 +1667,80 @@ func TestAppsCommandInCodexChat(t *testing.T) {
 		t.Fatal("the codex chat is not listed")
 	}
 }
+
+// A first launch whose prompt box never shows while no agent is in its pane (a shell hung on its rc file) fails with
+// its session ended, so the shell cannot run the launch line later into an agent with no chat; the first message is
+// back in the line, and «Continue sending» launches with it again.
+func TestAHungLaunchEndsItsSessionAndKeepsTheFirstMessage(t *testing.T) {
+	r := newRig(t)
+	res := r.do(wire.ConversationCreateCmd{OpID: "c1", Cwd: "/w", Provider: wire.ProviderClaude,
+		First: &wire.FirstMessage{ClientID: "first", Text: "start here", AttachmentIDs: []string{}}})
+	r.id = r.made(res)
+	if err := r.rt.Attach(r.id, "s1", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	r.machine.probes["s1"] = Probe{Session: true}
+	r.pane.screen = ""
+	r.tick(time.Second)
+	if len(r.launcher.ended) != 0 {
+		t.Fatalf("a starting launch lost its session: %v", r.launcher.ended)
+	}
+	for at := time.Duration(0); at < time.Duration(wire.LaunchDeadline)*time.Millisecond; at += 10 * time.Second {
+		r.tick(10 * time.Second)
+	}
+	if st := r.state(); st.K != wire.StateLaunchFailed || st.Reason != string(wire.LaunchFailedNoPromptBox) {
+		t.Fatalf("state: %+v", st)
+	}
+	if len(r.launcher.ended) != 1 || r.launcher.ended[0] != "s1" {
+		t.Fatalf("ended %v", r.launcher.ended)
+	}
+	if m := r.message("first"); m.State.K != wire.MsgQueued || m.State.Reason != wire.QueuedPaused || m.State.Position != 1 {
+		t.Fatalf("first after the failed launch: %+v", m.State)
+	}
+	delete(r.machine.probes, "s1")
+	if res := r.do(wire.QueueResumeCmd{OpID: "r1", ConversationID: r.id}); res.R != wire.ResultAccepted {
+		t.Fatalf("resume: %+v", res)
+	}
+	if n := len(r.launcher.launched); n != 2 || r.launcher.launched[1].First != "start here" {
+		t.Fatalf("launched %+v", r.launcher.launched)
+	}
+}
+
+// A failed launch whose agent is in its pane after all is not launched again beside itself: one chat has one agent.
+// It is waited for as a starting one, and the first message stays in the line for it.
+func TestALaunchIsNotMadeBesideALiveAgent(t *testing.T) {
+	r := newRig(t)
+	res := r.do(wire.ConversationCreateCmd{OpID: "c1", Cwd: "/w", Provider: wire.ProviderClaude,
+		First: &wire.FirstMessage{ClientID: "first", Text: "start here", AttachmentIDs: []string{}}})
+	r.id = r.made(res)
+	if err := r.rt.Attach(r.id, "s1", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	r.machine.probes["s1"] = Probe{Session: true, Foreground: true}
+	r.pane.screen = "Claude Code is starting…"
+	r.rt.LaunchFailed(r.id, wire.LaunchFailedNoSession)
+	r.tick(time.Second)
+	if st := r.state(); st.K != wire.StateLaunchFailed {
+		t.Fatalf("state: %+v", st)
+	}
+	r.send("m2", "and this", wire.ModeQueue)
+	if st := r.state(); st.K != wire.StateStarting {
+		t.Fatalf("state after a message: %+v", st)
+	}
+	if n := len(r.launcher.launched); n != 1 || len(r.launcher.ended) != 0 {
+		t.Fatalf("launched %d times, ended %v", n, r.launcher.ended)
+	}
+	if m := r.message("first"); m.State.K != wire.MsgQueued {
+		t.Fatalf("first: %+v", m.State)
+	}
+	// A session that holds only a shell is ended before the launch made anew.
+	r.rt.LaunchFailed(r.id, wire.LaunchFailedNoSession)
+	r.tick(time.Second)
+	r.machine.probes["s1"] = Probe{Session: true, Shell: true}
+	if res := r.do(wire.QueueResumeCmd{OpID: "r1", ConversationID: r.id}); res.R != wire.ResultAccepted {
+		t.Fatalf("resume: %+v", res)
+	}
+	if n := len(r.launcher.launched); n != 2 || r.launcher.launched[1].First != "start here" || len(r.launcher.ended) != 1 || r.launcher.ended[0] != "s1" {
+		t.Fatalf("launched %+v, ended %v", r.launcher.launched, r.launcher.ended)
+	}
+}

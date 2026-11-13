@@ -36,6 +36,8 @@ interface INoteRowProps {
   lead?: ReactNode;
   /** In the foot before ↑: the host's tools (the microphone). */
   tools?: ReactNode;
+  /** A dictation is on: «Отменить» and 🗑 step away, the foot is the recording the host put into `tools`. */
+  recording?: boolean;
   /** Between the field and the foot, the whole width: what the host unfolds (a block's settings, a picture to draw). */
   more?: ReactNode;
   okLabel?: string;
@@ -70,6 +72,7 @@ export const NoteRow = ({
   onCancel,
   lead,
   tools,
+  recording = false,
   more,
   okLabel,
   okDisabled = false,
@@ -92,6 +95,7 @@ export const NoteRow = ({
       className={className ? `hx-note__row ${className}` : 'hx-note__row'}
       data-state={open ? 'open' : 'closing'}
       data-more={more ? true : undefined}
+      data-rec={recording || undefined}
       aria-label={label}
       onSubmit={(event) => {
         event.preventDefault();
@@ -240,6 +244,15 @@ export interface INoteMarkProps {
   onCommit: (comment: string) => void;
   onRemove: () => void;
   onCancel: () => void;
+  /** The host keeps the row's words and adds to its foot (a dictation writes into the field, see INoteRowProps). */
+  field?: INoteField;
+}
+
+export interface INoteField {
+  value: string;
+  onValue: (text: string) => void;
+  tools?: ReactNode;
+  recording?: boolean;
 }
 
 /** One mark: the numbered dot (hollow while it has no word) and its row while it is edited. */
@@ -258,6 +271,7 @@ export const NoteMark = ({
   onCommit,
   onRemove,
   onCancel,
+  field,
 }: INoteMarkProps) => {
   const row = usePresentFlag(editing, NOTE_OUT_MS);
   return (
@@ -280,7 +294,10 @@ export const NoteMark = ({
       />
       {row.mounted && (
         <NoteRow
-          comment={comment}
+          comment={field?.value ?? comment}
+          onValue={field?.onValue}
+          tools={field?.tools}
+          recording={field?.recording}
           open={row.state === PRESENCE.open}
           label={rowLabel}
           placeholder={placeholder}

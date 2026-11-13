@@ -227,6 +227,38 @@
   opacity: 0.6;
   cursor: progress;
 }
+/* A dictation into the row: «Отменить» and 🗑 step away and the foot is the recording — cancel, the time, the wave,
+   stop — before ↑ (features/chat/note-voice.tsx). */
+.hx-note__row[data-rec] .hx-note__cancel,
+.hx-note__row[data-rec] .hx-note__del,
+.hx-note__row[data-rec] .hx-note__gap {
+  display: none;
+}
+.hx-note__recbar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  animation: hx-note-rec-in 220ms var(--hx-ease-out) backwards;
+}
+.hx-note__recbar[data-state='closing'] {
+  animation: hx-note-rec-out 160ms var(--hx-ease-out) both;
+  pointer-events: none;
+}
+.hx-note__rec {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px 0 4px;
+}
+.hx-note__recbar .hx-wave {
+  margin: 0 4px;
+}
+.hx-note__mic {
+  animation: hx-note-fade 200ms var(--hx-ease-out) backwards;
+}
 /* What the host unfolds between the line and the foot. */
 .hx-note__more {
   min-width: 0;
@@ -319,8 +351,12 @@
   .hx-note__num {
     animation-name: hx-note-fade;
   }
+  .hx-note__recbar {
+    animation-name: hx-note-fade;
+  }
   .hx-note__row[data-state='closing'],
-  .hx-note__bar[data-state='closing'] {
+  .hx-note__bar[data-state='closing'],
+  .hx-note__recbar[data-state='closing'] {
     animation-name: hx-note-fade-out;
   }
   .hx-note__dot {
@@ -360,6 +396,18 @@
   to {
     opacity: 0;
     transform: scale(0.96) translateY(-2px);
+  }
+}
+@keyframes hx-note-rec-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes hx-note-rec-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px);
   }
 }
 @keyframes hx-note-bar-in {

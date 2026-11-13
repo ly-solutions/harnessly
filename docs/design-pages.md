@@ -366,3 +366,27 @@ shared machine at load average 3-4, medians of 6-7 runs, `main` at `8cc88698` (b
 | library alone, `board-load.mjs --deck` | 692 | 506 | 268 | 267 |
 | editor, `deck-turn.mjs` | 2225 | 188 | 183 | 180 |
 | editor, `deck-turn.mjs --tunnel` | 2816 | 675 | 195 | 197 |
+
+Those runs used the runtime's own slot origins (`RUNTIME_PREVIEW_MODE=ports`). A machine behind the hub shows its
+slots by path (`RUNTIME_PREVIEW_MODE=path`, `<appBase>/__pv/<n>-<key>/`), and there a slide frame is sandboxed on an
+opaque origin, which changes three things (12.11.2026):
+
+- A message addressed to the frame's URL origin never reaches it: the board never learnt its mode, never said it was
+  drawn, and the stage showed every slide only after its 8 s wait. Deck messages to a slot by path go to `'*'`
+  (`deckTargetOrigin`).
+- The browser gives an opaque-origin frame no HTTP cache: every frame loads the engine, the kit, fonts and pictures
+  anew. So every slide, once loaded, is kept loaded, and the rest load out of sight after the slide on screen, the
+  neighbours first, two at a time (`deck/warm.ts`, at most 16 frames, 4 on a phone).
+- Every board holds an event stream of its files, and the hub and the runtime answer over HTTP/1.1 (six connections to
+  a host): kept frames would take them all and stall the page. A frame out of sight is told `tk:deck-live` off and
+  drops its stream and polling; on screen again it catches up.
+
+A copy of a 14-slide deck, headless Chrome on the shared machine at load average 35-55, path mode, ms from the arrow
+key to the slide on screen (six turns forward, six back, after the deck rested 15-45 s):
+
+| | open | turn |
+|---|---:|---:|
+| `main` at `7ad13884` | 17444-20060 | 8155-10517 (every turn, the one back too) |
+| this change, all 14 frames kept | 10699-13702 | 0-825 (the page's own requests 56-114 ms) |
+| this change, the others still loading | 13702 | 0-1556 |
+| this change, ports mode (control) | 13041 | 0-42 |

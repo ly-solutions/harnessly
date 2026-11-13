@@ -20,6 +20,7 @@ import { HomeScreen } from './screens/home';
 import { InviteScreen } from './screens/invite';
 import { MachinesScreen } from './screens/machines';
 import { NetworkScreen } from './screens/network';
+import { SwitchesScreen } from './screens/switches';
 import { NewSpaceScreen } from './screens/new-space';
 import { NewSiteScreen, SiteScreen, useSitesOn } from './screens/sites';
 import { SpaceProvider, useSpace } from './screens/space';
@@ -41,6 +42,7 @@ const ROUTES = [
   '/new',
   '/settings',
   '/network',
+  '/switches',
   '/browser/:machineId',
   '/s/:slug',
   '/s/:slug/settings',
@@ -355,6 +357,7 @@ const Routes = () => {
   }
   if (route === '/settings') return <AccountScreen />;
   if (route === '/network') return <NetworkScreen />;
+  if (route === '/switches') return <SwitchesScreen />;
   if (route === '/apps/:app') return <AppRedirect app={params.app ?? ''} search={search} />;
   if (route === '/browser/:machineId') return <BrowserScreen machineId={params.machineId ?? ''} />;
   if (route === '/o/:org' || route === '/o/:org/:scope' || route === '/o/:org/:scope/:section') {

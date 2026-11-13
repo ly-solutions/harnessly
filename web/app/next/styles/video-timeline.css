@@ -1,7 +1,7 @@
 /* The video timeline and comments, written by WP3b only: hx-video-tl*, hx-video-cm*, hx-video-cmp* classes. */
 .hx-video-tl {
   position: relative;
-  padding: 8px 0 4px;
+  padding: 4px 0 4px;
   color: var(--hx-fg-2);
 }
 .hx-video-tl__track {
@@ -9,23 +9,60 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  cursor: pointer;
+  padding-bottom: 2px;
+  cursor: text;
   touch-action: none;
   user-select: none;
   outline: none;
   border-radius: 8px;
+}
+.hx-video-tl__track[data-dragging='scrub'] {
+  cursor: grabbing;
+}
+.hx-video-tl__track[data-dragging='range'] {
+  cursor: col-resize;
 }
 .hx-video-tl__track:focus-visible {
   box-shadow: 0 0 0 3px var(--hx-focus);
 }
 .hx-video-tl__row {
   position: relative;
-  height: 28px;
+  height: 34px;
+}
+.hx-video-tl__row[data-row='ruler'] {
+  height: 22px;
+  border-bottom: 1px solid var(--hx-border);
 }
 .hx-video-tl__row[data-row='moments'],
 .hx-video-tl__row[data-row='comments'] {
-  height: 16px;
+  height: 14px;
 }
+
+/* The ruler: labelled ticks every step, short marks between them. */
+.hx-video-tl__tick {
+  position: absolute;
+  left: var(--l);
+  bottom: 0;
+  width: 1px;
+  height: 4px;
+  background: var(--hx-border-strong);
+}
+.hx-video-tl__tick[data-major='1'] {
+  height: 8px;
+  background: var(--hx-fg-3);
+}
+.hx-video-tl__tick span {
+  position: absolute;
+  bottom: 9px;
+  left: 4px;
+  color: var(--hx-fg-3);
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The scenes: number, title and length; the one under the playhead lit. */
 .hx-video-tl__tile,
 .hx-video-tl__mark,
 .hx-video-tl__range {
@@ -36,14 +73,74 @@
 .hx-video-tl__tile {
   top: 0;
   bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 8px;
   box-sizing: border-box;
   border-radius: 6px;
   border: 1px solid var(--hx-border);
   background: var(--hx-bg-raised);
+  /* A hairline of air between neighbours. */
+  clip-path: inset(0 1px round 6px);
+  container-type: inline-size;
+  overflow: hidden;
+  font-size: var(--hx-text-xs);
+  line-height: 1;
+  transition:
+    background 160ms var(--hx-ease-out),
+    border-color 160ms var(--hx-ease-out);
+}
+.hx-video-tl__track:hover .hx-video-tl__tile:hover {
+  background: var(--hx-bg-hover);
 }
 .hx-video-tl__tile[data-on='1'] {
   border-color: var(--hx-accent);
   background: var(--hx-accent-soft);
+  color: var(--hx-fg-1);
+}
+.hx-video-tl__tile-n {
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  background: var(--hx-bg-active);
+  color: var(--hx-fg-2);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.hx-video-tl__tile[data-on='1'] .hx-video-tl__tile-n {
+  background: var(--hx-accent);
+  color: #fff;
+}
+.hx-video-tl__tile-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-video-tl__tile-d {
+  flex: none;
+  color: var(--hx-fg-3);
+  font-variant-numeric: tabular-nums;
+}
+/* A narrow tile keeps its number, then its title; the length goes first. */
+@container (max-width: 96px) {
+  .hx-video-tl__tile-d {
+    display: none;
+  }
+}
+@container (max-width: 40px) {
+  .hx-video-tl__tile-t {
+    display: none;
+  }
 }
 .hx-video-tl__dot {
   position: absolute;
@@ -81,21 +178,74 @@
   background: var(--hx-danger);
 }
 .hx-video-tl__range {
-  top: 0;
+  top: 22px;
   bottom: 0;
   background: var(--hx-accent-soft);
   border-inline: 2px solid var(--hx-accent);
   pointer-events: none;
 }
-.hx-video-tl__head {
+
+/* The playhead: a line through every track, a handle and its time on the ruler. The hover's time is a ghost of it. */
+.hx-video-tl__head,
+.hx-video-tl__hover {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
+  top: 0;
+  bottom: 0;
   left: var(--l);
   width: 2px;
   margin-left: -1px;
   background: var(--hx-fg-1);
   pointer-events: none;
+  z-index: 2;
+}
+.hx-video-tl__hover {
+  width: 1px;
+  margin-left: 0;
+  background: var(--hx-fg-3);
+  z-index: 1;
+}
+.hx-video-tl__head span,
+.hx-video-tl__hover span {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  height: 18px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--hx-fg-1);
+  color: var(--hx-bg-app);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hx-video-tl__hover span {
+  background: var(--hx-bg-active);
+  color: var(--hx-fg-1);
+  font-weight: 500;
+}
+/* The handle under the time: a notch pointing at the line. */
+.hx-video-tl__head span::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  rotate: 45deg;
+  background: inherit;
+  border-radius: 1px;
+  z-index: -1;
+}
+.hx-video-tl__hint {
+  margin: 6px 0 0;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
 }
 .hx-video-tl__actions {
   position: relative;

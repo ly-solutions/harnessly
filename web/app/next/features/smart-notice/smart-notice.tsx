@@ -21,7 +21,7 @@ import CodeField, { CODE_FIELD, type TCodeFieldState } from '@/next/ui/code-fiel
 import Icon from '@/next/ui/icon';
 import { PRESENCE, usePresence, usePresentFlag } from '@/next/ui/presence';
 import type { TNoticePlace, TNoticeSound } from '@/next/stores/notices';
-import useGestures, { rise } from './use-gestures';
+import useGestures, { land, rise } from './use-gestures';
 import { STACK_DEPTH } from './pager';
 import { NOTICE_ACTION, NOTICE_INPUT, noteInput, noticeEvent } from './metrics';
 import { RecordingTime, RecordingWave } from '@/next/features/composer/recording';
@@ -70,6 +70,16 @@ export interface ISmartItem {
   summary?: string | null;
   /** Who asks through the open slot (an app or an agent): the label over the card. */
   source?: ISlotSource | null;
+  /** A machine's item: which machine, what runs short and the programs it says wait (a stall). */
+  machine?: ISmartMachine;
+  /** Work is about to fail: the card may open by itself for a few seconds (features/notifications/auto-open.ts). */
+  urgent?: boolean;
+}
+
+export interface ISmartMachine {
+  id: string;
+  metric: 'disk' | 'mem' | 'cpu' | 'io';
+  waiting: readonly string[];
 }
 
 /** What the open card shows for its main item, read by the binding. */
@@ -119,7 +129,8 @@ export interface ISmartNoticeProps {
   open: boolean;
   /** The plate's place; the middle of the bottom edge stands at `anchor` (the field of the chat) when there is one. */
   place: TNoticePlace;
-  anchor: { x: number; bottom: number } | null;
+  /** `width`: the field's, so the plate stays within the chat's column and never spills over the pane beside it. */
+  anchor: { x: number; bottom: number; width?: number } | null;
   /** Something opened from the field (the model's picker, the «+» menu) rises where the plate stands over it. */
   covered?: boolean;
   now: number;
@@ -698,7 +709,11 @@ const SmartNotice = ({
     onOpen(false);
     const from = thrown ? null : (body.current?.getBoundingClientRect() ?? null);
     // By hand, the plate goes as the shape flows away: the next one rises, the last one goes out at once.
-    if (!thrown && others.length > 0) rise(host.current, 1);
+    if (!thrown && others.length > 0 && host.current) {
+      // The next plate comes forward at once with its line; the page makes it the front when it can (land()).
+      host.current.dataset.fling = '';
+      host.current.dataset.promote = '';
+    }
     if (!thrown && others.length === 0 && host.current) host.current.dataset.gone = '';
     noticeEvent(WAITING_KINDS.has(shown.kind) ? NOTICE_ACTION.dropped : NOTICE_ACTION.closed, {
       kind: shown.kind,
@@ -780,10 +795,13 @@ const SmartNotice = ({
   }, [showing]);
 
   // A plate thrown off as the last one leaves still thrown; if another comes before it is gone, it comes back.
+  // Thrown off with more behind, the next plate already came forward with the throw: the new front lands where it
+  // stands, before the frame is painted (so the plates behind never show the brought-forward look on another line).
   const shownKey = shown?.key ?? null;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = host.current;
-    if (el && shownKey !== null && el.dataset.fling !== undefined) rise(el, 1);
+    if (el && shownKey !== null && el.dataset.promote !== undefined) land(el);
+    else if (el && shownKey !== null && el.dataset.fling !== undefined) rise(el, 1);
     if (el && shownKey !== null) delete el.dataset.gone;
   }, [shownKey]);
 
@@ -808,9 +826,12 @@ const SmartNotice = ({
     if (anchor) {
       el.style.setProperty('--sn-x', `${anchor.x}px`);
       el.style.setProperty('--sn-bottom', `${anchor.bottom}px`);
+      if (anchor.width) el.style.setProperty('--sn-col', `${anchor.width}px`);
+      else el.style.removeProperty('--sn-col');
     } else {
       el.style.removeProperty('--sn-x');
       el.style.removeProperty('--sn-bottom');
+      el.style.removeProperty('--sn-col');
     }
   }, [anchor, showing]);
 

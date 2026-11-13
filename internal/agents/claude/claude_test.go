@@ -286,7 +286,7 @@ func TestHookSettings(t *testing.T) {
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"/h/.data/status-hook.sh\" ` + ev + `",
+            "command": "[ ! -f \"/h/.data/status-hook.sh\" ] || sh \"/h/.data/status-hook.sh\" ` + ev + `",
             "timeout": 3
           }
         ]
@@ -301,7 +301,7 @@ func TestHookSettings(t *testing.T) {
 		hook("SessionStart", "session-start", false) + hook("UserPromptSubmit", "prompt-submit", false) +
 		hook("Notification", "notification", false) + hook("Stop", "stop", false) + hook("StopFailure", "stop-failure", false) +
 		hook("PreCompact", "pre-compact", false) + hook("PostCompact", "post-compact", true) +
-		"  },\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"sh \\\"/h/.data/statusline.sh\\\"\"\n  },\n" +
+		"  },\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"[ ! -f \\\"/h/.data/statusline.sh\\\" ] || sh \\\"/h/.data/statusline.sh\\\"\"\n  },\n" +
 		"  \"permissions\": {\n    \"allow\": [\n      \"mcp__preview\",\n      \"mcp__old-preview\"\n    ]\n  },\n" +
 		"  \"crossSessionInbound\": \"accept\"\n}\n"
 	if got != want {
@@ -335,10 +335,10 @@ func TestHookSettingsWithTheBudgetHook(t *testing.T) {
 		return out
 	}
 	// The prompt hook runs beside the status hook, and every tool call asks too; no other event does.
-	if c := cmds("UserPromptSubmit"); len(c) != 2 || c[0] != `sh "/h/s.sh" prompt-submit` || c[1] != `sh "/h/budget-hook.sh" claude UserPromptSubmit` {
+	if c := cmds("UserPromptSubmit"); len(c) != 2 || c[0] != `[ ! -f "/h/s.sh" ] || sh "/h/s.sh" prompt-submit` || c[1] != `[ ! -f "/h/budget-hook.sh" ] || sh "/h/budget-hook.sh" claude UserPromptSubmit` {
 		t.Errorf("%q", c)
 	}
-	if c := cmds("PreToolUse"); len(c) != 1 || c[0] != `sh "/h/budget-hook.sh" claude PreToolUse` || got.Hooks["PreToolUse"][0].Matcher != "" {
+	if c := cmds("PreToolUse"); len(c) != 1 || c[0] != `[ ! -f "/h/budget-hook.sh" ] || sh "/h/budget-hook.sh" claude PreToolUse` || got.Hooks["PreToolUse"][0].Matcher != "" {
 		t.Errorf("%q", c)
 	}
 	for _, event := range []string{"SessionStart", "Notification", "Stop"} {
@@ -626,7 +626,7 @@ func TestHookSettingsWithTheStatusProgram(t *testing.T) {
 	if err := json.Unmarshal(HookSettings(c), &got); err != nil {
 		t.Fatal(err)
 	}
-	want := `'/bin/harnessly' hook status stop 2>/dev/null || sh "/h/s.sh" stop`
+	want := `'/bin/harnessly' hook status stop 2>/dev/null || [ ! -f "/h/s.sh" ] || sh "/h/s.sh" stop`
 	if hooks := got.Hooks["Stop"][0].Hooks; len(hooks) != 1 || hooks[0].Command != want {
 		t.Fatalf("%+v", hooks)
 	}

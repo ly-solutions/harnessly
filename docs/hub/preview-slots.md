@@ -46,7 +46,17 @@ whole-page navigation may come from anywhere; other cross-site requests (images,
 person's slot or `null` are refused. Only the target's own `__t_*` cookies go upstream.
 
 Answers lose the path mode's sandbox, the target's CORS headers and origin-wide headers (HSTS, `Clear-Site-Data`), and gain
-`frame-ancestors` for the hub's origins, `X-Robots-Tag: noindex` and a private cache policy.
+`frame-ancestors` for the hub's origins and the slot itself (`'self'`: a page may hold another document of its slot in
+a frame, as a Storybook holds its canvas), `X-Robots-Tag: noindex` and a private cache policy.
+
+## Frames inside a slot by path
+
+By path the slot's page is sandboxed, so its origin is opaque, and no `frame-ancestors` source admits an opaque
+ancestor. The hub therefore leaves `frame-ancestors` out of the answer to a frame's navigation that comes from a
+cross-site context (`Sec-Fetch-Dest: iframe`, `Sec-Fetch-Site: cross-site`): that is what the slot's own page sends for a
+link it follows and for a frame it holds. Every such answer is still sandboxed, still needs the slot's key in its
+address and still carries nothing of the hub's session. The first load of the slot, from the hub's page, keeps
+`frame-ancestors 'self'`.
 
 ## Threat model
 

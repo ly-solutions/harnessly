@@ -28,6 +28,10 @@ const (
 	// environment's: they cannot remove it, nor turn it off when it is pinned.
 	EnvKindApp = "app"
 
+	// BuiltInEnvItemPrefix starts the id of an item the platform itself puts into every organization (the hub keeps it
+	// in its code, not in the organization's catalog).
+	BuiltInEnvItemPrefix = "builtin-"
+
 	// FeatureEnvClaude is in `hello` when the machine's runtime does the plugin and claude-settings kinds; the hub sends
 	// them only to such a machine.
 	FeatureEnvClaude = "environment.claude"
@@ -194,3 +198,7 @@ func AccessSecret(service string) string {
 	}
 	return "gitlab-token"
 }
+
+// IsBuiltInEnvItem says whether an environment item is the platform's own, not one the organization wrote. An app the
+// organization has an item of its own for comes with that item, not with the platform's.
+func IsBuiltInEnvItem(itemID string) bool { return strings.HasPrefix(itemID, BuiltInEnvItemPrefix) }

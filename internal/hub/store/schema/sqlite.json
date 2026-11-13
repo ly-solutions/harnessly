@@ -904,6 +904,47 @@
         }
       ]
     },
+    "automation_timers": {
+      "columns": [
+        {
+          "name": "rule_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "timer_key",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "started_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "due_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "event_payload",
+          "type": "TEXT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "rule_id",
+        "timer_key"
+      ],
+      "indexes": [
+        {
+          "name": "automation_timers_due",
+          "columns": [
+            "due_at"
+          ]
+        }
+      ]
+    },
     "board_bindings": {
       "columns": [
         {

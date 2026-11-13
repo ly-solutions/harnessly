@@ -11,6 +11,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/hub/config"
 	"github.com/ly-solutions/harnessly/internal/hub/designaccess"
+	"github.com/ly-solutions/harnessly/internal/hub/storehub"
 )
 
 const designUsage = `usage: hub design import-gateway [--dry-run] [--from postgres://…] [--space slug] [--teams team=<id>,…] [--machines person@example.org@vm-1=<id>,…] [--machine-prefix p-] [--default-machine id]
@@ -88,7 +89,8 @@ func runDesign(ctx context.Context, args []string, lookup func(string) (string, 
 		return exitCode(err)
 	}
 	defer db.Close()
-	svc := designaccess.New(designaccess.Deps{DB: db, Log: log, Shared: !cfg.Store.Off})
+	svc := designaccess.New(designaccess.Deps{DB: db, Log: log, Shared: !cfg.Store.Off, TeamLevel: cfg.DesignAccess.TeamLevel,
+		ClosedUnrecorded: cfg.DesignAccess.ClosedUnrecorded})
 	rep, linked, err := moveDesigns(ctx, svc, d)
 	fmt.Fprint(stdout, rep.Summary())
 	if err != nil {
@@ -141,4 +143,56 @@ func importDesignsAtStart(ctx context.Context, cfg *config.Config, svc *designac
 		case <-time.After(time.Minute):
 		}
 	}
+}
+
+// registerDesignsAtStart is the release step of GitHub #83: HUB_DESIGN_REGISTER gives every project folder of the
+// store's libraries the hub has no row for an owner and the team level, once the hub is up (dry-run: the report only).
+// Run it with apply before HUB_DESIGN_UNRECORDED=closed, or the projects without a row close to everyone but their
+// machine's person.
+func registerDesignsAtStart(ctx context.Context, cfg *config.Config, svc *designaccess.Service, st *storehub.Store, log *slog.Logger) {
+	if cfg.DesignAccess.Register == "" || svc == nil || st == nil {
+		return
+	}
+	dry := cfg.DesignAccess.Register != "apply"
+	for attempt := 1; attempt <= 5; attempt++ {
+		failed, err := registerDesigns(ctx, svc, st, dry, log)
+		if err == nil && !failed {
+			return
+		}
+		log.Error("design projects not all registered", "mode", cfg.DesignAccess.Register, "attempt", attempt, "error", err)
+		if err == nil {
+			// A project skipped or failed for a reason of its own: running again changes nothing.
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Minute):
+		}
+	}
+}
+
+func registerDesigns(ctx context.Context, svc *designaccess.Service, st *storehub.Store, dry bool, log *slog.Logger) (bool, error) {
+	spaces, err := st.DesignSpaces(ctx)
+	if err != nil {
+		return false, err
+	}
+	failed := false
+	for _, space := range spaces {
+		folders, err := st.DesignFolders(ctx, space)
+		if err != nil {
+			return failed, err
+		}
+		in := make([]designaccess.Folder, len(folders))
+		for i, f := range folders {
+			in[i] = designaccess.Folder{ID: f.ID, OwnerFile: f.OwnerFile, Member: f.Member}
+		}
+		rep, err := svc.RegisterUnrecorded(ctx, space, in, dry)
+		if err != nil {
+			return failed, err
+		}
+		failed = failed || rep.Failed()
+		log.Info("design projects registered", "space", space, "dryRun", dry, "report", strings.TrimSpace(rep.Summary()))
+	}
+	return failed, nil
 }

@@ -1,5 +1,13 @@
+import { pinLocale } from '@/next/i18n';
 import { describe, expect, it } from 'vitest';
-import { itemsOfCodes, itemsOfMachines, machineDetail, orderItems } from '@/next/bindings/smart-notice';
+import {
+  itemsOfCodes,
+  itemsOfMachines,
+  machineDetail,
+  noticeQuiet,
+  onePerChat,
+  orderItems,
+} from '@/next/bindings/smart-notice';
 import { SMART_KIND, type ISmartItem } from '@/next/features/smart-notice/smart-notice';
 import type { MachineProc, MachineStats } from '@/next/protocol/v2';
 
@@ -49,6 +57,28 @@ const stats = (procs: MachineProc[]): MachineStats => ({
   procs,
 });
 
+describe('onePerChat', () => {
+  const of = (key: string, kind: ISmartItem['kind'], chatId: string | null): ISmartItem => ({
+    ...item(key, kind, 1),
+    chatId,
+  });
+
+  it('drops the news of a chat that waits now, so one chat is one card with no plate under it (HRN-1285)', () => {
+    const kept = onePerChat([
+      of('q', SMART_KIND.question, 'c1'),
+      of('done-c1', SMART_KIND.done, 'c1'),
+      of('done-c2', SMART_KIND.done, 'c2'),
+      of('code', SMART_KIND.code, 'c1'),
+    ]).map((i) => i.key);
+    expect(kept).toEqual(['q', 'done-c2', 'code']);
+  });
+
+  it('gives the same list back when nothing goes', () => {
+    const items = [of('q', SMART_KIND.question, 'c1'), of('done', SMART_KIND.done, 'c2')];
+    expect(onePerChat(items)).toBe(items);
+  });
+});
+
 describe('orderItems', () => {
   it('puts a code first, then a permission, the machine and the questions, then what broke, then what is done', () => {
     const order = orderItems([
@@ -90,6 +120,7 @@ describe('itemsOfMachines', () => {
         id: 'vm',
         name: 'Моя ВМ',
         since: 7,
+        urgent: true,
         alert: { key: 'vm:mem', icon: 'memory-stick', text: '', metric: 'mem' },
       },
     ]);
@@ -99,11 +130,78 @@ describe('itemsOfMachines', () => {
       title: 'Моя ВМ',
       at: 7,
       chatId: null,
+      urgent: true,
+      machine: { id: 'vm', metric: 'mem', waiting: [] },
     });
+  });
+
+  // the line says what is wrong and who is behind it, without a press on «Подробнее».
+  it('says the cause in the line, and the heaviest program after it once it is known', () => {
+    pinLocale('ru');
+    const mem = {
+      id: 'vm',
+      name: 'Моя ВМ',
+      since: 7,
+      urgent: true,
+      alert: {
+        key: 'vm:7',
+        icon: 'memory-stick',
+        text: 'Память почти кончилась — занято 15 из 16 ГБ',
+        metric: 'mem',
+      },
+    } as const;
+    expect(itemsOfMachines([mem])[0]?.text).toBe('Память почти кончилась — занято 15 из 16 ГБ');
+    expect(itemsOfMachines([mem], () => 'vite')[0]?.text).toBe(
+      'Память почти кончилась — занято 15 из 16 ГБ · больше всего занимает vite',
+    );
+    pinLocale(null);
+  });
+
+  it('names the programs that wait when the machine is stalled, and nobody for a full disk', () => {
+    pinLocale('ru');
+    const [stall] = itemsOfMachines([
+      {
+        id: 'vm',
+        name: 'Моя ВМ',
+        since: 7,
+        urgent: true,
+        alert: {
+          key: 'vm:7',
+          icon: 'clock',
+          text: 'Сетевая папка «projects» не отвечает — программы ждут её',
+          metric: 'io',
+          waiting: ['git', 'node', 'claude'],
+        },
+      },
+    ]);
+    expect(stall?.text).toBe('Сетевая папка «projects» не отвечает — программы ждут её · ждут: git, node');
+    const [disk] = itemsOfMachines(
+      [
+        {
+          id: 'vm',
+          name: 'Моя ВМ',
+          since: 7,
+          urgent: true,
+          alert: { key: 'vm:7', icon: 'hard-drive', text: 'Диск почти заполнен', metric: 'disk' },
+        },
+      ],
+      () => 'vite',
+    );
+    expect(disk?.text).toBe('Диск почти заполнен');
+    pinLocale(null);
   });
 });
 
 describe('machineDetail', () => {
+  it('lists the programs that wait for a stall, none of them to stop', () => {
+    const detail = machineDetail('io', null, ['git', 'node']);
+    if (detail.k !== 'machine') throw new Error(detail.k);
+    expect(detail.heavy.map((h) => [h.name, h.stoppable])).toEqual([
+      ['git', false],
+      ['node', false],
+    ]);
+  });
+
   it('says what runs short before the figures come', () => {
     expect(machineDetail('mem', null)).toMatchObject({ k: 'machine', level: 1, heavy: [] });
   });
@@ -137,5 +235,17 @@ describe('machineDetail', () => {
     if (disk.k !== 'machine') throw new Error(disk.k);
     expect(disk.heavy).toEqual([]);
     expect(disk.level).toBeCloseTo(0.95);
+  });
+});
+
+describe('noticeQuiet', () => {
+  it('floats the plate over an ordinary chat', () => {
+    expect(noticeQuiet(false, false)).toBe(false);
+  });
+  it('keeps the plate away while the phone side menu is open', () => {
+    expect(noticeQuiet(false, true)).toBe(true);
+  });
+  it('keeps the plate away while an app has the whole window', () => {
+    expect(noticeQuiet(true, false)).toBe(true);
   });
 });

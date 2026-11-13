@@ -233,6 +233,15 @@ func (s *Service) Deliver(commentID string) {
 // Run probes the documents and boards services (health.go) and tries the comments not yet handed over again every minute until ctx ends, and gives up on those older than a day.
 func (s *Service) Run(ctx context.Context) {
 	safego.Go("docs services health", func() { s.runHealth(ctx) })
+	s.RunSweep(ctx)
+}
+
+// RunHealth probes the documents and boards services until ctx ends (every replica keeps its own view of them).
+func (s *Service) RunHealth(ctx context.Context) { s.runHealth(ctx) }
+
+// RunSweep tries the comments not yet handed over again every minute until ctx ends: with several replicas only the
+// leader does it (docs/hub/replicas.md).
+func (s *Service) RunSweep(ctx context.Context) {
 	s.reportLoose(ctx)
 	if s.links == nil {
 		return

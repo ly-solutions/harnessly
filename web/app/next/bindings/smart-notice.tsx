@@ -33,6 +33,7 @@ import { KEY_SCOPE } from '@/next/features/keys/commands';
 import type { IMachineNotice } from '@/next/features/notifications/from-machines';
 import { playSound } from '@/next/features/notifications/ping';
 import { loadMachineStats, procKey, stopProcess } from '@/next/features/pane/machine/api';
+import { AUTO_OPEN_DELAY_MS, AUTO_OPEN_MS, takeAutoOpen } from '@/next/features/notifications/auto-open';
 import { cancelCode, isSafeRefusal, putCode, type ICodeAsk } from '@/next/features/safe/api';
 import SmartNotice, {
   SMART_CODE,
@@ -49,7 +50,14 @@ import { openGates, useGates } from '@/next/stores/conversation';
 import { useConversationList } from '@/next/stores/conversations';
 import { addHistory, setHistoryPerson } from '@/next/stores/notice-history';
 import { SAMPLE_CHAT, setNotify, useNotify, type INotice } from '@/next/stores/notices';
-import { setDrops, takeDropBack, useDropBack, type IDrop } from '@/next/stores/smart-drops';
+import {
+  landDrop,
+  markArriving,
+  setDrops,
+  takeDropBack,
+  useDropBack,
+  type IDrop,
+} from '@/next/stores/smart-drops';
 import { fly, snap } from '@/next/features/smart-notice/fly';
 import { KIND_RANK, useFront, useNewsClock } from '@/next/features/smart-notice/flow';
 import {
@@ -86,6 +94,15 @@ const TICK_MS = 1000;
 /** The order on the stack: what waits now first (a code by its deadline), then what waits for an answer (the longest
  *  waiting first), then what broke, then what is ready (the newest first). */
 const RANK = KIND_RANK;
+
+/** One chat, one card: news of a chat that waits for an answer now (its turn ended, then it asked) is stale, and
+ *  behind the question it would only stand as a grey plate under what reads as a single notice. */
+export const onePerChat = (items: readonly ISmartItem[]): readonly ISmartItem[] => {
+  const waiting = new Set(items.filter((i) => WAITS.has(i.kind) && i.chatId !== null).map((i) => i.chatId));
+  if (waiting.size === 0) return items;
+  const kept = items.filter((i) => WAITS.has(i.kind) || i.chatId === null || !waiting.has(i.chatId));
+  return kept.length === items.length ? items : kept;
+};
 
 export const orderItems = (items: readonly ISmartItem[]): ISmartItem[] =>
   [...items].sort((a, b) => {
@@ -218,20 +235,41 @@ export const itemsOfCodes = (asks: readonly ICodeAsk[], skew: number): ISmartIte
     until: ask.until - skew,
   }));
 
-/** The machines in the red as items, in the words of the plate. */
-export const itemsOfMachines = (notices: readonly IMachineNotice[]): ISmartItem[] =>
-  notices.map((n) => ({
-    key: `machine:${n.alert.key}`,
-    kind: SMART_KIND.machine,
-    chatId: null,
-    icon: n.alert.icon,
-    title: n.name,
-    text: t('next.smart.machine.short'),
-    at: n.since,
-    until: null,
-  }));
+/** The heaviest thing on a machine by what runs short there: a program's or «Агенты»' name; null when not known. */
+export type TTopOf = (machine: string) => string | null;
+
+const NO_TOP: TTopOf = () => null;
 
 type TMetric = IMachineNotice['alert']['metric'];
+
+/** Who is behind what runs short, said after the cause; a full disk is nobody's. */
+const consumerOf = (n: IMachineNotice, top: string | null): string | null => {
+  const waiting = n.alert.waiting ?? [];
+  if (n.alert.metric === 'io')
+    return waiting.length > 0
+      ? t('next.smart.machine.waits', { names: waiting.slice(0, 2).join(', ') })
+      : null;
+  if (n.alert.metric === 'disk' || top === null) return null;
+  return t(`next.smart.machine.top.${n.alert.metric}`, { name: top });
+};
+
+/** The machines in the red as items: the line says what is wrong in words and who is behind it, without a press. */
+export const itemsOfMachines = (notices: readonly IMachineNotice[], topOf: TTopOf = NO_TOP): ISmartItem[] =>
+  notices.map((n) => {
+    const consumer = consumerOf(n, topOf(n.id));
+    return {
+      key: `machine:${n.alert.key}`,
+      kind: SMART_KIND.machine,
+      chatId: null,
+      icon: n.alert.icon,
+      title: n.name,
+      text: consumer ? `${n.alert.text} · ${consumer}` : n.alert.text,
+      at: n.since,
+      until: null,
+      machine: { id: n.id, metric: n.alert.metric, waiting: n.alert.waiting ?? [] },
+      urgent: n.urgent,
+    };
+  });
 
 const PROC_ICON: Record<MachineProcKind, string> = {
   service: 'server',
@@ -240,26 +278,46 @@ const PROC_ICON: Record<MachineProcKind, string> = {
   other: 'app-window',
 };
 
-/** How full the machine is in what runs short, 0…1. */
+/** How full the machine is in what runs short, 0…1; a stall has no share, it is the whole bar. */
 const LEVEL: Record<TMetric, (s: MachineStats) => number> = {
   mem: (s) => (s.mem.total > 0 ? s.mem.used / s.mem.total : 1),
   cpu: (s) => s.cpu,
   disk: (s) => (s.disk.total > 0 ? 1 - s.disk.free / s.disk.total : 1),
+  io: () => 1,
 };
 
-/** How much a program weighs in what runs short; the disk is not of programs. */
+/** How much a program weighs in what runs short; the disk and a stall are not weighed by the figures of programs. */
 const WEIGHT: Record<TMetric, (p: MachineStats['procs'][number]) => number> = {
   mem: (p) => p.rss,
   cpu: (p) => p.cpu,
   disk: () => 0,
+  io: () => 0,
 };
 
 const HEAVY_ROWS = 3;
 
 /** A machine's card: what runs short in words, how full it is, and what weighs most — the agents together, then the
- *  heaviest programs one by one. Without the figures yet, the words alone. */
-export const machineDetail = (metric: TMetric, stats: MachineStats | null): TSmartDetail => {
+ *  heaviest programs one by one; of a stall, the programs the machine says wait. Without the figures yet, the words
+ *  alone. */
+export const machineDetail = (
+  metric: TMetric,
+  stats: MachineStats | null,
+  waiting: readonly string[] = [],
+): TSmartDetail => {
   const text = t(`next.smart.machine.${metric}`);
+  if (metric === 'io')
+    return {
+      k: 'machine',
+      text,
+      level: 1,
+      heavy: waiting.slice(0, HEAVY_ROWS).map((name) => ({
+        key: `wait:${name}`,
+        icon: PROC_ICON.other,
+        name,
+        text: t('next.smart.machine.waiting'),
+        stoppable: false,
+      })),
+    };
   if (!stats) return { k: 'machine', text, level: 1, heavy: [] };
   const level = Math.max(0, Math.min(1, LEVEL[metric](stats)));
   if (metric === 'disk') return { k: 'machine', text, level, heavy: [] };
@@ -293,9 +351,11 @@ export const machineDetail = (metric: TMetric, stats: MachineStats | null): TSma
 };
 
 const STATS_MS = 10_000;
+/** A folded card reads the figures seldom: it names one program, and the machine is short of breath as it is. */
+const STATS_FOLDED_MS = 30_000;
 
-/** The Machine tool's figures of one machine, read again every few seconds while asked for. */
-const useMachineStats = (machine: MachineId | null): MachineStats | null => {
+/** The Machine tool's figures of one machine, read again every `every` ms while asked for. */
+export const useMachineStats = (machine: MachineId | null, every: number = STATS_MS): MachineStats | null => {
   const [stats, setStats] = useState<{ machine: MachineId; stats: MachineStats } | null>(null);
   useEffect(() => {
     if (!machine) return;
@@ -305,12 +365,12 @@ const useMachineStats = (machine: MachineId | null): MachineStats | null => {
         if (live && 'ok' in res) setStats({ machine, stats: res.value });
       });
     load();
-    const timer = setInterval(load, STATS_MS);
+    const timer = setInterval(load, every);
     return () => {
       live = false;
       clearInterval(timer);
     };
-  }, [machine]);
+  }, [machine, every]);
   return stats?.machine === machine ? stats.stats : null;
 };
 
@@ -327,9 +387,15 @@ const useTick = (on: boolean): number => {
 
 const FIELD = '.hx-composer';
 
+interface IFieldAnchor {
+  x: number;
+  bottom: number;
+  width: number;
+}
+
 /** The middle of the chat's field on screen and how far its top is from the window's bottom; null without a field. */
-const useFieldAnchor = (on: boolean, key: string): { x: number; bottom: number } | null => {
-  const [anchor, setAnchor] = useState<{ x: number; bottom: number } | null>(null);
+const useFieldAnchor = (on: boolean, key: string): IFieldAnchor | null => {
+  const [anchor, setAnchor] = useState<IFieldAnchor | null>(null);
   useLayoutEffect(() => {
     if (!on) return;
     const measure = () => {
@@ -340,9 +406,12 @@ const useFieldAnchor = (on: boolean, key: string): { x: number; bottom: number }
           ? {
               x: Math.round(box.left + box.width / 2),
               bottom: Math.round(window.innerHeight - box.top + OVER_FIELD_PX),
+              width: Math.round(box.width),
             }
           : null;
-      setAnchor((was) => (was?.x === next?.x && was?.bottom === next?.bottom ? was : next));
+      setAnchor((was) =>
+        was?.x === next?.x && was?.bottom === next?.bottom && was?.width === next?.width ? was : next,
+      );
     };
     const first = requestAnimationFrame(measure);
     // The field grows with its text and moves with the panes: a cheap look every half second keeps up with all of it.
@@ -376,7 +445,17 @@ export interface ISmartNoticeHostProps {
   /** Opens a machine's card with its figures. */
   onOpenMachine: (id: MachineId) => void;
   onOpenSettings: () => void;
+  /** An app or a design takes the whole window (Sinopia, a video with its player), or the phone's side menu is
+   *  open: no plate floats over it; what comes waits in the notification centre, the bell's dot says it. */
+  quiet?: boolean;
 }
+
+const NO_ITEMS: readonly ISmartItem[] = [];
+
+/** No plate floats while an app has the whole window, or while the phone's side menu is open: the plate would lie
+ *  over the menu. What comes waits in the notification centre. */
+export const noticeQuiet = (fullWindow: boolean, phoneMenuOpen: boolean): boolean =>
+  fullWindow || phoneMenuOpen;
 
 const SmartNoticeHost = ({
   person,
@@ -388,6 +467,7 @@ const SmartNoticeHost = ({
   onOpenCenter,
   onOpenMachine,
   onOpenSettings,
+  quiet = false,
 }: ISmartNoticeHostProps) => {
   setHistoryPerson(person);
   const settings = useNotify();
@@ -414,15 +494,35 @@ const SmartNoticeHost = ({
   const live = useNewsClock(news, keep, now, NEWS_MS);
 
   const byId = useMemo(() => new Map<string, Conversation>((convs ?? []).map((c) => [c.id, c])), [convs]);
+  // The figures of the machine in trouble (the open card's, else the first one's): its line names who is behind it.
+  const [statsOf, setStatsOf] = useState<MachineId | null>(null);
+  const firstSick = settings.cards && settings.machine ? (machineNotices[0] ?? null) : null;
+  const watched = statsOf ?? (firstSick ? (firstSick.id as MachineId) : null);
+  const needsFigures = (n: IMachineNotice | null) =>
+    n !== null && n.alert.metric !== 'io' && n.alert.metric !== 'disk';
+  const watchedNotice = machineNotices.find((n) => n.id === watched) ?? null;
+  const reading = open && statsOf !== null;
+  const stats = useMachineStats(
+    watched !== null && (reading || needsFigures(watchedNotice)) ? watched : null,
+    reading ? STATS_MS : STATS_FOLDED_MS,
+  );
+  const topName = useMemo(() => {
+    if (!stats || !watchedNotice) return null;
+    const detail = machineDetail(watchedNotice.alert.metric, stats);
+    return detail.k === 'machine' ? (detail.heavy[0]?.name ?? null) : null;
+  }, [stats, watchedNotice]);
+  const topOf = useCallback<TTopOf>((id) => (id === watched ? topName : null), [watched, topName]);
   const all = useMemo(
     () =>
       settings.cards
-        ? orderItems([
-            ...itemsOfCodes(codes.asks, codes.skew),
-            ...(settings.machine ? itemsOfMachines(machineNotices) : []),
-            ...itemsOfSlot(slot.notices),
-            ...itemsOfNotices(notices, byId, live),
-          ])
+        ? orderItems(
+            onePerChat([
+              ...itemsOfCodes(codes.asks, codes.skew),
+              ...(settings.machine ? itemsOfMachines(machineNotices, topOf) : []),
+              ...itemsOfSlot(slot.notices),
+              ...itemsOfNotices(notices, byId, live),
+            ]),
+          )
         : [],
     [
       settings.cards,
@@ -430,6 +530,7 @@ const SmartNoticeHost = ({
       codes.asks,
       codes.skew,
       machineNotices,
+      topOf,
       slot.notices,
       notices,
       byId,
@@ -502,7 +603,8 @@ const SmartNoticeHost = ({
     main?.kind === SMART_KIND.machine
       ? (machineNotices.find((n) => main.key === `machine:${n.alert.key}`) ?? null)
       : null;
-  const stats = useMachineStats(open && sick ? sick.id : null);
+  const sickId = sick ? (sick.id as MachineId) : null;
+  if (sickId !== statsOf) setStatsOf(sickId);
 
   // Nothing left: the card folds, so the next one comes as a line (adjusted while rendering, as React advises).
   const empty = items.length === 0;
@@ -578,11 +680,11 @@ const SmartNoticeHost = ({
       if (permission.kind !== 'tool') return { k: 'plain' };
       return { k: 'permission', command: permission.command ?? permission.tool ?? '' };
     }
-    if (sick) return machineDetail(sick.alert.metric, stats);
+    if (sick) return machineDetail(sick.alert.metric, sick.id === watched ? stats : null, sick.alert.waiting);
     if (main.kind === SMART_KIND.done)
       return { k: 'done', summary: main.summary ?? null, canReply: conv !== null };
     return { k: 'plain' };
-  }, [main, slot.notices, codes.asks, question, permission, sick, stats, conv]);
+  }, [main, slot.notices, codes.asks, question, permission, sick, stats, watched, conv]);
   // The last detail that was not a loading line, kept as state and replaced only when its content changed.
   const [lastDetail, setLastDetail] = useState<{ key: string; detail: TSmartDetail } | null>(null);
   const detail = steadyDetail(lastDetail, main?.key ?? null, fresh);
@@ -590,7 +692,43 @@ const SmartNoticeHost = ({
     setLastDetail({ key: main.key, detail });
 
   const covered = useFieldCovered();
-  const anchor = useFieldAnchor(settings.place === 'bottom-center' && items.length > 0, currentId ?? '');
+  const onPlate = quiet ? NO_ITEMS : items;
+  if (quiet && open) setOpen(false);
+  const anchor = useFieldAnchor(settings.place === 'bottom-center' && onPlate.length > 0, currentId ?? '');
+
+  // An urgent card (a machine about to fail its work) opens by itself for a few seconds and folds again, seldom
+  // (auto-open.ts). Not over a card the person reads, and one they took into their hands is theirs to close.
+  const urgentItem = onPlate.find((item) => item.urgent) ?? null;
+  const urgentKey = urgentItem?.key ?? null;
+  const urgentId = urgentItem?.machine?.id ?? urgentKey;
+  const busyNow = useRef(false);
+  const heldNow = useRef(false);
+  const [autoKey, setAutoKey] = useState<string | null>(null);
+  useEffect(() => {
+    busyNow.current = open || held;
+    heldNow.current = held;
+  });
+  useEffect(() => {
+    if (urgentKey === null || urgentId === null) return;
+    // Once the line has come: a plate that opens while it still arrives reads as a jump.
+    const timer = window.setTimeout(() => {
+      if (busyNow.current || document.visibilityState !== 'visible') return;
+      if (!takeAutoOpen(urgentId, true, Date.now())) return;
+      setAutoKey(urgentKey);
+      setMainKey(urgentKey);
+      setByKeys(false);
+      setOpen(true);
+    }, AUTO_OPEN_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [urgentKey, urgentId]);
+  useEffect(() => {
+    if (autoKey === null) return;
+    const timer = window.setTimeout(() => {
+      setAutoKey(null);
+      if (!heldNow.current) setOpen(false);
+    }, AUTO_OPEN_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoKey]);
 
   const remember = useCallback(
     (item: ISmartItem, text: string, icon: string) =>
@@ -726,21 +864,23 @@ const SmartNoticeHost = ({
   const onHide = (item: ISmartItem, from: DOMRect | null) => {
     // What it shows now, before it goes: the flight carries it into the drop.
     const view = from ? snap(document.querySelector('.hx-sn .hx-sn__body:not([data-ghost])')) : null;
+    // News put away is gone; what waits goes into its drop, flowing there when it was put away by hand. The drop is
+    // drawn hidden from its first frame until the flight lands: it never shows, hides and shows again.
+    const flies = from !== null && WAITS.has(item.kind);
+    if (flies) markArriving(item.key);
     setHidden((was) => new Set(was).add(item.key));
-    // News put away is gone; what waits goes into its drop, flowing there when it was put away by hand.
-    if (!from || !WAITS.has(item.kind)) return;
+    if (!flies) return;
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         const drop = document.querySelector<HTMLElement>(`[data-drop-key="${CSS.escape(item.key)}"]`);
-        if (!drop) return;
-        const to = snap(drop);
-        drop.dataset.arriving = '';
+        if (!drop) {
+          landDrop(item.key);
+          return;
+        }
         void fly(
           { rect: from, radius: 24, view },
-          { rect: drop.getBoundingClientRect(), radius: 22, view: to },
-        ).then(() => {
-          delete drop.dataset.arriving;
-        });
+          { rect: drop.getBoundingClientRect(), radius: 22, view: snap(drop) },
+        ).finally(() => landDrop(item.key));
       }),
     );
   };
@@ -780,7 +920,7 @@ const SmartNoticeHost = ({
 
   useKeys(KEY_SCOPE.global, {
     'global.notice': () => {
-      if (items.length === 0) {
+      if (onPlate.length === 0) {
         onOpenCenter();
         return;
       }
@@ -796,16 +936,17 @@ const SmartNoticeHost = ({
 
   return (
     <SmartNotice
-      items={items}
+      items={onPlate}
       mainKey={main?.key ?? null}
       detail={detail}
-      open={open && items.length > 0}
+      open={open && onPlate.length > 0}
       place={settings.place}
       anchor={anchor}
       covered={covered}
       now={now}
       onOpen={(next) => {
         if (next) setByKeys(false);
+        setAutoKey(null);
         setOpen(next);
       }}
       onMain={setMainKey}

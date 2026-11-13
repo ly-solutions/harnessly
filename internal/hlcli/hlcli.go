@@ -245,6 +245,8 @@ func (c *cli) run(args []string) error {
 		return c.memory(rest)
 	case "secret", "secrets":
 		return c.secret(rest)
+	case "settings", "setting":
+		return c.settings(rest)
 	case "supervise":
 		return c.supervise(rest)
 	case "install":

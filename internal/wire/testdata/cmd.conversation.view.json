@@ -1,0 +1,5 @@
+{
+  "op": "conversation.view",
+  "body": {"opId": "op-view1", "id": "tab-k3Jx9QmZ", "view": {"screen": "/designly/d1?chat=tab-k3Jx9QmZ", "at": 1770000000000}},
+  "result": {"r": "accepted", "ch": "convs", "seq": 1846, "rev": 19}
+}

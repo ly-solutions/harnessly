@@ -1607,7 +1607,7 @@ func TestAgentSettingsPages(t *testing.T) {
 		"no rev":           {"claude", []byte(`{"patch":{"options":[{"key":"model","value":"x"}]}}`)},
 		"unknown option":   {"claude", wire.AgentSettingsEdit{Rev: saved.Rev, Patch: wire.AgentSettingsPatch{Options: []wire.AgentOption{{Key: wire.OptFast, Value: true}}}}},
 		"value out of set": {"claude", wire.AgentSettingsEdit{Rev: saved.Rev, Patch: wire.AgentSettingsPatch{Options: []wire.AgentOption{{Key: wire.OptEffort, Value: "extreme"}}}}},
-		"mode only read":   {"claude", wire.AgentSettingsEdit{Rev: saved.Rev, Patch: wire.AgentSettingsPatch{Options: []wire.AgentOption{{Key: wire.OptPermissionMode, Value: "bypassPermissions"}}}}},
+		"mode only read":   {"claude", wire.AgentSettingsEdit{Rev: saved.Rev, Patch: wire.AgentSettingsPatch{Options: []wire.AgentOption{{Key: wire.OptPermissionMode, Value: "dontAsk"}}}}},
 		"rules for codex":  {"codex", wire.AgentSettingsEdit{Rev: codex.Rev, Patch: wire.AgentSettingsPatch{Rules: &rules}}},
 		"base url as env":  {"claude", wire.AgentSettingsEdit{Rev: saved.Rev, Patch: wire.AgentSettingsPatch{EnvSet: []wire.AgentEnvSet{{Key: "ANTHROPIC_BASE_URL", Value: "https://x.example"}}}}},
 		"a script as url":  {"codex", wire.AgentSettingsEdit{Rev: codex.Rev, Patch: wire.AgentSettingsPatch{Options: []wire.AgentOption{{Key: wire.OptBaseURL, Value: "javascript:alert(1)"}}}}},

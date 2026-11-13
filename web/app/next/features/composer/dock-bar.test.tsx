@@ -14,7 +14,7 @@ describe('the notice of a removed key', () => {
     render(<DockBar notice={{ kind: 'key', vendor: 'Kimi', onOpen, onContinue }} />);
     expect(screen.getByText(/The Kimi key was removed/)).toBeTruthy();
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Models and keys' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Providers' }));
     });
     expect(onOpen).toHaveBeenCalled();
     await act(async () => {

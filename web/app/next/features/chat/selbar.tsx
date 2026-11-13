@@ -6,12 +6,16 @@
 // words are kept by their turn and their place in its text (feed-anchor.ts): the feed draws only the turns near the
 // screen and redraws a turn as it grows. A finger has no mouseup, so on touch the button waits until the handles stop.
 // Where the chat has a side chat, «Ask aside» stands beside «Annotate»: the words go to the side chat's field as a quote
-// (stores/side-ask.ts), the agent of the chat is not disturbed.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+// (stores/side-ask.ts), the agent of the chat is not disturbed. The open row has the composer's microphone:
+// what is said is written into the annotation's field, ↑ or Enter while it listens stops it and keeps the annotation
+// once the words are in.
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useVoice } from '@/next/bindings/use-voice';
 import { createStore, useStore } from '@/next/core/store';
 import { anchorOf, rangeOf, stillHolds, type IFeedAnchor } from '@/next/features/chat/feed-anchor';
+import NoteVoice from '@/next/features/chat/note-voice';
 import { t } from '@/next/i18n';
-import type { ConvId } from '@/next/protocol/v2';
+import type { ConvId, MachineId } from '@/next/protocol/v2';
 import {
   addFeedNote,
   clearFeedNotes,
@@ -35,7 +39,7 @@ import {
   NoteMark,
 } from '@/next/ui/notes/notes';
 import type { IAnnotateSpot } from '@/next/ui/notes/place';
-import { useLeavingList } from '@/next/ui/presence';
+import { useLeavingList, usePresence } from '@/next/ui/presence';
 import '@/next/styles/feed-notes.css';
 
 const TOUCH_SETTLE_MS = 380;
@@ -181,9 +185,20 @@ interface ISelBarProps {
   conv: ConvId;
   /** The chat has a side chat (a Claude chat): the picked words can be asked about there. */
   aside?: boolean;
+  /** The chat's machine: it recognizes what is dictated into an annotation. Without it the row has no microphone. */
+  machine?: MachineId | null;
 }
 
-const SelBar = ({ conv, aside = false }: ISelBarProps) => {
+interface IDraft {
+  /** The mark whose row is open, or was last: a row that leaves keeps its words while it fades. */
+  id: string | null;
+  open: boolean;
+  text: string;
+  /** ↑ was pressed while the voice was heard: the count of recognized texts then, the annotation goes with the next. */
+  commitAfter: number | null;
+}
+
+const SelBar = ({ conv, aside = false, machine = null }: ISelBarProps) => {
   const quotes = useQuotes(conv);
   const [picked, setPicked] = useState<IPicked | null>(null);
   const [fresh, setFresh] = useState<IFeedMark | null>(null);
@@ -196,6 +211,20 @@ const SelBar = ({ conv, aside = false }: ISelBarProps) => {
     return fresh ? [...kept, fresh] : kept;
   }, [quotes, fresh]);
   const shown = useLeavingList(marks, markId, NOTE_OUT_MS);
+
+  // The words of the open row are kept here, so a dictation can write into them; every opening starts from the mark's
+  // own (state adjusted during render, not in an effect).
+  const [draft, setDraft] = useState<IDraft>({ id: null, open: false, text: '', commitAfter: null });
+  if (editing !== null && (draft.id !== editing || !draft.open)) {
+    const text = marks.find((m) => m.id === editing)?.comment ?? '';
+    setDraft({ id: editing, open: true, text, commitAfter: null });
+  } else if (editing === null && draft.open) setDraft({ ...draft, open: false, commitAfter: null });
+  const setText = useCallback((text: string) => setDraft((d) => ({ ...d, text })), []);
+  const voice = useVoice(machine, draft.text, setText);
+  const recBar = usePresence(voice.recording, NOTE_OUT_MS);
+  // A row that closes, or gives way to another, takes its recording with it.
+  const dropVoice = useEffectEvent(() => voice.onCancelRecording());
+  useEffect(() => () => dropVoice(), [editing]);
 
   // A mark that is leaving keeps the number it had.
   const current = marks.map((m, i) => `${m.id}:${i + 1}`).join(' ');
@@ -371,6 +400,34 @@ const SelBar = ({ conv, aside = false }: ISelBarProps) => {
     if (!mark.fresh) removeQuote(conv, mark.id);
     close();
   };
+  // ↑ or Enter while the voice is heard: it stops, and the annotation is kept once its words are in the field.
+  const keep = (mark: IFeedMark, comment: string) => {
+    const rec = voice.recording;
+    if (!rec) {
+      commit(mark, comment);
+      return;
+    }
+    setDraft((d) => ({ ...d, commitAfter: voice.recognized }));
+    if (!rec.busy) voice.onFinishRecording();
+  };
+  const voiceOver = draft.commitAfter !== null && !voice.recording;
+  const keepAfterVoice = useEffectEvent(() => {
+    const mark = marks.find((m) => m.id === editing);
+    // Nothing was recognized (silence, a failure, a cancel): the row stays open with what it has.
+    const heard = voice.recognized !== draft.commitAfter;
+    setDraft((d) => ({ ...d, commitAfter: null }));
+    if (mark && heard) commit(mark, draft.text.trim());
+  });
+  useEffect(() => {
+    if (!voiceOver) return;
+    const timer = window.setTimeout(keepAfterVoice, 0);
+    return () => window.clearTimeout(timer);
+  }, [voiceOver]);
+  // Esc while the voice is heard stops it, as in the composer; otherwise it leaves the row.
+  const leave = () => {
+    if (voice.recording && !voice.recording.busy) voice.onFinishRecording();
+    else close();
+  };
 
   return (
     <>
@@ -404,9 +461,29 @@ const SelBar = ({ conv, aside = false }: ISelBarProps) => {
                   if (fresh && fresh.id !== item.id) setFresh(null);
                   setEditing(editing === item.id ? null : item.id);
                 }}
-                onCommit={(comment) => commit(item, comment)}
+                onCommit={(comment) => keep(item, comment)}
                 onRemove={() => remove(item)}
-                onCancel={close}
+                onCancel={leave}
+                field={
+                  draft.id === item.id
+                    ? {
+                        value: draft.text,
+                        onValue: setText,
+                        recording: recBar.value !== null,
+                        tools: (
+                          <NoteVoice
+                            bar={recBar}
+                            onMic={voice.onMic ? () => voice.onMic?.() : undefined}
+                            onCancel={() => {
+                              setDraft((d) => ({ ...d, commitAfter: null }));
+                              voice.onCancelRecording();
+                            }}
+                            onFinish={voice.onFinishRecording}
+                          />
+                        ),
+                      }
+                    : undefined
+                }
               />
             );
           })}

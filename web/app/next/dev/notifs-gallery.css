@@ -191,3 +191,10 @@
   color: var(--hx-fg-muted, #888);
   font-size: 11px;
 }
+/* The machine's card apart from the column, as bindings/chat-background.tsx puts it under it. */
+.hx-ng__below {
+  margin-top: 8px;
+}
+.hx-ng__below .hx-ns__head {
+  display: none;
+}

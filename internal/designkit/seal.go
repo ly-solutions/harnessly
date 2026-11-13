@@ -50,8 +50,11 @@ type sealInfo struct {
 	files    int
 	bytes    int64
 	sealStat string
-	sig      string
-	at       time.Time
+	// list is the seal as read while its file stood as sealStat: the megabytes of JSON are not read and checked
+	// again every sealTTL only to look at the same files.
+	list []filestore.KitSealedFile
+	sig  string
+	at   time.Time
 }
 
 var (
@@ -176,27 +179,33 @@ func sealOf(id, version, root string) *sealInfo {
 	if c := sealCache[root]; c != nil && c.sealStat == stat && time.Since(c.at) < sealTTL {
 		return c
 	}
-	raw, err := os.ReadFile(filepath.Join(root, SealFile))
-	seal, perr := filestore.ParseKitSeal(raw)
-	if err != nil || perr != nil {
-		return &sealInfo{state: sealBad}
+	var list []filestore.KitSealedFile
+	if c := sealCache[root]; c != nil && c.state == sealOK && c.sealStat == stat {
+		list = c.list
+	} else {
+		raw, err := os.ReadFile(filepath.Join(root, SealFile))
+		seal, perr := filestore.ParseKitSeal(raw)
+		if err != nil || perr != nil {
+			return &sealInfo{state: sealBad}
+		}
+		list = seal.Files
 	}
 	var sig strings.Builder
-	for _, f := range seal.Files {
+	for _, f := range list {
 		fi, err := os.Lstat(filepath.Join(root, filepath.FromSlash(f.Path)))
 		if err != nil || !fi.Mode().IsRegular() || fi.Size() != f.Size {
 			return cacheSeal(root, &sealInfo{state: sealBad, sealStat: stat})
 		}
 		sig.WriteString(itoa(fi.ModTime().UnixNano()) + ";")
 	}
-	info := &sealInfo{state: sealOK, set: map[string]bool{}, files: len(seal.Files), sealStat: stat, sig: sig.String()}
+	info := &sealInfo{state: sealOK, set: map[string]bool{}, files: len(list), sealStat: stat, list: list, sig: sig.String()}
 	if c := sealCache[root]; c != nil && c.state == sealOK && c.sealStat == stat && c.sig == info.sig {
 		info.set, info.bytes = c.set, c.bytes // nothing moved since the files were hashed
 		info.at = time.Now()
 		sealCache[root] = info
 		return info
 	}
-	for _, f := range seal.Files {
+	for _, f := range list {
 		sum, _, err := sealHash(filepath.Join(root, filepath.FromSlash(f.Path)))
 		if err != nil || sum != f.SHA256 {
 			return cacheSeal(root, &sealInfo{state: sealBad, sealStat: stat})

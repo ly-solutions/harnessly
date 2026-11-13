@@ -4,6 +4,7 @@
 import { platformPath, runtimePath } from '@/next/core/net/machine';
 import { RuntimeError, postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { t } from '@/next/i18n';
+import { readOrSnapshot } from '@/next/features/designly/snapshot-read';
 import type { MachineId } from '@/next/protocol/v2';
 import {
   readDeckComment,
@@ -56,7 +57,7 @@ const must = <T>(v: T | null): T => {
 // ---- the deck, settings, notes, comments (WP1's routes)
 
 export const fetchDeck = async (m: MachineId, artifact: string, signal?: AbortSignal): Promise<IDeckState> =>
-  must(readDeckState(await runtimeJson(m, deck(`?${q({ artifact })}`), { signal, cache: 'no-store' })));
+  must(readDeckState(await readOrSnapshot(m, deck(`?${q({ artifact })}`), { signal, cache: 'no-store' })));
 
 export const putDeckSettings = async (
   m: MachineId,

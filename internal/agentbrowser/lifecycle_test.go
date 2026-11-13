@@ -2,6 +2,7 @@ package agentbrowser
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -137,5 +138,42 @@ func TestLifecycleCloseDormantRegistryWithoutChrome(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(i.dir, "chrome")); !os.IsNotExist(err) {
 		t.Fatal("cleanup created Chrome data")
+	}
+}
+
+// A stop that gave up half-way leaves a closing instance in the map; the next call forgets it instead of
+// refusing every call for good.
+func TestLifecycleForgetsInstanceLeftClosing(t *testing.T) {
+	m := New(Config{DataDir: t.TempDir()})
+	defer m.Close()
+	left := newInstance(m, DefaultProfile)
+	left.closing = true
+	left.cancel()
+	close(left.done)
+	m.instances[DefaultProfile] = left
+	gone, err := m.dropLeftover(t.Context(), DefaultProfile, left)
+	must(t, err)
+	if !gone || m.instances[DefaultProfile] != nil {
+		t.Fatal("the closing instance stayed in the map")
+	}
+
+	live := newInstance(m, DefaultProfile)
+	defer live.cancel()
+	m.instances[DefaultProfile] = live
+	gone, err = m.dropLeftover(t.Context(), DefaultProfile, live)
+	must(t, err)
+	if gone || m.instances[DefaultProfile] != live {
+		t.Fatal("a live instance was forgotten")
+	}
+
+	// One still unwinding is waited for, no longer than the caller's own patience.
+	slow := newInstance(m, DefaultProfile)
+	defer slow.cancel()
+	slow.closing = true
+	m.instances[DefaultProfile] = slow
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	if _, err = m.dropLeftover(ctx, DefaultProfile, slow); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waiting for an unwinding instance: %v", err)
 	}
 }

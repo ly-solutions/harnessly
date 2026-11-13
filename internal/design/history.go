@@ -979,6 +979,7 @@ func (l *Library) startHistoryWith(runtime string, onFailure func(string), quiet
 		l.arm(h.quiet)
 		h.mu.Unlock()
 	})
+	l.startViewCopies()
 	h.mu.Lock()
 	h.stopSub = stop
 	l.arm(0)
@@ -1014,6 +1015,7 @@ func historyPollDelay(watched bool, poll time.Duration) time.Duration {
 // stopHistory stops the history and returns once the snapshot or the look at the tree in flight has finished.
 func (l *Library) stopHistory() {
 	h := &l.hist
+	l.stopViewCopies()
 	defer h.work.Wait()
 	h.mu.Lock()
 	defer h.mu.Unlock()

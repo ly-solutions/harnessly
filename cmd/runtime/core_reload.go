@@ -28,6 +28,9 @@ type pluginReloader struct {
 	mu      sync.Mutex
 	mark    pluginreload.Mark
 	markMod time.Time
+
+	// retry: the tabs told to wait by their screens; only the sweep's goroutine touches it.
+	retry map[string]reloadRetry
 }
 
 // newPluginReloader watches the reconciler's mark (RUNTIME_PLUGIN_RELOAD_MARK); nil without one.
@@ -94,7 +97,34 @@ func (r *pluginReloader) sweep(m *status.Manager, svc *prompts.Service) {
 	if mark == nil {
 		return
 	}
-	sources := m.AgentSources()
+	r.sweepTabs(mark, m.AgentSources(), time.Now(), reloadPass{
+		queued: func(tabID string) bool { return len(svc.Queue().List(tabID)) > 0 },
+		panes:  r.c.cfg.Tmux.ReadAllPanes,
+		try:    func(session, command string) string { return r.reloadTab(svc, session, command) },
+	})
+}
+
+// reloadPass is what a sweep asks of the rest of the runtime.
+type reloadPass struct {
+	queued func(tabID string) bool
+	// panes is the shared listing of the panes, asked once a sweep and only when a tab has a reload to type.
+	panes func() (map[string]tmux.PaneInfo, bool)
+	// try reads the tab's screen and types the reload when the screen allows; a pluginreload outcome.
+	try func(session, command string) string
+}
+
+// reloadRetry is how long a tab whose screen said «wait» is left alone before its screen is read again: twice as
+// long each time, from reloadSweep to reloadRetryMax. Each read of the screen is a call of tmux, and 164 tabs asked
+// every five seconds were most of the runtime's tmux processes at rest.
+const reloadRetryMax = 5 * time.Minute
+
+type reloadRetry struct {
+	until time.Time
+	pause time.Duration
+	seq   int // the tab's EventSeq when it was told to wait: a hook since then (a turn ended) is a reason to look now
+}
+
+func (r *pluginReloader) sweepTabs(mark pluginreload.Mark, sources []status.AgentSource, now time.Time, p reloadPass) {
 	live := map[string]bool{}
 	for _, s := range sources {
 		live[s.TabID] = true
@@ -106,19 +136,60 @@ func (r *pluginReloader) sweep(m *status.Manager, svc *prompts.Service) {
 			changed = true
 		}
 	}
+	for id := range r.retry {
+		if !live[id] {
+			delete(r.retry, id)
+		}
+	}
+	var panes map[string]tmux.PaneInfo
+	listed := false
 	// One tab at a time: a reload watches the screen for a moment, and the sweep must not crowd tmux.
 	for _, s := range sources {
 		applied := r.applied.Get(s.TabID)
-		queued := len(svc.Queue().List(s.TabID)) > 0
-		d := pluginreload.Decide(pluginreload.Tab{PanelType: s.PanelType, Provider: s.Provider, CliState: s.CliState, Queued: queued}, mark, applied)
+		d := pluginreload.Decide(pluginreload.Tab{PanelType: s.PanelType, Provider: s.Provider, CliState: s.CliState, Queued: p.queued(s.TabID)}, mark, applied)
 		if d.Action != "insert" {
 			continue
 		}
-		command := pluginreload.Commands[d.Kind]
-		outcome := r.reloadTab(svc, s.TmuxSession, command)
-		if outcome == "applied" {
-			agent.Log("info", "core: plugins changed, reload typed into an idle Claude", agent.F{K: "tabId", V: s.TabID}, agent.F{K: "command", V: command})
+		if w, waits := r.retry[s.TabID]; waits && w.seq == s.EventSeq && now.Before(w.until) {
+			continue
 		}
+		if !listed {
+			var ok bool
+			if panes, ok = p.panes(); !ok {
+				return // tmux did not say what runs where: the next sweep asks again
+			}
+			listed = true
+		}
+		var outcome string
+		if pane, has := panes[s.TmuxSession]; !has || tmux.SafeShells[pane.Command] {
+			// No session, or a bare shell in it: no Claude to reload, and the next one reads the plugins as they are.
+			// Its screen is not read for that.
+			outcome = "settled"
+		} else {
+			command := pluginreload.Commands[d.Kind]
+			outcome = p.try(s.TmuxSession, command)
+			if outcome == "applied" {
+				agent.Log("info", "core: plugins changed, reload typed into an idle Claude", agent.F{K: "tabId", V: s.TabID}, agent.F{K: "command", V: command})
+			}
+		}
+		switch outcome {
+		case "gone":
+			outcome = "settled" // the session went while the reload was typed
+		case "wait":
+			w := r.retry[s.TabID]
+			if w.seq != s.EventSeq || w.pause == 0 {
+				w.pause = reloadSweep
+			} else {
+				w.pause = min(2*w.pause, reloadRetryMax)
+			}
+			w.until, w.seq = now.Add(w.pause), s.EventSeq
+			if r.retry == nil {
+				r.retry = map[string]reloadRetry{}
+			}
+			r.retry[s.TabID] = w
+			continue
+		}
+		delete(r.retry, s.TabID)
 		if next := pluginreload.Apply(applied, mark, d.Kind, outcome); outcome == "applied" || outcome == "settled" {
 			r.applied.Set(s.TabID, next)
 			changed = true

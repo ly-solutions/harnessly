@@ -2,6 +2,7 @@ package convo
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -585,5 +586,107 @@ func TestProfileChatLimitIsHeldWithoutAutoContinue(t *testing.T) {
 	}
 	if r.record().Limited != nil {
 		t.Fatalf("the hold ends quietly at the reset")
+	}
+}
+
+// autoTexts are the texts of the runtime's own «go on» messages of the chat.
+func (r *rig) autoTexts() []string {
+	var out []string
+	for _, a := range r.record().AutoContinues {
+		out = append(out, r.message(a.ClientID).Text)
+	}
+	return out
+}
+
+// tmux goes down while the runtime runs (a machine update): a chat at work goes on by itself once its
+// session is gone for good — resumed, with the word to go on.
+func TestLostAtWorkGoesOn(t *testing.T) {
+	r := newRig(t)
+	r.working("big job")
+	r.sessionGone()
+	for range 12 {
+		r.tick(15 * time.Second)
+	}
+	if got := r.autoTexts(); !slices.Equal(got, []string{RestartContinueText}) {
+		t.Fatalf("words %q, state %+v", got, r.state())
+	}
+	if len(r.launcher.resumed) == 0 {
+		t.Fatalf("not resumed, state %+v, queue %+v", r.state(), r.snap().Queue)
+	}
+}
+
+// A chat that had answered and waited for nothing is not woken by a lost tmux: it stays stopped until the
+// person writes.
+func TestLostAtRestStaysStopped(t *testing.T) {
+	r := newRig(t)
+	r.working("small job")
+	r.done()
+	r.hook("stop")
+	for range 5 {
+		r.tick(time.Second)
+	}
+	if st := r.state(); hotAtStop(st.K) {
+		t.Fatalf("the turn did not end: %+v", st)
+	}
+	r.sessionGone()
+	for range 12 {
+		r.tick(15 * time.Second)
+	}
+	if got := r.autoTexts(); len(got) != 0 || len(r.launcher.resumed) != 0 {
+		t.Fatalf("an idle chat was woken: words %q, resumed %v", got, r.launcher.resumed)
+	}
+	if st := r.state(); st.K != wire.StateStopped || !st.Resumable {
+		t.Fatalf("state %+v", st)
+	}
+}
+
+// A chat whose prompt was free but that waited for background work (subagents, commands) when the runtime
+// went down with tmux is sent on at the start, told that its background work stopped.
+func TestRestartGoesOnForBackgroundWork(t *testing.T) {
+	r := newRig(t)
+	r.working("job with helpers")
+	r.done()
+	r.hook("stop")
+	for range 5 {
+		r.tick(time.Second)
+	}
+	if st := r.state(); hotAtStop(st.K) {
+		t.Fatalf("the turn did not end: %+v", st)
+	}
+	r.poke(func(c *conv) {
+		c.rec.BgAgents = 2
+		c.touch()
+	})
+	r.rt.Stop()
+	r.sessionGone()
+	r.restart()
+	for range 12 {
+		r.tick(15 * time.Second)
+	}
+	if got := r.autoTexts(); !slices.Equal(got, []string{RestartBackgroundText}) {
+		t.Fatalf("words %q, state %+v", got, r.state())
+	}
+	if len(r.launcher.resumed) == 0 {
+		t.Fatalf("not resumed, state %+v", r.state())
+	}
+}
+
+// Lost at work, and the runtime went down before the session was given up for good: the mark is on the disk
+// and the start sends the chat on.
+func TestLostAtWorkSurvivesARestart(t *testing.T) {
+	r := newRig(t)
+	r.working("big job")
+	r.sessionGone()
+	r.tick(15 * time.Second)
+	if st := r.state(); st.K != wire.StateGone {
+		t.Fatalf("not lost: %+v", st)
+	}
+	r.rt.Stop()
+	r.restart()
+	for range 12 {
+		r.tick(15 * time.Second)
+	}
+	if got := r.autoTexts(); !slices.Equal(got, []string{RestartContinueText}) {
+		t.Fatalf("words %q, state %+v", got, r.state())
 	}
 }

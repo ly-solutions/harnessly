@@ -43,7 +43,7 @@ import ChatLogin, { loginLostTurn } from '@/next/bindings/chat-login';
 import type { FeedItem } from '@/next/features/chat/types';
 import GateCard from '@/next/features/questions/gate-card';
 import type { PermissionScope } from '@/next/features/questions/types';
-import { useConversationChannel } from '@/next/core/realtime/hub';
+import { hub, useConversationChannel } from '@/next/core/realtime/hub';
 import AppBackground from '@/next/features/app-views/background';
 import type { ConvId, MachineId, TurnOutput } from '@/next/protocol/v2';
 import { useFeedKinds } from '@/next/stores/feed-kinds';
@@ -366,6 +366,7 @@ const ChatView = ({
                           items={items}
                           placeKey={conv}
                           onCopyChatLink={() => copyLink(chatUrl(conv))}
+                          onReloadChat={() => hub.reloadConversation(machine, conv)}
                           failed={notFound || wait.expired}
                           failedReason={notFound ? null : failedReason}
                           onRetryLoad={() => {
@@ -490,7 +491,7 @@ const ChatView = ({
           onClose={() => setSharing({ path: sharing.path, open: false })}
         />
       )}
-      <SelBar conv={conv} aside={provider === 'claude'} />
+      <SelBar conv={conv} aside={provider === 'claude'} machine={machine} />
       <AppBackground machine={machine} conversation={conv} apps={record?.apps} />
     </AttachmentSrc.Provider>
   );

@@ -2,6 +2,7 @@
 // the machine), the open one on the right. On a phone the list is the screen and the open section slides over it from
 // the right, with a way back; the sidebar opens from the list's head with the same glyph as the sidebar's own toggle.
 import '@/next/styles/settings.css';
+import '@/next/styles/settings-changes.css';
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { t } from '@/next/i18n';
@@ -19,6 +20,7 @@ const SECTION_MARK: Readonly<Record<SettingsSection, { icon: string } | { agent:
   browser: { icon: 'agent-browser' },
   takes: { icon: 'mic' },
   accounts: { icon: 'key-round' },
+  smart: { icon: 'layers' },
   claude: { agent: 'claude' },
   codex: { agent: 'codex' },
   skills: { icon: 'blocks' },
@@ -27,14 +29,15 @@ const SECTION_MARK: Readonly<Record<SettingsSection, { icon: string } | { agent:
   connections: { icon: 'plug' },
   design: { icon: 'pen-tool' },
   extensions: { icon: 'blocks' },
+  plugins: { icon: 'blocks' },
   beta: { icon: 'sparkles' },
 };
 
 /** The groups of the list, in the order of SETTINGS_SECTIONS. */
 const NAV_GROUPS = [
   { id: 'app', sections: ['general', 'appearance', 'keys', 'notifications', 'voice', 'takes'] },
-  { id: 'agents', sections: ['accounts', 'claude', 'codex', 'skills', 'safe', 'browser'] },
-  { id: 'machine', sections: ['machines', 'apps', 'connections', 'design', 'extensions', 'beta'] },
+  { id: 'agents', sections: ['claude', 'codex', 'accounts', 'smart', 'skills', 'safe', 'browser'] },
+  { id: 'machine', sections: ['machines', 'apps', 'connections', 'design', 'extensions', 'plugins', 'beta'] },
 ] as const satisfies readonly { id: string; sections: readonly SettingsSection[] }[];
 
 interface ISettingsShellProps {
@@ -46,6 +49,8 @@ interface ISettingsShellProps {
   lead: string;
   /** Sections the list leaves out (Extensions, where no app fills a slot). */
   hidden?: readonly SettingsSection[];
+  /** Sections where an agent has just changed a setting: their entries carry a dot until the person opens them. */
+  changed?: readonly SettingsSection[];
   onPick: (section: SettingsSection) => void;
   onBack: () => void;
   onOpenDrawer: () => void;
@@ -57,6 +62,7 @@ const SettingsShell = ({
   pageOpen,
   lead,
   hidden = [],
+  changed = [],
   onPick,
   onBack,
   onOpenDrawer,
@@ -115,6 +121,13 @@ const SettingsShell = ({
                       )}
                     </span>
                     <span className="hx-set__nav-label">{t(`next.settings.section.${id}`)}</span>
+                    {changed.includes(id) && id !== section && (
+                      <span
+                        className="hx-set__nav-dot"
+                        role="img"
+                        aria-label={t('next.settingsChanges.dot')}
+                      />
+                    )}
                     <Icon name="chevron-right" size="sm" className="hx-set__nav-chev" />
                   </button>
                 );

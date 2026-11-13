@@ -483,6 +483,7 @@ const VideoView = (props: IVideoViewProps) => {
           onSettings={saveSettings}
           layout={null}
           onLayout={pickLayout}
+          ownLook
         />
       )}
       {shownPop.value === POP.render && (

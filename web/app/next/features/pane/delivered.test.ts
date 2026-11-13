@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const config = vi.hoisted(() => ({ centralUploads: true, platformApi: '/api/acme' }));
 vi.mock('@/platform/config', () => ({ appConfig: () => config, platformApi: () => config.platformApi }));
 
-import { downloadUrl, previewUrl } from '@/next/features/pane/delivered';
+import { chatPreviewUrl, downloadUrl, previewUrl } from '@/next/features/pane/delivered';
 import { connectionStore } from '@/next/stores/connection';
 
 const SHA = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
@@ -43,6 +43,22 @@ describe('a handed-over file', () => {
     connectionStore.set('m-1' as never, { k: 'offline' } as never);
     expect(previewUrl('m-1' as never, '/home/u/report.pdf')).toBe(
       '/api/acme/uploads/delivered/by-path?machine=m-1&path=%2Fhome%2Fu%2Freport.pdf',
+    );
+  });
+
+  // a chat's file is shown through the chat, so a file of its folder opens wherever the folder lies.
+  it('is shown through its chat while the machine is live', () => {
+    connectionStore.set('m-1' as never, { k: 'live' } as never);
+    const url = new URL(
+      chatPreviewUrl('m-1' as never, 'c-1' as never, '/srv/lib/p/.media/a.mp4'),
+      'http://x',
+    );
+    expect(url.pathname.endsWith('/conversations/c-1/download')).toBe(true);
+    expect(url.searchParams.get('path')).toBe('/srv/lib/p/.media/a.mp4');
+    expect(url.searchParams.get('show')).toBe('1');
+    connectionStore.set('m-1' as never, { k: 'offline' } as never);
+    expect(chatPreviewUrl('m-1' as never, 'c-1' as never, '/home/u/report.pdf')).toBe(
+      previewUrl('m-1' as never, '/home/u/report.pdf'),
     );
   });
 });

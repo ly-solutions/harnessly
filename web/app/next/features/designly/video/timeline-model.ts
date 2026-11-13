@@ -124,3 +124,42 @@ export const markerBox = (scene: IVideoScene, anchor: IAnchor, total: number): I
   const end = anchor.t1 === null ? left : msToFrac(scene.start + anchor.t1, total);
   return { left, width: end - left };
 };
+
+/** The ruler's label steps, ms: the smallest one that leaves room for a label wins. */
+const TICK_STEPS = [
+  500, 1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000,
+] as const;
+/** A label needs this many px of the ruler to itself. */
+export const TICK_LABEL_PX = 72;
+/** Minor ticks between two labels. */
+const TICK_MINORS = 5;
+
+export interface ITick {
+  ms: number;
+  /** Fraction of the track, 0..1. */
+  left: number;
+  /** A labelled tick; the others are the short marks between them. */
+  major: boolean;
+}
+
+/** The ruler's ticks for a track `width` px wide: labels far enough apart to read, short marks between them. */
+export const rulerTicks = (total: number, width: number): ITick[] => {
+  if (total <= 0 || width <= 0) return [];
+  const pxPerMs = width / total;
+  const step = TICK_STEPS.find((s) => s * pxPerMs >= TICK_LABEL_PX) ?? TICK_STEPS[TICK_STEPS.length - 1];
+  const minor = step / TICK_MINORS;
+  const ticks: ITick[] = [];
+  for (let i = 0; i * minor <= total; i += 1) {
+    const ms = i * minor;
+    ticks.push({ ms, left: msToFrac(ms, total), major: i % TICK_MINORS === 0 });
+  }
+  return ticks;
+};
+
+/** The ruler's label: m:ss, with tenths when the step is under a second. */
+export const tickLabel = (ms: number): string => {
+  const s = Math.floor(ms / 1000);
+  const tenth = Math.round((ms % 1000) / 100);
+  const base = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return tenth > 0 ? `${base}.${tenth}` : base;
+};

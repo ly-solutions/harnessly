@@ -1,0 +1,531 @@
+/* The stack of what waits in the chat's right column (features/smart-notice/stack.tsx), as the notifications of a
+   phone: folded, the top card with the edges of two more under it; spread, the cards by chat. The cards have the smart
+   notice's palette (--hx-toast-*). Motion on transform, translate, scale and opacity only: the cards spread down one
+   after another and fold back up, a card leaves sideways, the neighbours spring to their places (motion.ts). Only a
+   card opened in place changes its height, and only its own. */
+
+.hx-ns {
+  --ns-bg: var(--hx-toast-bg);
+  --ns-fg: var(--hx-toast-fg);
+  --ns-fg2: var(--hx-toast-fg2);
+  --ns-fg3: var(--hx-toast-fg3);
+  --ns-fill: var(--hx-toast-fill);
+  --ns-fill2: var(--hx-toast-fill2);
+  --ns-r: 22px;
+  /* Response 0.45 s, bounce 0.18 — the notification centre's spring (motion.ts: SPRING_MS, useSwipe reads it). */
+  --nc-spring: linear(
+    0,
+    0.0356,
+    0.1213,
+    0.2327,
+    0.3526,
+    0.47,
+    0.5781,
+    0.6732,
+    0.754,
+    0.8206,
+    0.8739,
+    0.9154,
+    0.9468,
+    0.9699,
+    0.9862,
+    0.9973,
+    1.0044,
+    1.0085,
+    1.0105,
+    1.0111,
+    1.0107,
+    1.0098,
+    1.0085,
+    1.0072,
+    1.0059,
+    1.0047,
+    1.0036,
+    1.0027,
+    1
+  );
+  /* The answer in place is the notification centre's (wait-row.tsx): its palette is this card's. */
+  --nc-bg: var(--ns-bg);
+  --nc-fg: var(--ns-fg);
+  --nc-fg2: var(--ns-fg2);
+  --nc-fg3: var(--ns-fg3);
+  --nc-fill: var(--ns-fill);
+  --nc-fill2: var(--ns-fill2);
+  --nc-line: var(--ns-fill);
+  --sn-bg: var(--ns-bg);
+  --sn-fg: var(--ns-fg);
+  --sn-fg2: var(--ns-fg2);
+  --sn-fg3: var(--ns-fg3);
+  --sn-fill: var(--ns-fill);
+  --sn-fill2: var(--ns-fill2);
+  margin: 4px 0 12px;
+}
+
+/* ── The heading: what it is, how many, «Свернуть» and «Очистить всё» ── */
+.hx-ns__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 4px 4px 8px;
+}
+.hx-ns__label {
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.hx-ns__count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--hx-bg-active);
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+  line-height: 20px;
+  text-align: center;
+}
+.hx-ns__tools {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.hx-ns__link {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hx-bg-active);
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  animation: hx-ns-fade 200ms var(--hx-ease-out) backwards;
+  transition: background-color 120ms var(--hx-ease-out);
+}
+.hx-ns__link:hover {
+  background: var(--hx-bg-hover);
+}
+
+/* ── Folded: the top card and the edges under it ── */
+.hx-ns__pile {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--ns-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: hx-ns-fade 220ms var(--hx-ease-out) backwards;
+}
+.hx-ns__face {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 16px 12px 12px;
+  border-radius: var(--ns-r);
+  background: var(--ns-bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  transition: scale 200ms var(--hx-ease-out);
+}
+.hx-ns__pile:hover .hx-ns__face {
+  scale: 1.01;
+}
+.hx-ns__pile:active .hx-ns__face {
+  scale: 0.985;
+}
+.hx-ns__under {
+  position: absolute;
+  inset: 0 0 16px;
+  border-radius: var(--ns-r);
+  background: var(--ns-bg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform-origin: 50% 100%;
+}
+.hx-ns__under[data-depth='1'] {
+  z-index: 2;
+  opacity: 0.72;
+  transform: translateY(8px) scale(0.94);
+}
+.hx-ns__under[data-depth='2'] {
+  z-index: 1;
+  opacity: 0.44;
+  transform: translateY(16px) scale(0.88);
+}
+.hx-ns__rest {
+  position: absolute;
+  z-index: 4;
+  right: 14px;
+  top: 10px;
+  color: var(--ns-fg3);
+  font-size: var(--hx-text-xs);
+}
+
+/* ── Spread: the cards by chat ── */
+.hx-ns__list,
+.hx-ns__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hx-ns__list {
+  gap: 10px;
+}
+.hx-ns__gname {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 6px;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-xs);
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  animation: hx-ns-fade 200ms var(--hx-ease-out) backwards;
+}
+.hx-ns__gcount {
+  color: var(--hx-fg-2);
+  font-weight: 500;
+}
+.hx-ns__card {
+  border-radius: var(--ns-r);
+  background: var(--ns-bg);
+  color: var(--ns-fg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  touch-action: pan-y;
+  /* translate and scale for the entrance: motion.ts moves the card with transform, so the two never fight. */
+  animation: hx-ns-in 420ms var(--nc-spring) backwards;
+}
+.hx-ns__card[data-i='1'] {
+  animation-delay: 30ms;
+}
+.hx-ns__card[data-i='2'] {
+  animation-delay: 60ms;
+}
+.hx-ns__card[data-i='3'] {
+  animation-delay: 90ms;
+}
+.hx-ns__card[data-i='4'] {
+  animation-delay: 120ms;
+}
+.hx-ns__card[data-i='5'] {
+  animation-delay: 150ms;
+}
+/* Arriving from the notice: the flight (fly.ts) draws it until it lands. */
+.hx-ns__card[data-arriving],
+.hx-ns__face[data-arriving] {
+  visibility: hidden;
+  animation: none;
+}
+/* Landed: the flight was its entrance, so it shows as it is; playing its own again would blink it. */
+.hx-ns__card[data-landed],
+.hx-ns__face[data-landed],
+.hx-ns__pile[data-calm] {
+  animation: none;
+}
+/* Folding back: the cards rise into the stack and fade, the lower ones first. */
+.hx-ns__list[data-folding] .hx-ns__card,
+.hx-ns__list[data-folding] .hx-ns__gname {
+  animation: hx-ns-fold 240ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+/* Leaving: «Убрать», or answered elsewhere — sideways, as a swipe flies. */
+.hx-ns__card[data-leaving] {
+  pointer-events: none;
+  animation: hx-ns-out 220ms var(--hx-ease-out) forwards;
+}
+/* Taken off by the person and flown already: gone until the stack lets it go, never flown again. */
+.hx-ns__card[data-leaving='flown'] {
+  visibility: hidden;
+  animation: none;
+}
+@keyframes hx-ns-in {
+  from {
+    opacity: 0;
+    translate: 0 -12px;
+    scale: 0.96;
+  }
+}
+@keyframes hx-ns-fold {
+  to {
+    opacity: 0;
+    translate: 0 -16px;
+    scale: 0.94;
+  }
+}
+@keyframes hx-ns-out {
+  to {
+    opacity: 0;
+    translate: 110% 0;
+  }
+}
+@keyframes hx-ns-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ── A card: chip, the chat's name with «when», the line; × on hover ── */
+.hx-ns__line {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.hx-ns__hit {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 12px 16px 12px 12px;
+  border: 0;
+  border-radius: var(--ns-r);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hx-ns__lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.hx-ns__t1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.hx-ns__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--hx-text-sm);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hx-ns__when {
+  flex: none;
+  color: var(--ns-fg3);
+  font-size: var(--hx-text-xs);
+}
+.hx-ns__text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ns-fg2);
+  font-size: var(--hx-text-xs);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* A machine's line says what is wrong and who is behind it: three lines hold both without a press. */
+.hx-ns__card[data-kind='machine'] .hx-ns__text {
+  -webkit-line-clamp: 3;
+}
+/* Opened, the line is whole. */
+.hx-ns__card[data-open] .hx-ns__text {
+  display: block;
+  overflow: visible;
+}
+.hx-ns__x {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--hx-bg-raised);
+  box-shadow: 0 0 0 1px var(--hx-border);
+  color: var(--hx-fg-2);
+  cursor: pointer;
+  opacity: 0;
+  scale: 0.8;
+  transition:
+    opacity 140ms var(--hx-ease-out),
+    scale 140ms var(--hx-ease-out);
+}
+.hx-ns__card:hover .hx-ns__x,
+.hx-ns__x:focus-visible {
+  opacity: 1;
+  scale: 1;
+}
+@media (hover: none) {
+  .hx-ns__x {
+    display: none;
+  }
+}
+
+/* ── Opened in place: what is asked, whole, and the answer ── */
+.hx-ns__fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms var(--hx-ease-out);
+}
+.hx-ns__card[data-open] .hx-ns__fold {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 420ms var(--nc-spring);
+}
+.hx-ns__inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.hx-ns__more {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px 14px 56px;
+  opacity: 1;
+  transition: opacity 200ms var(--hx-ease-out) 80ms;
+  animation: hx-ns-fade 200ms var(--hx-ease-out) 60ms backwards;
+}
+.hx-ns__fold[data-state='closing'] .hx-ns__more {
+  opacity: 0;
+  transition-delay: 0ms;
+}
+.hx-ns__what {
+  margin: 0;
+  color: var(--ns-fg2);
+  font-size: var(--hx-text-sm);
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+/* A machine's card, opened in place (features/smart-notice/machine-more.tsx): what weighs on it, a row each. */
+.hx-ns__heavy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hx-ns__heavy li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.hx-ns__hname {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  color: var(--ns-fg);
+  font-size: var(--hx-text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-ns__htext {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ns-fg2);
+  font-size: var(--hx-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-ns__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hx-ns__acts:empty {
+  display: none;
+}
+.hx-ns__btn {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ns-fill2);
+  color: var(--ns-fg);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 120ms var(--hx-ease-out);
+}
+.hx-ns__btn[data-main] {
+  background: var(--ns-fg);
+  color: var(--ns-bg);
+}
+.hx-ns__btn:hover {
+  opacity: 0.86;
+}
+.hx-ns :focus-visible {
+  outline: 2px solid rgb(var(--hx-toast-on) / 0.85);
+  outline-offset: 2px;
+}
+
+/* The answer in place (features/notifications/wait-row.tsx) in the card's palette. */
+.hx-ns .hx-nc__gist {
+  color: var(--ns-fg2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hx-ns__card,
+  .hx-ns__card[data-leaving],
+  .hx-ns__list[data-folding] .hx-ns__card,
+  .hx-ns__pile,
+  .hx-ns__more {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+  .hx-ns__fold,
+  .hx-ns__card[data-open] .hx-ns__fold {
+    transition-duration: 1ms;
+  }
+}
+
+/* ── The machine's card stands apart, under the column (bindings/chat-background.tsx) ── */
+.hx-side-below {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 6;
+  width: 320px;
+  transform: translateY(var(--hx-side-h, 0px));
+  transition: transform 420ms var(--hx-ease-out);
+}
+.hx-side-below .hx-ns {
+  margin: 0;
+}
+.hx-side-below .hx-ns__head {
+  display: none;
+}
+.hx-stage[data-pane='true'] .hx-side-below {
+  right: calc(var(--pane-w) + 28px);
+}
+@media (max-width: 900px) {
+  .hx-side-below,
+  .hx-stage[data-pane='true'] .hx-side-below {
+    left: calc(8px + env(safe-area-inset-left));
+    right: calc(8px + env(safe-area-inset-right));
+    top: calc(8px + env(safe-area-inset-top));
+    width: auto;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-side-below {
+    transition-duration: 1ms;
+  }
+}

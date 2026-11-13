@@ -36,6 +36,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
 	"github.com/ly-solutions/harnessly/internal/hub/hubsafe"
 	"github.com/ly-solutions/harnessly/internal/hub/ingest"
+	"github.com/ly-solutions/harnessly/internal/hub/leader"
 	"github.com/ly-solutions/harnessly/internal/hub/limits"
 	"github.com/ly-solutions/harnessly/internal/hub/link"
 	"github.com/ly-solutions/harnessly/internal/hub/machines"
@@ -182,6 +183,8 @@ type Hub struct {
 
 	// relay passes this replica's events to the other replicas' streams; nil for a single process.
 	relay *events.Relay
+	// lead picks the replica that does the jobs that must run once; nil for a hub of one process (it leads always).
+	lead *leader.Leader
 	// draining is set once the hub is being stopped: it answers that it is not ready while it still serves.
 	draining atomic.Bool
 }
@@ -225,6 +228,7 @@ func New(o Options) (*Hub, error) {
 		c := &link.Cluster{DB: db, ID: id, Addr: cfg.ReplicaAddr, Secret: cfg.ReplicaSecret, Log: log}
 		h.Registry.SetCluster(c)
 		h.Internal = recoverer(log, c.Handler())
+		h.lead = leader.New(db, id, log, o.Now)
 	}
 	h.Auth, err = auth.New(auth.Deps{Config: cfg, DB: db, Mailer: o.Mailer, Limiter: o.Limiter, Log: log, Now: o.Now, HTTPClient: o.HTTPClient, Endpoints: o.Endpoints})
 	if err != nil {
@@ -283,7 +287,14 @@ func New(o Options) (*Hub, error) {
 		}
 		h.Safe = hubsafe.New(kv, prefix, cfg.SafeRefPrefixes)
 	}
-	if h.appTokens, err = newAppTokens(cfg.AppToken, cfg.PublicURL, o.HTTPClient); err != nil {
+	var shared *sharedKey
+	if cfg.Replicas {
+		shared = &sharedKey{secret: cfg.SecretKey}
+		if err := replicaKeyCheck(cfg); err != nil {
+			return nil, err
+		}
+	}
+	if h.appTokens, err = newAppTokens(cfg.AppToken, cfg.PublicURL, o.HTTPClient, shared); err != nil {
 		return nil, err
 	}
 	if h.appTokens != nil && o.Now != nil {
@@ -303,7 +314,12 @@ func New(o Options) (*Hub, error) {
 		envFeatures = anyGate{env.StaticFeatures(cfg.EnvFeatures), h.Features}
 	}
 	installValues := env.InstallValues(cfg.BoardsPublicURL, cfg.ArtifactsPublicURL)
-	h.Env = env.New(env.Deps{DB: db, Gate: h.Orgs.Gate, Features: envFeatures, Recommended: cfg.EnvRecommended, Install: installValues, Publisher: orgEvents{db: db, broker: h.Events}, Reg: h.Registry, Log: log, Now: o.Now,
+	var builtInApps []env.BuiltInApp
+	if cfg.EnvApps {
+		builtInApps = env.BuiltInApps(env.BuiltInAppSource{RepoURL: cfg.BoardsAppRepo, Branch: cfg.BoardsAppBranch},
+			env.BuiltInAppSource{RepoURL: cfg.ArtifactsAppRepo, Branch: cfg.ArtifactsAppBranch})
+	}
+	h.Env = env.New(env.Deps{DB: db, Gate: h.Orgs.Gate, Features: envFeatures, Recommended: cfg.EnvRecommended, Install: installValues, Apps: builtInApps, Publisher: orgEvents{db: db, broker: h.Events}, Reg: h.Registry, Log: log, Now: o.Now,
 		Changed: func() {
 			if h.EnvPush != nil {
 				h.EnvPush.Kick()
@@ -338,7 +354,7 @@ func New(o Options) (*Hub, error) {
 	var envSink machines.EnvSink
 	// An organization may switch the environment on at any time, so the pusher is always there; it pushes nothing to the
 	// machines of an organization whose feature is off.
-	h.EnvPush = env.NewPusher(env.PushDeps{DB: db, Reg: h.Registry, Features: envFeatures, Recommended: cfg.EnvRecommended, Install: installValues, Publisher: orgEvents{db: db, broker: h.Events}, Log: log, Now: o.Now})
+	h.EnvPush = env.NewPusher(env.PushDeps{DB: db, Reg: h.Registry, Features: envFeatures, Recommended: cfg.EnvRecommended, Install: installValues, Apps: builtInApps, Publisher: orgEvents{db: db, broker: h.Events}, Log: log, Now: o.Now})
 	h.Env.UsePusher(h.EnvPush)
 	envSink = h.EnvPush
 	machineFeatures := o.Features
@@ -387,6 +403,7 @@ func New(o Options) (*Hub, error) {
 		DB: db, Reg: h.Registry, Log: log, Now: o.Now, HubURL: cfg.PublicURL, ShareURL: cfg.DesignShareURL,
 		ShareAliases: cfg.DesignShareAliases, PlatformAPI: cfg.DesignPlatformAPI, Transport: func(id string) http.RoundTripper { return px.Transport(id) },
 		LinkKey: linkKey, Notice: notice, Shared: !cfg.Store.Off, Kits: kitAccess(cfg, db, o),
+		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: cfg.DesignAccess.ClosedUnrecorded,
 	})
 	h.Efficiency = &efficiency.Service{DB: db, OrgGate: h.Orgs.OrgGate, Features: h.Features, Switches: h.Switches, Now: o.Now}
 	h.Docs = docs.New(docs.Deps{Config: cfg, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry, Gate: h.Switches, Notice: func(ctx context.Context, to, subject, body, link string) error {
@@ -396,7 +413,7 @@ func New(o Options) (*Hub, error) {
 		}
 		return nil
 	}})
-	h.Automations = automations.New(automations.Deps{Config: cfg, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry})
+	h.Automations = automations.New(automations.Deps{Config: cfg, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry, Gate: h.Switches})
 	var historySink machines.HistorySink
 	if cfg.History {
 		h.History = history.New(history.Deps{DB: db, Reg: h.Registry, Log: log, Now: o.Now})
@@ -413,6 +430,9 @@ func New(o Options) (*Hub, error) {
 	})
 	h.Analytics.UseMachines(h.Machines)
 	h.Analytics.UseEvents(h.OrgEvents)
+	if h.lead != nil {
+		h.Analytics.UseLeader(h.lead.Held)
+	}
 	h.Analytics.UseFeatures(h.Features)
 	h.Relay = relay.New(relay.Deps{Auth: h.Auth, DB: db, Machines: h.Machines, Reg: h.Registry, Log: log, Now: o.Now, Timeout: o.AgentTimeout})
 	px = proxy.New(proxy.Deps{Config: cfg, DB: db, Auth: h.Auth, Spaces: h.Spaces, Reg: h.Registry, Tickets: h.Tickets, Log: log, Now: o.Now, Design: h.Design, Features: h.Features, Workspace: o.Workspace, History: cfg.History, VoiceTakes: cfg.VoiceTakes, Fleet: h.Fleet, Switches: h.Switches, SlotKey: slotKey})
@@ -739,9 +759,14 @@ func (h *Hub) readyz(w http.ResponseWriter, r *http.Request) {
 // Run does the hub's background work until ctx ends: the local machine's registration code, and the sweeping of what
 // expired (sessions, challenges, tickets, remembered nonces).
 func (h *Hub) Run(ctx context.Context) {
+	// With several replicas the jobs that hand something over to machines or to the outside world, or race over the
+	// same rows, run on one of them (h.lead.Lead); the jobs of this replica's own links, streams and caches run on each.
+	if h.lead != nil {
+		safego.Go("leader", func() { h.lead.Run(ctx) })
+	}
 	safego.Go("local machine code", func() { h.Machines.RunLocalCode(ctx) })
 	if h.Machines.Enabled() {
-		safego.Go("machine operations", func() { h.runMachineOps(ctx) })
+		safego.Go("machine operations", func() { h.lead.Lead(ctx, "machine operations", h.runMachineOps) })
 	}
 	if h.relay != nil {
 		safego.Go("events relay", func() { h.relay.Run(ctx) })
@@ -749,22 +774,24 @@ func (h *Hub) Run(ctx context.Context) {
 	safego.Go("live analytics", func() { h.Analytics.RunLive(ctx, h.OrgEvents.Active) })
 	safego.Go("design", func() { h.Design.Run(ctx) })
 	// messages written to a machine that was off, handed over once it is back
-	safego.Go("outbox", func() { h.Proxy.RunOutbox(ctx) })
+	safego.Go("outbox", func() { h.lead.Lead(ctx, "outbox", h.Proxy.RunOutbox) })
 	// new chats started while no machine answered, made once their machine is back
-	safego.Go("outbox chats", func() { h.Proxy.RunOutboxChats(ctx) })
+	safego.Go("outbox chats", func() { h.lead.Lead(ctx, "outbox chats", h.Proxy.RunOutboxChats) })
+	// the documents and boards services' health, on every replica
+	safego.Go("docs health", func() { h.Docs.RunHealth(ctx) })
 	// comments not yet handed to their conversations
-	safego.Go("docs", func() { h.Docs.Run(ctx) })
+	safego.Go("docs", func() { h.lead.Lead(ctx, "docs sweep", h.Docs.RunSweep) })
 	if h.historySweep != nil {
 		// the copies of chats deleted on their machines, removed after their term (HUB_HISTORY_DELETED_DAYS)
-		safego.Go("history sweep", func() { h.historySweep.Run(ctx) })
+		safego.Go("history sweep", func() { h.lead.Lead(ctx, "history sweep", h.historySweep.Run) })
 	}
 	// queued automation runs, started on their owners' machines (HUB_AUTOMATIONS)
-	safego.Go("automations", func() { h.Automations.Run(ctx) })
+	safego.Go("automations", func() { h.lead.Lead(ctx, "automations", h.Automations.Run) })
 	if h.Ext != nil {
 		safego.Go("extensions", func() { h.Ext.Run(ctx, ext.CheckEvery) })
 	}
 	if h.Sites != nil {
-		safego.Go("sites", func() { h.Sites.Run(ctx) })
+		safego.Go("sites", func() { h.lead.Lead(ctx, "sites sweep", h.Sites.Run) })
 	}
 	if raw := h.cfg.Switches; raw != "" {
 		if rows, err := switches.ParseSeeds(raw); err != nil {
@@ -790,7 +817,7 @@ func (h *Hub) Run(ctx context.Context) {
 		}
 	}
 	if c := h.efficiencyCollector(); c != nil {
-		safego.Go("efficiency collector", func() { c.Run(ctx) })
+		safego.Go("efficiency collector", func() { h.lead.Lead(ctx, "efficiency collector", c.Run) })
 	}
 	// the evaluation's scheduler: under the hub-eval rollout switch; it runs a task only on a machine whose agent
 	// offers eval.run (the operator opted in there with AGENT_HUB_EVAL=on)
@@ -799,9 +826,9 @@ func (h *Hub) Run(ctx context.Context) {
 		evalLink.Offers = h.Machines.Offers
 	}
 	evalSched := eval.New(eval.Deps{DB: h.db, Gate: h.Switches, Link: evalLink, Log: h.log})
-	safego.Go("eval", func() { evalSched.Run(ctx) })
+	safego.Go("eval", func() { h.lead.Lead(ctx, "eval", evalSched.Run) })
 	if p := mrsource.New(h.cfg.MRSourceURL, h.cfg.MRSourceGroups, h.cfg.MRSourceToken, h.db.S(), h.log); p != nil {
-		safego.Go("merge request source", func() { p.Run(ctx) })
+		safego.Go("merge request source", func() { h.lead.Lead(ctx, "merge request source", p.Run) })
 	}
 	// warm the sums of the binaries before the first machine asks
 	safego.Go("dist manifest", func() { _, _ = h.Dist.Manifest() })

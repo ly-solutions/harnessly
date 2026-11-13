@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppAsks from '@/next/features/app-views/asks';
 import AppFrame, { fromApp } from '@/next/features/app-views/app-frame';
+import AppUnavailable from '@/next/features/app-views/app-unavailable';
+import { appService, SERVICE_STATE, useAppService } from '@/next/features/app-views/service-health';
 import { ConsentStage } from '@/next/features/app-consent/consent-ask';
 import { useInstalledApps, type IAppView, type IInstalledApp } from '@/next/features/app-views/api';
 import ConsentBlock from '@/next/features/app-consent/consent-block';
@@ -14,7 +16,7 @@ import AppInspector from '@/next/features/app-views/inspector';
 import { onOpenAppTab } from '@/next/features/app-views/open';
 import { keptFrames } from '@/next/features/app-views/kept-frames';
 import { parseAppTarget } from '@/next/features/app-views/target';
-import type { IAppMenuItem } from '@/next/features/app-main/app-main';
+import type { IAppMenuItem } from '@/next/features/app-main/app-menu';
 import AppStage, { appStageDesign } from '@/next/features/app-main/app-stage';
 import type { TChatOpeners } from '@/next/bindings/chat-view';
 import { startFolder } from '@/next/bindings/home-composer';
@@ -108,6 +110,9 @@ const AppStagePage = ({
   });
   const conv = stage.conv ?? null;
   const chatApps = useChatApps(machine, conv);
+  // A built-in app whose service is down shows «сейчас не открывается» in place of its view, and the view once it is back.
+  const service = appService(id);
+  const health = useAppService(machine, id);
   useTabTitle(routePath({ kind: ROUTE.app, id, ...(object ? { object } : {}) }), object ?? app.name);
 
   // The app's own page is its one view: a pane view of it kept out of sight goes, rather than two players sounding.
@@ -208,30 +213,38 @@ const AppStagePage = ({
   return (
     <>
       <AppStage
-        title={app.name}
-        icon={app.icon || 'layout-grid'}
-        object={object ? { title: object } : null}
-        onHome={() => go(null)}
+        title={object ?? t('next.appmain.home')}
+        onBack={object ? () => go(null) : undefined}
         stage={stage}
         menu={menu}
         onShare={share}
         toolPane={toolPane}
         onOpenDrawer={onOpenDrawer}
         frame={
-          <ConsentStage machine={machine} app={app}>
-            <AppFrame
-              machine={machine}
-              app={app}
-              view={view}
-              target={target}
-              viewPort={viewPort}
-              conversation={conv}
-              reloadToken={reload}
-              data={object ? { object } : undefined}
-              handlers={handlers}
-              onOpenObject={go}
+          service !== null && health.state === SERVICE_STATE.down ? (
+            <AppUnavailable
+              service={service}
+              object={object !== null}
+              icon={app.icon || 'layout-grid'}
+              checking={health.checking}
+              onRetry={health.retry}
             />
-          </ConsentStage>
+          ) : (
+            <ConsentStage machine={machine} app={app}>
+              <AppFrame
+                machine={machine}
+                app={app}
+                view={view}
+                target={target}
+                viewPort={viewPort}
+                conversation={conv}
+                reloadToken={reload}
+                data={object ? { object } : undefined}
+                handlers={handlers}
+                onOpenObject={go}
+              />
+            </ConsentStage>
+          )
         }
         inspector={
           inspector === 'closed' ? null : (

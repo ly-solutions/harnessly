@@ -104,6 +104,11 @@ export const SCENARIOS: Record<string, Entry> = {
       },
     },
   },
+  switches: {
+    title: 'Переключатели выката (администратор)',
+    path: '/switches',
+    scenario: { signedIn: true, admin: true, spaces: [SPACE('machines', [online()])] },
+  },
   'machines-one': {
     title: 'Машины, одна подключена',
     path: '/s/acme/setup/machines',

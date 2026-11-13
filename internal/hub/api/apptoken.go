@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -9,12 +10,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/apptoken"
 	"github.com/ly-solutions/harnessly/internal/hub/config"
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
+	"github.com/ly-solutions/harnessly/internal/hub/sshinstall"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
 
@@ -31,11 +34,11 @@ type appTokens struct {
 	audience string
 }
 
-func newAppTokens(cfg config.AppToken, issuer string, client *http.Client) (*appTokens, error) {
+func newAppTokens(cfg config.AppToken, issuer string, client *http.Client, shared *sharedKey) (*appTokens, error) {
 	if !cfg.On() {
 		return nil, nil
 	}
-	key, err := apptoken.LoadOrCreateKey(cfg.KeyFile)
+	key, err := loadAppTokenKey(cfg.KeyFile, shared)
 	if err != nil {
 		return nil, fmt.Errorf("HUB_APP_TOKEN_KEY_FILE: %w", err)
 	}
@@ -192,5 +195,41 @@ func (h *Hub) agentAppToken(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.WriteJSON(w, http.StatusOK, hubproto.AppTokenAnswer{Sealed: sealed, ExpiresAt: expires.Unix()})
+	return nil
+}
+
+// sharedKey is what the replicas of a hub (HUB_REPLICAS=on) must agree on: they sign and seal for each other, and a
+// key a replica made for itself would be one the others do not know.
+type sharedKey struct {
+	// secret is HUB_SECRET_KEY; empty when the hub keeps its key in a file.
+	secret string
+}
+
+// loadAppTokenKey is the key the hub signs apps' tokens with: the file when it is there; otherwise, for a replica, one
+// derived from HUB_SECRET_KEY (the same on every replica), and for a single hub a new one written to the file.
+func loadAppTokenKey(path string, shared *sharedKey) (ed25519.PrivateKey, error) {
+	if shared == nil {
+		return apptoken.LoadOrCreateKey(path)
+	}
+	if _, err := os.Stat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return apptoken.LoadOrCreateKey(path)
+	}
+	if shared.secret == "" {
+		return nil, fmt.Errorf("%s is missing: with HUB_REPLICAS=on every replica must sign with the same key; give each the same file (a Secret) or set HUB_SECRET_KEY", path)
+	}
+	seed := sha256.Sum256([]byte("harnessly-hub/app-token/v1\x00" + shared.secret))
+	return ed25519.NewKeyFromSeed(seed[:]), nil
+}
+
+// replicaKeyCheck refuses to start a replica that would seal with a key of its own: without HUB_SECRET_KEY the key is
+// the file secret_key of HUB_DATA_DIR, and a replica without that file would make a new one (docs/hub/replicas.md).
+func replicaKeyCheck(cfg *config.Config) error {
+	if cfg.SecretKey != "" {
+		return nil
+	}
+	path := filepath.Join(cfg.DataDir, sshinstall.SecretKeyFile)
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("HUB_REPLICAS=on without HUB_SECRET_KEY needs %s, the same on every replica (a Secret mounted there): %w", path, err)
+	}
 	return nil
 }

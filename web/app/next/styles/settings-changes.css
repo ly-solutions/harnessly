@@ -1,0 +1,161 @@
+/* An agent changes the settings: the row it has just changed, the journal of the changes, the dot of a
+   section in the list, and the card of a proposal over a chat's field. */
+.hx-set__row[data-changed='true'] {
+  background: var(--hx-accent-soft);
+  animation: hx-set-chg 900ms var(--hx-ease-out);
+}
+.hx-set__row[data-changed='true']::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--hx-accent);
+}
+@keyframes hx-set-chg {
+  from {
+    background: color-mix(in oklch, var(--hx-accent) 34%, transparent);
+  }
+}
+.hx-set__chg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+}
+.hx-set__chg s,
+.hx-setlog__diff s {
+  color: var(--hx-fg-3);
+}
+.hx-set__chg-undo {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  text-decoration: underline;
+  text-decoration-color: var(--hx-border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.hx-set__chg-undo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hx-set__nav-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--hx-accent);
+  animation: hx-set-in 280ms var(--hx-ease-out) backwards;
+}
+
+/* «Умные функции»: a feature whose last call to its provider failed says why in the colour of a failure. */
+.hx-smart__row + .hx-smart__row {
+  border-top: 1px solid var(--hx-border);
+}
+.hx-smart__row[data-failed='true'] .hx-set__row-hint {
+  color: var(--hx-danger);
+}
+
+/* The journal. */
+.hx-setlog__failed {
+  padding: 12px 16px;
+}
+.hx-setlog__row {
+  align-items: flex-start;
+}
+.hx-setlog__diff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-sm);
+}
+.hx-setlog__diff .hx-icon {
+  color: var(--hx-fg-3);
+}
+.hx-setlog__who {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 40%;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  text-align: right;
+}
+
+/* The card of a proposal, over the field of the chat whose agent asks. */
+.hx-setask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-3);
+  margin-bottom: var(--hx-space-2);
+  padding: var(--hx-space-3);
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-lg);
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-sm);
+  animation: hx-setask-in var(--hx-dur-md) var(--hx-ease-out);
+}
+.hx-setask[data-state='closing'] {
+  animation: hx-setask-out 180ms var(--hx-ease-out) forwards;
+}
+@keyframes hx-setask-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+@keyframes hx-setask-out {
+  to {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+.hx-setask__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.hx-setask__lead,
+.hx-setask__why {
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+  line-height: 1.45;
+}
+.hx-setask__title {
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-md);
+  font-weight: var(--hx-weight-semibold);
+}
+.hx-setask__fail {
+  margin: 0;
+  color: var(--hx-danger);
+  font-size: var(--hx-text-sm);
+}
+.hx-setask__acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--hx-space-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-set__row[data-changed='true'],
+  .hx-set__nav-dot,
+  .hx-setask,
+  .hx-setask[data-state='closing'] {
+    animation-duration: 1ms;
+  }
+}

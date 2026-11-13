@@ -41,6 +41,9 @@ type AccessSnapshot struct {
 	Projects map[string]Grant          `json:"projects"`
 	Team     map[string]string         `json:"team"`
 	People   map[string]PersonSnapshot `json:"people,omitempty"`
+	// Unrecorded "closed": a project with no row in the snapshot is closed to everyone but the machine's own person
+	// (the hub's HUB_DESIGN_UNRECORDED=closed); "" keeps it open, as before.
+	Unrecorded string `json:"unrecorded,omitempty"`
 }
 
 // PersonSnapshot is one person's part of a shared machine's snapshot.
@@ -48,6 +51,9 @@ type PersonSnapshot struct {
 	Projects map[string]Grant  `json:"projects"`
 	Team     map[string]string `json:"team"`
 }
+
+// UnrecordedClosed is the snapshot's word for «a project without a row is closed».
+const UnrecordedClosed = "closed"
 
 var (
 	accessRoles = map[string]bool{"owner": true, "manage": true, "edit": true, "comment": true, "view": true}
@@ -107,6 +113,9 @@ func (s AccessSnapshot) Validate() error {
 	}
 	if err := validSection(s.Projects, s.Team); err != nil {
 		return err
+	}
+	if s.Unrecorded != "" && s.Unrecorded != UnrecordedClosed {
+		return errors.New("unknown rule for unrecorded projects")
 	}
 	if len(s.People) > accessMaxPeople {
 		return errors.New("too many people")

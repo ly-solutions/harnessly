@@ -3,6 +3,7 @@
 // styles are read, and one click in the page can pick a node. Messages go only to the frame's window at its own origin
 // and are read only from them; a page whose script does not answer is told so, not guessed at.
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import { frameOrigin, fromFrame } from '@/next/features/designly/bridge-origin';
 import { readDomMessage, type IDomDetail, type TDomMessage } from '@/next/features/designly/dom-bridge';
 import {
   domRows,
@@ -108,7 +109,8 @@ export const useDomBridge = (
   const send = (message: Record<string, unknown>) => {
     const target = frameRef.current;
     if (!target?.contentWindow || src === null || ownBlank(target.contentWindow)) return;
-    target.contentWindow.postMessage(message, new URL(src, window.location.href).origin);
+    const origin = frameOrigin(src);
+    if (origin !== null) target.contentWindow.postMessage(message, origin);
   };
 
   /** A request the page answers by its number; no answer in time is null. */
@@ -219,10 +221,10 @@ export const useDomBridge = (
   useEffect(() => {
     const target = frameRef.current;
     if (!target || src === null) return;
-    const origin = new URL(src, window.location.href).origin;
+    const origin = frameOrigin(src);
     let changeTimer = 0;
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== target.contentWindow || event.origin !== origin) return;
+      if (!fromFrame(event, target.contentWindow, origin)) return;
       const message = readDomMessage(event.data);
       if (!message) return;
       if (message.k === 'tree' || message.k === 'node') {

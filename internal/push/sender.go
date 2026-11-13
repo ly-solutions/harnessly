@@ -5,6 +5,7 @@ package push
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ly-solutions/harnessly/internal/nodejson"
 	"github.com/ly-solutions/harnessly/internal/status"
@@ -33,7 +35,21 @@ type Config struct {
 	Client    *http.Client
 	Now       func() time.Time
 	Log       func(level, msg string, kv ...any)
+	// Summary writes the words of a finished turn's notification with a model the person picked for it; nil, or one
+	// that is not picked, leaves the notification as BuildMessage wrote it.
+	Summary Summarizer
 }
+
+// Summarizer is the background feature «notification summaries» (internal/bgmodel).
+type Summarizer interface {
+	// Picked says whether the person picked a model for the summaries; false is «as now».
+	Picked() bool
+	// Summarize is one short line of what the agent did, from the text of its answer.
+	Summarize(ctx context.Context, answer string) (string, error)
+}
+
+// summaryWait bounds a summary: a model that is slower leaves the notification as it was.
+const summaryWait = 10 * time.Second
 
 // Sender sends pushes and implements status.Pusher.
 type Sender struct {
@@ -42,6 +58,8 @@ type Sender struct {
 
 	mu     sync.Mutex
 	signer *signer
+	// bg are the notifications that wait for their summary.
+	bg sync.WaitGroup
 }
 
 // New sends from cfg.Dir.
@@ -170,6 +188,41 @@ func (s *Sender) Push(tabID string, e status.Entry, kind string) {
 		return
 	}
 	msg := BuildMessage(tabID, e, kind, s.cfg.TagPrefix, s.cfg.Now())
+	if kind == "done" && s.cfg.Summary != nil && s.cfg.Summary.Picked() {
+		// Only an answer that does not fit the notification is worth a model's summary. The keeper is not kept
+		// waiting for it: the notification goes when the summary is there, or as it was when the model fails.
+		if answer, ok := FullAnswer(e); ok && utf8.RuneCountInString(answer) > detailMax {
+			s.bg.Add(1)
+			go func() {
+				defer s.bg.Done()
+				s.deliver(subs, s.summarized(msg, answer))
+			}()
+			return
+		}
+	}
+	s.deliver(subs, msg)
+}
+
+// Wait returns when every notification that waited for a summary went.
+func (s *Sender) Wait() { s.bg.Wait() }
+
+// summarized is msg with the model's summary for its words; msg itself when the model gave none.
+func (s *Sender) summarized(msg Message, answer string) Message {
+	ctx, cancel := context.WithTimeout(context.Background(), summaryWait)
+	defer cancel()
+	summary, err := s.cfg.Summary.Summarize(ctx, answer)
+	if err != nil || summary == "" {
+		if err != nil {
+			s.log("warn", "notification summary failed, the notification goes as before", "err", err.Error())
+		}
+		return msg
+	}
+	msg.Detail = Clip(summary, detailMax)
+	msg.Body = Clip(doneWord.String()+summary, detailMax)
+	return msg
+}
+
+func (s *Sender) deliver(subs []Subscription, msg Message) {
 	for _, sub := range SelectTargets(subs, s.Store.Visible()) {
 		code, err := s.Send(sub, msg)
 		if err != nil {

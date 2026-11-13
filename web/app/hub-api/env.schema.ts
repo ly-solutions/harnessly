@@ -52,6 +52,8 @@ export const envEntryRow = obj({
   delivery: nullable(obj({ ok: num, pending: num, error: num, message: nullable(str) })),
   groupId: str,
   position: num,
+  builtIn: opt(bool),
+  off: opt(bool),
 });
 export const envGroup = obj({
   id: str,

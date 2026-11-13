@@ -712,7 +712,7 @@ func (s *Service) guestFile(w http.ResponseWriter, r *http.Request, g guestReq) 
 	if !ok {
 		return gNoFile
 	}
-	if strings.HasPrefix(segs[0], "__") && segs[0] != "__guest" && segs[0] != "__vendor" {
+	if !servedSegment(segs[0]) {
 		return gNoFile
 	}
 	ext := strings.ToLower(path.Ext(segs[len(segs)-1]))

@@ -3,6 +3,7 @@
 // hands the words to the host (which switches to editing, opens the chat and sends) and answers the board: whether
 // there is a chat (`tk:board-chat`), and that the error is in it (`tk:board-error-ack`).
 import { useEffect, useEffectEvent, useRef } from 'react';
+import { frameOrigin, replyOrigin } from '@/next/features/designly/bridge-origin';
 import {
   boardChat,
   boardErrorAck,
@@ -17,14 +18,6 @@ export interface IBoardFrame {
   /** The address the frame shows: its origin is where a message to it goes. */
   src: string | null;
 }
-
-const originOf = (src: string): string | null => {
-  try {
-    return new URL(src, window.location.href).origin;
-  } catch {
-    return null;
-  }
-};
 
 export const useBoardErrors = (opts: {
   /** Takes the words; absent where there is no chat to send to (a guest, a design one may not edit). */
@@ -49,7 +42,7 @@ export const useBoardErrors = (opts: {
     if (!chat && !toldOn.current) return;
     toldOn.current = chat;
     for (const { frame, src } of opts.frames()) {
-      const origin = src === null ? null : originOf(src);
+      const origin = src === null ? null : frameOrigin(src);
       if (!frame?.contentWindow || origin === null) continue;
       frame.contentWindow.postMessage(boardChat(opts.report !== undefined), origin);
     }
@@ -76,7 +69,7 @@ export const useBoardErrors = (opts: {
         if (!latest.current.report || !personIsActing()) return;
         sink.current ??= boardErrorSink((words) => report(words));
         if (sink.current.take(error, latest.current.board()))
-          board.postMessage(boardErrorAck(error), event.origin);
+          board.postMessage(boardErrorAck(error), replyOrigin(event.origin));
         return;
       }
     };

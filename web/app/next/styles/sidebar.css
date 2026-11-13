@@ -1484,6 +1484,10 @@ button.hx-nav__add {
 .hx-chat-status[data-status='limited'] {
   color: var(--hx-fg-3);
 }
+/* Free itself while its delegated chats work: a still, quiet mark — the work goes on beneath it, nothing to answer. */
+.hx-chat-status[data-status='delegated'] {
+  color: var(--hx-fg-3);
+}
 
 .hx-group__chev {
   margin-left: auto;

@@ -146,3 +146,19 @@ func TestTheAgentIsStartedWithItsMark(t *testing.T) {
 		t.Fatalf("self-test panes: %v", got)
 	}
 }
+
+// Only a self-test's pane older than any scenario's term is taken for left behind.
+func TestLeftSessionsAreTheOldOnes(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	made := map[string]string{
+		"hs-selftest-old":   strconv.FormatInt(now.Add(-3*time.Hour).Unix(), 10) + "\n",
+		"hs-selftest-fresh": strconv.FormatInt(now.Add(-time.Minute).Unix(), 10),
+		"hs-selftest-odd":   "",
+		"hs-chat-1":         "1",
+	}
+	got := leftSessions([]string{"hs-selftest-old", "hs-selftest-fresh", "hs-selftest-odd", "hs-selftest-mute", "hs-chat-1"}, "hs-", now,
+		func(name string) (string, bool) { v, ok := made[name]; return v, ok })
+	if len(got) != 1 || got[0] != "hs-selftest-old" {
+		t.Fatalf("left %v", got)
+	}
+}

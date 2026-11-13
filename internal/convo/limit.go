@@ -16,6 +16,9 @@ import (
 const (
 	LimitContinueText   = "Продолжай с того места, где остановился"
 	RestartContinueText = "Продолжай — работа была прервана перезапуском"
+	// RestartBackgroundText goes to an agent whose prompt was free but that waited for background work when it was cut:
+	// that work died with it, and it must know to start again what it still needs.
+	RestartBackgroundText = "Продолжай — работа была прервана перезапуском. Фоновые задачи и сабагенты, которых ты ждал, остановились вместе с тобой: перезапусти те, что ещё нужны, и доведи работу до конца"
 )
 
 // LimitRetryMin is how soon at the earliest a chat held on its limit goes on by itself: a reset the agent names that
@@ -312,7 +315,13 @@ func (c *conv) cutAtRestart(was wire.AgentState, now time.Time) {
 	// A chat that was stopped is not cut short; it is remembered as stopped for the look that finds it without a
 	// session (see seeing).
 	c.stoppedAtRestart, c.resumableAtRestart = was.K == wire.StateStopped, was.K == wire.StateStopped && was.Resumable
-	if !hotAtStop(was.K) || c.rec.Session == "" || c.d.Machine == nil {
+	if c.lostAtWork && c.rec.Session != "" && (c.rec.AgentSessionID != "" || c.rec.TranscriptPath != "") {
+		// Lost at work while the runtime ran, and not gone on since: the start sends it on.
+		c.ownAtRestart(was, true)
+		c.restartCut, c.restartSent, c.restartAt = true, false, now
+		return
+	}
+	if !hotAtStop(was.K) && c.bgAtStop == 0 || c.rec.Session == "" || c.d.Machine == nil {
 		c.ownAtRestart(was, true)
 		return
 	}
@@ -324,10 +333,41 @@ func (c *conv) cutAtRestart(was wire.AgentState, now time.Time) {
 	}
 	running := pr.Session && pr.Foreground
 	c.ownAtRestart(was, running)
-	if was.K != wire.StateWorking || running {
+	// At work is a turn under way, or a free prompt over background work the agent waited for (subagents, commands,
+	// monitors, a wakeup: HRN-1259). A chat that had answered and waited for nothing is not touched; one waiting on a
+	// question or a permission is resumed to ask it again (ownAtRestart), with no word typed into the open question.
+	if was.K != wire.StateWorking && (c.bgAtStop == 0 || hotAtStop(was.K)) || running {
 		return
 	}
 	c.restartCut, c.restartSent, c.restartAt = true, false, now
+}
+
+// atWork: the agent is at work now — a turn under way, a question or permission open, or background work it waits
+// for. A chat lost so is owed the word to go on.
+func (c *conv) atWork() bool {
+	return hotAtStop(c.rec.State.K) || c.rec.BgAgents > 0
+}
+
+// markLostAtWork remembers, as the chat is taken for lost, that its agent was at work: kept on disk, so a runtime that
+// goes down before the session comes back still sends it on at its start.
+func (c *conv) markLostAtWork(now time.Time) {
+	if c.lostTmux() || !c.atWork() {
+		return
+	}
+	c.lostAtWork = true
+	c.restartBg = c.rec.State.K != wire.StateWorking && c.rec.BgAgents > 0
+	c.touch()
+	c.flush(now, false)
+}
+
+// goOnLost sends on a chat whose agent was lost at work and whose session is gone for good: the word to go on, which
+// the queue takes to the resumed agent.
+func (c *conv) goOnLost(now time.Time) {
+	if !c.lostAtWork {
+		return
+	}
+	c.restartCut, c.restartSent, c.restartAt = true, false, now
+	c.restartWord(now)
 }
 
 // restartDue is what a start owes a chat whose agent was hot when the runtime went down, once the agent has been
@@ -348,13 +388,22 @@ func (c *conv) restartWord(now time.Time) {
 	if k == wire.StateUnknown || k == wire.StateStarting {
 		return // not looked at yet, or on its way back
 	}
-	if _, on := c.autoOn(); !on || k == wire.StateGone && !c.lostTmux() || k == wire.StateLaunchFailed {
-		c.restartCut = false
+	// A chat whose agent never got a session is launched anew with its own first prompt (relaunchLost): «go on» would
+	// be the first words of an agent that knows nothing.
+	noSession := c.rec.AgentSessionID == "" && c.rec.TranscriptPath == ""
+	if _, on := c.autoOn(); !on || noSession || k == wire.StateGone && !c.lostTmux() || k == wire.StateLaunchFailed {
+		c.restartCut, c.lostAtWork, c.restartBg, c.bgAtStop = false, false, false, 0
 		return
 	}
 	if !c.restartSent {
 		c.restartSent = true
-		if id := c.autoSend(RestartContinueText, wire.AutoAfterRestart, now); id != "" {
+		text := RestartContinueText
+		if c.restartBg || c.bgAtStop > 0 && !hotAtStop(c.rec.State.K) {
+			text = RestartBackgroundText
+		}
+		c.lostAtWork, c.restartBg, c.bgAtStop = false, false, 0
+		c.touch()
+		if id := c.autoSend(text, wire.AutoAfterRestart, now); id != "" {
 			c.logAuto(wire.AutoAfterRestart, id, now)
 		}
 	}

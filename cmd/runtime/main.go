@@ -141,7 +141,9 @@ type runtimeGate struct {
 	kits func() string
 	// revisions makes the store's revisions the Sinopia library's history.
 	revisions func(design.Revisions)
-	store     *storelink.Link
+	// pusher gives the library the way to put a project into the store at once.
+	pusher func(design.StorePusher)
+	store  *storelink.Link
 }
 
 // configFileOf is the runtime's config (the pair's secret, the person's settings).
@@ -375,7 +377,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 		MachineAgent:  machineAgent(secret, cookieName),
 		Cookie:        cookieName,
 		SignSession:   func() string { return agent.SignHS256(secret, "user", "", sessionMaxAge) },
-		Tools:         preflight.New(home),
+		Tools:         preflight.Shared(home),
 		UsageRefresh:  usageRefresh(),
 		Upstream:      cfg.Upstream,
 		Standalone:    cfg.Standalone(),
@@ -524,6 +526,9 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(hubEnvRoutes(d)...)
 	f.Add(askRoutes(d, ref.c)...)
 	f.Add(secretRoutes(d, ref.c)...)
+	f.Add(extProviderRoutes(d)...)
+	f.Add(backgroundRoutes(d)...)
+	f.Add(settingsCtlRoutes(d, ref.c)...)
 	setupRunners := envSetupRunners(d, os.Getenv("AGENT_HUB_OBSERVE_FILE"), cfg.Version)
 	// The organization's rule for apps comes with the hub's list (apps_consent_policy.go).
 	appsPolicy := newAppsConsentPolicy(hubLinkDirs(d.DataDir, os.Getenv("AGENT_HUB_OBSERVE_FILE")))
@@ -551,7 +556,8 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	rg := &runtimeGate{Gate: f, terms: terms, browser: remoteBrowser, agentBrowser: agentBrowser, core: ref, tmux: tm, home: home, self: self,
 		envSetup: setupRunners, library: func() string { return designAPI(d).L.Root() },
 		kits:      func() string { return designAPI(d).L.KitsDir() },
-		revisions: func(r design.Revisions) { designAPI(d).L.UseRevisions(r) }}
+		revisions: func(r design.Revisions) { designAPI(d).L.UseRevisions(r) },
+		pusher:    func(p design.StorePusher) { designAPI(d).L.UseStorePusher(p) }}
 	if checkOn {
 		rg.update = checker
 	}

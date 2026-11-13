@@ -1,0 +1,130 @@
+// Settings → «Умные функции»: the background features of the machine and whose model does each. «Как сейчас»
+// leaves a feature to the chat's own agent; a provider's model does it always. A feature that does not go through a
+// picked model yet says so and keeps the choice; one whose last call failed says why in the provider's words.
+import { markOf, type TChangedMarks } from '@/next/features/settings/changed-mark';
+import { Group, MenuRow } from '@/next/features/settings/rows';
+import type { IChoice } from '@/next/features/settings/options';
+import type {
+  ISmartChoice,
+  ISmartFeature,
+  ISmartProvider,
+  ISmartView,
+} from '@/next/features/settings/smart-api';
+import { t } from '@/next/i18n';
+import LoadFailed, { LOAD_FAILED_SIZE } from '@/next/ui/load-failed';
+import { Skeleton } from '@/next/ui/skeleton';
+import '@/next/styles/settings-changes.css';
+
+/** The catalog's key of a feature's setting (cmd/runtime/routes_settingsctl.go). */
+export const smartKey = (feature: string) => `background.${feature}`;
+
+export type TSmartState =
+  { k: 'loading' } | { k: 'failed'; text: string; onRetry: () => void } | { k: 'ready'; view: ISmartView };
+
+interface ISmartSectionProps {
+  state: TSmartState;
+  /** The features whose choice waits for the machine. */
+  busy: ReadonlySet<string>;
+  marks: TChangedMarks;
+  onPick: (feature: string, choice: ISmartChoice | null) => void;
+  onOpenProviders: () => void;
+}
+
+/** A choice as the menu's value: a provider's id has no «/» (it is a slug), a model's may. */
+const valueOf = (choice: ISmartChoice): string => `${choice.provider}/${choice.model}`;
+
+/** What a feature may be given: «as now», every model of every provider, and its own choice if no list has it. */
+export const smartChoices = (
+  feature: ISmartFeature,
+  providers: readonly ISmartProvider[],
+): { choices: IChoice[]; byValue: ReadonlyMap<string, ISmartChoice> } => {
+  const byValue = new Map<string, ISmartChoice>();
+  const choices: IChoice[] = [{ value: null, label: t('next.smart.asNow'), sub: null }];
+  for (const provider of providers)
+    for (const model of provider.models) {
+      const choice = { provider: provider.id, model: model.id };
+      byValue.set(valueOf(choice), choice);
+      choices.push({ value: valueOf(choice), label: `${provider.name} · ${model.label}`, sub: null });
+    }
+  const own = feature.choice;
+  if (own && !byValue.has(valueOf(own))) {
+    const name = providers.find((p) => p.id === own.provider)?.name ?? own.provider;
+    byValue.set(valueOf(own), own);
+    choices.push({ value: valueOf(own), label: `${name} · ${own.model}`, sub: null });
+  }
+  return { choices, byValue };
+};
+
+/** The line under a feature's name: what it is, that it waits for its day, or why its last call failed. */
+const hintOf = (feature: ISmartFeature): string => {
+  if (feature.choice && feature.failure !== null) return t('next.smart.failed', { reason: feature.failure });
+  if (!feature.live) return `${feature.description} ${t('next.smart.notLive')}`;
+  return feature.description;
+};
+
+const SmartSection = ({ state, busy, marks, onPick, onOpenProviders }: ISmartSectionProps) => {
+  if (state.k === 'loading')
+    return (
+      <div className="hx-set__group">
+        <Skeleton className="hx-set__sk" />
+      </div>
+    );
+  if (state.k === 'failed')
+    return (
+      <Group>
+        <div className="hx-setlog__failed">
+          <LoadFailed
+            size={LOAD_FAILED_SIZE.inline}
+            title={t('next.smart.loadFailed')}
+            reason={state.text}
+            onRetry={state.onRetry}
+          />
+        </div>
+      </Group>
+    );
+  const { features, providers } = state.view;
+  const none = providers.every((p) => p.models.length === 0);
+  return (
+    <Group
+      foot={
+        <>
+          {t('next.smart.foot')}
+          {none && (
+            <>
+              {' '}
+              <button type="button" className="hx-set__chg-undo" onClick={onOpenProviders}>
+                {t('next.smart.connect')}
+              </button>
+            </>
+          )}
+        </>
+      }
+    >
+      {features.length === 0 && <div className="hx-set__empty">{t('next.smart.empty')}</div>}
+      {features.map((feature) => {
+        const { choices, byValue } = smartChoices(feature, providers);
+        return (
+          <div
+            key={feature.id}
+            className="hx-smart__row"
+            data-failed={(feature.choice !== null && feature.failure !== null) || undefined}
+          >
+            <MenuRow
+              label={feature.title}
+              hint={hintOf(feature)}
+              value={feature.choice ? valueOf(feature.choice) : null}
+              choices={choices}
+              busy={busy.has(feature.id)}
+              mark={markOf(marks, smartKey(feature.id))}
+              onPick={(value) =>
+                onPick(feature.id, value === null ? null : (byValue.get(String(value)) ?? null))
+              }
+            />
+          </div>
+        );
+      })}
+    </Group>
+  );
+};
+
+export default SmartSection;

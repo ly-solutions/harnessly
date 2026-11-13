@@ -53,6 +53,8 @@ export interface IDeckSettings {
   style: IDeckStyle | null;
   theme: string;
   font: TDeckSettingsFont;
+  /** The theme and font were chosen; a video's scenes keep their own look until then. */
+  picked?: boolean;
   /** Absent: the built-in themes (Компания, Фиолет, Лес). */
   themes?: IDeckTheme[];
 }

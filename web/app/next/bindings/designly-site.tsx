@@ -24,13 +24,27 @@ import ProjectAway from '@/next/features/designly/access/project-away';
 import {
   boardHref,
   fetchLibrary,
+  fetchStoreLibrary,
   isPublicAddress,
   keptLibrary,
   slotBoardHref,
+  storeBoardHref,
   type IDesign,
   type IDesignLibrary,
 } from '@/next/features/designly/api';
+import { STORE_AT, useStoreHead } from '@/next/features/designly/use-store-head';
 import { openPreview, slotNonce } from '@/next/core/net/preview';
+import { SNAPSHOT_WAIT_MS, snapshotTime } from '@/next/features/designly/snapshot-read';
+import {
+  awayIsFinal,
+  awayIsSilent,
+  MACHINE_PATIENCE_MS,
+  PROJECT_FROM,
+  PROJECT_READ,
+  readProject,
+  useStorePush,
+  type TAway,
+} from '@/next/features/designly/project-read';
 import { LIBRARY_PAGE_SLOT, LIBRARY_PANE_SLOT, slotLeases } from '@/next/features/pane/slot-lease';
 import type { IStageOptions } from '@/next/bindings/site-stage';
 import type { TChatOpeners } from '@/next/bindings/chat-view';
@@ -94,7 +108,8 @@ const AWAY_POLL_MS = 15_000;
 
 interface IProject {
   design: IDesign;
-  port: number;
+  /** The library server's port on the machine; null for a project read from the hub's snapshot. */
+  port: number | null;
   /** Where the project's conversations work (the runtime lists the ones in it as the design's). */
   dir: string;
 }
@@ -188,6 +203,8 @@ const DesignlySiteBody = ({
     return { project: known, tabs: seeded, tab: seeded[0] ?? null };
   });
   const [project, setProject] = useState<IProject | null>(start.project);
+  /** The project is shown from the hub's last snapshot, not from its machine: when it was made, ms. */
+  const [snapshot, setSnapshot] = useState<{ at: number } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // The kit the project is made from: its chip on the bar, «Из кита» on a picked element, «Показать макет».
   const kitLink = useKitLink(machine, id);
@@ -232,6 +249,8 @@ const DesignlySiteBody = ({
   const [attempt, setAttempt] = useState(0);
   // The library has no such project: for a person the gateway turns away that is the card, otherwise the way back.
   const [missing, setMissing] = useState(false);
+  // Why it is on neither side (the machine's word and the store's), for the card; null while it is being looked for.
+  const [away, setAway] = useState<TAway | null>(null);
   // Who may do what with the project, from the gateway; where there is none (standalone) the design is as it was.
   const gate = useProjectAccess(id);
   const [shareOpen, setShareOpen] = useState(false);
@@ -279,6 +298,7 @@ const DesignlySiteBody = ({
     return () => document.removeEventListener('visibilitychange', onShow);
   }, []);
   const loaded = useRef(false);
+  const onSnapshot = useRef(false);
   // The window's tab is named by the page a design is open on; in a pane the chat names it.
   useTabTitle(routePath({ kind: ROUTE.site, id }), pane ? null : (project?.design.title ?? null));
   const pageSlot = pane ? PANE_PAGE_SLOT : PAGE_SLOT;
@@ -295,17 +315,49 @@ const DesignlySiteBody = ({
   // What a share and the phone's code give: the design's own page, not the chat the pane is in.
   const shareUrl = pane ? designAddress(id) : window.location.href;
 
+  // What a read of the project that found it on neither side leaves behind: the card's reason, or the old error where
+  // no hub stands behind the runtime.
+  const onAway = useEffectEvent((why: TAway, machineError: string | null) => {
+    const silent = awayIsSilent(why);
+    // A quiet re-read the machine is slow to answer does not close an open design.
+    if (silent && loaded.current) return;
+    if (gate.state.k === ACCESS.absent && machineError !== null) {
+      setLoadError(machineError);
+      return;
+    }
+    setAway(why);
+    setMissing(true);
+  });
   useEffect(() => {
     const abort = new AbortController();
-    fetchLibrary(machine, abort.signal).then(
-      (library) => {
-        const read = projectIn(library, id);
-        if (!read) {
-          setMissing(true);
+    // The machine is asked first; when it is slow, has failed or has not got the project, the hub's snapshot opens the
+    // design for viewing, and the machine's answer still replaces it when it comes. A store with
+    // no copy never ends the wait for the machine: the project opens from it without the card.
+    void readProject(
+      id,
+      {
+        machine: () => fetchLibrary(machine, abort.signal),
+        store: () => fetchStoreLibrary(machine, abort.signal),
+      },
+      (state) => {
+        if (abort.signal.aborted) return;
+        if (state.k === PROJECT_READ.away) {
+          onAway(state.why, state.machineError);
           return;
         }
+        const fromHub = state.from === PROJECT_FROM.store;
+        // A quiet re-read that the machine is slow to answer does not turn an open design into the snapshot.
+        if (fromHub && loaded.current && !onSnapshot.current) return;
+        const read: IProject | null =
+          state.from === PROJECT_FROM.store
+            ? { design: state.design, port: null, dir: '' }
+            : projectIn(state.library, id);
+        if (!read) return;
         setMissing(false);
+        setAway(null);
         loaded.current = true;
+        onSnapshot.current = fromHub;
+        setSnapshot(fromHub ? { at: read.design.updatedAt } : null);
         setProject(read);
         const first = seedTabs(read.design.boards);
         if (!seeded.current && first.length > 0) {
@@ -314,10 +366,7 @@ const DesignlySiteBody = ({
           setTab(first[0].id);
         }
       },
-      (failure: Error) => {
-        // A failed quiet re-read keeps the pages on screen; only the first read turns into the error.
-        if (!abort.signal.aborted && !loaded.current) setLoadError(failure.message);
-      },
+      { store: SNAPSHOT_WAIT_MS, machine: MACHINE_PATIENCE_MS },
     );
     return () => abort.abort();
     // onMissing is the host's; a new one each render must not load the library again.
@@ -333,15 +382,22 @@ const DesignlySiteBody = ({
   useEffect(() => {
     if (!missing || !granted) return;
     const step = RETRY_STEPS_MS[retries.current];
+    // A machine that did not answer has been waited for already (MACHINE_PATIENCE_MS): the card says so at once, and
+    // the next look leaves it the same time to answer, so a slow machine is never cut short by the look after it.
+    const silent = awayIsSilent(away);
     // After the waits the project is still on its way to the store: the card says so and the library is read again
     // now and then, so the project opens by itself when it arrives.
-    if (step === undefined) setExhausted(true);
+    if (step === undefined || silent) setExhausted(true);
+    // A hub with no store and a machine that has not got the project, or a machine closed to the person: nothing will
+    // bring the project here, so after the short steps (a role just given) the card stays without reading again.
+    if (step === undefined && awayIsFinal(away)) return;
+    const wait = silent ? AWAY_POLL_MS + MACHINE_PATIENCE_MS : (step ?? AWAY_POLL_MS);
     const timer = setTimeout(() => {
       retries.current += 1;
       setAttempt((n) => n + 1);
-    }, step ?? AWAY_POLL_MS);
+    }, wait);
     return () => clearTimeout(timer);
-  }, [missing, granted, attempt]);
+  }, [missing, granted, attempt, away]);
   // A project the gateway gives the person no place in, and no gateway at all, lead back to the library. One they have a
   // place in but their library does not have after the waits stays on its own card (ProjectAway): not in the store yet.
   useEffect(() => {
@@ -353,6 +409,7 @@ const DesignlySiteBody = ({
   const lookAgain = () => {
     retries.current = 0;
     setExhausted(false);
+    setAway(null);
     setLoadError(null);
     setAttempt((n) => n + 1);
   };
@@ -457,17 +514,40 @@ const DesignlySiteBody = ({
   const mayShow = opened !== null && (!entering || (waited && !refused)) && lateKey === null;
   const plainSrc =
     mayShow && opened.origin !== null && path !== null ? slotBoardHref(opened.origin, id, path) : null;
-  const src = mayShow ? plainSrc : null;
+  const hubSrc = (page: string | null) => (page === null ? null : storeBoardHref(machine, id, page));
+  const src = snapshot !== null ? hubSrc(path) : mayShow ? plainSrc : null;
   const slotOrigin = opened?.origin ?? null;
   const slotError = opened?.error ?? null;
   const gated = gate.state.k === ACCESS.ready ? gate.state.access : null;
+  // The hub's snapshot is only looked at: a save goes to the machine, and the machine is not answering.
   const mayEdit =
-    gate.state.k === ACCESS.absent ||
-    (gated !== null && (gated.role === ROLE.owner || gated.role === ROLE.manage || gated.role === ROLE.edit));
+    snapshot === null &&
+    (gate.state.k === ACCESS.absent ||
+      (gated !== null &&
+        (gated.role === ROLE.owner || gated.role === ROLE.manage || gated.role === ROLE.edit)));
   // A design is looked at unless the editing mode is asked for (and may be): the pane of a chat always edits, one
   // opened from a chat edits as that chat last had it (design-mode).
-  const editing = pane !== undefined || (asked && mayEdit) || onMode === undefined;
+  const editing = snapshot === null && (pane !== undefined || (asked && mayEdit) || onMode === undefined);
   const viewing = !editing;
+  // Looking at a design reads it from the hub's store: no slot, nothing asked of the machine for the boards.
+  // A project the store has not got (or a hub that does not answer in time) opens from the machine as before, and the
+  // machine's sync puts it into the store meanwhile: the store's revision, once it comes, takes over the frames.
+  const storeAt = useStoreHead(machine, id, viewing);
+  const storeRev = viewing && storeAt.k === STORE_AT.at ? storeAt.rev : null;
+  const needSlot = !viewing || storeAt.k === STORE_AT.none;
+  // The store has nothing of a project that is open from its machine: the machine is asked to put it there at once,
+  // so the next look reads the hub.
+  const storeLacks = viewing && storeAt.k === STORE_AT.none && project !== null && snapshot === null;
+  useStorePush(machine, id, storeLacks);
+  /** A board's address in the store at the revision on screen: a newer revision loads the frames again. A video's
+   *  scene asks for the scene's runtime (design/public.go GuestSceneParam), as the machine gives it. */
+  const sceneParam = project?.design.kind === 'video' ? '&scene=1' : '';
+  const storeSrc = (page: string | null) =>
+    storeRev === null || page === null
+      ? null
+      : `${storeBoardHref(machine, id, page)}?rev=${storeRev}${sceneParam}`;
+  const boardSrc = storeRev === null ? src : storeSrc(path);
+  const boardPlainSrc = storeRev === null ? plainSrc : boardSrc;
   // The apps on in this document (their panels, selection menu, marks on the boards, the gate before a share). The
   // chat they send tasks to is the one the pane sits beside, or the one the person came from.
   // The design's own chat, when it has no pane or chat it was opened from, is the column's.
@@ -530,15 +610,21 @@ const DesignlySiteBody = ({
 
   // The slot opens for the page on screen at the time; the pages after it reuse it (see the effect on the path).
   const pathRef = useRef(path);
+  const slotRef = useRef(slot);
+  useEffect(() => {
+    slotRef.current = slot;
+  }, [slot]);
   const hasPath = path !== null;
   useEffect(() => {
     pathRef.current = path;
   }, [path]);
   useEffect(() => {
     const first = pathRef.current;
-    if (port === null || first === null) return;
-    let live = true;
+    if (port === null || first === null || !needSlot) return;
     const key = `${port}|${reloadKey}|${reopen}`;
+    // Back from the store's view to editing: the slot opened for this key before is still the page's.
+    if (slotRef.current?.key === key && slotRef.current.error === null) return;
+    let live = true;
     openPreview(machine, { kind: 'port', port }, pageSlot, ENTER_PATH).then(
       (slotOpened) => {
         if (!live) return;
@@ -546,7 +632,8 @@ const DesignlySiteBody = ({
           key,
           nonce: slotOpened.nonce,
           openedAt: Date.now(),
-          enterUrl: slotOpened.enterUrl,
+          // A slot by path has nothing to enter: its pages load at once instead of after a frame of its own.
+          enterUrl: slotOpened.byPath === true ? null : slotOpened.enterUrl,
           origin: slotOpened.origin,
           error: null,
         });
@@ -567,7 +654,7 @@ const DesignlySiteBody = ({
     };
     // The path is read once through the ref: a page switch inside an open slot must not open another. A project that
     // had no page yet (a deck whose agent is still making it) opens the slot when its first page comes.
-  }, [machine, port, id, reloadKey, reopen, pageSlot, hasPath]);
+  }, [machine, port, id, reloadKey, reopen, pageSlot, hasPath, needSlot]);
 
   /**
    * Called where the page on screen may change, with the page it will be (nothing changes when it is the same one).
@@ -731,8 +818,8 @@ const DesignlySiteBody = ({
       />
     );
   }
-  if (missing && project === null && granted && exhausted) {
-    return <ProjectAway ownerName={gated?.ownerName ?? ''} onBack={back} />;
+  if (missing && project === null && granted && exhausted && away !== null) {
+    return <ProjectAway why={away} ownerName={gated?.ownerName ?? ''} onBack={back} />;
   }
 
   // «Опубликовать как сайт» lives in «Поделиться», where a manager edits a site design.
@@ -882,8 +969,8 @@ const DesignlySiteBody = ({
       pages={project ? pagesOf(project.design) : []}
       tabs={tabs}
       tab={current?.id ?? ''}
-      src={src}
-      plainSrc={plainSrc}
+      src={boardSrc}
+      plainSrc={boardPlainSrc}
       phoneUrl={isPublicAddress(shareUrl) ? shareUrl : null}
       error={slotError}
       reloadKey={reloadKey}
@@ -954,9 +1041,12 @@ const DesignlySiteBody = ({
       boards: project.design.boards.map((b) => ({ path: b.path, title: b.title || b.path })),
       path,
       onGo: navigate,
-      src,
-      frameSrc: (page: string) =>
-        mayShow && opened.origin !== null ? slotBoardHref(opened.origin, id, page) : null,
+      src: boardSrc,
+      frameSrc: (page: string) => {
+        if (storeRev !== null) return storeSrc(page);
+        if (snapshot !== null) return hubSrc(page);
+        return mayShow && opened.origin !== null ? slotBoardHref(opened.origin, id, page) : null;
+      },
       slotError,
       onReload: () => setReloadKey((n) => n + 1),
       stage: viewing ? undefined : stage,
@@ -1009,6 +1099,11 @@ const DesignlySiteBody = ({
         {kindView()}
       </SinopiaStage>
       {packOut.dialog}
+      {snapshot !== null && (
+        <div className="hx-snapshot" role="status">
+          {t('next.site.snapshot', { time: snapshotTime(snapshot.at) })}
+        </div>
+      )}
       {gated !== null && oneDialog !== null && (
         <ResourceShare
           open={shareOpen}

@@ -2,14 +2,17 @@
 // also brings an older document up to the app's format) and shows the app's editor in it, through the same frame as any
 // view, with the document as its target. A document that may only be read shows the editor in read-only mode, with a line saying why;
 // one whose app is missing says that instead.
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import ModeButton from '@/next/features/designly/mode-button';
 import { MODE_KIND, modeStateKey, useDesignMode } from '@/next/features/designly/design-mode';
 import type { ISiteMode } from '@/next/features/designly/site-view';
 import AppFrame from '@/next/features/app-views/app-frame';
 import { useInstalledApps } from '@/next/features/app-views/api';
-import AppMain from '@/next/features/app-main/app-main';
-import { PLACEMENT } from '@/next/features/app-main/placement';
+import AppStage from '@/next/features/app-main/app-stage';
+import { startFolder } from '@/next/bindings/home-composer';
+import { useSiteStage } from '@/next/bindings/site-stage';
+import { useConversation, useConversationList } from '@/next/stores/conversations';
+import { useDefaultCwd } from '@/next/stores/projects';
 import { NeedsApp, ReadOnly } from '@/next/features/app-doc/app-doc-notice';
 import {
   loadKindDocs,
@@ -21,6 +24,8 @@ import type { ConvId, MachineId } from '@/next/protocol/v2';
 import { goTo, ROUTE, routePath } from '@/next/routes/routes';
 import { useTabTitle } from '@/next/stores/tabs';
 import { t } from '@/next/i18n';
+
+const isConvId = (id: string): id is ConvId => id.startsWith('tab-');
 
 interface IAppDocPageProps {
   machine: MachineId;
@@ -122,9 +127,40 @@ export const useAppDocStage = (
   };
 };
 
-const AppDocPage = ({ machine, id, chat = null, edit = false, onMode }: IAppDocPageProps) => {
+const AppDocPage = ({
+  machine: screen,
+  id,
+  chat = null,
+  edit = false,
+  onMode,
+  onOpenDrawer,
+}: IAppDocPageProps) => {
+  const fromChat = chat !== null && isConvId(chat) ? chat : null;
+  const record = useConversation(fromChat);
+  const machine = record?.machineId ?? screen;
+  const chats = useConversationList(machine);
+  const defaultCwd = useDefaultCwd(machine);
   const [asked, setMode] = useDesignMode({ conv: chat, id, edit, onMode });
-  const { title, stage, mayEdit } = useAppDocStage(machine, id, null, onMode !== undefined && !asked);
+  const address = useMemo(() => ({ kind: ROUTE.appDoc, id }) as const, [id]);
+  const site = useSiteStage({
+    machine,
+    design: `doc:${id}`,
+    fromChat,
+    dir: record?.cwd ?? startFolder(chats, machine, defaultCwd ?? null),
+    tied: [],
+    title: id,
+    pageUrl: '',
+    port: null,
+    onOpenDrawer,
+    keep: true,
+    app: { address, onCreated: () => undefined },
+  });
+  const { title, stage, mayEdit } = useAppDocStage(
+    machine,
+    id,
+    site.conv ?? null,
+    onMode !== undefined && !asked,
+  );
   // A document is looked at unless the editing is asked for; one that may not be changed has no way into it (its line
   // says why).
   const mode: ISiteMode | null = (() => {
@@ -135,19 +171,15 @@ const AppDocPage = ({ machine, id, chat = null, edit = false, onMode }: IAppDocP
   })();
   useTabTitle(routePath({ kind: ROUTE.appDoc, id }), title);
   return (
-    <AppMain
+    <AppStage
       title={title ?? ''}
-      chatTitle={null}
-      placement={PLACEMENT.left}
-      float={null}
-      onPlacement={() => undefined}
-      onFloat={() => undefined}
-      menu={[]}
       lead={mode && <ModeButton mode={mode} />}
-      stage={stage}
-      chat={null}
-      island={null}
+      stage={site}
+      frame={stage}
       inspector={null}
+      menu={[]}
+      toolPane={null}
+      onOpenDrawer={onOpenDrawer}
     />
   );
 };

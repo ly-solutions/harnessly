@@ -37,6 +37,7 @@ export const FEATURES = [
   'made',
   'agent-browser',
   'snapshot-after',
+  'chat-view',
 ] as const;
 export type Feature = (typeof FEATURES)[number];
 export const REACHES = ['online', 'unreachable', 'unknown'] as const;
@@ -44,7 +45,7 @@ export type Reach = (typeof REACHES)[number];
 /** How a machine stands, worse later: warn is worth a look, critical is work about to fail. */
 export const HEALTH_LEVELS = ['ok', 'warn', 'critical'] as const;
 export type HealthLevel = (typeof HEALTH_LEVELS)[number];
-export const HEALTH_METRICS = ['disk', 'mem', 'cpu'] as const;
+export const HEALTH_METRICS = ['disk', 'mem', 'cpu', 'io'] as const;
 export type HealthMetric = (typeof HEALTH_METRICS)[number];
 export const AGENT_INSTALL_STATUSES = ['ready', 'missing', 'login-required'] as const;
 export type AgentInstallStatus = (typeof AGENT_INSTALL_STATUSES)[number];
@@ -334,6 +335,7 @@ export const OPS = [
   'conversation.pin',
   'conversation.apps',
   'conversation.test',
+  'conversation.view',
   'conversation.move',
   'conversation.delete',
   'conversation.restore',
@@ -432,6 +434,14 @@ export interface MachineHealth {
   /** When the machine came to this level. */
   since: Ms;
   issues: HealthIssue[];
+  /** What an 'io' issue is made of; absent without one. */
+  stall?: HealthStall;
+}
+/** A stall: the load is high while the processors stand idle, so the tasks wait for a disk or the network. `mounts`:
+ *  the network folders whose server stopped answering; `waiting`: the programs with the most tasks waiting, most first. */
+export interface HealthStall {
+  mounts: string[];
+  waiting: string[];
 }
 export interface HealthIssue {
   metric: HealthMetric;
@@ -1067,6 +1077,8 @@ export interface AppRow {
   updatedAt: number;
   closedAt: number | null;
   author: string | null;
+  /** The author's picture as the page loads it (a route of the runtime); null when the code host gave none. */
+  avatar: string | null;
   assignees: string[];
   reviewers: string[];
   me: AppRole[];
@@ -1355,6 +1367,7 @@ export interface Conversation {
   goal?: Goal; // the agent's /goal; absent when it has none
   launch?: Launch; // set on a chat started with others by one prompt on several models
   apps?: string[]; // the installed apps turned on in this chat; absent when none is on
+  view?: Record<string, unknown>; // how the person left this chat's window (stores/chat-view.ts); absent when none was kept
   recap?: Recap; // Claude's latest recap; absent when it has none
   bgAgents?: number; // background work it waits for, all kinds together (subagents, commands, monitors, a wakeup); absent when none — the chat is at work, not done
   bgWait?: BgWait; // what bgAgents is made of; absent when it waits for nothing
@@ -1468,6 +1481,13 @@ export interface RuntimeSettings {
   restartContinue?: OnOff;
   /** What agents may do with the chats they delegate; absent: 5 chats each, only their own. */
   delegation?: DelegationSettings;
+  /** The model that sums a finished turn up for the «готово» notice; absent: the chat's provider and its cheap model. */
+  noticeSummary?: NoticeSummaryModel;
+}
+/** `provider`: claude, codex, `off` for no summaries, or `auto` for the default; `model`: one of the provider's, absent for its cheap one. */
+export interface NoticeSummaryModel {
+  provider: 'claude' | 'codex' | 'off' | 'auto';
+  model?: string;
 }
 /** How many chats one chat's agent may have delegated at a time (1–10), and whether agents may write to any chat. */
 export interface DelegationSettings {
@@ -2005,6 +2025,7 @@ export interface CommandBodies {
   'conversation.pin': OpBody & { id: ConvId; pinned: boolean };
   'conversation.apps': OpBody & { id: ConvId; apps: string[] };
   'conversation.test': OpBody & { id: ConvId; test: boolean };
+  'conversation.view': OpBody & { id: ConvId; view: Record<string, unknown> };
   'conversation.move': OpBody & { id: ConvId; projectId: string | null };
   'conversation.delete': OpBody & { id: ConvId; force?: boolean };
   'conversation.restore': OpBody & { id: ConvId };
@@ -2411,11 +2432,14 @@ const machineLoad: Decoder<MachineLoad> = object({
   diskTotal: int,
   busyAgents: int,
 });
-const machineHealth: Decoder<MachineHealth> = object({
-  level: oneOf(HEALTH_LEVELS),
-  since: ms,
-  issues: array(object({ metric: oneOf(HEALTH_METRICS), level: oneOf(['warn', 'critical'] as const) })),
-});
+const machineHealth: Decoder<MachineHealth> = object(
+  {
+    level: oneOf(HEALTH_LEVELS),
+    since: ms,
+    issues: array(object({ metric: oneOf(HEALTH_METRICS), level: oneOf(['warn', 'critical'] as const) })),
+  },
+  { stall: object({ mounts: array(str), waiting: array(str) }) },
+);
 const machine: Decoder<Machine> = object(
   {
     id,
@@ -2693,7 +2717,7 @@ const appMr: Decoder<AppMR> = object({
   pipeline: nullable(oneOf(APP_PIPELINES)),
   approvals: nullable(object({ given: int, required: int })),
 });
-const appRow: Decoder<AppRow> = object({
+const appRowBody: Decoder<AppRow> = object({
   key: id,
   id,
   title: id,
@@ -2708,6 +2732,7 @@ const appRow: Decoder<AppRow> = object({
   updatedAt: ms,
   closedAt: nullable(ms),
   author: nullable(id),
+  avatar: nullable(id),
   assignees: array(id),
   reviewers: array(id),
   me: array(oneOf(APP_ROLES)),
@@ -2719,6 +2744,11 @@ const appRow: Decoder<AppRow> = object({
   children: array(appChild),
   mr: nullable(appMr),
 });
+/** A runtime older than the avatars sends no `avatar`: its row reads as one without a picture. */
+const appRow: Decoder<AppRow> = (v, p) => {
+  const o = record(v, p);
+  return appRowBody(Object.hasOwn(o, 'avatar') ? o : { ...o, avatar: null }, p);
+};
 const appFeed: Decoder<AppFeed> = (v, p) => {
   const feed = object({
     id: oneOf(APP_IDS),
@@ -2836,6 +2866,7 @@ const runtimeSettings: Decoder<RuntimeSettings> = object(
     limitContinue: oneOf(ON_OFFS),
     restartContinue: oneOf(ON_OFFS),
     delegation: object({ maxChildren: int, anyChat: bool }),
+    noticeSummary: object({ provider: oneOf(['claude', 'codex', 'off', 'auto'] as const) }, { model: str }),
   },
 );
 const rewindMark: Decoder<RewindMark> = object({
@@ -2915,6 +2946,7 @@ const conversation: Decoder<Conversation> = object(
     goal,
     launch,
     apps: array(id),
+    view: record,
     recap,
     pendingModel,
     modelLog: array(modelSwitch),
@@ -3402,6 +3434,7 @@ const commandBodies: { [K in Op]: Decoder<CommandBodies[K]> } = {
   'conversation.pin': object({ opId: id, id: convId, pinned: bool }),
   'conversation.apps': object({ opId: id, id: convId, apps: array(id) }),
   'conversation.test': object({ opId: id, id: convId, test: bool }),
+  'conversation.view': object({ opId: id, id: convId, view: record }),
   'conversation.move': object({ opId: id, id: convId, projectId: nullable(id) }),
   'conversation.delete': object({ opId: id, id: convId }, { force: bool }),
   'conversation.restore': object({ opId: id, id: convId }),

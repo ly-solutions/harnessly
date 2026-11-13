@@ -7,6 +7,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/connections"
 	"github.com/ly-solutions/harnessly/internal/gate"
+	"github.com/ly-solutions/harnessly/internal/services"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
@@ -17,6 +18,27 @@ import (
 //
 // Read through the person's own GitHub connection first, else the deployment's; without one the answer is off and the
 // start stays as it is.
+
+// forgeAvatarPath serves the avatars of code hosts' people (services.Handlers.ForgeAvatar).
+var forgeAvatarPath = platformAPI + "/link-meta/forge-avatar"
+
+// forgeHosts are the hosts of the person's GitLab and GitHub connections: their avatars are served too.
+func forgeHosts(d deps) []string {
+	list, err := connectionsFor(d).List()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, c := range list {
+		if c.Kind != connections.GitLab && c.Kind != connections.GitHub {
+			continue
+		}
+		if host := reviewHost(c.BaseURL); host != "" {
+			out = append(out, host)
+		}
+	}
+	return out
+}
 
 // githubListConn is the GitHub connection to list with: the person's own (the primary first), else the deployment's.
 func githubListConn(list []connections.Conn) (connections.Conn, bool) {
@@ -68,6 +90,9 @@ func pullRow(p connections.PullSummary) (wire.AppRow, bool) {
 	if p.Author != nil {
 		row.Author = &p.Author.Name
 		row.Person = row.Author
+		if link := services.AvatarLink(forgeAvatarPath, p.Author.Avatar); link != "" {
+			row.Avatar = &link
+		}
 	}
 	if p.Mine {
 		row.Me = append(row.Me, wire.RoleAuthor)

@@ -693,6 +693,19 @@ func (m *Manager) recoverEntrySession(tabID string) bool {
 	return true
 }
 
+// AdoptSession gives the tab's entry the agent session its layout tab took from the chat's record; an entry
+// that keeps a session keeps it.
+func (m *Manager) AdoptSession(tabID, sessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.tabs[tabID]
+	if e == nil || sessionID == "" || e.AgentSessionID.Value() != "" {
+		return
+	}
+	e.AgentSessionID = Some(sessionID)
+	m.broadcastUpdate(tabID, e, nil)
+}
+
 // RecoverSession is recoverEntrySession for the queue.
 func (m *Manager) RecoverSession(tabID string) bool { return m.recoverEntrySession(tabID) }
 

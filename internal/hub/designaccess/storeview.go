@@ -16,7 +16,8 @@ type StoreGrant struct {
 }
 
 // StoreView is the store's filter for a machine: per recorded project of its space, what the machine's person — the
-// one its runtime runs for — may do. A project nobody recorded is not listed: it is open, as the access rule has it.
+// one its runtime runs for — may do. A project nobody recorded is not listed: it is open, as the access rule has it,
+// unless the hub keeps such projects closed (ClosedUnrecorded).
 func (s *Service) StoreView(ctx context.Context, m store.Machine) (map[string]StoreGrant, error) {
 	t, err := s.read(ctx, m)
 	if err != nil {

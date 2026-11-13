@@ -28,6 +28,7 @@ const row = (patch: Partial<AppRow>): AppRow => ({
   updatedAt: 1,
   closedAt: null,
   author: 'Oleg',
+  avatar: null,
   assignees: [],
   reviewers: [],
   me: [],

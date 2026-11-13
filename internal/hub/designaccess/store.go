@@ -42,6 +42,8 @@ type txn struct {
 	// shared: a project's rows may be under another machine of the space (Service.shared).
 	shared bool
 	homes  map[string]string
+	// closed: a project without a row gives nobody a role (Service.closed).
+	closed bool
 }
 
 // key is the machine whose rows hold a project: this one, or with a shared library the machine of the space that
@@ -76,7 +78,7 @@ func (s *Service) read(ctx context.Context, m store.Machine) (*txn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &txn{ctx: ctx, st: st, q: st.Q(), pg: s.db.Driver() == store.Postgres, m: m, w: w, now: s.now(), seal: s.seal, shared: s.shared}, nil
+	return &txn{ctx: ctx, st: st, q: st.Q(), pg: s.db.Driver() == store.Postgres, m: m, w: w, now: s.now(), seal: s.seal, shared: s.shared, closed: s.closed}, nil
 }
 
 func (s *Service) write(ctx context.Context, m store.Machine, fn func(t *txn) error) error {
@@ -85,7 +87,7 @@ func (s *Service) write(ctx context.Context, m store.Machine, fn func(t *txn) er
 		if err != nil {
 			return err
 		}
-		return fn(&txn{ctx: ctx, st: st, q: st.Q(), pg: s.db.Driver() == store.Postgres, m: m, w: w, now: s.now(), seal: s.seal, shared: s.shared})
+		return fn(&txn{ctx: ctx, st: st, q: st.Q(), pg: s.db.Driver() == store.Postgres, m: m, w: w, now: s.now(), seal: s.seal, shared: s.shared, closed: s.closed})
 	})
 	if err == nil {
 		s.kickSpace(ctx, m)
@@ -149,6 +151,9 @@ func (t *txn) effective(id string) (project, bool, error) {
 	}
 	if p != nil {
 		return *p, true, nil
+	}
+	if t.closed {
+		return project{ID: id, TeamLevel: levelNone}, false, nil
 	}
 	return project{ID: id, TeamLevel: roleEdit}, false, nil
 }
@@ -330,7 +335,7 @@ func (s *Service) registerCreated(ctx context.Context, m store.Machine, id, emai
 	owner := normEmail(email)
 	done := false
 	err := s.write(ctx, m, func(t *txn) error {
-		out, err := t.insertProject(id, owner, t.w.displayName(owner), roleEdit, false)
+		out, err := t.insertProject(id, owner, t.w.displayName(owner), s.teamLevel, false)
 		if err != nil {
 			return err
 		}
@@ -357,12 +362,12 @@ func (s *Service) registerClaim(ctx context.Context, m store.Machine, id, email 
 	owner := normEmail(email)
 	done := false
 	err := s.write(ctx, m, func(t *txn) error {
-		out, err := t.insertProject(id, owner, t.w.displayName(owner), roleEdit, true)
+		out, err := t.insertProject(id, owner, t.w.displayName(owner), s.teamLevel, true)
 		if err != nil || out != regDone {
 			return err
 		}
 		done = true
-		return t.writeLog(id, owner, "claim", owner, map[string]any{"team": roleEdit})
+		return t.writeLog(id, owner, "claim", owner, map[string]any{"team": s.teamLevel})
 	})
 	return done, err
 }

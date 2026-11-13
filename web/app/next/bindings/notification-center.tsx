@@ -84,7 +84,7 @@ export const logSourceOf = (
   reads: machineListed || originOf(conv).src !== SOURCE.cache,
 });
 
-interface IWaitBindingProps {
+export interface IWaitBindingProps {
   conv: Conversation;
   item: INotification;
   open: boolean;
@@ -93,7 +93,7 @@ interface IWaitBindingProps {
 }
 
 /** One waiting row: the chat's channel while it is on screen, its question or permission, the answer from here. */
-const WaitBinding = ({ conv, item, open, onToggle, onOpenChat }: IWaitBindingProps) => {
+export const WaitBinding = ({ conv, item, open, onToggle, onOpenChat }: IWaitBindingProps) => {
   const status = chatStatusOf(conv, true);
   const needsGate = status === CHAT_STATUS.question || status === CHAT_STATUS.perm;
   useConversationChannel(needsGate ? conv.machineId : null, needsGate ? conv.id : null);

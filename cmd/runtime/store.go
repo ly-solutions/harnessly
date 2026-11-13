@@ -114,6 +114,10 @@ func (f *runtimeGate) startStore(ctx context.Context, cfg gate.Config) func() {
 	if f.store.Kind() == storelink.KindHub && f.revisions != nil {
 		f.revisions(storeRevisions{c: f.store.Client(filestore.KindDesign)})
 	}
+	// A project the page opened from the machine is put into the hub's store at once.
+	if f.store.Kind() == storelink.KindHub && f.pusher != nil {
+		f.pusher(storePusher{l: f.store})
+	}
 	run, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
@@ -216,6 +220,13 @@ func keepDelivered(info delivery.Info) {
 			agent.Log("info", "a handed-over file is not in the hub's store", agent.F{K: "error", V: err.Error()})
 		}
 	}()
+}
+
+// storePusher sends a project's folder of the Sinopia library to the store ahead of the sync's own pace.
+type storePusher struct{ l *storelink.Link }
+
+func (p storePusher) PushProject(ctx context.Context, project string) error {
+	return p.l.PushNow(ctx, filestore.KindDesign, project)
 }
 
 // storeRevisions is the design collection's history in the hub's store as the Sinopia library reads it.

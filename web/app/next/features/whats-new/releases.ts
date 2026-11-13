@@ -13,6 +13,14 @@ export interface IRelease {
 
 export const RELEASES = [
   {
+    id: '2026-11-13',
+    items: [
+      { key: 'reviewSeamless', icon: 'git-pull-request' },
+      { key: 'noticeStack', icon: 'bell' },
+      { key: 'sinopiaOffline', icon: 'film' },
+    ],
+  },
+  {
     id: '2026-11-11zd',
     items: [{ key: 'inherit', icon: 'git-branch' }],
   },

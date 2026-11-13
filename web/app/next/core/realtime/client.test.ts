@@ -272,6 +272,31 @@ describe('RealtimeClient', () => {
     expect(rt.opened.length).toBe(2);
   });
 
+  it('reloads a chat: its data goes, a new socket asks for the whole channel (HRN-1266)', async () => {
+    const { rt, m } = await bootFake();
+    const release = hub.openConversation(m, CONV);
+    await settle();
+    rt.emit(CH, step(1));
+    expect(turnEntries()).toContain('x:30001#0');
+    const before = rt.opened.length;
+
+    hub.reloadConversation(m, CONV);
+    // The page's copy is gone at once: the chat draws its skeleton until the machine answers.
+    expect(feedStore.get(CONV)).toMatchObject({ loaded: false, rows: [] });
+    expect(entryStore.get(key(CONV, 'x:30001#0'))).toBeUndefined();
+    await settle();
+
+    expect(rt.opened.length).toBe(before + 1);
+    const again = subs(lastSocket(rt)).find((f) => f.ch === CH)!;
+    expect(again.epoch).toBeUndefined();
+    expect(again.afterSeq).toBeUndefined();
+    expect(again.afterEntryId).toBeUndefined();
+    expect(conn(m).k).toBe('live');
+    expect(feedStore.get(CONV)!.loaded).toBe(true);
+    expect(turnEntries()).toContain('x:30001#0');
+    release();
+  });
+
   it('asks for a held channel whole again on resnapshot', async () => {
     const { rt, m } = await bootFake();
     const s = lastSocket(rt);

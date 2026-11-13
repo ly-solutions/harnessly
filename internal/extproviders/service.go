@@ -1,0 +1,343 @@
+package extproviders
+
+import (
+	"context"
+	"net/url"
+	"slices"
+	"strings"
+)
+
+// sameServer says whether two addresses are of one server: the same scheme and host (with its port).
+func sameServer(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	return errA == nil && errB == nil && ua.Host != "" && ua.Scheme == ub.Scheme && strings.EqualFold(ua.Host, ub.Host)
+}
+
+// Service is the registry with the safe its keys live in and the client that asks a provider for its models.
+type Service struct {
+	Store   *Store
+	Secrets Secrets
+	// Probe asks a provider; nil is a Prober of its own.
+	Probe *Prober
+	// OnChange is told after the registry changed: what happened ("created", "updated", "removed") to which provider.
+	OnChange func(what string, before, after *Provider)
+}
+
+func (s *Service) prober() *Prober {
+	if s.Probe != nil {
+		return s.Probe
+	}
+	return &Prober{}
+}
+
+func (s *Service) changed(what string, before, after *Provider) {
+	if s.OnChange != nil {
+		s.OnChange(what, before, after)
+	}
+}
+
+// ViewOf is a provider as the page sees it.
+func (s *Service) ViewOf(p Provider) View {
+	models := p.Models
+	if models == nil {
+		models = []Model{}
+	}
+	return View{ID: p.ID, Name: p.Name, BaseURL: p.BaseURL, Host: p.Host(), API: p.API, Preset: p.Preset,
+		HasKey: p.KeyRef != "" && s.Secrets.Has(p.KeyRef), Models: models, ModelsAt: p.ModelsAt, ClaudeCLI: p.ClaudeCLI(),
+		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+}
+
+// List is the providers as the page sees them.
+func (s *Service) List() ([]View, error) {
+	list, err := s.Store.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]View, 0, len(list))
+	for _, p := range list {
+		out = append(out, s.ViewOf(p))
+	}
+	return out, nil
+}
+
+// Get is one provider as the registry keeps it.
+func (s *Service) Get(id string) (Provider, error) { return s.Store.Get(id) }
+
+// Key is the provider's key from the safe; "" for a provider that takes none.
+func (s *Service) Key(p Provider) (string, error) {
+	if p.KeyRef == "" || !s.Secrets.Has(p.KeyRef) {
+		return "", nil
+	}
+	return s.Secrets.Reveal(p.KeyRef)
+}
+
+// Input is the form of a new provider. Key may be empty: a local server takes none.
+type Input struct {
+	Name    string  `json:"name"`
+	BaseURL string  `json:"baseUrl"`
+	API     API     `json:"api"`
+	Preset  string  `json:"preset"`
+	Key     string  `json:"key"`
+	Models  []Model `json:"models"`
+}
+
+// Create adds a provider and puts its key into the safe.
+func (s *Service) Create(in Input) (View, error) {
+	name, err := cleanName(in.Name)
+	if err != nil {
+		return View{}, err
+	}
+	base, err := CleanURL(in.BaseURL)
+	if err != nil {
+		return View{}, err
+	}
+	if !in.API.Valid() {
+		return View{}, refuse(ReasonBadAPI)
+	}
+	if !validPreset(in.Preset) {
+		in.Preset = ""
+	}
+	key, err := cleanKey(in.Key)
+	if err != nil {
+		return View{}, err
+	}
+	models, err := cleanModels(in.Models)
+	if err != nil {
+		return View{}, err
+	}
+	var made Provider
+	err = s.Store.change(func(body *fileBody) error {
+		if len(body.Providers) >= MaxProviders {
+			return refuse(ReasonTooMany)
+		}
+		id := slug(name)
+		taken := func(id string) bool {
+			return slices.ContainsFunc(body.Providers, func(p Provider) bool { return p.ID == id })
+		}
+		if id == "" || taken(id) {
+			stem := id
+			if stem == "" {
+				stem = "provider"
+			}
+			for id = stem + "-" + randomHex(3); taken(id); id = stem + "-" + randomHex(3) {
+			}
+		}
+		now := s.Store.now()
+		made = Provider{ID: id, Name: name, BaseURL: base, API: in.API, Preset: in.Preset, Models: models, CreatedAt: now, UpdatedAt: now}
+		if key != "" {
+			made.KeyRef = "provider-" + id + "-key"
+			if err := s.Secrets.Put(made.KeyRef, key); err != nil {
+				return &Refusal{Reason: ReasonFailed, Err: err}
+			}
+		}
+		body.Providers = append(body.Providers, made)
+		return nil
+	})
+	if err != nil {
+		return View{}, err
+	}
+	s.changed("created", nil, &made)
+	return s.ViewOf(made), nil
+}
+
+// Patch changes a provider: a field left nil stays as it is. An empty Key removes the saved key.
+type Patch struct {
+	Name    *string  `json:"name"`
+	BaseURL *string  `json:"baseUrl"`
+	API     *API     `json:"api"`
+	Key     *string  `json:"key"`
+	Models  *[]Model `json:"models"`
+}
+
+// Update changes a provider. A new address or kind of API drops the models taken from the old one, unless the patch
+// brings its own.
+func (s *Service) Update(id string, patch Patch) (View, error) {
+	var before, after Provider
+	err := s.Store.change(func(body *fileBody) error {
+		i := slices.IndexFunc(body.Providers, func(p Provider) bool { return p.ID == id })
+		if i < 0 {
+			return refuse(ReasonNotFound)
+		}
+		p := body.Providers[i]
+		before = p
+		moved := false
+		if patch.Name != nil {
+			name, err := cleanName(*patch.Name)
+			if err != nil {
+				return err
+			}
+			p.Name = name
+		}
+		if patch.BaseURL != nil {
+			base, err := CleanURL(*patch.BaseURL)
+			if err != nil {
+				return err
+			}
+			moved = moved || base != p.BaseURL
+			p.BaseURL = base
+		}
+		if patch.API != nil {
+			if !patch.API.Valid() {
+				return refuse(ReasonBadAPI)
+			}
+			moved = moved || *patch.API != p.API
+			p.API = *patch.API
+		}
+		if moved {
+			p.Models, p.ModelsAt = []Model{}, 0
+		}
+		// A key is saved for one server. An address that moves to another server drops it, unless the patch brings the
+		// key of the new one: the old key is never sent to a server the person did not give it to.
+		if !sameServer(before.BaseURL, p.BaseURL) && patch.Key == nil && p.KeyRef != "" {
+			_ = s.Secrets.Remove(p.KeyRef)
+			p.KeyRef = ""
+		}
+		if patch.Models != nil {
+			models, err := cleanModels(*patch.Models)
+			if err != nil {
+				return err
+			}
+			p.Models = models
+		}
+		if patch.Key != nil {
+			key, err := cleanKey(*patch.Key)
+			if err != nil {
+				return err
+			}
+			switch {
+			case key != "":
+				if p.KeyRef == "" {
+					p.KeyRef = "provider-" + p.ID + "-key"
+				}
+				if err := s.Secrets.Put(p.KeyRef, key); err != nil {
+					return &Refusal{Reason: ReasonFailed, Err: err}
+				}
+			case p.KeyRef != "":
+				_ = s.Secrets.Remove(p.KeyRef)
+				p.KeyRef = ""
+			}
+		}
+		p.UpdatedAt = s.Store.now()
+		body.Providers[i] = p
+		after = p
+		return nil
+	})
+	if err != nil {
+		return View{}, err
+	}
+	s.changed("updated", &before, &after)
+	return s.ViewOf(after), nil
+}
+
+// Remove deletes a provider and its key.
+func (s *Service) Remove(id string) error {
+	var gone Provider
+	err := s.Store.change(func(body *fileBody) error {
+		i := slices.IndexFunc(body.Providers, func(p Provider) bool { return p.ID == id })
+		if i < 0 {
+			return refuse(ReasonNotFound)
+		}
+		gone = body.Providers[i]
+		body.Providers = slices.Delete(body.Providers, i, i+1)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if gone.KeyRef != "" {
+		_ = s.Secrets.Remove(gone.KeyRef)
+	}
+	s.changed("removed", &gone, nil)
+	return nil
+}
+
+// Draft is a form that is not saved yet: «Проверить» before «Сохранить». With ID and no Key the saved key of that
+// provider is used, so a person who edits an address need not type the key again.
+type Draft struct {
+	ID      string `json:"id"`
+	BaseURL string `json:"baseUrl"`
+	API     API    `json:"api"`
+	Key     string `json:"key"`
+}
+
+// CheckDraft asks the address of a form for its models.
+func (s *Service) CheckDraft(ctx context.Context, d Draft) (Check, error) {
+	base, err := CleanURL(d.BaseURL)
+	if err != nil {
+		return Check{}, err
+	}
+	if !d.API.Valid() {
+		return Check{}, refuse(ReasonBadAPI)
+	}
+	key, err := cleanKey(d.Key)
+	if err != nil {
+		return Check{}, err
+	}
+	if key == "" && d.ID != "" {
+		p, err := s.Store.Get(d.ID)
+		if err != nil {
+			return Check{}, err
+		}
+		// The saved key goes only to the server it was saved for: a form that names another server is checked without
+		// it, and the person types the key again.
+		if sameServer(p.BaseURL, base) {
+			if key, err = s.Key(p); err != nil {
+				return Check{}, &Refusal{Reason: ReasonFailed, Err: err}
+			}
+		}
+	}
+	return s.prober().Check(ctx, base, d.API, key), nil
+}
+
+// Check asks a saved provider for its models and, when it answers, keeps them.
+func (s *Service) Check(ctx context.Context, id string) (Check, error) {
+	p, err := s.Store.Get(id)
+	if err != nil {
+		return Check{}, err
+	}
+	key, err := s.Key(p)
+	if err != nil {
+		return Check{}, &Refusal{Reason: ReasonFailed, Err: err}
+	}
+	got := s.prober().Check(ctx, p.BaseURL, p.API, key)
+	if got.OK && len(got.Models) > 0 {
+		_ = s.Store.change(func(body *fileBody) error {
+			i := slices.IndexFunc(body.Providers, func(x Provider) bool { return x.ID == id })
+			if i < 0 {
+				return refuse(ReasonNotFound)
+			}
+			body.Providers[i].Models, body.Providers[i].ModelsAt = got.Models, s.Store.now()
+			return nil
+		})
+	}
+	return got, nil
+}
+
+// ModelList is the models of a provider and when they were taken from it.
+type ModelList struct {
+	Models []Model `json:"models"`
+	At     int64   `json:"at,omitempty"`
+	// Check is how the refresh went, when one was made.
+	Check *Check `json:"check,omitempty"`
+}
+
+// Models is the models of a provider: the kept ones, or (refresh, or none kept yet) the provider's own answer. A
+// provider that does not answer leaves the kept ones.
+func (s *Service) Models(ctx context.Context, id string, refresh bool) (ModelList, error) {
+	p, err := s.Store.Get(id)
+	if err != nil {
+		return ModelList{}, err
+	}
+	if !refresh && p.ModelsAt != 0 {
+		return ModelList{Models: p.Models, At: p.ModelsAt}, nil
+	}
+	got, err := s.Check(ctx, id)
+	if err != nil {
+		return ModelList{}, err
+	}
+	if p, err = s.Store.Get(id); err != nil {
+		return ModelList{}, err
+	}
+	return ModelList{Models: p.Models, At: p.ModelsAt, Check: &got}, nil
+}

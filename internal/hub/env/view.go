@@ -94,6 +94,10 @@ type EntryItem struct {
 	GroupID string `json:"groupId"`
 	// Position is the entry's place among the layer's entries: scripts run in this order (0 until placed).
 	Position int `json:"position"`
+	// BuiltIn: an app of the platform itself («Доски», «Документы»); the one thing an organization's admin changes in
+	// it is Off (PATCH …/catalog/{itemId} with `source.off`). Off: the app is off for the whole organization.
+	BuiltIn bool `json:"builtIn,omitempty"`
+	Off     bool `json:"off,omitempty"`
 }
 
 // LayerView is one layer with its rows.

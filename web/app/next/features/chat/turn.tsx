@@ -10,6 +10,8 @@ import Steps, { isWorkflowCall } from '@/next/features/chat/steps';
 import WorkflowCard from '@/next/features/workflows/workflow-card';
 import SubsBlock from '@/next/features/subagents/subs-block';
 import CopyButton from '@/next/features/chat/copy-button';
+import ErrorLine, { errorHeadline } from '@/next/features/chat/error-line';
+import { isRetryable, parseErrorText, type ParsedError } from '@/next/features/chat/error-text';
 import UserMessage from '@/next/features/chat/user-message';
 import Outputs from '@/next/features/chat/outputs';
 import DelegationCards from '@/next/features/chat/delegation-card';
@@ -86,8 +88,22 @@ const TurnActions = ({
   );
 };
 
+/** The codes whose text is a failed call to the model: its kind says more than «model API failure» does. */
+const MODEL_CALL: readonly TurnFailureCode[] = ['api-error', 'unknown'];
+
+const TURN_ACTIONS = ['continue', 'retry'] as const;
+type TTurnAction = (typeof TURN_ACTIONS)[number];
+const ACTION_KEYS: Record<TTurnAction, string> = {
+  continue: 'next.turnEnd.continue',
+  retry: 'next.turnEnd.retry',
+};
+
+/** «Model API failure» in general words, or what the failed call to the model was when its text says so. */
+const failureHeadline = (code: TurnFailureCode, error: ParsedError): string =>
+  (MODEL_CALL.includes(code) ? errorHeadline(error) : null) ?? t(FAILURE_KEYS[code]);
+
 const TurnEnd = ({ item, handlers }: { item: TurnItem; handlers: ITurnHandlers }) => {
-  const action = usePending<'continue' | 'retry'>();
+  const action = usePending<TTurnAction>();
   const { turn } = item;
   const busy = isBusy(action.phase);
   if (turn.status === 'interrupted') {
@@ -117,42 +133,43 @@ const TurnEnd = ({ item, handlers }: { item: TurnItem; handlers: ITurnHandlers }
       </div>
     );
   }
-  const why = turn.failure?.detail
-    ? `${t(FAILURE_KEYS[code])}: ${turn.failure.detail}`
-    : t(FAILURE_KEYS[code]);
+  const error = parseErrorText(turn.failure?.detail);
+  // A request that never reached the model is cured by sending it again: «Retry turn» comes first then.
+  const retryFirst = MODEL_CALL.includes(code) && isRetryable(error.kind);
+  const actions = retryFirst ? [...TURN_ACTIONS].reverse() : TURN_ACTIONS;
+  const run: Record<TTurnAction, () => Promise<unknown>> = {
+    continue: () => handlers.onContinueTurn(turn.id),
+    retry: () => handlers.onRetryTurn(turn.id),
+  };
   return (
     <div className="hx-turnend" data-kind="failed" role="status">
       <Icon name="circle-alert" size="sm" className="hx-turnend__ic" />
       <span className="hx-turnend__text">
         <span className="hx-turnend__title">{t('next.turnEnd.failed')}</span>
         <span className="hx-turnend__why">
-          {action.phase === PENDING.failed ? t('next.turnEnd.actionFailed') : why}
+          {action.phase === PENDING.failed ? (
+            t('next.turnEnd.actionFailed')
+          ) : (
+            <ErrorLine error={error} headline={failureHeadline(code, error)} />
+          )}
         </span>
       </span>
       <span className="hx-turnend__acts">
-        <button
-          type="button"
-          className="hx-btn"
-          data-size="sm"
-          data-busy={(busy && action.key === 'continue') || undefined}
-          disabled={busy}
-          onClick={() => action.run('continue', () => handlers.onContinueTurn(turn.id))}
-        >
-          <span>{t('next.turnEnd.continue')}</span>
-          <Spinner />
-        </button>
-        <button
-          type="button"
-          className="hx-btn"
-          data-size="sm"
-          data-variant="ghost"
-          data-busy={(busy && action.key === 'retry') || undefined}
-          disabled={busy}
-          onClick={() => action.run('retry', () => handlers.onRetryTurn(turn.id))}
-        >
-          <span>{t('next.turnEnd.retry')}</span>
-          <Spinner />
-        </button>
+        {actions.map((key, index) => (
+          <button
+            key={key}
+            type="button"
+            className="hx-btn"
+            data-size="sm"
+            data-variant={index === 0 ? undefined : 'ghost'}
+            data-busy={(busy && action.key === key) || undefined}
+            disabled={busy}
+            onClick={() => action.run(key, run[key])}
+          >
+            <span>{t(ACTION_KEYS[key])}</span>
+            <Spinner />
+          </button>
+        ))}
       </span>
     </div>
   );

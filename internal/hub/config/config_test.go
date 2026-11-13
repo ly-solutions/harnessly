@@ -742,6 +742,34 @@ func TestDesignImport(t *testing.T) {
 	}
 }
 
+func TestDesignAccess(t *testing.T) {
+	m := map[string]string{"HUB_PUBLIC_URL": "http://localhost:8040", "HUB_DATA_DIR": t.TempDir()}
+	c, err := Load(env(m))
+	if err != nil || c.DesignAccess.TeamLevel != "edit" || c.DesignAccess.ClosedUnrecorded || c.DesignAccess.Register != "" {
+		t.Fatalf("today's behaviour by default: %v %+v", err, c.DesignAccess)
+	}
+	m["HUB_DESIGN_DEFAULT_TEAM_LEVEL"] = "None"
+	m["HUB_DESIGN_UNRECORDED"] = "closed"
+	m["HUB_DESIGN_REGISTER"] = "dry-run"
+	if c, err = Load(env(m)); err != nil || c.DesignAccess.TeamLevel != "none" || !c.DesignAccess.ClosedUnrecorded || c.DesignAccess.Register != "dry-run" {
+		t.Fatalf("closed: %v %+v", err, c.DesignAccess)
+	}
+	for k, v := range map[string]string{"HUB_DESIGN_DEFAULT_TEAM_LEVEL": "manage", "HUB_DESIGN_UNRECORDED": "ajar", "HUB_DESIGN_REGISTER": "yes"} {
+		bad := map[string]string{}
+		for kk, vv := range m {
+			bad[kk] = vv
+		}
+		bad[k] = v
+		if _, err := Load(env(bad)); err == nil {
+			t.Fatalf("%s=%s was taken", k, v)
+		}
+	}
+	m["HUB_STORE"] = "off"
+	if _, err := Load(env(m)); err == nil {
+		t.Fatal("the registration without the store")
+	}
+}
+
 func TestTunnelMemory(t *testing.T) {
 	base := map[string]string{"HUB_PUBLIC_URL": "https://hub.example.com", "HUB_SMTP_URL": "smtp://mail.example.com"}
 	c, err := Load(env(base))

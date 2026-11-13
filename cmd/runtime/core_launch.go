@@ -101,7 +101,7 @@ func (c *core) newLauncher() {
 		Store: c.store, Lines: lines, Availability: avail, Keeper: c.keeperOf,
 		WorkspaceRoot: lc.WorkspaceRoot, Home: c.cfg.Home, DataDir: c.cfg.DataDir, DataDirLabel: lc.DataDirLabel,
 		EnvPrefix: lc.EnvPrefix, EnvSource: c.envSource, PromptDir: filepath.Join(c.cfg.DataDir, "launch-prompts"), FirstWorkspaceName: lc.FirstWorkspaceName,
-		Admit: c.budgetAdmit, BeforeAgent: memoryBeforeAgent,
+		Admit: c.budgetAdmit, BeforeAgent: beforeAgent(firstRunBeforeAgent(c.cfg.Home), memoryBeforeAgent),
 	})
 	c.inbox = &launch.Inbox{Starter: c.launcher, Tmux: inboxTmux{c}, Log: coreLog,
 		Submit: func(session, text string) error {
@@ -262,4 +262,13 @@ func (c *core) launchRoutes(f *gate.Gate, d deps, isMachineAgent func(*http.Requ
 	}
 	routes := []gate.Route{{Slice: "launch", Match: running(main.Match), Handler: main.Handler}}
 	return append(routes, f.AsBodyRoutes(gate.BodyRoute{Slice: "launch", Match: running(shadow.Match), Serve: shadow.Handler.ServeHTTP})...)
+}
+
+// beforeAgent runs the steps one after another before an agent starts.
+func beforeAgent(steps ...func(provider, cwd string)) func(provider, cwd string) {
+	return func(provider, cwd string) {
+		for _, step := range steps {
+			step(provider, cwd)
+		}
+	}
 }

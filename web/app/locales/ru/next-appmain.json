@@ -185,5 +185,15 @@
   "next.apppage.mentions": "Находит своё по «@»: {title}",
   "next.apppage.missing": "Такого приложения нет ни у вас, ни в каталогах.",
   "next.apppage.tab.about": "Обзор",
-  "next.apppage.tab.journal": "Журнал"
+  "next.apppage.tab.journal": "Журнал",
+  "next.appdown.doc": "Документ сейчас не открывается",
+  "next.appdown.docs": "Документы сейчас не открываются",
+  "next.appdown.board": "Доска сейчас не открывается",
+  "next.appdown.boards": "Доски сейчас не открываются",
+  "next.appdown.docText": "Текст никуда не делся. Попробуйте ещё раз через минуту.",
+  "next.appdown.boardText": "Рисунок никуда не делся. Попробуйте ещё раз через минуту.",
+  "next.appdown.homeText": "Всё на месте. Попробуйте ещё раз через минуту.",
+  "next.appmain.back": "Назад",
+  "next.appmain.home": "Главная",
+  "next.appmain.collapse": "Свернуть"
 }

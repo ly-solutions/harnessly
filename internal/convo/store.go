@@ -80,6 +80,9 @@ type convFile struct {
 	Left                    []string          `json:"left,omitempty"`
 	// Rest is what a conversation at rest read out of its transcript, tied to the file (rest.go).
 	Rest *restFile `json:"rest,omitempty"`
+	// LostAtWork: the agent was lost (its tmux gone) while it was at work — a turn under way, a question or permission
+	// open, or background work it waited for — and has not gone on since. A start owes it the word to go on.
+	LostAtWork bool `json:"lostAtWork,omitempty"`
 }
 
 func (s *Store) convPath(id string) string { return filepath.Join(s.dir, "convs", id+".json") }

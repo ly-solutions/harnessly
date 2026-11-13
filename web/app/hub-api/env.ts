@@ -98,6 +98,9 @@ export type EnvEntryRow = {
   delivery: ItemDelivery | null;
   groupId: string; // the group of the layer the entry is in; '' for none
   position: number; // the entry's place among the layer's entries: scripts run in this order (0 until placed)
+  // An app of the platform itself («Доски», «Документы»): the one thing an admin changes in it is `off`.
+  builtIn?: boolean;
+  off?: boolean; // an app the organization turned off for everybody
 };
 
 // A group of a layer's entries (docs/hub/environment.md, «Groups»). Required: its items are pinned. Optional: each

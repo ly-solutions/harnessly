@@ -58,6 +58,16 @@ export interface IStoreLibrary {
   layout: ILibraryLayout;
 }
 
+/**
+ * The hub runs without a design store (HUB_STORE off): its refusal of the store's reads says so by its code, so a page
+ * does not promise a copy that will never arrive (GitHub #82).
+ */
+export const storeIsOff = (failure: unknown): boolean => {
+  // A RuntimeError's body, read by shape: the refusal is the hub's JSON as it came.
+  const body = typeof failure === 'object' && failure !== null && 'body' in failure ? failure.body : null;
+  return typeof body === 'object' && body !== null && 'code' in body && body.code === 'store_off';
+};
+
 /** The hub answers it under any machine of the space, on or off; a runtime with no hub answers 404 (no copy). */
 export const fetchStoreLibrary = async (m: MachineId, signal?: AbortSignal): Promise<IStoreLibrary> => {
   const raw = await runtimeJson<{ artifacts?: unknown; layout?: Partial<ILibraryLayout> }>(
@@ -147,6 +157,13 @@ export const storeBoardHref = (m: MachineId, id: string, board: string) =>
     ),
     m,
   );
+
+/**
+ * The hub's stream «the project is at revision N» (designaccess team.go, `events`): the first event is the newest
+ * revision; a project the store has nothing of answers 404.
+ */
+export const storeEventsHref = (m: MachineId, id: string) =>
+  runtimePath(platformPath(`/design/store/${encodeURIComponent(id)}/events`), m);
 
 /** A new project from the brief: the runtime copies the template and opens a conversation of an agent in it. */
 export const createDesign = (m: MachineId, body: DesignlyCreate) =>

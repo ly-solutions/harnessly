@@ -619,6 +619,48 @@ export const ru = {
   'network.err.noPublishers':
     'Подпись обязательна, а издателей нет: никто не сможет установить приложение. Добавьте издателя.',
 
+  // ---- rollout switches (docs/hub/rollout-switches.md)
+  'switches.title': 'Переключатели выката',
+  'switches.entry':
+    'Включение функций по людям и машинам без релиза: таблица переключателей всей инсталляции.',
+  'switches.open': 'Открыть переключатели выката',
+  'switches.adminOnly': 'Переключатели выката правит только администратор хаба.',
+  'switches.lead':
+    'Строка включает или выключает функцию для человека на машине. Побеждает самая точная строка: пара, потом человек, потом машина, потом «все». Нет строки значит выключено.',
+  'switches.seedWarn':
+    'Строки, засеянные из HUB_SWITCHES (кто изменил: config:HUB_SWITCHES), при каждом перезапуске хаба возвращаются к значениям из конфига. Правка здесь для них живёт до ближайшего рестарта: чтобы изменить насовсем, поправьте HUB_SWITCHES.',
+  'switches.empty': 'Строк пока нет: ни одна функция не включена.',
+  'switches.add': 'Добавить строку',
+  'switches.edit': 'Изменить',
+  'switches.delete': 'Удалить',
+  'switches.any': 'все',
+  'switches.person': 'Человек',
+  'switches.machine': 'Машина',
+  'switches.feature': 'Функция',
+  'switches.enabled': 'Включено',
+  'switches.on': 'включено',
+  'switches.off': 'выключено',
+  'switches.note': 'Заметка',
+  'switches.noNote': 'без заметки',
+  'switches.updated': '{by}, {at}',
+  'switches.seeded': 'из HUB_SWITCHES',
+  'switches.hint.person': 'Почта или * для всех. Пусто значит *.',
+  'switches.hint.machine': 'Id машины или * для всех. Пусто значит *.',
+  'switches.addTitle': 'Новая строка',
+  'switches.editTitle': 'Изменить строку',
+  'switches.review': 'Проверить',
+  'switches.confirmTitle': 'Отправить в хаб?',
+  'switches.confirmPut': 'В хаб уйдёт ровно это: PUT /api/admin/switches',
+  'switches.confirmDelete': 'В хаб уйдёт ровно это:',
+  'switches.confirmDeleteTitle': 'Удалить строку?',
+  'switches.confirmDeleteText':
+    'Без строки область решают более широкие строки, а если их нет, функция выключена.',
+  'switches.confirmSend': 'Отправить',
+  'switches.back': 'Назад',
+  'switches.err.feature': 'У переключателя нужно имя.',
+  'switches.saved': 'Строка сохранена.',
+  'switches.deleted': 'Строка удалена.',
+
   // ---- the person
   'account.title': 'Аккаунт',
   'account.back': 'Назад',

@@ -237,6 +237,10 @@ const AppFrame = ({
   // The most telling thing the view said about its failure before it was up; the timeout then says it.
   const seen = useRef<{ key: string; failure: IFailure } | null>(null);
   const bridge = useRef<AppBridge | null>(null);
+  // A view on the app's own server is a site: its frame is shown at once, and the machine's session (which only the
+  // bridge's calls need) is asked for beside it. A bridge call waits for it; the page never does.
+  const heldSession = useRef<{ key: string; made: Promise<string> } | null>(null);
+  const [lateSession, setLateSession] = useState<{ key: string; session: string } | null>(null);
   // This frame among the views of the chat that offer page tools.
   const frameId = useId();
   // A slot view holds a slot of its own: two views of one app on a page would share one cookie, and the second
@@ -313,30 +317,25 @@ const AppFrame = ({
         failText(t('next.appview.badAddressWhy'));
         return;
       }
-      withTimeout(
-        createViewSession(machine, {
-          app: app.id,
-          view: view.id,
-          target,
-          conversation: chat,
-          ...(doc === undefined ? {} : { document: doc }),
-        }),
-        SESSION_WAIT_MS,
-        slow,
-      )
-        .then((made) => {
-          const at = made.url === undefined ? null : frameSrc(made.url, window.location.origin);
-          if (!live) return;
-          if (at === null) failText(t('next.appview.badAddressWhy'));
-          else
-            setOpened({
-              key,
-              src: withNonce(at, made.nonce),
-              session: made.session,
-              nonce: made.nonce,
-            });
-        })
-        .catch(failError);
+      const made = createViewSession(machine, {
+        app: app.id,
+        view: view.id,
+        target,
+        conversation: chat,
+        ...(doc === undefined ? {} : { document: doc }),
+      }).then((m) => m.session);
+      heldSession.current = { key, made };
+      made.then(
+        (sid) => {
+          if (live) setLateSession({ key, session: sid });
+        },
+        () => undefined,
+      );
+      // The nonce is the page's own here: it only ties the bridge to the document this frame was given.
+      const pageNonce = (newTrace('n') + newTrace('')).replace(/[^A-Za-z0-9_-]/g, '');
+      queueMicrotask(() => {
+        if (live) setOpened({ key, src: withNonce(direct, pageNonce), session: null, nonce: pageNonce });
+      });
       return () => {
         live = false;
       };
@@ -431,13 +430,14 @@ const AppFrame = ({
   const src = shown?.src ?? null;
 
   // A mounted view keeps its session while nobody uses it (a pane tab left open); if the runtime lost it, mount anew.
+  const renewed = session ?? (lateSession?.key === key ? lateSession.session : null);
   useEffect(() => {
-    if (session === null) return;
+    if (renewed === null) return;
     const timer = window.setInterval(() => {
-      renewViewSession(machine, session).catch(() => setReload((n) => n + 1));
+      renewViewSession(machine, renewed).catch(() => setReload((n) => n + 1));
     }, RENEW_MS);
     return () => window.clearInterval(timer);
-  }, [machine, session]);
+  }, [machine, renewed]);
 
   // What the page sees of the frame itself: when its first document loaded, and a refusal of the page's own
   // policy. When the machine never saw the view's request, these are what the card can tell.
@@ -451,6 +451,8 @@ const AppFrame = ({
     const onLoad = () => {
       if (seenNow.loadedAt !== null) return;
       seenNow.loadedAt = Date.now();
+      // A site is up when its page loaded: it shows its own states, and owes the host no handshake to be seen.
+      if (remote) send({ k: 'handshake' });
       journal(
         {
           level: 'info',
@@ -480,7 +482,7 @@ const AppFrame = ({
       frame.removeEventListener('load', onLoad);
       document.removeEventListener('securitypolicyviolation', onCsp);
     };
-  }, [frame, src, machine, app.id, view.id, chat, key, mountOf]);
+  }, [frame, src, machine, app.id, view.id, chat, key, mountOf, remote, send]);
 
   // The first document the frame loads is the view; any later load is a navigation, which ends the bridge. It is kept
   // apart from the bridge's effect so that a bridge made afresh later does not take the navigated page for the first.
@@ -532,20 +534,34 @@ const AppFrame = ({
     const noChat = () => {
       throw new BridgeError('host_unavailable', 'page tools work in a chat the app is on in');
     };
+    // The session of a bridge call: the mount's, or the one a site's frame did not wait for.
+    const need = async (): Promise<string> => {
+      if (session !== null) return session;
+      const held = heldSession.current;
+      if (held?.key !== frameKey) throw new BridgeError('host_unavailable', 'this view has no host session');
+      try {
+        return await held.made;
+      } catch (e) {
+        throw new BridgeError(
+          'host_unavailable',
+          e instanceof Error ? e.message : 'this view has no host session',
+        );
+      }
+    };
     const host: IBridgeHandlers = {
       pageTools: (tools) => (offer ? offer.tools(tools) : noChat()),
       pageToolResult: (id, answer) => offer?.result(id, answer),
       hooks: (on) => (offer ? offer.hooks(on) : noChat()),
       publish: (data) => (offer ? offer.publish(data) : noChat()),
       // The runtime reads the app, the target and the chat from the session; none of them is sent again.
-      tool: (name, args) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callTool(machine, session, name, args);
+      tool: async (name, args) => {
+        const sid = await need();
+        return callTool(machine, sid, name, args);
       },
-      storage: (op, scope, k, value, ifVersion) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
+      storage: async (op, scope, k, value, ifVersion) => {
+        const sid = await need();
         return callStorage(machine, {
-          session,
+          session: sid,
           op,
           scope,
           key: k,
@@ -553,69 +569,69 @@ const AppFrame = ({
           ...(ifVersion === undefined ? {} : { ifVersion }),
         });
       },
-      settings: () => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callSettings(machine, session);
+      settings: async () => {
+        const sid = await need();
+        return callSettings(machine, sid);
       },
-      upload: (path, data) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callUpload(machine, session, path, data);
+      upload: async (path, data) => {
+        const sid = await need();
+        return callUpload(machine, sid, path, data);
       },
-      workflow: (op, move) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callWorkflow(machine, session, op, move);
+      workflow: async (op, move) => {
+        const sid = await need();
+        return callWorkflow(machine, sid, op, move);
       },
-      notice: (op, params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callNotice(machine, session, op, params);
+      notice: async (op, params) => {
+        const sid = await need();
+        return callNotice(machine, sid, op, params);
       },
-      files: (op, path, text) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callFiles(machine, session, op, path, text);
+      files: async (op, path, text) => {
+        const sid = await need();
+        return callFiles(machine, sid, op, path, text);
       },
       filesMore: async (op, params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        const out = await callFilesMore(machine, session, op, params);
-        // The names of the changed files come by the machine's stream, to this view's session only.
+        const sid = await need();
+        const out = await callFilesMore(machine, sid, op, params);
+        // The names of the changed files come by the machine's stream, to this view's sid only.
         if (op === 'watch' && offFiles === null)
-          offFiles = subscribeFileChanges(machine, session, (paths) => bridge.current?.filesChanged(paths));
+          offFiles = subscribeFileChanges(machine, sid, (paths) => bridge.current?.filesChanged(paths));
         if (op === 'unwatch') {
           offFiles?.();
           offFiles = null;
         }
         return out;
       },
-      git: (op, params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callGit(machine, session, op, params);
+      git: async (op, params) => {
+        const sid = await need();
+        return callGit(machine, sid, op, params);
       },
-      run: (op, params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callRun(machine, session, op, params);
+      run: async (op, params) => {
+        const sid = await need();
+        return callRun(machine, sid, op, params);
       },
-      terminal: (params, events) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return openAppTerminal(machine, session, params, events);
+      terminal: async (params, events) => {
+        const sid = await need();
+        return openAppTerminal(machine, sid, params, events);
       },
-      browser: (params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callBrowser(machine, session, params);
+      browser: async (params) => {
+        const sid = await need();
+        return callBrowser(machine, sid, params);
       },
-      ai: (params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callAI(machine, session, params);
+      ai: async (params) => {
+        const sid = await need();
+        return callAI(machine, sid, params);
       },
-      secretsPut: (params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callSecretsPut(machine, session, params);
+      secretsPut: async (params) => {
+        const sid = await need();
+        return callSecretsPut(machine, sid, params);
       },
-      agentsRun: (params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callAgentsRun(machine, session, params);
+      agentsRun: async (params) => {
+        const sid = await need();
+        return callAgentsRun(machine, sid, params);
       },
-      terminalRead: (params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        return callTerminalRead(machine, session, params);
+      terminalRead: async (params) => {
+        const sid = await need();
+        return callTerminalRead(machine, sid, params);
       },
       previewOpen: async (port, path) => {
         if (!openAddressTab(`localhost:${port}${path === '/' ? '' : path}`))
@@ -656,8 +672,8 @@ const AppFrame = ({
           );
       },
       sinopia: async (method, params) => {
-        if (session === null) throw new BridgeError('host_unavailable', 'this view has no host session');
-        const result = await callSinopia(machine, session, method, params);
+        const sid = await need();
+        const result = await callSinopia(machine, sid, method, params);
         latest.current.onSinopiaCall?.(method, params);
         return result;
       },

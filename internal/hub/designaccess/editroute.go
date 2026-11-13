@@ -51,7 +51,9 @@ func (s *Service) serveEdit(w http.ResponseWriter, r *http.Request, u store.User
 		return false
 	}
 	read := r.Method == http.MethodGet || r.Method == http.MethodHead
-	if read && s.reg != nil && s.reg.Get(m.ID) != nil {
+	// A machine that is on answers a read, unless the page asks for the store's copy (from=store): it waited for the
+	// machine and the machine did not answer.
+	if read && s.reg != nil && s.reg.Get(m.ID) != nil && r.URL.Query().Get("from") != "store" {
 		return false
 	}
 	project := r.URL.Query().Get("artifact")

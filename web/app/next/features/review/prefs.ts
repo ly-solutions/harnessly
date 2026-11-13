@@ -5,10 +5,16 @@ import { DIFF_LAYOUT, type TDiffLayout } from '@/next/features/pane/editor/diff-
 export interface IReviewPrefs {
   layout: TDiffLayout;
   ignoreWhitespace: boolean;
+  /** The review column (card of the change, files, discussions): open or folded; null — the person never chose. */
+  panel: boolean | null;
 }
 
 const KEY = 'hx.review.prefs';
-export const DEFAULT_PREFS: IReviewPrefs = { layout: DIFF_LAYOUT.split, ignoreWhitespace: false };
+export const DEFAULT_PREFS: IReviewPrefs = {
+  layout: DIFF_LAYOUT.split,
+  ignoreWhitespace: false,
+  panel: null,
+};
 
 export const parsePrefs = (raw: string | null): IReviewPrefs => {
   if (!raw) return DEFAULT_PREFS;
@@ -17,6 +23,7 @@ export const parsePrefs = (raw: string | null): IReviewPrefs => {
     return {
       layout: value.layout === DIFF_LAYOUT.inline ? DIFF_LAYOUT.inline : DIFF_LAYOUT.split,
       ignoreWhitespace: value.ignoreWhitespace === true,
+      panel: typeof value.panel === 'boolean' ? value.panel : null,
     };
   } catch {
     return DEFAULT_PREFS;

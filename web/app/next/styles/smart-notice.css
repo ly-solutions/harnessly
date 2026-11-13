@@ -6,6 +6,19 @@
    sampled into linear()); opening bounces a little, folding and leaving do not. Black in the light theme, a light card
    in the dark one (--hx-toast-* in tokens.css). */
 
+/* The gesture's shift (features/smart-notice/use-gestures.ts), written on the shape alone: registered as not
+   inherited, a move restyles that one element instead of everything the plate holds. */
+@property --sn-dx {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --sn-dy {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 .hx-sn {
   --sn-bg: var(--hx-toast-bg);
   --sn-fg: var(--hx-toast-fg);
@@ -143,8 +156,10 @@
   --sn-ir: 0px;
   --sn-ox: calc(100% - var(--sn-cw) / 2);
 }
-/* Over the field of the chat: its middle, a little above it. */
+/* Over the field of the chat: its middle, a little above it, and no wider than the field, so it stays within the
+   chat's column and never covers the pane beside it. */
 .hx-sn[data-anchored] {
+  --sn-max: min(calc(100vw - 16px), var(--sn-col, 100vw));
   left: var(--sn-x, 50%);
   bottom: var(--sn-bottom, 24px);
   transition: opacity 160ms var(--hx-ease-out);
@@ -174,7 +189,8 @@
   width: var(--sn-bw);
   height: var(--sn-bh);
   pointer-events: none;
-  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.26)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.16));
+  /* One shadow, not two: the filter is drawn again whenever the shape inside it changes. */
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.28));
   transform-origin: var(--sn-ox) var(--sn-oy);
   transition:
     scale var(--sn-open-ms) var(--sn-spring),
@@ -238,10 +254,7 @@
 }
 .hx-sn[data-phase='out'] .hx-sn__body {
   opacity: 0;
-  filter: blur(6px);
-  transition:
-    opacity 180ms var(--hx-ease-out),
-    filter 180ms var(--hx-ease-out);
+  transition: opacity 180ms var(--hx-ease-out);
 }
 .hx-sn[data-v='top'] .hx-sn__body {
   top: 0;
@@ -259,17 +272,16 @@
   left: 50%;
   translate: -50% 0;
 }
+/* Opacity and scale only: a blur repaints the whole line every frame. */
 @keyframes hx-sn-in {
   from {
     opacity: 0;
-    filter: blur(8px);
     scale: 0.94;
   }
 }
 @keyframes hx-sn-out {
   to {
     opacity: 0;
-    filter: blur(6px);
     scale: 1.03;
   }
 }
@@ -831,7 +843,7 @@
 /* Only the front plate follows the finger, one to one (--sn-dx/--sn-dy, no delay); let go, it springs back, or is
    thrown off with its own speed (--sn-fling-ms) while the next one rises from the stack into its place. */
 .hx-sn__shape {
-  translate: var(--sn-dx, 0px) var(--sn-dy, 0px);
+  translate: var(--sn-dx) var(--sn-dy);
   transition:
     clip-path var(--sn-open-ms) var(--sn-spring),
     translate var(--sn-open-ms) var(--sn-spring),
@@ -847,10 +859,20 @@
 }
 .hx-sn[data-drag] .hx-sn__shape {
   transition: clip-path var(--sn-open-ms) var(--sn-spring);
+  will-change: translate;
+}
+/* While the plate is led or thrown, its shadow is not drawn: a filter over the lift is drawn again on every frame the
+   shape moves in it, over the whole box (as tall as 70 % of the window), which is what dropped frames on a wide window
+   (HRN-1315). It is back the moment the plate is let go. */
+.hx-sn[data-drag] .hx-sn__lift,
+.hx-sn[data-fling] .hx-sn__lift,
+.hx-sn[data-paging] .hx-sn__lift {
+  filter: none;
 }
 .hx-sn[data-fling] .hx-sn__shape {
   opacity: 0;
-  rotate: calc(var(--sn-dx, 0px) / 60px * 1deg);
+  rotate: calc(var(--sn-dx) / 60px * 1deg);
+  will-change: translate, rotate, opacity;
   transition:
     translate var(--sn-fling-ms, 300ms) cubic-bezier(0.2, 0.7, 0.35, 1),
     rotate var(--sn-fling-ms, 300ms) cubic-bezier(0.2, 0.7, 0.35, 1),
@@ -900,6 +922,42 @@
   from {
     opacity: 0;
   }
+}
+/* Thrown off (or put away) with more behind: the first plate behind comes to the front with the throw — full size,
+   black, its line on it — so the next one is there at once and never shows as an empty grey plate while the page
+   draws it as the front. The page then lands the shape where the plate stands, with no move of its own. */
+.hx-sn[data-promote] .hx-sn__plate[data-depth='1'] {
+  z-index: 3;
+  scale: 1;
+  translate: 0 0;
+  transition:
+    scale 240ms var(--hx-ease-out),
+    translate 240ms var(--hx-ease-out);
+}
+.hx-sn[data-promote] .hx-sn__plate[data-depth='1'] > .hx-sn__tint {
+  opacity: 0;
+  transition: opacity 160ms var(--hx-ease-out);
+}
+.hx-sn[data-promote] .hx-sn__plate[data-depth='1'] .hx-sn__peek {
+  opacity: 1;
+  transition: opacity 120ms var(--hx-ease-out) 40ms;
+}
+.hx-sn[data-promote] .hx-sn__plate[data-depth='2'] {
+  scale: 0.93;
+  translate: 0 calc(var(--sn-away) * (var(--sn-ch) * 0.07 + 9px));
+}
+.hx-sn[data-promote] .hx-sn__plate[data-depth='2'] > .hx-sn__tint {
+  opacity: 0.172;
+}
+.hx-sn[data-land] .hx-sn__shape {
+  transition: clip-path 240ms var(--hx-ease-out);
+  animation: none;
+}
+.hx-sn[data-land] .hx-sn__body {
+  animation: none;
+}
+.hx-sn[data-land] .hx-sn__ghosts {
+  display: none;
 }
 /* Paging (features/smart-notice/pager.ts): the stack is where the gesture and its spring put it, written each frame
    on the shape and the plates; the stylesheet's own transitions and animations stand aside, only the window's size
@@ -1190,234 +1248,28 @@
   animation: none;
 }
 
-/* ── The drops in the chat's right column (features/smart-notice/drops.tsx) ── */
-.hx-sn-drops {
-  --sn-bg: var(--hx-toast-bg);
-  --sn-fg: var(--hx-toast-fg);
-  --sn-fg2: var(--hx-toast-fg2);
-  --sn-fg3: var(--hx-toast-fg3);
-  --sn-fill: var(--hx-toast-fill);
-  --sn-fill2: var(--hx-toast-fill2);
-  margin: 4px 0 12px;
-}
-.hx-sn-drops__list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.hx-sn-drop {
-  border-radius: 22px;
-  background: var(--sn-bg);
-  color: var(--sn-fg);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
-  animation: hx-sn-drop-in 620ms
-    linear(
-      0,
-      0.0302,
-      0.1049,
-      0.202,
-      0.318,
-      0.4381,
-      0.5493,
-      0.6573,
-      0.7489,
-      0.8315,
-      0.8997,
-      0.9515,
-      0.9932,
-      1.0234,
-      1.0429,
-      1.0552,
-      1.0609,
-      1.0619,
-      1.0592,
-      1.0544,
-      1.0478,
-      1.0405,
-      1.0334,
-      1.0262,
-      1.02,
-      1.0142,
-      1.0093,
-      1.0055,
-      1.0023,
-      0.9999,
-      0.9982,
-      0.9971,
-      0.9965,
-      0.9962,
-      0.9962,
-      0.9964,
-      0.9967,
-      0.9971,
-      0.9976,
-      0.998,
-      1
-    )
-    backwards;
-  transform-origin: 50% 0;
-}
-/* Arriving from the notice: the flight draws it until it lands. */
-.hx-sn-drop[data-arriving] {
-  visibility: hidden;
-  animation: none;
-}
+/* A line that comes in (the open card's rows). */
 @keyframes hx-sn-drop-in {
   from {
     opacity: 0;
     scale: 0.6;
   }
 }
-/* A drop on the 8pt grid: a 56px capsule, the 32px chip set in it concentrically (12px on every side), 12px from the chip
-   to the text, and the chevron as far from the right edge as the chip is from the left. */
-.hx-sn-drop__line {
-  display: flex;
-  align-items: center;
-  min-height: 56px;
-}
-.hx-sn-drop__main {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 12px;
-  align-self: stretch;
-  min-width: 0;
-  padding: 0 0 0 12px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.hx-sn-drop__lines {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-.hx-sn-drop .hx-sn__chip {
-  width: 32px;
-  height: 32px;
-}
-/* The timer ring stays inside the chip here, so it keeps the same 12px from the capsule's edge. */
-.hx-sn-drop .hx-sn__ring {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.hx-sn-drop__title,
-.hx-sn-drop__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hx-sn-drop__title {
-  font-size: var(--hx-text-sm);
-  font-weight: 600;
-  line-height: 18px;
-}
-.hx-sn-drop__text {
-  color: var(--sn-fg2);
-  font-size: var(--hx-text-xs);
-  line-height: 16px;
-}
-.hx-sn-drop__more {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin: 0 12px 0 8px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--sn-fg2);
-  cursor: pointer;
-}
-.hx-sn-drop__more .hx-icon {
-  transition: rotate 420ms var(--hx-ease-out);
-}
-.hx-sn-drop[data-open] .hx-sn-drop__more .hx-icon {
-  rotate: 180deg;
-}
-.hx-sn-drop__more:hover,
-.hx-sn-drop__main:hover .hx-sn-drop__title {
-  color: var(--sn-fg);
-}
-/* Opened in place: it grows to what is asked, springing; folding settles. */
-.hx-sn-drop__fold {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 360ms var(--hx-ease-out);
-}
-.hx-sn-drop[data-open] .hx-sn-drop__fold {
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 520ms cubic-bezier(0.34, 1.2, 0.64, 1);
-}
-.hx-sn-drop__inner {
-  min-height: 0;
-  overflow: hidden;
-}
-.hx-sn-drop__what {
-  margin: 0;
-  padding: 0 16px 12px 56px;
-  color: var(--sn-fg2);
-  font-size: var(--hx-text-sm);
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  opacity: 0;
-  transition: opacity 200ms var(--hx-ease-out);
-}
-.hx-sn-drop[data-open] .hx-sn-drop__what {
-  opacity: 1;
-  transition-delay: 80ms;
-}
-.hx-sn-drop__answer {
-  margin: 0 12px 12px 56px;
-  padding: 7px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--sn-fg);
-  color: var(--sn-bg);
-  font: inherit;
-  font-size: var(--hx-text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.hx-sn :focus-visible,
-.hx-sn-drop :focus-visible {
+
+.hx-sn :focus-visible {
   outline: 2px solid rgb(var(--hx-toast-on) / 0.85);
   outline-offset: 2px;
 }
-/* The drop's main button is the whole line: from the keyboard the capsule itself takes a soft ring around its edge. */
-.hx-sn-drop__main:focus-visible {
-  outline: none;
+/* The chip in a card of the right column's stack (styles/notice-stack.css): 32px, its ring inside it. */
+.hx-ns .hx-sn__chip {
+  flex: none;
+  width: 32px;
+  height: 32px;
 }
-/* The ring is drawn by the button over the whole capsule, not by :has() on the capsule: a :has() on focus costs every
-   keystroke on the page (has-cost.test.ts). */
-.hx-sn-drop {
-  position: relative;
-}
-.hx-sn-drop__main:focus-visible::after {
-  content: '';
-  position: absolute;
+.hx-ns .hx-sn__ring {
   inset: 0;
-  border-radius: 22px;
-  box-shadow: 0 0 0 3px var(--hx-focus);
-  pointer-events: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .hx-sn-drop {
-    animation: none;
-  }
-  .hx-sn-drop__fold,
-  .hx-sn-drop[data-open] .hx-sn-drop__fold {
-    transition: none;
-  }
+  width: 100%;
+  height: 100%;
 }
 /* The column's button while a drop waits in a folded column: a black dot. */
 .hx-bgwrap {
@@ -1436,16 +1288,14 @@
   animation: hx-sn-drop-in 520ms var(--hx-ease-out) backwards;
 }
 
-/* A finished chat's recap in its card, and the field under it. */
+/* A finished chat's recap in its card, and the field under it: whole, never cut — the open card is where the recap is read (the card scrolls when it is long). */
 .hx-sn__summary {
-  display: -webkit-box;
   margin: 0 0 12px;
-  overflow: hidden;
   color: var(--sn-fg2);
   font-size: var(--hx-text-sm);
   line-height: 1.5;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 .hx-sn__reply[data-rec] {
   gap: 8px;

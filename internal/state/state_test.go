@@ -373,6 +373,42 @@ func TestStoreRecoveredSession(t *testing.T) {
 	}
 }
 
+// a tab that keeps no session takes the one of its chat's record; a tab that keeps one is left alone.
+func TestAdoptAgentSession(t *testing.T) {
+	const id, other = "425055ec-bbc8-4e3c-87d0-36fa74c1cccb", "11111111-2222-4333-8444-555555555555"
+	session := "tk-ws-a1-pane-b2-tab-c3"
+	transcript := "/home/u/.claude/projects/-srv-admin/" + id + ".jsonl"
+	setup := func(state string) *rig {
+		r := newRig(t)
+		r.writeLayout("ws-a1", `{"root":{"type":"pane","id":"pane-b2","activeTabId":"tab-c3","tabs":[{"id":"tab-c3","sessionName":"`+session+`","name":"Claude","order":0,"panelType":"claude-code","agentState":`+state+`}]},"activePaneId":"pane-b2","updatedAt":"2026-10-12T00:00:00.000Z"}`)
+		return r
+	}
+	tab := func(r *rig) *jsvalue.Object { return tabsOf(root(r.readFile("workspaces/ws-a1/layout.json")))[0] }
+
+	lost := setup(`{"providerId":"claude","sessionId":null,"jsonlPath":null,"summary":"x"}`)
+	if adopted, err := lost.s.AdoptAgentSession(session, Claude, id, transcript); err != nil || !adopted {
+		t.Fatalf("adopted %v, err %v", adopted, err)
+	}
+	healed := tab(lost)
+	if s, _ := healed.Object("agentState").Get("sessionId"); s != id || healed.String("claudeSessionId") != id {
+		t.Fatal(jsvalue.Stringify(healed, ""))
+	}
+	if p, _ := healed.Object("agentState").Get("jsonlPath"); p != transcript {
+		t.Fatalf("transcript %v", p)
+	}
+
+	kept := setup(`{"providerId":"claude","sessionId":"` + other + `","jsonlPath":null,"summary":null}`)
+	if adopted, err := kept.s.AdoptAgentSession(session, Claude, id, transcript); err != nil || adopted {
+		t.Fatalf("a tab with a session adopted another: %v, %v", adopted, err)
+	}
+	if s, _ := tab(kept).Object("agentState").Get("sessionId"); s != other {
+		t.Fatalf("session %v", s)
+	}
+	if adopted, _ := setup(`{"providerId":"claude","sessionId":null}`).s.AdoptAgentSession(session, Claude, "", ""); adopted {
+		t.Fatal("nothing to adopt")
+	}
+}
+
 func TestBrokenFiles(t *testing.T) {
 	r := newRig(t)
 	file := r.writeLayout("ws-x", `{"root": `)

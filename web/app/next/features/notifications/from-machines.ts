@@ -7,6 +7,8 @@ export interface IMachineNotice {
   name: string;
   alert: IMachineAlert;
   since: number;
+  /** Work is about to fail: its card may open by itself, once in a while (auto-open.ts). */
+  urgent: boolean;
 }
 
 /** A machine's row is unread while it is critical and leaves once it is not: the runtime keeps no log of it. */

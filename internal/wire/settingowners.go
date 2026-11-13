@@ -56,6 +56,7 @@ var Settings = []Setting{
 	{Doc: SettingsDocRuntime, Key: "limitContinue", Owner: OwnerMachine},
 	{Doc: SettingsDocRuntime, Key: "restartContinue", Owner: OwnerMachine},
 	{Doc: SettingsDocRuntime, Key: "delegation", Owner: OwnerMachine},
+	{Doc: SettingsDocRuntime, Key: "noticeSummary", Owner: OwnerMachine},
 
 	{Doc: SettingsDocAgent, Key: "provider", Owner: OwnerMachine},
 	{Doc: SettingsDocAgent, Key: "path", Owner: OwnerMachine},
