@@ -126,6 +126,7 @@ export type TTarget =
   | 'onboarding'
   | 'object-action'
   | 'hub-settings'
+  | 'home'
   | `sinopia.${string}`;
 
 export type TSinopiaMethod = (typeof SINOPIA_METHODS)[number];

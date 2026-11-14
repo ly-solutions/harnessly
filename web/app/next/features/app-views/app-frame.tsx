@@ -199,7 +199,11 @@ interface IOpened {
 }
 
 const isSlotTarget = (target: string) =>
-  target === 'settings' || target === 'onboarding' || target === 'object-action' || target === 'hub-settings';
+  target === 'settings' ||
+  target === 'onboarding' ||
+  target === 'object-action' ||
+  target === 'hub-settings' ||
+  target === 'home';
 
 const AppFrame = ({
   machine,

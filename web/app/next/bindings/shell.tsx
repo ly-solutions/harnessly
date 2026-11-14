@@ -129,7 +129,7 @@ import { t } from '@/next/i18n';
 import { goTo, HOME, ROUTE, useRoute, type TRoute } from '@/next/routes/routes';
 import AppsScreen from '@/next/bindings/apps';
 import SettingsScreen from '@/next/bindings/settings';
-import { BrandingHost } from '@/next/features/app-views/slot-pages';
+import { BrandingHost, HomeSlots } from '@/next/features/app-views/slot-pages';
 import DesignlyView from '@/next/bindings/designly';
 import { DESIGN_KIND } from '@/next/features/designly/designly-home';
 import { useWorkingDesigns } from '@/next/bindings/working-designs';
@@ -1144,7 +1144,12 @@ const Shell = ({ owner }: IShellProps) => {
                 newChatMachineStore.set(null);
                 goTo({ kind: ROUTE.chat, id: queuedChatId(id) });
               }}
-              below={<HomeTools tools={homeTools} />}
+              below={
+                <>
+                  <HomeTools tools={homeTools} />
+                  <HomeSlots machine={startOn} />
+                </>
+              }
               onCreated={(id) => {
                 newChatProjectStore.set(null);
                 newChatMachineStore.set(null);

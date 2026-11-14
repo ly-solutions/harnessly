@@ -101,6 +101,7 @@ var surfaceTargets = []SurfaceTarget{
 	{Name: TargetObjectAction, Doc: "A button at an object (a machine, a chat) that opens the view.", Slot: true},
 	{Name: TargetHubSettings, Doc: "A page in the settings of a Hub.", Slot: true},
 	{Name: TargetBranding, Doc: "The product's name and accent; declared values, no view.", Slot: true},
+	{Name: TargetHome, Doc: "A block on the start page, under the field of a new chat.", Slot: true},
 }
 
 var surfacePermissions = []SurfacePermission{

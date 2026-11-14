@@ -8,7 +8,17 @@
 // while its card is open, and a program can be stopped from there. Put away, what waits goes into a drop in the chat's
 // right column (stores/smart-drops.ts) and stays there, the only reminder of it, until it is answered or pressed back;
 // put away by hand (not thrown), the black shape flows into the drop, and pressed, out of it back into the card.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react';
 import { useCodeAsks } from '@/next/bindings/code-asks';
 import {
   SLOT_ANSWER,
@@ -147,9 +157,22 @@ const summaryOf = (n: INotice): string | null => {
 
 /** The notices as items: what waits while its chat's gate is open, the rest while it is `live` news (each on its own
  *  clock, paused while the plate is held: features/smart-notice/flow.ts). */
+// A machine's item carries its machine as an object made anew on each recompute: it is equal by what it says, not by
+// reference, or the list never comes back the same and the stack sets its state on every render (React #301).
+const sameMachine = (a: ISmartItem['machine'], b: ISmartItem['machine']): boolean =>
+  a === b ||
+  (a !== undefined &&
+    b !== undefined &&
+    a.id === b.id &&
+    a.metric === b.metric &&
+    a.waiting.length === b.waiting.length &&
+    a.waiting.every((name, i) => name === b.waiting[i]));
+
 const sameItem = (a: ISmartItem, b: ISmartItem): boolean => {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof ISmartItem)[]);
-  for (const k of keys) if (a[k] !== b[k]) return false;
+  for (const k of keys) {
+    if (k === 'machine' ? !sameMachine(a.machine, b.machine) : a[k] !== b[k]) return false;
+  }
   return true;
 };
 
@@ -988,4 +1011,28 @@ const SmartNoticeHost = ({
   );
 };
 
-export default SmartNoticeHost;
+/** The plate floats over the page: one of its failures takes the plate away and says so in the console (the journal),
+ *  never the chat under it. */
+class NoticeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(failure: Error, info: ErrorInfo) {
+    console.error(`smart notice failed: ${failure.message}${info.componentStack ?? ''}`.slice(0, 2000));
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+const GuardedSmartNoticeHost = (props: ISmartNoticeHostProps) => (
+  <NoticeBoundary>
+    <SmartNoticeHost {...props} />
+  </NoticeBoundary>
+);
+
+export default GuardedSmartNoticeHost;

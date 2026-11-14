@@ -789,6 +789,7 @@ rights are the manifest's `permissions`, checked by the core.
 | `onboarding` | a step of «First steps» on the same page; the view calls `hl.slot.done()` when it is finished | `label`, `icon`, `order` |
 | `object-action` | a button at an object: a `machine` (Settings → Machines) or a `chat`; the object is `hl.context.data.object` (`{kind, id, name}`) | `objects` (the kinds it is for; all when absent) |
 | `hub-settings` | a page of the hub's settings | a Hub extension declares it (`ui` in its entry of the extensions file, see `docs/hub/extensions.md`); the hub draws it under «Расширения» in the same sandbox |
+| `home` | a block on the start page, under the field of a new chat (a brief of the day, a queue of work); blocks go by `order` | `order` |
 | `branding` | not a view: the app's `branding` block (`name`, `accent` as `#rrggbb`, `supportUrl`, `tagline`) sets the page title and the accent | |
 
 The slots are off until the runtime starts with `HARNESSLY_UI_SLOTS=on`: without it a slot view is not offered, `open` for

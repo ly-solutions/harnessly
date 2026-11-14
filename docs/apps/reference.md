@@ -16,6 +16,7 @@ Everything an app can use, from the one table the manifest check and the bridge 
 | `object-action` | A button at an object (a machine, a chat) that opens the view. |
 | `hub-settings` | A page in the settings of a Hub. |
 | `branding` | The product's name and accent; declared values, no view. |
+| `home` | A block on the start page, under the field of a new chat. |
 | `sinopia.<kind>` | The editor of one Sinopia document type: panels, selection items, checks, bindings. An alias of the screen of `harnessly.sinopia`. |
 | `sinopia.*` | The editor of every Sinopia document type. An alias of the screen of `harnessly.sinopia`. |
 
@@ -25,7 +26,7 @@ The host's own kinds, then the points the builtin apps declare.
 
 | Kind | Declared in | Shows in | What it is |
 | --- | --- | --- | --- |
-| `view` | `views[]` | `pane`, `app`, `chat`, `settings`, `onboarding`, `object-action`, `hub-settings`, `sinopia.<kind>` | A page of the app in a frame. |
+| `view` | `views[]` | `pane`, `app`, `chat`, `settings`, `onboarding`, `object-action`, `hub-settings`, `home`, `sinopia.<kind>` | A page of the app in a frame. |
 | `chat.command` | `chat.commands[]` | `chat` | A /-command of the chat's palette. |
 | `chat.card` | `chat.cards[]` | `chat` | A view of the app the chat's feed shows as a card. |
 | `chat.starter` | `chat.starters[]` | `chat` | A line an empty chat offers under its field; a click puts it into the field. |

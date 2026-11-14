@@ -11,6 +11,9 @@ tools/oss-forbidden.txt
 # and people of the company, and mean nothing outside it.
 .gitlab-ci.yml
 service.yaml
+# How the team ships to the internal main (HRN-1372): its agents read these two.
+AGENTS.md
+CLAUDE.md
 docs/hub/deploy-*.md
 
 # The working plan of the hub's first build (task keys, who owns which file); the public docs are architecture.md and api.md.

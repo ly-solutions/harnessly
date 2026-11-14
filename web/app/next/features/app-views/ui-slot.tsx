@@ -1,11 +1,11 @@
-// A view of an app in a UI slot (settings page, onboarding step, object action): the same sandboxed frame and bridge as
+// A view of an app in a UI slot (settings page, onboarding step, object action, start page): the same sandboxed frame and bridge as
 // every app view, inside a boundary of its own. A view that throws while it draws, or that does not open in time, is
 // replaced by a line that says so; the page around it keeps working.
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import AppFrame from '@/next/features/app-views/app-frame';
 import type { IAppView, IInstalledApp } from '@/next/features/app-views/api';
 import type { IBridgeHandlers } from '@/next/features/app-views/bridge';
-import type { ISlotObject } from '@/next/features/app-views/slots';
+import type { ISlotObject, TSlot } from '@/next/features/app-views/slots';
 import { t } from '@/next/i18n';
 import type { MachineId } from '@/next/protocol/v2';
 import LoadFailed from '@/next/ui/load-failed';
@@ -43,7 +43,7 @@ export interface IUiSlotProps {
   machine: MachineId;
   app: IInstalledApp;
   view: IAppView;
-  target: 'settings' | 'onboarding' | 'object-action';
+  target: TSlot;
   viewPort: number;
   /** For an object action: the object the button is about; the view reads it as `hl.context.data.object`. */
   object?: ISlotObject;

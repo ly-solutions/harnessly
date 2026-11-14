@@ -179,6 +179,7 @@ export const APP_TARGETS = [
   'object-action',
   'hub-settings',
   'branding',
+  'home',
   'sinopia.<kind>',
   'sinopia.*',
 ] as const;

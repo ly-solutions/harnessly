@@ -1,7 +1,7 @@
 // The one-time codes the agents' commands of a machine wait for (harnessly secret run --code): read every two seconds
 // while the page is visible, since such a code lives half a minute. Every place that shows them (the chat's column
 // «Ждут код», later the island of notifications) reads them here and answers through features/safe/api.ts.
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { pageClock } from '@/next/core/clock';
 import { isSafeRefusal, loadCodeAsks, type ICodeAsk } from '@/next/features/safe/api';
 import type { MachineId } from '@/next/protocol/v2';
@@ -19,6 +19,8 @@ export interface ICodeAsksRead {
 
 const same = (a: readonly ICodeAsk[], b: readonly ICodeAsk[]) =>
   a.length === b.length && a.every((x, i) => x.id === b[i]?.id && x.until === b[i]?.until);
+
+const NO_ASKS: readonly ICodeAsk[] = [];
 
 export const useCodeAsks = (machine: MachineId | null): ICodeAsksRead => {
   const [read, setRead] = useState<{ machine: MachineId; asks: readonly ICodeAsk[]; skew: number } | null>(
@@ -66,8 +68,12 @@ export const useCodeAsks = (machine: MachineId | null): ICodeAsksRead => {
     };
   }, [machine]);
 
-  const asks =
-    read !== null && read.machine === machine ? read.asks.filter((a) => !dropped.includes(a.id)) : [];
+  // The same list until the read or the drops change: the smart notice recomputes its items on a new one.
+  const asks = useMemo(
+    () =>
+      read !== null && read.machine === machine ? read.asks.filter((a) => !dropped.includes(a.id)) : NO_ASKS,
+    [read, machine, dropped],
+  );
   return {
     asks,
     skew: read?.skew ?? 0,

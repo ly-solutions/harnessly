@@ -217,6 +217,10 @@
             "description": "The product's name and accent; declared values, no view."
           },
           {
+            "const": "home",
+            "description": "A block on the start page, under the field of a new chat."
+          },
+          {
             "description": "The editor of one Sinopia document type: panels, selection items, checks, bindings.",
             "pattern": "^sinopia\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$"
           },

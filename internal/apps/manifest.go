@@ -48,10 +48,11 @@ const (
 	TargetObjectAction = "object-action" // a button at an object (a machine, a chat) that opens the view
 	TargetHubSettings  = "hub-settings"  // a page in the settings of a Hub
 	TargetBranding     = "branding"      // the product's name and accent; no view, see Branding
+	TargetHome         = "home"          // a block on the start page, under the field of a new chat
 )
 
 // SlotTargets are the targets above, in the order the docs name them.
-var SlotTargets = []string{TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding}
+var SlotTargets = []string{TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding, TargetHome}
 
 // IsSlot says whether a target is one of the slots.
 func IsSlot(target string) bool { return contains(SlotTargets, target) }
@@ -452,12 +453,12 @@ func (m *Manifest) Check() Problems {
 
 	targets := map[string]bool{}
 	if len(m.Targets) == 0 {
-		add("targets", "is required: where the app works (chat, pane, app, settings, onboarding, object-action, hub-settings, branding, sinopia.<kind>)")
+		add("targets", "is required: where the app works (chat, pane, app, settings, onboarding, object-action, hub-settings, branding, home, sinopia.<kind>)")
 	}
 	for i, t := range m.Targets {
 		path := fmt.Sprintf("targets[%d]", i)
 		if !validTarget(t) {
-			add(path, "%q is not a target: chat, pane, app, settings, onboarding, object-action, hub-settings, branding, sinopia.<kind> or sinopia.*", t)
+			add(path, "%q is not a target: chat, pane, app, settings, onboarding, object-action, hub-settings, branding, home, sinopia.<kind> or sinopia.*", t)
 			continue
 		}
 		if targets[t] {
@@ -834,7 +835,7 @@ func validTarget(t string) bool {
 	switch t {
 	case TargetChat, TargetPane, TargetApp:
 		return true
-	case TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding:
+	case TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding, TargetHome:
 		return true
 	}
 	_, scope, ok := aliasOwner(t)
@@ -843,7 +844,7 @@ func validTarget(t string) bool {
 
 func hasViewTarget(targets map[string]bool) bool {
 	return targets[TargetPane] || targets[TargetApp] || targets[TargetSettings] || targets[TargetOnboarding] ||
-		targets[TargetObjectAction] || targets[TargetHubSettings]
+		targets[TargetObjectAction] || targets[TargetHubSettings] || targets[TargetHome]
 }
 
 // hasSinopia says whether a target names Sinopia's screen through one of its aliases.

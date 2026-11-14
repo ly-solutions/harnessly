@@ -9,7 +9,8 @@
     "settings",
     "onboarding",
     "object-action",
-    "branding"
+    "branding",
+    "home"
   ],
   "permissions": [
     "storage",
@@ -24,7 +25,8 @@
   "views": [
     { "id": "settings", "title": "Example Corp", "label": "Example Corp", "icon": "plug", "entry": "ui/settings.html", "targets": ["settings"] },
     { "id": "welcome", "title": "Connect your Example Corp account", "label": "Account", "order": 10, "entry": "ui/onboarding.html", "targets": ["onboarding"] },
-    { "id": "open-ticket", "title": "Open in Example Corp", "label": "Open in Example Corp", "icon": "external-link", "objects": ["machine"], "entry": "ui/action.html", "targets": ["object-action"] }
+    { "id": "open-ticket", "title": "Open in Example Corp", "label": "Open in Example Corp", "icon": "external-link", "objects": ["machine"], "entry": "ui/action.html", "targets": ["object-action"] },
+    { "id": "today", "title": "Example Corp today", "order": 10, "entry": "ui/home.html", "targets": ["home"] }
   ],
   "kind": "ui",
   "secrets": [

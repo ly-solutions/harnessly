@@ -22,7 +22,6 @@ import {
   profileName,
   resetClock,
   span,
-  spanShort,
   windowName,
   windowShort,
   windowsOf,
@@ -246,9 +245,6 @@ const WindowsChip = ({ view }: ILimitsChipProps) => {
           >
             <small>{windowShort(w.kind)}</small>
             {lefts[i]}%
-            <small className="hx-lim__reset">
-              {t('next.limits.resetShort', { span: spanShort(w.window.resetsAt - now / 1000) })}
-            </small>
           </span>
         ))}
         {windows.length === 0 && balance && (

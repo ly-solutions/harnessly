@@ -178,7 +178,7 @@
   }
 }
 
-/* UI slots: an app's views in the Extensions page and at objects. Nothing here draws unless an app fills a slot. */
+/* UI slots: an app's views in the Extensions page, at objects and on the start page. Nothing here draws unless an app fills a slot. */
 .hx-uislot {
   min-width: 0;
 }
@@ -201,6 +201,13 @@
 }
 .hx-uislot-step[data-done='true'] .hx-uislot-step__head {
   color: var(--hx-fg-3);
+}
+.hx-uislot-home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-3);
+  width: 100%;
+  margin-top: var(--hx-space-4);
 }
 .hx-uislot-actions {
   display: flex;

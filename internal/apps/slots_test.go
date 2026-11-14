@@ -67,7 +67,7 @@ func TestSlotRules(t *testing.T) {
 }
 
 func TestIsSlot(t *testing.T) {
-	for _, s := range []string{"settings", "onboarding", "object-action", "hub-settings", "branding"} {
+	for _, s := range []string{"settings", "onboarding", "object-action", "hub-settings", "branding", "home"} {
 		if !IsSlot(s) {
 			t.Errorf("%s is a slot", s)
 		}

@@ -227,8 +227,7 @@
     padding: 0 8px;
     gap: 6px;
   }
-  .hx-lim__win:not([data-least]):not(:only-of-type),
-  .hx-lim__reset {
+  .hx-lim__win:not([data-least]):not(:only-of-type) {
     display: none;
   }
   .hx-lim__pop {

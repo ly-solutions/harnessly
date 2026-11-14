@@ -33,6 +33,10 @@ func (s *Server) Available() bool {
 	return err == nil && st.Mode()&os.ModeSocket != 0
 }
 
+// Decodes says whether ffmpeg is there: a machine whose recognition service is set up but not listening yet (it starts
+// with the machine, beside the runtime) still recognizes once it does.
+func (s *Server) Decodes() bool { return s.ffmpeg() != "" }
+
 // segmentMax is the longest piece of a recording recognized in one pass. The recognition service reads a pass in time
 // that grows faster than the audio (a 2:39 recording given whole did not come back in three minutes, and the
 // service's one inference thread was held for everyone on the machine meanwhile), the live dictation never gives it

@@ -1,7 +1,7 @@
 // The machine's open slot of the smart notice (cmd/runtime/routes_notices.go): what apps and agents ask the person,
 // read every second and a half while the page is visible, answered here; and the app view's side (hl.notice), which
 // asks through its view session.
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { pageClock } from '@/next/core/clock';
 import { platformPath } from '@/next/core/net/machine';
 import { postJson, runtimeJson, RuntimeError } from '@/next/core/net/runtime-json';
@@ -62,6 +62,8 @@ const same = (a: readonly ISlotNotice[], b: readonly ISlotNotice[]) =>
     );
   });
 
+const NO_NOTICES: readonly ISlotNotice[] = [];
+
 export const useSlotNotices = (machine: MachineId | null): ISlotRead => {
   const [read, setRead] = useState<{ machine: MachineId; notices: readonly ISlotNotice[] } | null>(null);
   const [dropped, setDropped] = useState<readonly string[]>([]);
@@ -100,7 +102,13 @@ export const useSlotNotices = (machine: MachineId | null): ISlotRead => {
     };
   }, [machine]);
 
-  const notices =
-    read === null || read.machine !== machine ? [] : read.notices.filter((n) => !dropped.includes(n.id));
+  // The same list until the read or the drops change: the smart notice recomputes its items on a new one.
+  const notices = useMemo(
+    () =>
+      read === null || read.machine !== machine
+        ? NO_NOTICES
+        : read.notices.filter((n) => !dropped.includes(n.id)),
+    [read, machine, dropped],
+  );
   return { notices, drop: (id) => setDropped((was) => [...was, id]) };
 };

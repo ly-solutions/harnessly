@@ -43,7 +43,7 @@ import {
 import { favoritesStore } from '@/next/stores/favorites';
 import { applyRemoteDraft, applyRemoteDrafts } from '@/next/core/drafts-cloud';
 import { defaultCwdStore, projectKey, projectsStore } from '@/next/stores/projects';
-import { machineOrderStore, machinesStore } from '@/next/stores/machines';
+import { keepFeatures, machineOrderStore, machinesStore } from '@/next/stores/machines';
 import {
   applyMessage,
   applyPromptState,
@@ -268,6 +268,7 @@ export function applyConvEvent(machine: MachineId, conv: ConvId, e: ConvEvent): 
 export const storeSink: Sink = {
   welcome(machine, w) {
     noteServerTime(machine, w.serverTime);
+    keepFeatures(machine, w.features);
     const orgName = machinesStore.get(machine)?.machine.orgName;
     machinesStore.set(machine, {
       machine: { ...w.machine, id: machine, ...(orgName ? { orgName } : {}) },

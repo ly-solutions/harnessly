@@ -1,5 +1,5 @@
 // What the UI slots put on the screens that exist: the «Extensions» page of Settings (the settings views and the
-// onboarding steps) and the action row at an object. Every piece here is empty without HARNESSLY_UI_SLOTS=on.
+// onboarding steps), the action row at an object and the blocks of the start page. Every piece here is empty without HARNESSLY_UI_SLOTS=on.
 import { useCallback, useEffect, useState } from 'react';
 import { useInstalledApps } from '@/next/features/app-views/api';
 import {
@@ -116,6 +116,31 @@ export const ObjectActions = ({ machine, object }: { machine: MachineId; object:
           target="object-action"
           viewPort={list.viewPort}
           object={object}
+        />
+      ))}
+    </div>
+  );
+};
+
+/**
+ * The blocks the apps put on the start page, under the field of a new chat (a brief of the day, a queue of work):
+ * nothing at all when no app fills the `home` slot, so the page stays as it was.
+ */
+export const HomeSlots = ({ machine }: { machine: MachineId | null }) => {
+  // Without a machine to start on there is nobody to ask; the hook still runs, switched off.
+  const { list } = useInstalledApps(machine ?? ('' as MachineId), 0, machine !== null);
+  const blocks = slotViews(list, 'home');
+  if (machine === null || list === null || blocks.length === 0) return null;
+  return (
+    <div className="hx-uislot-home">
+      {blocks.map((b) => (
+        <UiSlot
+          key={keyOf(b)}
+          machine={machine}
+          app={b.app}
+          view={b.view}
+          target="home"
+          viewPort={list.viewPort}
         />
       ))}
     </div>

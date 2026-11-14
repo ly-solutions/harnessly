@@ -180,17 +180,18 @@ describe("LimitsChip for a vendor's profile", () => {
   });
 });
 
-describe('the reset beside what is left', () => {
-  it('tells on the chip when each window resets, to its largest unit', () => {
+describe('the reset stays off the chip', () => {
+  it('shows only the windows and what is left; the reset is in the card', () => {
     render(
       <LimitsChip
         view={ready(limits({ sevenDay: { usedPct: 81, resetsAt: inHours(100.5), forecast: null } }))}
       />,
     );
-    const resets = [...document.querySelectorAll('.hx-lim__reset')].map((el) => el.textContent);
-    expect(resets).toHaveLength(2);
-    expect(resets[1]).toMatch(/4/);
-    expect(resets[1]).toMatch(/д|d/);
+    const chip = screen.getByRole('button');
+    expect(chip.querySelectorAll('.hx-lim__win')).toHaveLength(2);
+    expect(chip.querySelectorAll('.hx-lim__win small')).toHaveLength(2);
+    expect(chip.textContent).toContain('19%');
+    expect(chip.textContent).not.toMatch(/сброс|reset/i);
   });
 });
 

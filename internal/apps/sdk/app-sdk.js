@@ -976,7 +976,7 @@ export async function connect(options = {}) {
   };
 
   // A card and a slot view are as tall as their content.
-  if (['chat', 'settings', 'onboarding', 'object-action'].includes(hl.context?.target) && typeof ResizeObserver === 'function') {
+  if (['chat', 'settings', 'onboarding', 'object-action', 'home'].includes(hl.context?.target) && typeof ResizeObserver === 'function') {
     new ResizeObserver(() => hl.resize(document.documentElement.scrollHeight)).observe(document.documentElement);
   }
   if (hl.protocol >= 2) answerRefusals(hl, true);

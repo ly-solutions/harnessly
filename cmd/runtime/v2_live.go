@@ -144,8 +144,10 @@ func newV2Live(d deps, c *core) *v2Live {
 	// A snapshot after an entry carries the turns from that entry's on: the page may open a chat from the cluster's copy.
 	features = append(features, wire.FeatureSnapshotAfter)
 	// Dictation is announced when this machine is set up for it at start: ffmpeg and the recognition service's socket.
+	// a socket set for the machine (RUNTIME_VOICE_SOCKET) counts before it is there; the service starts with
+	// the machine beside the runtime, and a runtime that looked first went the whole day without a microphone.
 	var dictation *voice.Server
-	if dv := newVoice(d.DataDir); dv.Available() {
+	if dv := newVoice(d.DataDir); dv.Available() || (os.Getenv("RUNTIME_VOICE_SOCKET") != "" && dv.Decodes()) {
 		dictation = dv
 		features = append(features, wire.FeatureVoice)
 	}

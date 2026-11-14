@@ -1,9 +1,9 @@
 // The UI slots of apps (docs/apps.md, «Slots»): which views of the installed apps fill the settings page, the
-// onboarding, an object's action row and the branding. All of it is empty unless the machine runs with
+// onboarding, an object's action row, the start page and the branding. All of it is empty unless the machine runs with
 // HARNESSLY_UI_SLOTS=on, so without extensions the interface stays as it was.
 import type { IAppView, IBranding, IInstalledApp, IInstalledApps } from '@/next/features/app-views/api';
 
-export type TSlot = 'settings' | 'onboarding' | 'object-action';
+export type TSlot = 'settings' | 'onboarding' | 'object-action' | 'home';
 
 export interface ISlotEntry {
   app: IInstalledApp;
