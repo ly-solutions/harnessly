@@ -79,10 +79,8 @@ type Deps struct {
 	// their owner, members and granted teams, never to the space by default. nil opens every machine.
 	Opens func(ctx context.Context, userID string, m store.Machine) bool
 	// HomeOn says whether Sinopia's home in one answer (GET <platform>/design/home) is on for a person on a
-	// machine: the rollout switch hub-design-home. Off, the hub asks machine and store at once, the machine's answer
-	// goes to the page when it comes within HomeMachineBudget, otherwise the store's copy of the library does,
-	// at once, with `from: "store"`, and the page reads the other parts by their own routes, as before; on,
-	// the request goes on to the machine. nil is off.
+	// machine: the rollout switch hub-design-home. Off, the hub answers 404 and the page asks part by part, as before;
+	// on, the request goes on to the machine. nil is off.
 	HomeOn func(ctx context.Context, email, machineID string) bool
 	// OwnerOn says whether the hub owns the design facts (the rollout switch hub-design-owner): off, the
 	// library is what the store's files say, as before. nil is off.
@@ -142,7 +140,7 @@ func New(d Deps) *Service {
 	s := &Service{
 		db: d.DB, reg: d.Reg, log: d.Log, now: d.Now, hubURL: strings.TrimRight(d.HubURL, "/"), platformAPI: d.PlatformAPI,
 		transport: d.Transport, seal: newSealer(d.LinkKey), files: newFileKeyer(d.LinkKey), notice: d.Notice, bell: d.Bell, shared: d.Shared, opens: d.Opens, homeOn: d.HomeOn, ownerOn: d.OwnerOn, view: d.View, kits: d.Kits,
-		serving: map[string]bool{}, prefixes: map[string]string{}, timers: map[string]*time.Timer{}, 
+		serving: map[string]bool{}, prefixes: map[string]string{}, timers: map[string]*time.Timer{},
 		events: map[string]*dayCount{}, tokens: map[string]cachedToken{}, budget: newBudget(),
 		teamLevel: roleEdit, closed: d.ClosedUnrecorded,
 	}
@@ -162,7 +160,7 @@ func New(d Deps) *Service {
 		s.shareURL = u.Scheme + "://" + u.Host
 		s.shareHost = strings.ToLower(u.Host)
 		for _, a := range d.ShareAliases {
-			if au, err := url.Parse(strings.TrimRight(a, "/")); err == nil && au.Host != "" && !strings.EqualFold(a, au.Host) {
+			if au, err := url.Parse(strings.TrimRight(a, "/")); err == nil && au.Host != "" && !strings.EqualFold(au.Host, u.Host) {
 				if s.aliasHosts == nil {
 					s.aliasHosts = map[string]bool{}
 				}
@@ -373,7 +371,7 @@ func (s *Service) Run(ctx context.Context) {
 
 // ---- the page's API ---------------------------------------------------------------------------------------------
 
-// apiPath: <prefix>/design/access[/...], <prefix>/design/store/<project>/... (team.go), <prefix>/design/store-library(?:/changes)?, <prefix>/design/store-(?:cover|records-check|work-machine), <prefix>/docs/people or the one access API <prefix>/access/{design/...,
+// apiPath: <prefix>/design/access[/...], <prefix>/design/store/<project>/... (team.go), <prefix>/docs/people or the one access API <prefix>/access/{design/...,me,
 // directory} under a platform prefix /api/<name>.
 var apiPath = regexp.MustCompile(`^(/api/[A-Za-z0-9_-]+)(/design/access(?:/.*)?|/design/store/.+|/design/store-library(?:/changes)?|/design/store-(?:cover|records-check|work-machine)|/docs/people|/access/(?:design(?:/.*)?|kit(?:/.*)?|me|directory))$`)
 
@@ -503,18 +501,17 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func (s *Service) writeError(w http.ResponseWriter, err error) error {
+func (s *Service) writeError(w http.ResponseWriter, err error) {
 	if e, ok := asError(err); ok {
 		status := statusOf[e.Code]
 		if status == 0 {
 			status = http.StatusBadRequest
 		}
 		writeJSON(w, status, map[string]string{"error": e.Message, "code": e.Code})
-		return nil
+		return
 	}
 	s.log.Error("design access request failed", "error", err)
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Внутренняя ошибка", "code": "internal"})
-	return nil
 }
 
 var errBadBody = fail("bad_request", "Некорректное тело запроса")

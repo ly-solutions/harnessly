@@ -142,7 +142,7 @@ func (s *Service) pinFromStore(ctx context.Context, m store.Machine, req hubprot
 
 // serveToResponse runs a handler and hands its answer over as a response whose body streams while the handler writes.
 // An error before the handler answered is returned as it is.
-func serveToResponse(r *http.Request, serve func(w http.ResponseWriter, r *http.Request) error) (*http.Response, error) {
+func serveToResponse(r *http.Request, serve func(http.ResponseWriter, *http.Request) error) (*http.Response, error) {
 	pr, pw := io.Pipe()
 	w := &pipeWriter{h: http.Header{}, pw: pw, pr: pr, got: make(chan *http.Response, 1)}
 	failed := make(chan error, 1)
