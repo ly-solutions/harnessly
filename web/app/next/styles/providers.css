@@ -56,6 +56,13 @@
 .hx-prov__body .hx-segmented {
   justify-self: start;
 }
+/* Ключ вендора не переехал в аккаунты: сказано над полем ключа */
+.hx-prov__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hx-fg-2);
+}
 .hx-preset {
   display: flex;
   flex-direction: column;
@@ -194,15 +201,10 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: 0 16px 18px 64px;
+  margin: 0 16px 18px var(--hx-acct-indent);
 }
 .hx-acct__how .hx-segmented {
   align-self: flex-start;
-}
-@media (max-width: 600px) {
-  .hx-acct__how {
-    margin-left: 16px;
-  }
 }
 .hx-seen {
   display: flex;
@@ -237,7 +239,7 @@
 
 /* «GPT в Claude Code»: a switch under a rule at the foot of the Codex card */
 .hx-gpt {
-  margin: 4px 16px 18px 64px;
+  margin: 4px 16px 18px var(--hx-acct-indent);
   padding-top: 18px;
   border-top: 1px solid var(--hx-border);
 }
@@ -284,9 +286,4 @@
 }
 .hx-gpt__retry {
   margin-top: 8px;
-}
-@media (max-width: 600px) {
-  .hx-gpt {
-    margin-left: 16px;
-  }
 }

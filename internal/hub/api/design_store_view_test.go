@@ -99,6 +99,17 @@ func TestDesignGuestLinksReadTheStoreWithTheMachineOff(t *testing.T) {
 		t.Fatalf("the deck's PDF with the machine off: %s", r)
 	}
 
+	// a file of a live link carries its version as the ETag, and a guest that holds it is not sent it again.
+	put("shop/project/kit.css", "body{margin:0}")
+	first := open(whole + "/f/kit.css")
+	tag := first.Header.Get("ETag")
+	if first.Code != 200 || tag == "" {
+		t.Fatalf("a live link's file without an ETag: %s %v", first, first.Header)
+	}
+	if r := guest.DoAt(s.URL, shareHost, "GET", whole+"/f/kit.css", nil, "If-None-Match", tag); r.Code != http.StatusNotModified || r.Header.Get("ETag") != tag {
+		t.Fatalf("a file the guest holds was sent again: %s %v", r, r.Header)
+	}
+
 	// The project changes in the store (a teammate's machine, the editor through the hub): the live link follows.
 	v2 := put("shop/project/Main.dc.html", `<html><body>store v2</body></html>`)
 	if r := open(live + "/f/Main.dc.html"); r.Code != 200 || !strings.Contains(string(r.Body), "store v2") {
@@ -356,5 +367,65 @@ func TestDesignDeckEditsSaveThroughTheHubWithTheMachineOff(t *testing.T) {
 	}
 	if r := mate.Do("PUT", deck+"/settings", map[string]any{"artifact": "shop", "settings": map[string]any{"script": true}}); r.Code != 403 {
 		t.Fatalf("a viewer saves: %s", r)
+	}
+}
+
+// HRN-1321, HRN-1318: a link revoked while the author's machine is off ends at the guest's next request, and the ETag
+// the guest holds does not get them a 304 of a link that is gone.
+func TestDesignGuestLinkRevokedWithTheMachineOffEndsAtOnce(t *testing.T) {
+	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_SHARE_URL", "http://"+shareHost))
+	if s.Hub.Store == nil {
+		t.Skip("the hub runs without a store")
+	}
+	owner := s.SignIn("owner@example.com")
+	space, _ := owner.NewSpace("Studio")
+	a, _ := designMachine(t, s, owner, space)
+	created(a, "shop", "owner@example.com")
+	s.Eventually("the project recorded", func() bool { r, ok := snapshotFor(a, "owner@example.com", "shop"); return ok && r == "owner" })
+	ctx := context.Background()
+	room, err := s.Hub.Store.DesignRoom(ctx, space)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		"shop/artifact.json":        `{"title":"Shop"}`,
+		"shop/project/Main.dc.html": `<html><body>store v1</body></html>`,
+		"shop/project/kit.css":      "body{margin:0}",
+	} {
+		sum := sha256.Sum256([]byte(body))
+		sha := hex.EncodeToString(sum[:])
+		if err := room.PutBlob(ctx, sha, bytes.NewReader([]byte(body))); err != nil {
+			t.Fatal(err)
+		}
+		if _, conflict, err := room.Commit(ctx, filestore.CommitRequest{Path: path, Sha: sha, Size: int64(len(body)), Author: "owner"}, "vm-owner"); err != nil || conflict {
+			t.Fatalf("commit %s: %v %v", path, err, conflict)
+		}
+	}
+	base := "/m/" + a.MachineID + "/api/platform/design/access"
+	r := owner.Do("POST", base+"/shop/shares", map[string]any{"rights": "view"})
+	if r.Code != 201 {
+		t.Fatalf("create link: %s", r)
+	}
+	var l struct{ ID, URL string }
+	r.JSON(&l)
+	link := strings.TrimPrefix(l.URL, "http://"+shareHost)
+
+	a.Close()
+	s.Eventually("the machine offline", func() bool { return s.Hub.Registry.Get(a.MachineID) == nil })
+
+	guest := s.Browser()
+	first := guest.DoAt(s.URL, shareHost, "GET", link+"/f/kit.css", nil)
+	tag := first.Header.Get("ETag")
+	if first.Code != 200 || tag == "" {
+		t.Fatalf("the link with the machine off: %s %v", first, first.Header)
+	}
+	// The owner revokes the link; their machine is still off.
+	if r := owner.Do("DELETE", base+"/shop/shares/"+l.ID, nil); r.Code >= 300 {
+		t.Fatalf("revoke with the machine off: %s", r)
+	}
+	for _, p := range []string{"", "/index.json", "/f/kit.css", "/f/Main.dc.html"} {
+		if r := guest.DoAt(s.URL, shareHost, "GET", link+p, nil, "If-None-Match", tag); r.Code < 400 {
+			t.Fatalf("a revoked link still answers %q: %s", p, r)
+		}
 	}
 }

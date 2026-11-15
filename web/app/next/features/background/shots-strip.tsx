@@ -8,7 +8,9 @@ import type { Shot } from '@/next/protocol/v2';
 import { formatAgo } from '@/next/i18n/format';
 import { t } from '@/next/i18n';
 import Icon from '@/next/ui/icon';
-import ImageView, { type IImageViewItem } from '@/next/ui/image-view';
+import ImageEditView from '@/next/features/image-edit/image-editor';
+import { useMarkupTarget } from '@/next/features/image-edit/to-composer';
+import type { IImageViewItem } from '@/next/ui/image-view';
 import { usePresence } from '@/next/ui/presence';
 import { Skeleton, useDelayed } from '@/next/ui/skeleton';
 
@@ -23,6 +25,9 @@ export interface IShotsStripProps {
   /** Where a picture's bytes are. */
   srcOf: (shot: Shot) => string;
   now: number;
+  /** Drawn in place of another chat's pictures (a change of chat): a skeleton stands at once while they come, so the
+   *  column keeps its height instead of shrinking and growing back. */
+  instant?: boolean;
 }
 
 const who = (shot: Shot): string => shot.agent ?? t('next.shots.byAgent');
@@ -64,6 +69,7 @@ const ShotsList = ({
 }) => {
   const [more, setMore] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
+  const annotate = useMarkupTarget();
   const head = shots.slice(0, SHOTS_HEAD);
   const rest = shots.slice(SHOTS_HEAD);
   const at = viewing === null ? -1 : shots.findIndex((x) => x.id === viewing);
@@ -103,8 +109,10 @@ const ShotsList = ({
           </button>
         </>
       )}
-      <ImageView
+      <ImageEditView
         item={item}
+        editing={null}
+        annotate={annotate}
         onClose={() => setViewing(null)}
         position={at >= 0 ? { at: at + 1, of: shots.length } : undefined}
         onStep={step}
@@ -115,14 +123,15 @@ const ShotsList = ({
 
 const NONE: readonly Shot[] = [];
 
-const ShotsStrip = ({ shots, srcOf, now }: IShotsStripProps) => {
+const ShotsStrip = ({ shots, srcOf, now, instant = false }: IShotsStripProps) => {
+  const [atOnce] = useState(instant);
   const has = shots !== null && shots.length > 0;
   // The last pictures stay on screen while the section leaves.
   const { value, state } = usePresence(has ? shots : null, EXIT_MS);
   const loading = shots === null;
   // A skeleton only for a snapshot that is slow; a fast one shows nothing before the squares.
   const waited = useDelayed(loading);
-  if (loading ? !waited : !value) return null;
+  if (loading ? !(waited || atOnce) : !value) return null;
   return (
     <section className="hx-shots" data-state={state} aria-label={t('next.shots.title')}>
       <div className="hx-shots__clip">

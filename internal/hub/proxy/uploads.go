@@ -3,19 +3,20 @@ package proxy
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/ly-solutions/harnessly/internal/hub/metrics"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
-	"time"
 	"unicode/utf8"
 
+	"github.com/ly-solutions/harnessly/internal/blobserve"
 	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/auth"
 	"github.com/ly-solutions/harnessly/internal/hub/history"
@@ -166,10 +167,22 @@ func (s *Service) serveUploads(w http.ResponseWriter, r *http.Request, p *auth.P
 			Scan(&ref.Sha256, &ref.Mime, &ref.Name, &ref.Size)
 		if err == nil {
 			if ok, _ := u.HasBlob(ctx, m.SpaceID, filestore.KindUploads, ref.Sha256); ok {
+				metrics.CountRead(metrics.ReadUpload, metrics.FromStore)
 				s.sendBlob(w, r, u, m, filestore.KindUploads, ref.Sha256, ref.Mime, ref.Name)
 				return
 			}
 		}
+		// an upload the machine's move put into the store, with no ref of the person's yet (it was moved before
+		// the move bound uploads to their person): it is the machine's person's, so it is bound now and read from the hub.
+		if errors.Is(err, sql.ErrNoRows) && p.User.ID == m.CreatedBy {
+			if ref, ok := s.adoptMoved(ctx, u, m, p.User.ID, name); ok {
+				metrics.CountRead(metrics.ReadUpload, metrics.FromStore)
+				s.sendBlob(w, r, u, m, filestore.KindUploads, ref.Sha256, ref.Mime, ref.Name)
+				return
+			}
+		}
+		metrics.CountRead(metrics.ReadUpload, metrics.FromMachine)
+		s.noteUploadMiss(ctx, u, m, p.User.ID, name)
 		// Not in the hub (yet): the machine's own copy, the way the page read it before.
 		target := s.cfg.BasePath + workspaceBase + "/api/v2/uploads/" + url.PathEscape(name) + "?machine=" + url.QueryEscape(m.ID)
 		w.Header().Set("Cache-Control", "no-store")
@@ -191,6 +204,7 @@ func (s *Service) serveUploads(w http.ResponseWriter, r *http.Request, p *auth.P
 			if q.Get("download") == "1" {
 				typ = "" // a download is never shown in the page
 			}
+			metrics.CountRead(metrics.ReadDelivered, metrics.FromStore)
 			s.sendBlob(w, r, u, m, filestore.KindFiles, sha, typ, title)
 			return
 		}
@@ -207,11 +221,80 @@ func (s *Service) serveUploads(w http.ResponseWriter, r *http.Request, p *auth.P
 		}
 		target.Set("path", path)
 		target.Set("machine", m.ID)
+		metrics.CountRead(metrics.ReadDelivered, metrics.FromMachine)
 		w.Header().Set("Cache-Control", "no-store")
 		http.Redirect(w, r, s.cfg.BasePath+workspaceBase+platformOf(rest)+"/file-preview?"+target.Encode(), http.StatusTemporaryRedirect)
 	default:
 		httpx.WriteError(w, r, httpx.ErrNotFound)
 	}
+}
+
+// adoptMoved binds an upload the machine's own move verified in the store (migration_objects) to the machine's person,
+// as the move does itself for the ones it reports now (migration.bindUpload). The journal keeps no type of the upload,
+// so the type is read off the bytes; false when the journal or the store has not got it.
+// noteUploadMiss says why a chat's upload was read from the machine, by the journal of the machine's move, counts it
+// (data_read_misses_total) and writes one line with the machine and the object: the list of what is still to be
+// delivered before the machine's copy can stop being the way out. A failed object is asked to be tried
+// again only when the reader is the machine's own person, the one whose «Повторить» the journal takes: a read by
+// anybody else of the space changes nothing of the machine's move.
+func (s *Service) noteUploadMiss(ctx context.Context, u Uploads, m store.Machine, reader, id string) {
+	reason, code := metrics.MissUnreported, ""
+	var migration, state, sha, asked string
+	err := s.db.QueryRow(ctx, `SELECT migration, state, sha256, code, asked FROM migration_objects
+		WHERE machine_id = ? AND kind = ? AND object = ? ORDER BY changed_at DESC LIMIT 1`, m.ID, filestore.KindUploads, id).Scan(&migration, &state, &sha, &code, &asked)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
+		return
+	case state == "verified":
+		reason = metrics.MissForeign
+		if ok, _ := u.HasBlob(ctx, m.SpaceID, filestore.KindUploads, sha); !ok {
+			reason = metrics.MissLost
+		}
+	case state == "failed":
+		reason = metrics.MissFailed
+		if asked != "retry" && reader != "" && reader == m.CreatedBy {
+			_, _ = s.db.Exec(ctx, `UPDATE migration_objects SET asked = 'retry', changed_at = ?
+				WHERE machine_id = ? AND migration = ? AND kind = ? AND object = ? AND state = 'failed'`,
+				store.Ms(s.now()), m.ID, migration, filestore.KindUploads, id)
+		}
+	case state == "skipped":
+		reason = metrics.MissSkipped
+	default:
+		reason = metrics.MissPending
+	}
+	metrics.CountMiss(metrics.ReadUpload, reason)
+	s.log.Info("data read from the machine", "kind", "upload", "machine", m.ID, "object", id, "reason", reason, "code", code, "own", reader == m.CreatedBy)
+}
+
+func (s *Service) adoptMoved(ctx context.Context, u Uploads, m store.Machine, owner, id string) (uploadRef, bool) {
+	var ref uploadRef
+	if err := s.db.QueryRow(ctx, `SELECT sha256, size FROM migration_objects
+		WHERE machine_id = ? AND kind = ? AND object = ? AND state = 'verified' ORDER BY changed_at DESC LIMIT 1`,
+		m.ID, filestore.KindUploads, id).Scan(&ref.Sha256, &ref.Size); err != nil || !filestore.ValidSha(ref.Sha256) {
+		return ref, false
+	}
+	rc, err := u.OpenBlob(ctx, m.SpaceID, filestore.KindUploads, ref.Sha256)
+	if err != nil {
+		return ref, false
+	}
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(rc, head)
+	rc.Close()
+	if kind, _, _ := mime.ParseMediaType(http.DetectContentType(head[:n])); inlineTypes[kind] {
+		ref.Mime = kind
+	}
+	now := store.Ms(s.now())
+	if _, err := s.db.Exec(ctx, `INSERT INTO upload_owners (machine_id, sha256, owner_id, created_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT (machine_id, sha256, owner_id) DO NOTHING`, m.ID, ref.Sha256, owner, now); err != nil {
+		return ref, false
+	}
+	if _, err := s.db.Exec(ctx, `INSERT INTO upload_refs (machine_id, upload_id, owner_id, sha256, mime, name, size, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (machine_id, upload_id, owner_id) DO NOTHING`,
+		m.ID, id, owner, ref.Sha256, ref.Mime, "", ref.Size, now); err != nil {
+		return ref, false
+	}
+	return ref, true
 }
 
 // ownsUpload tells whether the person put these bytes into the machine's space.
@@ -234,46 +317,23 @@ func (s *Service) sendBlob(w http.ResponseWriter, r *http.Request, u Uploads, m 
 		httpx.WriteError(w, r, httpx.ErrNotFound)
 		return
 	}
-	rc, err := u.OpenBlob(r.Context(), m.SpaceID, collection, sha)
-	if errors.Is(err, os.ErrNotExist) {
-		httpx.WriteError(w, r, httpx.ErrNotFound)
-		return
-	}
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	defer rc.Close()
 	kind, _, _ = mime.ParseMediaType(kind)
-	h := w.Header()
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox")
-	h.Set("Cache-Control", "private, max-age=31536000, immutable")
-	h.Set("ETag", `"`+sha+`"`)
-	disposition := "attachment"
+	// Only the types a page shows as they are go inline; anything else is a download, so nothing put here runs on the
+	// hub's origin.
+	policy := blobserve.Policy{Disposition: "attachment", Name: clip(strings.TrimSpace(name), 255), Cache: blobserve.Immutable,
+		CSP: "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox"}
 	if inlineTypes[kind] {
-		h.Set("Content-Type", kind)
-		disposition = "inline"
-	} else {
-		h.Set("Content-Type", "application/octet-stream")
+		policy.Type, policy.Disposition = kind, "inline"
 	}
-	if name = strings.TrimSpace(name); name != "" {
-		h.Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": clip(name, 255)}))
-	} else {
-		h.Set("Content-Disposition", disposition)
+	err := blobserve.Serve(w, r, blobserve.Blob{Sha: sha, Open: func(ctx context.Context) (io.ReadCloser, error) {
+		return u.OpenBlob(ctx, m.SpaceID, collection, sha)
+	}}, policy)
+	switch {
+	case errors.Is(err, blobserve.ErrNotFound):
+		httpx.WriteError(w, r, httpx.ErrNotFound)
+	case err != nil:
+		s.fail(w, r, err)
 	}
-	if match := r.Header.Get("If-None-Match"); match == `"`+sha+`"` {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	if r.Method == http.MethodHead {
-		return
-	}
-	if f, ok := rc.(io.ReadSeeker); ok {
-		http.ServeContent(w, r, "", time.Time{}, f)
-		return
-	}
-	_, _ = io.Copy(w, rc)
 }
 
 func clip(v string, n int) string {

@@ -36,9 +36,6 @@
   margin-bottom: 10px;
   padding-left: 8px;
 }
-.hx-set__menu {
-  display: none;
-}
 .hx-set__h1 {
   font-size: var(--hx-text-xl);
   font-weight: var(--hx-weight-semibold);
@@ -602,7 +599,7 @@
   transition-delay: 80ms;
 }
 .hx-acct__block {
-  padding: 0 16px 16px 64px;
+  padding: 0 16px 16px var(--hx-acct-indent);
 }
 .hx-acct__label {
   display: flex;
@@ -1227,12 +1224,6 @@
     margin-bottom: 8px;
     height: 48px;
   }
-  .hx-set__menu {
-    display: grid;
-    width: 40px;
-    height: 40px;
-    flex: none;
-  }
   .hx-set__nav-item {
     height: 52px;
     padding: 0 12px;
@@ -1277,9 +1268,6 @@
     flex-wrap: wrap;
     row-gap: 10px;
     align-content: center;
-  }
-  .hx-acct__block {
-    padding-left: 16px;
   }
   .hx-ext__use {
     width: 64px;
@@ -1586,23 +1574,28 @@
     display: none;
   }
 }
+/* What the card holds starts under its name, past the head's mark; on the agent's own page (no head) and in a narrow window,
+   at the card's own padding. One line for all of them: --hx-acct-indent. */
+.hx-acct {
+  --hx-acct-indent: 64px;
+}
+.hx-acct--page {
+  --hx-acct-indent: 16px;
+}
+@media (max-width: 900px) {
+  .hx-acct {
+    --hx-acct-indent: 16px;
+  }
+}
 .hx-acct__inner > .hx-src,
 .hx-acct__inner > .hx-proxy,
 .hx-acct__inner > .hx-seen,
 .hx-acct__inner > .hx-acct__label {
-  margin-left: 64px;
+  margin-left: var(--hx-acct-indent);
   margin-right: 16px;
 }
 .hx-acct__inner > .hx-proxy {
   margin-bottom: 18px;
-}
-@media (max-width: 600px) {
-  .hx-acct__inner > .hx-src,
-  .hx-acct__inner > .hx-proxy,
-  .hx-acct__inner > .hx-seen,
-  .hx-acct__inner > .hx-acct__label {
-    margin-left: 16px;
-  }
 }
 
 /* ── Claude Code: конструктор правил и переменные окружения ── */
@@ -2345,4 +2338,219 @@ html[data-theme='dark'] .hx-nplace__spot[aria-checked='true'] {
   font-family: var(--hx-font-mono);
   font-size: var(--hx-text-sm);
   overflow-wrap: anywhere;
+}
+
+/* «Провайдеры»: an agent's row leads to its page, where it is signed in. */
+.hx-acct-row {
+  width: 100%;
+  gap: 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms var(--hx-ease-out);
+}
+.hx-acct-row:hover {
+  background: var(--hx-bg-hover);
+}
+.hx-acct-row__go {
+  flex: none;
+  color: var(--hx-fg-3);
+}
+/* «Подключение» on the agent's page: the card's body without its head. */
+.hx-acct--page .hx-acct__inner {
+  padding-top: 16px;
+}
+
+/* The agent of the Settings window: a field at the bottom of the page, over what scrolls, and its answer above it */
+.hx-set__nav {
+  grid-column: 1;
+  grid-row: 1;
+}
+.hx-set__page {
+  grid-column: 2;
+  grid-row: 1;
+}
+/* The room under the last row is the island's height now (settings-shell measures it), so the field covers nothing. */
+.hx-set__page-in {
+  padding-bottom: calc(var(--hx-isle-h, 176px) + 16px);
+}
+.hx-set__isle {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  position: relative;
+  z-index: 5;
+  min-width: 0;
+  max-width: 760px;
+  padding: 0 40px 20px;
+  pointer-events: none;
+}
+.hx-isle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 680px;
+  pointer-events: auto;
+}
+.hx-isle__reply {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--hx-border-strong);
+  border-radius: 16px;
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay);
+  animation: hx-in-up 260ms var(--hx-ease-out) backwards;
+}
+.hx-isle__reply[data-state='closing'] {
+  animation: hx-isle-out 160ms var(--hx-ease-out) forwards;
+}
+@keyframes hx-isle-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.hx-isle__text {
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-md);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.hx-isle__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hx-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.hx-isle__go:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hx-isle__think {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-isle__think > i {
+  animation: hx-spin 900ms linear infinite;
+}
+.hx-isle__diff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-isle__diff-title {
+  flex-basis: 100%;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+.hx-isle__diff s,
+.hx-isle__diff > .hx-icon {
+  color: var(--hx-fg-3);
+}
+.hx-isle__diff b {
+  margin-right: auto;
+  color: var(--hx-fg-1);
+  font-weight: 500;
+}
+.hx-isle__acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 900px) {
+  .hx-set__nav,
+  .hx-set__page {
+    grid-column: 1;
+  }
+  .hx-set__page-in {
+    padding-bottom: calc(var(--hx-isle-h, 168px) + 16px);
+  }
+  /* An absolute child of a grid is placed in its grid area: the island takes the only column a phone has. */
+  .hx-set__isle {
+    grid-column: 1;
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 3;
+    max-width: none;
+    padding: 0 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  /* The list of the sections has no field: it comes with the open section */
+  .hx-set[data-page='false'] .hx-set__isle {
+    display: none;
+  }
+}
+
+/* «Ещё входы» of Codex: the head of a sign-in (its name, whose plan, rename and remove) and the row that adds one. */
+.hx-cxl__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+.hx-cxl .hx-acct__inner {
+  padding: 10px 14px 12px;
+}
+.hx-cxl__who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.hx-cxl__who b {
+  font-size: var(--hx-text-sm);
+  font-weight: 600;
+  color: var(--hx-fg-1);
+  overflow-wrap: anywhere;
+}
+.hx-cxl__who small {
+  font-size: var(--hx-text-xs);
+  color: var(--hx-fg-3);
+  overflow-wrap: anywhere;
+}
+.hx-cxl__main {
+  margin-right: 6px;
+  color: var(--hx-fg-1);
+  font-weight: 600;
+}
+.hx-cxl__rename,
+.hx-cxl__add {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.hx-cxl__rename .hx-set__input,
+.hx-cxl__add .hx-set__input {
+  flex: 1;
+  min-width: 0;
+}
+.hx-cxl__add {
+  padding: 12px 14px;
+}
+@media (max-width: 560px) {
+  .hx-cxl__head,
+  .hx-cxl__rename,
+  .hx-cxl__add {
+    flex-wrap: wrap;
+  }
+  .hx-cxl__who {
+    flex-basis: 100%;
+  }
 }

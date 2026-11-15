@@ -33,10 +33,10 @@ func trackerKeys() []string {
 
 func sourceLinks() *sources.Links {
 	return &sources.Links{
-		TrackerURL:   strings.TrimRight(os.Getenv("RUNTIME_TRACKER_URL"), "/"),
-		TrackerHosts: splitList(os.Getenv("RUNTIME_TRACKER_HOSTS")),
+		TrackerURL:   displayTrackerURL(),
+		TrackerHosts: displayTrackerHosts(),
 		IssueKeys:    trackerKeys(),
-		GitLabHosts:  splitList(os.Getenv("RUNTIME_GITLAB_HOSTS")),
+		GitLabHosts:  displayGitLabHosts(),
 		DocsHost:     os.Getenv("RUNTIME_DOCS_HOST"),
 		ReaderHost:   os.Getenv("RUNTIME_PLATFORM_HOST"),
 		ReaderPath:   env("RUNTIME_DOCS_READER_PATH", "/agents/docs/"),
@@ -57,13 +57,15 @@ func usageRoute(d deps, authorized func(*http.Request) bool) *usagereport.Route 
 	host, _ := os.Hostname()
 	offset, _ := strconv.ParseFloat(os.Getenv("RUNTIME_USAGE_TZ_OFFSET_MINUTES"), 64)
 	collector := usagereport.NewCollector(usagereport.Config{
-		ClaudeRoot: filepath.Join(env("CLAUDE_CONFIG_DIR", filepath.Join(d.Home, ".claude")), "projects"),
-		CodexRoot:  filepath.Join(env("CODEX_HOME", filepath.Join(d.Home, ".codex")), "sessions"),
-		CacheFile:  filepath.Join(d.DataDir, "stats", env("RUNTIME_USAGE_CACHE_FILE", "usage-v2.json")),
-		Projects:   &usagereport.Projects{Root: os.Getenv("RUNTIME_PROJECTS_ROOT"), TaskPrefixes: trackerKeys()},
-		Clock:      usagereport.Clock{Offset: offset * 60},
-		Timezone:   env("RUNTIME_USAGE_TIMEZONE", "UTC"),
-		Machine:    host,
+		ClaudeRoot:     filepath.Join(env("CLAUDE_CONFIG_DIR", filepath.Join(d.Home, ".claude")), "projects"),
+		CodexRoot:      filepath.Join(env("CODEX_HOME", filepath.Join(d.Home, ".codex")), "sessions"),
+		MoreCodexRoots: codexLoginSessionRoots,
+		CacheFile:      filepath.Join(d.DataDir, "stats", env("RUNTIME_USAGE_CACHE_FILE", "usage-v2.json")),
+		Projects:       &usagereport.Projects{Root: os.Getenv("RUNTIME_PROJECTS_ROOT"), TaskPrefixes: trackerKeys()},
+		Clock:          usagereport.Clock{Offset: offset * 60},
+		Timezone:       env("RUNTIME_USAGE_TIMEZONE", "UTC"),
+		Machine:        host,
+		AccountOf:      accountOfSession(d.DataDir),
 	})
 	if d.UsageRefresh > 0 {
 		go collector.KeepFresh(d.UsageRefresh, nil)
@@ -84,14 +86,21 @@ func hubAnalyticsUsage(authorized func(*http.Request) bool) func(*http.Request) 
 	}
 }
 
-// shareRoute is the conversation snapshots and read-only links; nil while the deployment has not named the share
-// headers, token, file prefix and app name (the routes then stay with the previous runtime).
+// shareDefaults stand in for the deployment's share settings it has not named: the snapshot routes used to
+// be on only with all six set, and no machine behind the hub had them, so a chat could be neither captured, downloaded
+// nor shared there. The link's address still comes from the platform in the base header: without it links stay off.
+var shareDefaults = map[string]string{
+	"RUNTIME_SHARE_BASE_HEADER": "X-Harnessly-Share-Base", "RUNTIME_SHARE_TOKEN_HEADER": "X-Harnessly-Share-Token",
+	"RUNTIME_SHARE_TOKEN_SALT": "harnessly", "RUNTIME_SHARE_TOKEN_AUDIENCE": "harnessly-share-read",
+	"RUNTIME_SHARE_FILE_PREFIX": "harnessly", "RUNTIME_APP_NAME": "harnessly",
+}
+
+// shareRoute is the conversation snapshots and read-only links, by the deployment's share settings or their defaults.
 func (c *core) shareRoute(d deps) *share.Route {
 	cfg := map[string]string{}
-	for _, k := range []string{"RUNTIME_SHARE_BASE_HEADER", "RUNTIME_SHARE_TOKEN_HEADER", "RUNTIME_SHARE_TOKEN_SALT",
-		"RUNTIME_SHARE_TOKEN_AUDIENCE", "RUNTIME_SHARE_FILE_PREFIX", "RUNTIME_APP_NAME"} {
+	for k, def := range shareDefaults {
 		if cfg[k] = os.Getenv(k); cfg[k] == "" {
-			return nil
+			cfg[k] = def
 		}
 	}
 	return &share.Route{

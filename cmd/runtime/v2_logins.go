@@ -20,6 +20,12 @@ var loginEnvNames = []string{"USER", "LOGNAME", "LANG", "LC_ALL", "XDG_CONFIG_HO
 
 // v2Logins builds the sign-in service over the machine's CLIs. path is the PATH the person's login shell builds.
 func v2Logins(home string, path func() string, changed func(wire.Provider)) *loginflow.Service {
+	return v2LoginsIn(home, "", path, changed)
+}
+
+// v2LoginsIn is v2Logins for a Codex home other than the main one (one more sign-in, internal/codexaccounts): the CLI
+// signs in, and out, in that home. "" is the main home.
+func v2LoginsIn(home, codexHome string, path func() string, changed func(wire.Provider)) *loginflow.Service {
 	return loginflow.New(loginflow.Config{
 		Bin: func(p wire.Provider) (string, error) {
 			name := string(p)
@@ -44,9 +50,15 @@ func v2Logins(home string, path func() string, changed func(wire.Provider)) *log
 				// The person's tmux shim wraps a CLI that has a terminal; this one is driven by the runtime.
 				"JARVIS_TMUX=off"}
 			for _, n := range loginEnvNames {
+				if n == "CODEX_HOME" && codexHome != "" {
+					continue
+				}
 				if v, ok := os.LookupEnv(n); ok {
 					env = append(env, n+"="+v)
 				}
+			}
+			if codexHome != "" {
+				env = append(env, "CODEX_HOME="+codexHome)
 			}
 			return env
 		},

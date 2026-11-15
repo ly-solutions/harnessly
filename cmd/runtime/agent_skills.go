@@ -115,7 +115,7 @@ func workspacePromptText(agentName string, integ integrations.Config) string {
 	b.WriteString("It is on your PATH and finds the workspace by itself; there is nothing to log in to.\n\n")
 	b.WriteString("```bash\n" +
 		"harnessly open <link|file|port>   # show it to the person in the right pane (a document, a board, ./report.md, 4400)\n" +
-		"harnessly deliver <file>          # hand a file to the person (zip, docx, pdf, md): a card in the chat to open and download\n" +
+		"harnessly deliver <file|folder>   # hand a file to the person (any type; a folder as a zip): a card in the chat, downloaded at once\n" +
 		"harnessly tab list                # the tabs of this workspace\n" +
 		"harnessly tab create -t codex-cli --prompt \"<the whole task>\" [--notify]   # hand a task to another agent: a chat nested under yours\n" +
 		"harnessly tab status <id>         # is it working or waiting\n" +
@@ -139,9 +139,19 @@ func workspacePromptText(agentName string, integ integrations.Config) string {
 			"To sign in, use `chrome_fill_secret` for an existing safe entry; otherwise use `chrome_request_login`. " +
 			"If you ran JavaScript on a tab, use `chrome_open` to create a fresh tab before entering a secret.\n\n")
 	}
+	b.WriteString("## Pictures\n\n")
+	b.WriteString("You can draw. When the person asks for a picture, photo, poster, icon, logo, cover or illustration (\"нарисуй\", " +
+		"\"сгенерируй картинку\", \"сделай фото кота\", \"плакат A3\", \"make an icon\"), call the MCP tool `generate_images` in that same turn: " +
+		"write the brief yourself from what they said and do not ask first. It is already loaded (no ToolSearch needed). " +
+		"Never draw with code instead (python, PIL, matplotlib, SVG, canvas), never answer that you cannot draw. " +
+		"The pictures appear in the chat as they are drawn, so do not deliver them or paste their paths; hand a file over with `deliver_file` " +
+		"only when the person asks for one (a PNG to download, a PDF for print), after the picture is in the chat. " +
+		"To change a picture, call `generate_images` with it as `source`.\n\n")
 	b.WriteString("## Handing files over\n\n")
-	b.WriteString("When the person asks you to send or collect a file (\"put it in a zip\", \"give me the docx\"), hand it over with " +
-		"`harnessly deliver <path>` (or the `deliver_file` tool): the chat gets a card that opens the file on the right and downloads it. " +
+	b.WriteString("When the person asks you to download, send or give them a file (\"скачай\", \"скинь\", \"put it in a zip\", \"give me the docx\"), " +
+		"make it and hand it over with the `deliver_file` tool (or `harnessly deliver <path>`); never answer with the path in text. " +
+		"Any type goes (html, zip, pdf, png, md, csv, docx…), a folder goes as one zip. The chat gets a card that opens the file on the right, " +
+		"and the person's browser downloads it at once. " +
 		"Deliver only files the person asked to receive. Files you merely write or change while working make no card, so do not deliver them, " +
 		"and do not deliver the same file twice unless you changed it.\n\n")
 	b.WriteString("## The file beside the chat\n\n")

@@ -45,6 +45,9 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"doc_threads", `slug IN ` + docsOfSpace},
 	{"doc_reads", `slug IN ` + docsOfSpace},
 	{"resource_guest_links", bySpace},
+	{"design_derived", bySpace},
+	{"search_docs", bySpace},
+	{"chat_shares", bySpace},
 	{"resource_access_log", bySpace},
 	{"resource_access_requests", bySpace},
 	{"resource_access_people", bySpace},
@@ -74,6 +77,8 @@ var SpaceCascade = []SpaceCascadeStep{
 	// Spend and what the agents did.
 	{"agent_session_mrs", `EXISTS (SELECT 1 FROM agent_sessions a WHERE a.org_key = agent_session_mrs.org_key AND a.provider = agent_session_mrs.provider
 		AND a.session_key = agent_session_mrs.session_key AND a.space_id = :id)`},
+	{"session_facts", `EXISTS (SELECT 1 FROM agent_sessions a WHERE a.org_key = session_facts.org_key AND a.provider = session_facts.provider
+		AND a.session_key = session_facts.session_key AND a.space_id = :id)`},
 	{"agent_sessions", bySpace},
 	{"tool_usage_day", bySpace},
 	{"usage_rollup_hour", bySpace},
@@ -98,6 +103,7 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"env_person_off", `scope = :id`},
 	{"env_entries", layeredOnSpace + ` OR item_id IN ` + catalogOfSpace},
 	{"env_presets", layeredOnSpace},
+	{"env_proposals", byMachine},
 	{"env_groups", layeredOnSpace},
 	{"catalog_items", `(owner_layer = 'tenant' AND owner_scope = :id) OR (owner_layer = 'team' AND owner_scope IN ` + teamsOfSpace + `)`},
 
@@ -131,6 +137,7 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"machine_debug_openings", byMachine},
 	{"machine_budgets", byMachine},
 	{"machine_cards", byMachine},
+	{"machine_projects", byMachine},
 	{"machine_env", byMachine},
 	{"machine_hw", byMachine},
 	{"machine_links", byMachine},
@@ -164,7 +171,7 @@ var keptOnSpaceDelete = map[string]string{
 	"schema_migrations": "installation", "currency_rates": "installation", "prices": "installation",
 	"job_leases":      "installation: which replica does a background job",
 	"auth_challenges": "installation", "auth_events": "installation: the record of the deletion itself is here",
-	"users": "person", "identities": "person", "passkeys": "person", "person_settings": "person",
+	"users": "person", "identities": "person", "passkeys": "person", "person_settings": "person", "api_tokens": "person", "notice_items": "person", "notice_settings": "person",
 	"orgs":                  "the organization outlives its spaces",
 	"merged_mrs":            "merge requests are keyed by their address and name no machine",
 	"eff_pulse":             "a person's own weekly answers",

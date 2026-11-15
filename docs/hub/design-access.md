@@ -9,6 +9,10 @@ pages) to someone without an account. The hub keeps these records; the machine's
 - A stored project is open to the space at the deployment's team level (`HUB_DESIGN_DEFAULT_TEAM_LEVEL`, `edit` by
   default) until its owner changes that (`view`, `comment`, `edit`, `none`). Editors may share; only the owner and
   managers change the team level and members.
+- The team level counts only for the people who may open the machine the project is recorded on: with
+  `HUB_ACCESS_ENFORCE=on` a private machine (its access list, or the owner's rule `own-work` for a role) keeps its
+  projects out of everyone else's library, snapshot and store reads. The owner, a grant by name and a grant to a team
+  still open the project; with `off` and `warn` nothing changes.
 - Every member of the machine's space appears in the snapshot the hub pushes to the machine
   (`hubproto.OpDesignAccess`); a person missing there gets nothing on a known project. The snapshot is pushed when the
   machine connects, after every change (debounced), when grants run out, and every five minutes.
@@ -152,6 +156,7 @@ each project with what moved, each pair with its machine or why not. The agents 
 | --- | --- | --- |
 | `HUB_DESIGN_SHARE_URL` | hub | Origin of the guest links, e.g. `https://share.example.com`. A DNS record and certificate for it pointing at the hub. Empty: links are off |
 | `HUB_DESIGN_SHARE_ALIASES` | off | Comma-separated origins that used to carry the guest links (`https://old-share.example.com`). On them `GET`/`HEAD /s/<token>…` answers `307` to the same path on `HUB_DESIGN_SHARE_URL` (`no-store`, no referrer), everything else is `404`, so links already handed out keep opening. Needs `HUB_DESIGN_SHARE_URL`; an origin must differ from the hub's, the share origin and `HUB_APPS_GUEST_URL` |
+| `HUB_DESIGN_DERIVED` | off | `on`: what the hub works out from one revision of a design project (a board's page, the list of the boards, a file) is kept in the store and the database (`design_derived`) and given from there by every replica, with the blob's hash as the validator (`304`); a replica that has just started does not put the project into a folder for the first guest. Off: every replica lays the revision out, as before |
 | `HUB_DESIGN_SHARE_DOCS` | off | `on`: a document's guest link (`/d/<token>`, needs documents and their access on) opens on the share host and its aliases too, under the address it was handed out at. The page sets its own sandbox and the hub's session is not on those origins. Needs `HUB_DESIGN_SHARE_URL` |
 | `HUB_DESIGN_PLATFORM_API` | hub | Platform prefix of the runtimes, default `/api/platform` |
 | `HUB_DESIGN_DEFAULT_TEAM_LEVEL` | `edit` | Team level of a newly recorded project: `none`, `view`, `comment` or `edit` |

@@ -2,7 +2,16 @@
 // limits). A machine whose runtime answers no v2 is 'outdated': its chats are not listed (spec §8).
 
 import { createKeyedStore, createStore, sameItems, useAll, useKey, useStore } from '@/next/core/store';
-import type { Feature, Limits, Machine, MachineId } from '@/next/protocol/v2';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
+
+import {
+  FEATURES,
+  type Feature,
+  type Limits,
+  type Machine,
+  type MachineId,
+  type MachineLoad,
+} from '@/next/protocol/v2';
 
 export interface MachineView {
   machine: Machine;
@@ -30,6 +39,46 @@ export const DEFAULT_LIMITS: Limits = {
 
 export const machinesStore = createKeyedStore<MachineId, MachineView>();
 /** The fleet's order; null while the list is loading. */
+/**
+ * The load the active machine reports every 2 s, apart from its record: a reading changed the record, and
+ * every reader of the record (the shell, the chat, the composer) drew anew each time with nothing new to show. Only
+ * what shows the numbers reads it: the machine's card, and a critical alert that names the free disk or memory.
+ */
+export const machineLoadStore = createKeyedStore<MachineId, MachineLoad>();
+
+/** The record without its load, the load into machineLoadStore: what a welcome or a snapshot of the machine brings. */
+export function splitLoad(m: MachineId, machine: Machine): Machine {
+  if (machine.load === undefined) return machine;
+  const { load, ...rest } = machine;
+  machineLoadStore.set(m, load);
+  return rest;
+}
+
+export const useMachineLoad = (m: MachineId | null) => useKey(machineLoadStore, m);
+
+/** The loads of these machines, the same array while none of theirs changed: a reading of another machine draws nothing. */
+export function useMachineLoads(ids: readonly MachineId[]): readonly (MachineLoad | undefined)[] {
+  const key = ids.join('\n');
+  const subscribe = useCallback(
+    (fn: () => void) => {
+      const want = new Set(key.split('\n'));
+      return machineLoadStore.subscribeAll((changed) => {
+        for (const id of changed) if (want.has(id)) return fn();
+      });
+    },
+    [key],
+  );
+  const last = useRef<{ key: string; loads: readonly (MachineLoad | undefined)[] } | null>(null);
+  const get = () => {
+    const loads = ids.map((id) => machineLoadStore.get(id));
+    const was = last.current;
+    if (was && was.key === key && sameItems(was.loads, loads)) return was.loads;
+    last.current = { key, loads };
+    return loads;
+  };
+  return useSyncExternalStore(subscribe, get, get);
+}
+
 export const machineOrderStore = createStore<MachineId[] | null>(null);
 /** The machine whose chat is open: it holds machine, convs and the open conv; the rest hold only convs. */
 export const activeMachineStore = createStore<MachineId | null>(null);
@@ -46,11 +95,53 @@ export const homeMachineStore = createStore<MachineId | null>(null);
  */
 export type FleetMachine = Machine & { hangs?: boolean; features?: Feature[]; usage?: unknown };
 
+const FEATURES_KEY = 'hx-machine-features';
+
+const readKept = (): Record<string, unknown> => {
+  try {
+    const all: unknown = JSON.parse(localStorage.getItem(FEATURES_KEY) ?? '{}');
+    return typeof all === 'object' && all !== null && !Array.isArray(all)
+      ? (all as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+/** What the machine said it can in its last welcome in this browser; [] when it never said. */
+export function keptFeatures(m: MachineId): Feature[] {
+  const v = readKept()[m];
+  return Array.isArray(v) ? v.filter((f): f is Feature => (FEATURES as readonly unknown[]).includes(f)) : [];
+}
+
+/**
+ * A machine's welcome comes over its socket, seconds after the page (a busy machine, a restart for an
+ * update, a slow tunnel). Until then the page drew it as able of nothing and the microphone was not offered: it came
+ * and went. What the machine said last is kept here and stands in until it speaks again.
+ */
+export function keepFeatures(m: MachineId, features: readonly Feature[]): void {
+  try {
+    const all = readKept();
+    const was = all[m];
+    if (Array.isArray(was) && was.length === features.length && was.every((f, i) => f === features[i]))
+      return;
+    localStorage.setItem(FEATURES_KEY, JSON.stringify({ ...all, [m]: features }));
+  } catch {
+    // Blocked or full storage: the page waits for the welcome as before.
+  }
+}
+
 function putMachine({ hangs, features, usage: _usage, ...m }: FleetMachine): void {
   machinesStore.patch(m.id, (prev) => {
     const { hangs: _was, ...view }: MachineView = prev
       ? { ...prev, machine: m }
-      : { machine: m, runtime: 'unknown', epoch: null, features: features ?? [], limits: null };
+      : {
+          machine: m,
+          runtime: 'unknown',
+          epoch: null,
+          features: features?.length ? features : keptFeatures(m.id),
+          limits: null,
+        };
     // A machine that has said welcome on this page answers for itself.
     return hangs && view.epoch === null ? { ...view, hangs: true } : view;
   });

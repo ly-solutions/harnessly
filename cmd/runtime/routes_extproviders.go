@@ -19,7 +19,7 @@ import (
 // The external providers of the Settings screen (internal/extproviders). All of it is the person's page: a page
 // session, same origin. No answer holds a key.
 //
-//	GET    <platform>/ext-providers                {providers: [View], presets: [Preset]}
+//	GET    <platform>/ext-providers                {providers: [View], presets: [Preset], accounts: true, launch: true}
 //	POST   <platform>/ext-providers                {name, baseUrl, api, preset?, key?, models?} -> 201 {provider: View}
 //	POST   <platform>/ext-providers/check          {baseUrl, api, key?, id?} -> Check (a form that is not saved yet)
 //	PATCH  <platform>/ext-providers/<id>           {name?, baseUrl?, api?, key?, models?} -> {provider: View}
@@ -64,19 +64,25 @@ func extProvidersFor(d deps) *extproviders.Service {
 	}
 	dataDir := d.DataDir
 	s := &extproviders.Service{
-		Store:   &extproviders.Store{Dir: filepath.Join(dataDir, "v2", "ext-providers")},
-		Secrets: extSecrets{store: safeFor(d).store},
-		OnChange: func(what string, before, after *extproviders.Provider) {
-			extProvidersMu.Lock()
-			hear := append([]func(string, *extproviders.Provider, *extproviders.Provider){}, extProviderHearers[dataDir]...)
-			extProvidersMu.Unlock()
-			for _, h := range hear {
-				h(what, before, after)
-			}
-		},
+		Store:    &extproviders.Store{Dir: filepath.Join(dataDir, "v2", "ext-providers")},
+		Secrets:  extSecrets{store: safeFor(d).store},
+		Bound:    safeBound(safeFor(d).store),
+		OnChange: tellExtProviderHearers(dataDir),
 	}
 	extProvidersAll[dataDir] = s
 	return s
+}
+
+// tellExtProviderHearers is what a registry calls after a change: it tells the hearers of its data folder.
+func tellExtProviderHearers(dataDir string) func(what string, before, after *extproviders.Provider) {
+	return func(what string, before, after *extproviders.Provider) {
+		extProvidersMu.Lock()
+		hear := append([]func(string, *extproviders.Provider, *extproviders.Provider){}, extProviderHearers[dataDir]...)
+		extProvidersMu.Unlock()
+		for _, h := range hear {
+			h(what, before, after)
+		}
+	}
 }
 
 // extProviderHearers are told of every change of a data folder's registry.
@@ -92,6 +98,14 @@ func extProviderMessage(reason string) string {
 	switch reason {
 	case extproviders.ReasonBadName:
 		return locale.Pick("Give the provider a name of up to 60 characters.", "Дайте провайдеру название до 60 символов.")
+	case extproviders.ReasonNameTaken:
+		return locale.Pick("Another account is called so already. Give this one a name of its own.", "Так уже называется другой аккаунт. Дайте этому своё имя.")
+	case extproviders.ReasonBadEnv:
+		return locale.Pick("A variable needs a name of letters, digits and _ (once), a value of one line, and a secret one a value.", "У переменной имя из букв, цифр и _ (один раз), значение в одну строку, а у секретной оно обязательно.")
+	case extproviders.ReasonEnvReserved:
+		return locale.Pick("This variable is set by the launch itself and cannot be changed here.", "Эту переменную задаёт сам запуск, здесь её менять нельзя.")
+	case extproviders.ReasonSubscriptionToken:
+		return locale.Pick("This is the token of a Claude subscription. A machine has one sign-in by a subscription, in Settings → Claude Code; a provider takes a key of the API.", "Это токен подписки Claude. Вход по подписке на машине один — в настройках Claude Code; провайдеру нужен ключ API.")
 	case extproviders.ReasonBadURL:
 		return locale.Pick("The address must start with https:// or http:// and name a host.", "Адрес должен начинаться с https:// или http:// и содержать имя сервера.")
 	case extproviders.ReasonBadAPI:
@@ -100,6 +114,15 @@ func extProviderMessage(reason string) string {
 		return locale.Pick("The key does not look like one: it is too long or has line breaks.", "Ключ не похож на ключ: он слишком длинный или с переносами строк.")
 	case extproviders.ReasonBadModel:
 		return locale.Pick("A model's name must be one word without spaces.", "Название модели — одно слово без пробелов.")
+	case extproviders.ReasonManaged:
+		return locale.Pick("This provider comes from the team's environment. It is changed in the hub.", "Этот провайдер из окружения команды. Его меняют в хабе.")
+	case extproviders.ReasonSecretUnbound:
+		return locale.Pick("This secret is not allowed for this server. Ask the person to allow it: harnessly secret ask NAME --origin https://<host> --why …",
+			"Этот секрет не разрешён для этого сервера. Попросите человека разрешить: harnessly secret ask ИМЯ --origin https://<хост> --why …")
+	case extproviders.ReasonBadSecretRef:
+		return locale.Pick("A secret is named by its name in the safe or by a vault: reference.", "Секрет называют именем в сейфе или ссылкой vault:.")
+	case extproviders.ReasonSecretInSource:
+		return locale.Pick("A token or a key is not written into the environment: name its secret instead.", "Токен или ключ в окружение не пишут: назовите секрет, в котором он лежит.")
 	case extproviders.ReasonNotFound:
 		return locale.Pick("There is no such provider any more.", "Такого провайдера уже нет.")
 	case extproviders.ReasonTooMany:
@@ -114,7 +137,7 @@ func extProviderRefusal(w http.ResponseWriter, err error) {
 	switch reason {
 	case extproviders.ReasonNotFound:
 		status = http.StatusNotFound
-	case extproviders.ReasonTooMany:
+	case extproviders.ReasonTooMany, extproviders.ReasonNameTaken, extproviders.ReasonManaged:
 		status = http.StatusConflict
 	case extproviders.ReasonFailed:
 		status = http.StatusInternalServerError
@@ -167,7 +190,8 @@ func extProviderRoutes(d deps) []gate.Route {
 				extProviderRefusal(w, err)
 				return
 			}
-			secretJSON(w, http.StatusOK, map[string]any{"providers": views, "presets": extproviders.Presets()})
+			// accounts: this runtime keeps several accounts of one provider, tells them apart by name and marks the default.
+			secretJSON(w, http.StatusOK, map[string]any{"providers": views, "presets": extproviders.Presets(), "accounts": true, "launch": true})
 		case http.MethodPost:
 			var in extproviders.Input
 			if !read(w, r, &in) {

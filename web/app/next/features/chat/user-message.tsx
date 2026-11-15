@@ -17,7 +17,8 @@ import { t } from '@/next/i18n';
 import { readAnnotated, type ISentNote } from '@/next/features/designly/annotation';
 import { NoteChip } from '@/next/features/designly/note-chip';
 import { bubbleParts, Pasted, splitPasted } from '@/next/features/chat/pasted';
-import { parsePeer } from '@/next/features/chat/peer';
+import { parsePeers } from '@/next/features/chat/peer';
+import { AppTaskCard, parseAppTask } from '@/next/features/chat/app-task';
 import { parseContextBlock } from '@/next/features/chat/handoff';
 import { ContextCard } from '@/next/features/chat/handoff-card';
 import { PEER_DELIVERY, PeerCard, type TPeerDelivery } from '@/next/features/chat/peer-card';
@@ -271,9 +272,22 @@ const UserMessage = ({
   // A picture's path in the words (a paste of the old view) is the picture itself, without the path.
   const pictures = useNamedPictures(placed.text);
   if (!fade.mounted) return null;
+  // A task an app set in the person's name is the app's card, not the person's words.
+  const task = parseAppTask(text);
+  if (task) return <AppTaskCard task={task} />;
   // Another agent's words are never the person's bubble (internal/peers delivers them as an envelope).
-  const peer = parsePeer(text);
-  if (peer) return <PeerCard peer={peer} delivery={peerDelivery(phase, outgoing, steered)} />;
+  // Several agents' messages that reached the agent as one are a card each, in the order they came.
+  const peers = parsePeers(text);
+  if (peers.length > 0) {
+    const delivery = peerDelivery(phase, outgoing, steered);
+    return (
+      <>
+        {peers.map((peer, at) => (
+          <PeerCard key={peer.id ?? at} peer={peer} delivery={delivery} />
+        ))}
+      </>
+    );
+  }
   // The context another chat handed over, or a fork's result: a card that says where it comes from.
   const block = parseContextBlock(text);
   if (block)

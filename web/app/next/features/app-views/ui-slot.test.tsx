@@ -64,6 +64,7 @@ const list = (slots: boolean): IInstalledApps =>
       app('example-corp.a', [
         view('act', ['object-action'], { objects: ['chat'] }),
         view('st', ['onboarding']),
+        view('brief', ['home'], { order: 1 }),
       ]),
     ],
   }) as unknown as IInstalledApps;
@@ -82,6 +83,8 @@ describe('slot views', () => {
     ]);
     expect(slotViews(list(true), 'object-action', 'chat').map((s) => s.app.id)).toEqual(['example-corp.a']);
     expect(slotViews(list(true), 'onboarding').length).toBe(1);
+    expect(slotViews(list(true), 'home').map((s) => s.view.id)).toEqual(['brief']);
+    expect(slotViews(list(false), 'home')).toEqual([]);
   });
 
   it('brand the page and give it back', () => {

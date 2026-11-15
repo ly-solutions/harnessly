@@ -23,6 +23,7 @@ type KindCounts struct {
 	ClaudeSettings int `json:"claude-settings,omitempty"`
 	App            int `json:"app,omitempty"`
 	Pack           int `json:"pack,omitempty"`
+	Provider       int `json:"provider,omitempty"`
 }
 
 func (c *KindCounts) add(kind string) {
@@ -47,6 +48,8 @@ func (c *KindCounts) add(kind string) {
 		c.App++
 	case store.CatalogPack:
 		c.Pack++
+	case store.CatalogProvider:
+		c.Provider++
 	}
 }
 

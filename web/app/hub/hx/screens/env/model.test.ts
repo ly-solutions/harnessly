@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { detect, BAD } from './detect';
-import { blankDraft, fromItem, hasBrew, secretVar, toSource, valid } from './model';
+import { blankDraft, fromItem, hasBrew, need, secretVar, toSource, valid } from './model';
 import { missingCommand } from './runs';
 import { stateOfMachine } from './machine';
 import type { MeMachine } from '../../../../hub-api/env';
@@ -46,7 +46,10 @@ describe('model', () => {
     expect(valid(blankDraft('script'))).toBe(false);
   });
 
-  const itemOf = (kind: 'app' | 'plugin' | 'claude-settings', source: ReturnType<typeof toSource>) =>
+  const itemOf = (
+    kind: 'app' | 'plugin' | 'claude-settings' | 'provider',
+    source: ReturnType<typeof toSource>,
+  ) =>
     fromItem({
       id: 'i',
       kind,
@@ -102,6 +105,43 @@ describe('model', () => {
     d.f.plugin = 'review-kit@team';
     expect(valid(d)).toBe(true);
     expect(itemOf('plugin', toSource(d))?.f.plugin).toBe('review-kit@team');
+  });
+
+  it('takes a model provider with its secrets named, never typed', () => {
+    const d = blankDraft('provider');
+    expect(valid(d)).toBe(false);
+    d.f.url = 'llm.corp.example/anthropic';
+    d.f.models = 'corp-large\n\ncorp-small';
+    d.f.secret = 'vault:shared/llm/gateway#key';
+    d.f.env = 'ANTHROPIC_MODEL=corp-large';
+    d.f.secretEnv = 'ANTHROPIC_AUTH_TOKEN=gateway-token';
+    expect(valid(d)).toBe(true);
+    const source = toSource(d);
+    expect(source).toEqual({
+      api: 'anthropic',
+      baseUrl: 'https://llm.corp.example/anthropic',
+      models: ['corp-large', 'corp-small'],
+      key: 'vault:shared/llm/gateway#key',
+      env: ['ANTHROPIC_MODEL=corp-large'],
+      secretEnv: ['ANTHROPIC_AUTH_TOKEN=gateway-token'],
+    });
+    expect(itemOf('provider', source)?.f).toMatchObject({
+      api: 'anthropic',
+      models: 'corp-large\ncorp-small',
+      secret: 'vault:shared/llm/gateway#key',
+      secretEnv: 'ANTHROPIC_AUTH_TOKEN=gateway-token',
+    });
+
+    // A token is not typed into the environment: the form says where it goes.
+    d.f.env = 'ANTHROPIC_AUTH_TOKEN=sk-live-123';
+    expect(valid(d)).toBe(false);
+    expect(need(d)).toContain('ANTHROPIC_AUTH_TOKEN — секрет');
+    d.f.env = '';
+    d.f.secretEnv = 'ANTHROPIC_AUTH_TOKEN=sk live 123';
+    expect(valid(d)).toBe(false);
+    d.f.secretEnv = '';
+    d.f.secret = 'sk live 123';
+    expect(valid(d)).toBe(false);
   });
 
   it('reads Claude settings as JSON of always, ifAbsent and claudeMd', () => {

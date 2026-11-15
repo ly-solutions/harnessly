@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 var sampleLine = regexp.MustCompile(`^harnessly_hub_[a-z0-9_]+(\{[a-z_]+="[^"]*"(,[a-z_]+="[^"]*")*\})? -?[0-9.e+]+$`)
@@ -36,12 +37,15 @@ func TestWriteIsThePrometheusTextFormat(t *testing.T) {
 			help[current]++
 		case strings.HasPrefix(line, "# TYPE "):
 			f := strings.Fields(line)
-			if f[2] != current || (f[3] != "counter" && f[3] != "gauge") {
+			if f[2] != current || (f[3] != "counter" && f[3] != "gauge" && f[3] != "histogram") {
 				t.Fatalf("TYPE line out of place: %q", line)
 			}
 			typ[current]++
 		default:
 			name, _, _ := strings.Cut(strings.Fields(line)[0], "{")
+			if typ[current] == 1 && strings.HasSuffix(current, "_seconds") {
+				name = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(name, "_bucket"), "_sum"), "_count")
+			}
 			if name != current {
 				t.Fatalf("sample %q is not under its own HELP (%s)", line, current)
 			}
@@ -112,5 +116,95 @@ func TestHandlerServesOnlyMetrics(t *testing.T) {
 		if rec.Code == http.StatusOK {
 			t.Fatalf("%s %s answered 200", req.Method, req.URL.Path)
 		}
+	}
+}
+
+// a read of people's data is counted by its kind and by what answered it.
+func TestReadsAreCountedByKindAndSource(t *testing.T) {
+	before := Reads(ReadUpload, FromMachine)
+	CountRead(ReadUpload, FromMachine)
+	CountRead(99, FromStore)
+	CountRead(ReadDesign, -1)
+	if got := Reads(ReadUpload, FromMachine) - before; got != 1 {
+		t.Fatalf("counted %d reads", got)
+	}
+	var out strings.Builder
+	if err := Write(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`data_reads_total{kind="upload",source="machine"} `, `data_reads_total{kind="design",source="store"} `, `data_reads_total{kind="delivered",source="machine"} `} {
+		if !strings.Contains(out.String(), Prefix+want) {
+			t.Fatalf("no sample %s in:\n%s", want, out.String())
+		}
+	}
+}
+
+// the time to answer, by the finer group of the route, as a Prometheus histogram; streams are not timed.
+func TestLatencyIsAHistogramByArea(t *testing.T) {
+	for _, c := range []struct {
+		path string
+		want string
+	}{
+		{"/m/abc/api/platform/design/store-library", "design"},
+		{"/m/abc/api/v2/designly/library", "design"},
+		{"/api/history/sidebar", "history"},
+		{"/m/abc/api/history/conversations", "history"},
+		{"/store/v1/collections/design/files", "store"},
+		{"/m/abc/api/v2/convs", "machine"},
+		{"/api/me", "api"},
+	} {
+		if got := areaNames[LatencyArea(c.path)]; got != c.want {
+			t.Fatalf("%s: area %q, want %q", c.path, got, c.want)
+		}
+	}
+	ObserveLatency("/m/x/api/platform/design/store-library", "GET", 200, 300*time.Millisecond)
+	ObserveLatency("/m/x/api/platform/design/store-library", "GET", 200, 3*time.Second)
+	ObserveLatency("/m/x/api/platform/design/store-library", "GET", 200, 40*time.Second)
+	ObserveLatency("/store/v1/collections/design/changes", "GET", 200, time.Minute)
+	ObserveLatency("/m/x/api/v2/ws", "GET", 101, time.Hour)
+	var b strings.Builder
+	if err := Write(&b); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, want := range []string{
+		"# TYPE harnessly_hub_http_request_duration_seconds histogram",
+		`harnessly_hub_http_request_duration_seconds_bucket{route="design",method="GET",le="0.2"} 0`,
+		`harnessly_hub_http_request_duration_seconds_bucket{route="design",method="GET",le="0.4"} 1`,
+		`harnessly_hub_http_request_duration_seconds_bucket{route="design",method="GET",le="5"} 2`,
+		`harnessly_hub_http_request_duration_seconds_bucket{route="design",method="GET",le="+Inf"} 3`,
+		`harnessly_hub_http_request_duration_seconds_count{route="design",method="GET"} 3`,
+		`harnessly_hub_http_request_duration_seconds_sum{route="design",method="GET"} 43.3`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `route="store"`) || strings.Contains(out, `route="machine",method="GET"`) {
+		t.Fatalf("a stream was timed:\n%s", out)
+	}
+}
+
+func TestWebVitalHistogram(t *testing.T) {
+	ObserveWebVital("lcp", 1.2)
+	ObserveWebVital("lcp", 3)
+	ObserveWebVital("fcp", 1)  // not in the set
+	ObserveWebVital("lcp", -1) // not a time
+	var b strings.Builder
+	if err := Write(&b); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, want := range []string{
+		`harnessly_hub_web_vital_seconds_bucket{name="lcp",le="1.5"} 1`,
+		`harnessly_hub_web_vital_seconds_bucket{name="lcp",le="4"} 2`,
+		`harnessly_hub_web_vital_seconds_count{name="lcp"} 2`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `name="fcp"`) {
+		t.Error("a name outside the set became a label")
 	}
 }

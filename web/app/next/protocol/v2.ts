@@ -139,8 +139,18 @@ export const TURN_FAILURE_CODES = [
 export type TurnFailureCode = (typeof TURN_FAILURE_CODES)[number];
 export const FILE_OPS = ['created', 'edited', 'read'] as const;
 export type FileOp = (typeof FILE_OPS)[number];
-/** What a turn made that the person opens: a published page, a design, a document, a merge request, a stand, a file handed over. */
-export const OUTPUT_KINDS = ['artifact', 'design', 'doc', 'mr', 'stand', 'delivery'] as const;
+/** What a turn made that the person opens: a published page, a design, a document, a merge request, a stand, a file handed over,
+ *  a task of the tracker, a commit (the last two only with the cap links). */
+export const OUTPUT_KINDS = [
+  'artifact',
+  'design',
+  'doc',
+  'mr',
+  'stand',
+  'delivery',
+  'task',
+  'commit',
+] as const;
 export type OutputKind = (typeof OUTPUT_KINDS)[number];
 export const OUTPUT_OPS = ['created', 'changed'] as const;
 export type OutputOp = (typeof OUTPUT_OPS)[number];
@@ -276,7 +286,7 @@ export const CLIENT_FRAME_KINDS = ['hello', 'sub', 'unsub', 'ping'] as const;
 /** The optional parts of the frames this page reads, named in its socket's address (?caps=…) and in the HTTP calls
  *  that carry them: the runtime sends them only to a page that names them, so a tab left on an older build never meets
  *  a field it refuses. Not in hello: a runtime older than the page refuses a field of hello it does not know. */
-export const CLIENT_CAPS = ['delegation', 'workflows', 'profiles', 'msgstatus'] as const;
+export const CLIENT_CAPS = ['delegation', 'workflows', 'profiles', 'msgstatus', 'links'] as const;
 /** CLIENT_CAPS as a query: `caps=…`. */
 export const CAPS_QUERY = `caps=${CLIENT_CAPS.join(',')}`;
 export type ClientFrameKind = (typeof CLIENT_FRAME_KINDS)[number];
@@ -468,7 +478,7 @@ export interface MachineAgent {
 }
 /** A profile id: lower case, `^[a-z][a-z0-9-]{0,31}$`. The runtime owns the list (`kimi`, `glm`, `xai`…). */
 export type ProfileId = string;
-export const PROFILE_VENDORS = ['kimi', 'glm', 'grok', 'gpt', 'auto'] as const;
+export const PROFILE_VENDORS = ['kimi', 'glm', 'grok', 'gpt', 'auto', 'own'] as const;
 export type ProfileVendor = (typeof PROFILE_VENDORS)[number];
 /** A backend profile a machine can start a conversation on: another vendor's models behind this CLI. */
 export interface ProfileOffer {
@@ -503,6 +513,8 @@ export interface ProfileInfo {
   /** Present on a profile that takes no key but is turned on and off (`gpt`: a local proxy over the Codex CLI's
    *  ChatGPT sign-in); absent on the others. */
   switch?: ProfileSwitch;
+  /** The profile's key is an account of the person's providers, changed there; absent on a profile with a key of its own. */
+  account?: boolean;
 }
 /** Whether the person turned a switched profile on. Whether it can run now is the offer's `configured`. */
 export interface ProfileSwitch {
@@ -690,7 +702,7 @@ export const DESIGN_KINDS: readonly DesignKind[] = ['site', 'slides', 'ds', 'vid
 
 /** What a chat made, opened or changed that the tools home lists: a document, a board, a design, a tracker task, a merge
  *  request (the block of merge requests under a finished task reads it). */
-export const MADE_KINDS = ['doc', 'board', 'design', 'task', 'mr'] as const;
+export const MADE_KINDS = ['doc', 'board', 'design', 'task', 'mr', 'stand', 'commit', 'file'] as const;
 export type MadeKind = (typeof MADE_KINDS)[number];
 /** A task named by another: its epic, or a subtask of an epic. */
 export interface MadeTaskRef {
@@ -816,6 +828,9 @@ export interface DesignArtifact {
   boards: DesignBoard[];
   convs: string[];
   touchedBy?: string[];
+  /** Who worked on it, by name: the owner, then the people of its chats (a delegated chat's is its root's), each once;
+   *  never an address or a chat id. Absent from an older runtime. */
+  people?: string[];
   owner?: DesignOwner;
   role?: DesignRole;
   /** The app's document type the project is (made of Sinopia's site): its label; absent for Sinopia's own projects. */
@@ -919,6 +934,19 @@ export interface ChatDigest {
   text: string;
   path: string;
   truncated: boolean;
+}
+/** One message of a chat in its glance: when, and what it said, cut short. */
+export interface GlanceMessage {
+  at: Ms;
+  text: string;
+}
+/** What a chat said last (GET /api/v2/conversations/{id}/glance): the newest message of each side, null when it has
+ *  none; `messages` is how many the search index holds for the chat. */
+export interface ChatGlance {
+  convId: ConvId;
+  lastUser: GlanceMessage | null;
+  lastAgent: GlanceMessage | null;
+  messages: number;
 }
 /** The parts of the disk layout, in the order they are drawn; `other` is the used part none of the named folders
  *  accounts for. */
@@ -1079,6 +1107,8 @@ export interface AppRow {
   author: string | null;
   /** The author's picture as the page loads it (a route of the runtime); null when the code host gave none. */
   avatar: string | null;
+  /** The author is a bot of the code host (a dependency updater, a release robot). */
+  bot: boolean;
   assignees: string[];
   reviewers: string[];
   me: AppRole[];
@@ -1215,7 +1245,7 @@ export interface LegacyTab {
 }
 /** The tab of the right pane a chip or a link opens in (GET /api/v2/conversations/{id}/open): a tracker task, a
  *  GitLab merge request or commit, a published document or board, any other site in the browser. */
-export const OPEN_TABS = ['task', 'gitlab', 'artifacts', 'browser', 'link'] as const;
+export const OPEN_TABS = ['task', 'gitlab', 'artifacts', 'browser', 'design', 'link'] as const;
 /** Why a `link` answer opens nothing: the connection's sign-in was refused (`connect`), or the provider cannot be
  *  shown inside a page (`embed`). The target is then the original address. */
 export const OPEN_REASONS = ['connect', 'embed'] as const;
@@ -1228,6 +1258,8 @@ export interface OpenTarget {
   reason?: OpenReason;
   /** Present when the ref fits several places (`!12` in two projects): the best first, which is tab and target. */
   choices?: OpenChoice[];
+  /** Only on the `design` tab: the board of the design the ref is (a path under its project/). */
+  board?: string;
 }
 /** One place a ref may open: the project, and what is known of the merge request there (its title). */
 export interface OpenChoice {
@@ -1266,6 +1298,8 @@ export interface FileContent {
   content: string;
   revision: string;
   bytes: number;
+  /** The file lies outside the chat's folder: it is shown, never saved. */
+  readOnly?: true;
 }
 /** PUT /api/v2/conversations/{id}/file?path=: the whole new text over the revision that was read; answers the file as it is now. */
 export interface FileSave {
@@ -1382,7 +1416,14 @@ export interface Conversation {
   autoContinues?: AutoContinue[]; // the times the runtime went on by itself, oldest first (the last 20); absent when none
   parentId?: ConvId; // the chat whose agent delegated this one; absent for a chat the person started
   test?: boolean; // a chat an agent made to check something: the sidebar leaves it out unless the person shows test chats
+  from?: ChatFrom; // an app started the chat for the person: it sits in the app's folder until the person moves it
   rev: number;
+}
+/** The app that started a chat for the person: `app` is its id, `label` the folder's name, `title` the chat's name. */
+export interface ChatFrom {
+  app: string;
+  label: string;
+  title?: string;
 }
 /**
  * A chat held on its agent's usage limit. `resetsAt` is when the limit resets (null: unknown); `continueAt` is when the
@@ -1493,7 +1534,12 @@ export interface NoticeSummaryModel {
 export interface DelegationSettings {
   maxChildren: number;
   anyChat: boolean;
+  /** When an agent's message reaches a working agent: `step` (absent) inside the running turn, `turn` after it. */
+  delivery?: DelegationDelivery;
 }
+/** `step`: an agent's message is read inside the running turn, at its next step; `turn`: when the turn ends. */
+export const DELEGATION_DELIVERY = ['step', 'turn'] as const;
+export type DelegationDelivery = (typeof DELEGATION_DELIVERY)[number];
 /** The delegation a runtime keeps when it was never set (wire.DefaultDelegation). */
 export const DEFAULT_DELEGATION: DelegationSettings = { maxChildren: 5, anyChat: false };
 /** The counts «Поручений на один чат» offers. */
@@ -2232,6 +2278,7 @@ const fail = (path: string, problem: string): never => {
 const str: Decoder<string> = (v, p) => (typeof v === 'string' ? v : fail(p, 'not a string'));
 const id: Decoder<string> = (v, p) => (str(v, p) !== '' ? (v as string) : fail(p, 'empty'));
 const bool: Decoder<boolean> = (v, p) => (typeof v === 'boolean' ? v : fail(p, 'not a boolean'));
+const onlyTrue: Decoder<true> = (v, p) => (v === true ? true : fail(p, 'not true'));
 const int: Decoder<number> = (v, p) =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : fail(p, 'not a whole number ≥ 0');
 const seq: Decoder<number> = (v, p) => (int(v, p) >= 1 ? (v as number) : fail(p, 'below 1'));
@@ -2400,7 +2447,7 @@ const profileInfo: Decoder<ProfileInfo> = object(
     key: profileKey,
     models: array(agentModel),
   },
-  { login: object({ account: str }), switch: object({ on: bool }) },
+  { login: object({ account: str }), switch: object({ on: bool }), account: bool },
 );
 const profileList: Decoder<ProfileList> = object({ profiles: array(profileInfo) });
 const profileTest: Decoder<ProfileTest> = object({
@@ -2592,7 +2639,13 @@ const designArtifact: Decoder<DesignArtifact> = object(
     boards: array(designBoard),
     convs: array(convId),
   },
-  { touchedBy: array(convId), owner: designOwner, role: designRole, appKind: designAppKind },
+  {
+    touchedBy: array(convId),
+    people: array(str),
+    owner: designOwner,
+    role: designRole,
+    appKind: designAppKind,
+  },
 );
 const madeTaskRef: Decoder<MadeTaskRef> = object({
   key: id,
@@ -2652,6 +2705,13 @@ const messageHit: Decoder<MessageHit> = object({
 });
 const messageSearch: Decoder<MessageSearch> = object({ query: str, hits: array(messageHit), indexing: bool });
 const chatDigest: Decoder<ChatDigest> = object({ convId, title: str, text: str, path: id, truncated: bool });
+const glanceMessage: Decoder<GlanceMessage> = object({ at: ms, text: str });
+const chatGlance: Decoder<ChatGlance> = object({
+  convId,
+  lastUser: nullable(glanceMessage),
+  lastAgent: nullable(glanceMessage),
+  messages: int,
+});
 const share: Decoder<number> = (v, p) => (num(v, p) <= 1 ? (v as number) : fail(p, 'above 1'));
 const diskPartId = oneOf(DISK_PART_IDS);
 const machineDiskPart: Decoder<MachineDiskPart> = object({ id: diskPartId, bytes: int });
@@ -2733,6 +2793,7 @@ const appRowBody: Decoder<AppRow> = object({
   closedAt: nullable(ms),
   author: nullable(id),
   avatar: nullable(id),
+  bot: bool,
   assignees: array(id),
   reviewers: array(id),
   me: array(oneOf(APP_ROLES)),
@@ -2744,10 +2805,11 @@ const appRowBody: Decoder<AppRow> = object({
   children: array(appChild),
   mr: nullable(appMr),
 });
-/** A runtime older than the avatars sends no `avatar`: its row reads as one without a picture. */
+/** A runtime older than the avatars sends no `avatar`, one older than the bots no `bot`: its row reads as one without
+ *  a picture, written by a person. */
 const appRow: Decoder<AppRow> = (v, p) => {
   const o = record(v, p);
-  return appRowBody(Object.hasOwn(o, 'avatar') ? o : { ...o, avatar: null }, p);
+  return appRowBody({ avatar: null, bot: false, ...o }, p);
 };
 const appFeed: Decoder<AppFeed> = (v, p) => {
   const feed = object({
@@ -2777,6 +2839,7 @@ const openTarget: Decoder<OpenTarget> = object(
   { tab: oneOf(OPEN_TABS), target: id },
   {
     reason: oneOf(OPEN_REASONS),
+    board: id,
     choices: (v, p) => {
       const choices = array(openChoice)(v, p);
       return choices.length >= 2 ? choices : fail(p, 'fewer than 2 choices');
@@ -2865,7 +2928,7 @@ const runtimeSettings: Decoder<RuntimeSettings> = object(
   {
     limitContinue: oneOf(ON_OFFS),
     restartContinue: oneOf(ON_OFFS),
-    delegation: object({ maxChildren: int, anyChat: bool }),
+    delegation: object({ maxChildren: int, anyChat: bool }, { delivery: oneOf(['step', 'turn'] as const) }),
     noticeSummary: object({ provider: oneOf(['claude', 'codex', 'off', 'auto'] as const) }, { model: str }),
   },
 );
@@ -2883,6 +2946,11 @@ const rewindPlan: Decoder<RewindPlan> = object({
     object({ at: ms, changes: array(object({ path: id, change: oneOf(FILE_CHANGES) })), more: int }),
   ),
 });
+const CHAT_FROM_MAX = 120;
+const fromField: Decoder<string> = (v, p) =>
+  [...str(v, p)].length <= CHAT_FROM_MAX ? (v as string) : fail(p, 'too long');
+const chatFrom: Decoder<ChatFrom> = object({ app: fromField, label: fromField }, { title: fromField });
+
 const origin: Decoder<Origin> = object(
   {
     k: oneOf(ORIGIN_KINDS),
@@ -2961,6 +3029,7 @@ const conversation: Decoder<Conversation> = object(
     autoContinues: array(autoContinue),
     parentId: convId,
     test: bool,
+    from: chatFrom,
   },
 );
 
@@ -3622,7 +3691,8 @@ export const parsePage = {
   designlyChat: (v: unknown): DesignlyChat => designlyChat(v, '$'),
   files: (v: unknown): DirListing =>
     object({ path: str, entries: array(fileEntry), truncated: bool }, { root: str })(v, '$'),
-  file: (v: unknown): FileContent => object({ path: id, content: str, revision: id, bytes: int })(v, '$'),
+  file: (v: unknown): FileContent =>
+    object({ path: id, content: str, revision: id, bytes: int }, { readOnly: onlyTrue })(v, '$'),
   tasks: (v: unknown): Task[] => array(task)(v, '$'),
   legacy: (v: unknown): LegacyTab | null => {
     // A conversation without a tmux session yet answers {"tab":null}.
@@ -3636,6 +3706,7 @@ export const parsePage = {
   context: (v: unknown): ConvContext => convContext(v, '$'),
   search: (v: unknown): MessageSearch => messageSearch(v, '$'),
   digest: (v: unknown): ChatDigest => chatDigest(v, '$'),
+  glance: (v: unknown): ChatGlance => chatGlance(v, '$'),
   machineStats: (v: unknown): MachineStats => machineStats(v, '$'),
   machineStop: (v: unknown): MachineStopped => machineStopped(v, '$'),
   apps: (v: unknown): AppsFeed => appsFeed(v, '$'),

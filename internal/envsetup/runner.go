@@ -99,6 +99,11 @@ func (r *Runner) Tick(ctx context.Context) {
 		if err := r.writeState(st); err != nil {
 			r.logf("warn", "envsetup: state not written", "error", err.Error())
 		}
+		// The last item left the list: what the environment had put on the machine leaves with it, as after a full run.
+		gone := &execution{r: r, ctx: ctx}
+		gone.pruneApps()
+		gone.pruneProviders()
+		gone.prunePacks()
 		return
 	}
 	id := "apply-" + short(h.Hash) + "-" + fmt.Sprint(r.now().UnixMilli())
@@ -187,14 +192,16 @@ func (r *Runner) readHeld() (held, bool) {
 	return h, true
 }
 
-// setupItems are the items the machine does something with, in the order of the steps: access, repositories, apps,
+// setupItems are the items the machine does something with, in the order of the steps: access, model providers, repositories, apps,
 // Claude's settings and plugins, then the scripts by their place in the list (those without one, in the order they came, last).
 func setupItems(all []hubproto.EnvItem) []hubproto.EnvItem {
-	var access, repos, appItems, packs, claude, scripts []hubproto.EnvItem
+	var access, providers, repos, appItems, packs, claude, scripts []hubproto.EnvItem
 	for _, it := range all {
 		switch it.Kind {
 		case hubproto.EnvKindAccess:
 			access = append(access, it)
+		case hubproto.EnvKindProvider:
+			providers = append(providers, it)
 		case hubproto.EnvKindRepo:
 			repos = append(repos, it)
 		case hubproto.EnvKindApp:
@@ -214,7 +221,7 @@ func setupItems(all []hubproto.EnvItem) []hubproto.EnvItem {
 		}
 		return a < b
 	})
-	return slices.Concat(access, repos, appItems, packs, claude, scripts)
+	return slices.Concat(access, providers, repos, appItems, packs, claude, scripts)
 }
 
 func (r *Runner) readState() hubproto.EnvSetupState {

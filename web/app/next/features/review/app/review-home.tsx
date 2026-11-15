@@ -19,6 +19,7 @@ import {
   type IGithubList,
   type THomeTab,
 } from '@/next/features/review/app/home';
+import { NO_RULES, visibleRows, type IReviewRules } from '@/next/features/review/app/rules';
 import type { AppFeed, AppRow } from '@/next/protocol/v2';
 import { Button } from '@/next/ui/button';
 import Icon from '@/next/ui/icon';
@@ -68,6 +69,8 @@ export interface IReviewHomeProps {
   onConnect: () => void;
   /** The sidebar on a phone. */
   onOpenDrawer: () => void;
+  /** The person's rules of the lists: whether the bots' merge requests are hidden. */
+  rules?: IReviewRules;
 }
 
 const List = ({
@@ -78,6 +81,7 @@ const List = ({
   onOpen,
   onRetry,
   onConnect,
+  rules = NO_RULES,
 }: IReviewHomeProps & { tab: THomeTab; q: string }) => {
   if (feed.k === 'loading') return <PageSkeleton />;
   if (feed.k === 'failed')
@@ -99,7 +103,7 @@ const List = ({
       />
     );
   if (gitlab && !noGitlab && gitlab.state !== 'ready' && !withGithub) return appNote(gitlab, onRetry);
-  const rows = homeRows(homeSourceRows(gitlab, github), tab, q);
+  const rows = homeRows(visibleRows(homeSourceRows(gitlab, github), rules, q), tab, q);
   const githubDown = github?.state === 'failed' && (
     <p className="hx-rvhome__warn">
       {github.reason === 'denied' ? t('next.reviewApp.githubDenied') : t('next.reviewApp.githubDown')}
@@ -153,7 +157,7 @@ const ReviewHome = (props: IReviewHomeProps) => {
   const [q, setQ] = useState('');
   const link = openableLink(q);
   const rows = props.feed.k === 'ready' ? homeSourceRows(props.feed.gitlab, props.feed.github) : [];
-  const counts = homeCounts(rows);
+  const counts = homeCounts(visibleRows(rows, props.rules ?? NO_RULES, ''));
   const options = HOME_TABS.map((id) => ({
     value: id,
     label:

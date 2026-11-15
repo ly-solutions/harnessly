@@ -3,7 +3,7 @@
 // UTC strings, days are YYYY-MM-DD (UTC). A number the hub has no facts for is null, never 0.
 
 export type CatalogKind =
-  'skill' | 'mcp' | 'repo' | 'doc' | 'script' | 'access' | 'plugin' | 'claude-settings' | 'app';
+  'skill' | 'mcp' | 'repo' | 'doc' | 'script' | 'access' | 'plugin' | 'claude-settings' | 'app' | 'provider';
 export type EnvLayerKind = 'org' | 'tenant' | 'team';
 export type AudienceMode = 'tenant' | 'teams' | 'off';
 
@@ -50,6 +50,15 @@ export type CatalogSource = {
   always?: unknown;
   ifAbsent?: unknown;
   claudeMd?: string;
+  // provider: a model provider for every machine. The key and the secret variables are named (a secret of the person's
+  // safe, or `vault:<path>#<key>` of the organization's), never carried; env are `NAME=value`, secretEnv `NAME=<secret>`.
+  api?: 'anthropic' | 'openai';
+  baseUrl?: string;
+  preset?: string;
+  models?: string[];
+  key?: string;
+  env?: string[];
+  secretEnv?: string[];
 };
 
 // `script` and `access` are counted by a hub that has the machine setup; an older one omits them.
@@ -63,6 +72,7 @@ export type KindCounts = {
   plugin?: number;
   'claude-settings'?: number;
   app?: number;
+  provider?: number;
 };
 
 export type Audience = {
@@ -157,6 +167,27 @@ export type PatchPresetRequest = {
   position?: number;
 };
 export type PresetResponse = { preset: EnvPreset };
+
+// A change of the organization's environment an agent proposed from a machine. It changes nothing until an admin of the
+// organization applies it. `source` is the provider as proposed, `before` the one of that name the organization has now
+// (a change or a removal); both name their secrets and carry no value of one. The name, the hint and the chat's title
+// are the agent's own words.
+export type EnvProposalChange = 'add' | 'update' | 'remove';
+export type EnvProposal = {
+  id: string;
+  change: EnvProposalChange;
+  name: string;
+  hint: string;
+  source?: CatalogSource;
+  before?: CatalogSource;
+  machine: string;
+  owner: string; // who connected the machine; '' when the account is gone
+  conv: string;
+  convTitle: string;
+  createdAt: number; // ms
+  expiresAt: number; // ms
+};
+export type EnvProposalsResponse = { proposals: EnvProposal[] };
 
 // POST /api/orgs/{org}/env/apply → 200: «Применить на машинах». `now` runs an update on the machines online now, the
 // rest when they next connect; `next` waits for the next connection on every machine.

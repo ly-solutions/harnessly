@@ -50,9 +50,28 @@ type Preset struct {
 	// Switched: the profile takes no key. The person turns it on (Store.Switches), and Claude Code is pointed at the
 	// local proxy the switch keeps; BaseURL is where the proxy's requests end up.
 	Switched bool
+	// Custom: a provider the person added by hand (the registry of internal/extproviders, SetCustom). Its key and the
+	// values of SecretEnv come from the machine's safe (Store.Safe), and it may run on a credential of SecretEnv alone.
+	Custom bool
+	// Proxied names the OpenAI-compatible provider (internal/extproviders) a custom profile reaches through the
+	// runtime's proxy (Store.Proxy): Claude Code is pointed at the proxy with the proxy's key, and the proxy turns its
+	// requests into the provider's. "" for every other profile.
+	Proxied string
+	// Backed: the vendor's profile takes its key from an account of the person's providers (SetBacked), not from a key
+	// typed for the profile itself. Its KeyRef is that account's secret in the safe; "" while there is no account.
+	Backed bool
+	// Unlisted: a chat that runs on the profile goes on with it, and a new one is not offered it: the account it is of
+	// is the vendor's own profile now (the default account of a vendor), which is the one to pick.
+	Unlisted bool
+	// SecretEnv are the variables of the CLI's environment whose values the safe holds: the name of the variable to the
+	// name of its secret. They are put over Env and over everything the launch sets itself (a custom profile only).
+	SecretEnv map[string]string
 	// KeyRef names a secret of the safe the key is taken from (a profile of the profiles file, ProfileFile). It is a
 	// name and never the value; Store.Secrets turns it into the key when the key is needed.
 	KeyRef string
+	// Home: the profile is another sign-in of the Codex CLI (SetCodexLogins): the CODEX_HOME a chat on it runs with.
+	// It takes no key; it is ready when that home is signed in.
+	Home string
 }
 
 const million = 1 << 20

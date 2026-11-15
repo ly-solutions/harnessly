@@ -54,6 +54,9 @@ type Runner struct {
 	// Apps installs the environment's apps (items of kind app) in the runtime's app registry; nil: this runtime does
 	// not, and such a step fails saying so.
 	Apps Apps
+	// Providers keeps the environment's model providers (items of kind provider) in the runtime's registry; nil: this
+	// runtime does not, and such a step fails saying so.
+	Providers Providers
 
 	// The rest is for tests; the zero value is the real thing.
 	Exec   ExecFunc
@@ -126,6 +129,19 @@ func (r *Runner) exec(ctx context.Context, c Cmd) (int, error) {
 }
 
 // source is what any setup kind's source may hold (docs/hub/environment.md).
+// Providers is the runtime's registry of model providers as the setup sees it.
+type Providers interface {
+	// Apply puts the item's provider into the registry or brings it in line with the source; changed is false when it
+	// was there as it is. waiting are the secrets of the person's safe the source names that the person has not put
+	// or not allowed for the provider's server yet (they are asked, and the provider is kept without them); shared
+	// are the vault: references to the organization's secrets it names.
+	Apply(itemID, name string, source json.RawMessage) (changed bool, waiting, shared []string, err error)
+	// Has: the item's provider is in the registry.
+	Has(itemID string) bool
+	// Prune takes off the environment's providers whose item is not among keep.
+	Prune(keep []string) ([]string, error)
+}
+
 // Apps is the runtime's app registry as the setup sees it.
 type Apps interface {
 	// Install puts the app in dir on the machine as the environment item's, with the installation's values the hub

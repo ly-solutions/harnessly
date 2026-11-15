@@ -21,7 +21,9 @@ import { useReviewNotes } from '@/next/features/review/app/use-review-notes';
 import { forgeOf, FORGE, isReviewLink } from '@/next/features/review/app/mr-review';
 import { useMrContext, useMrReview, type IMrReviewIo } from '@/next/features/review/app/use-mr-review';
 import { CreateMr, OwnMr, toConnections } from '@/next/legacy/own-mr';
-import { actMrReview, loadMrReview } from '@/next/legacy/code-review-api';
+import { VIEWED_IO, actMrReview, loadMrReview } from '@/next/legacy/code-review-api';
+import { changeReviewRules, useReviewRules } from '@/next/legacy/review-rules';
+import type { IReviewRulesApi } from '@/next/features/review/app/rules';
 import { chatAnswers, contentHash, sideAnswer, workWriter } from '@/next/legacy/work-write-api';
 import { putQuote, removeQuote, useQuotes } from '@/next/stores/quotes';
 import type { IQuoted } from '@/next/features/review/app/mr-threads';
@@ -84,6 +86,12 @@ const MR_IO: IMrReviewIo = {
   act: actMrReview,
 };
 
+/** The person's review rules with the way to change them, for the screen. */
+const useRulesApi = (): IReviewRulesApi => {
+  const rules = useReviewRules();
+  return useMemo(() => ({ rules, change: changeReviewRules }), [rules]);
+};
+
 const NO_ANSWERS: IAgentReviewIo['read'] = () => Promise.resolve([]);
 
 interface IMrStageProps {
@@ -125,6 +133,7 @@ export const MrStage = ({ url, ask, send, chat, machine, expand, onRead }: IMrSt
     [send, chat],
   );
   const agent = useAgentReview(url, io);
+  const rules = useRulesApi();
   const ready = view.k === 'ready' ? view.view : null;
   useEffect(() => {
     if (ready) onRead?.({ title: ready.title, crumb: `${ready.project.split('/').at(-1)} ${ready.ref}` });
@@ -156,6 +165,8 @@ export const MrStage = ({ url, ask, send, chat, machine, expand, onRead }: IMrSt
       threads={view.view.comments}
       mr={mr}
       agent={agent}
+      rules={rules}
+      viewedIo={VIEWED_IO}
       actions={out}
       expand={expand}
     />
@@ -269,6 +280,7 @@ export const WorkStage = ({ machine, chat, wt }: { machine: MachineId; chat: Con
     [machine, chat],
   );
   const agent = useAgentReview(`${chat}\u0000${worktree ?? ''}`, io);
+  const rules = useRulesApi();
 
   if (current === undefined) return <StageSkeleton />;
   if (!entry)
@@ -335,6 +347,8 @@ export const WorkStage = ({ machine, chat, wt }: { machine: MachineId; chat: Con
       worktree={entry.worktree}
       edit={edit}
       agent={agent}
+      rules={rules}
+      viewedIo={VIEWED_IO}
       actions={
         mrUrl ? (
           <OpenLink url={mrUrl} provider={forgeOf(mrUrl) === FORGE.github ? 'github' : 'gitlab'} />

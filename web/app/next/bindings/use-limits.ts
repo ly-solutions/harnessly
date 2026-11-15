@@ -6,8 +6,16 @@ import { createKeyedStore, useKey } from '@/next/core/store';
 import { useLinkRestored } from '@/next/stores/connection';
 import { useDayStartHour } from '@/next/stores/me';
 import { loadMachineLimits } from '@/next/features/limits/api';
-import { readLimitsOf, type LimitsView, type MachineLimits } from '@/next/features/limits/model';
-import type { MachineId, Provider } from '@/next/protocol/v2';
+import {
+  otherLimitsOf,
+  limitsOfOwner,
+  readLimitsOf,
+  type LimitsOwner,
+  type LimitsView,
+  type MachineLimits,
+  type OtherLimits,
+} from '@/next/features/limits/model';
+import type { MachineId } from '@/next/protocol/v2';
 
 export const LIMITS_POLL_MS = 60_000;
 
@@ -34,13 +42,16 @@ export const seedLimits = (machine: MachineId, usage: unknown): void => {
   if (limits) entries.patch(machine, (prev) => prev ?? { limits, failed: false });
 };
 
-/** Null while the first answer has not come: the chip is not drawn before it knows what to say. */
-export const useAgentLimits = (machine: MachineId | null, provider: Provider | null): LimitsView | null => {
-  const entry = useKey(entries, machine);
+/** The card's «other subscriptions», when the machine has any. */
+const othersOf = (limits: MachineLimits, owner: LimitsOwner): { others?: OtherLimits[] } => {
+  const others = otherLimitsOf(limits, owner);
+  return others.length > 0 ? { others } : {};
+};
+
+/** Keeps the machine's limits asked while something on the page shows them. */
+const useLimitsAsked = (machine: MachineId | null): void => {
   // The link coming back asks at once, not at the next minute.
   const restored = useLinkRestored(machine);
-  const dayStartHour = useDayStartHour();
-
   useEffect(() => {
     if (!machine) return;
     let live = true;
@@ -64,12 +75,43 @@ export const useAgentLimits = (machine: MachineId | null, provider: Provider | n
       document.removeEventListener('visibilitychange', resume);
     };
   }, [machine, restored]);
+};
 
-  if (!entry || !provider || !machine) return null;
+/** Everything the machine says of its limits (Settings lists them by account); null until it has answered. */
+export const useMachineLimits = (machine: MachineId | null): MachineLimits | null => {
+  const entry = useKey(entries, machine);
+  useLimitsAsked(machine);
+  return entry?.limits ?? null;
+};
+
+/** Null while the first answer has not come: the chip is not drawn before it knows what to say. */
+export const useAgentLimits = (machine: MachineId | null, owner: LimitsOwner | null): LimitsView | null => {
+  const entry = useKey(entries, machine);
+  const dayStartHour = useDayStartHour();
+  useLimitsAsked(machine);
+
+  if (!entry || !owner || !machine) return null;
+  const { provider } = owner;
+  if (owner.profile !== null) {
+    // A vendor's profile has a chip only once the machine has its limits: one it cannot ask says nothing, not zero.
+    const limits = entry.limits ? limitsOfOwner(entry.limits, owner) : null;
+    if (!limits || !entry.limits) return null;
+    return {
+      state: 'ready',
+      provider,
+      profile: owner.profile,
+      limits,
+      spend: null,
+      ...othersOf(entry.limits, owner),
+    };
+  }
   // The spend is Claude's: a Codex chat goes by its limits only.
   const claudeSpend = provider === 'claude' ? (entry.limits?.claudeSpend ?? null) : null;
   const spend = claudeSpend ? { spend: claudeSpend, dayStartHour } : null;
-  if (entry.limits) return { state: 'ready', provider, limits: entry.limits[provider], spend };
+  if (entry.limits) {
+    const limits = limitsOfOwner(entry.limits, owner);
+    return { state: 'ready', provider, limits, spend, ...othersOf(entry.limits, owner) };
+  }
   if (entry.failed) return { state: 'failed', provider, onRetry: () => ask(machine) };
   return { state: 'ready', provider, limits: null, spend: null };
 };

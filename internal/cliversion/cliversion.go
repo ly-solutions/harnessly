@@ -33,8 +33,8 @@ type Range struct {
 // checked is the one table. A reference screen is a file testdata/tui/<provider>-<version>-<name> of the typist; its
 // test fails when a version there has no row here, or a row names a version without screens.
 var checked = []Range{
-	{Provider: Claude, From: "2.1.296", To: "2.1.322",
-		Screens: []string{"2.1.296", "2.1.310", "2.1.311", "2.1.312", "2.1.316", "2.1.322"}},
+	{Provider: Claude, From: "2.1.296", To: "2.1.323",
+		Screens: []string{"2.1.296", "2.1.310", "2.1.311", "2.1.312", "2.1.316", "2.1.322", "2.1.323"}},
 }
 
 // Table is the rows of the table.

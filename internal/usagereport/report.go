@@ -25,9 +25,12 @@ type Day struct {
 	Hours [24]float64
 }
 
-// UsageRow is the usage of a day, provider, model and project.
+// UsageRow is the usage of a day, provider, model and project, and of the account of the provider it was paid by.
 type UsageRow struct {
-	Day, Provider, Model, Project                        string
+	Day, Provider, Model, Project string
+	// Account is the name of the account of the provider the sessions of the row ran on; "" for sessions
+	// nobody noted an account of: the CLI's own sign-in, and everything from before accounts were noted.
+	Account                                              string
 	Input, Output, CacheRead, CacheWrite, Cost, APICalls float64
 }
 
@@ -154,6 +157,12 @@ func (k *keyed[V]) set(key string, v V) {
 
 // Build reduces the facts of every transcript into the report, as of nowMs.
 func Build(files []*Facts, person, machine, timezone string, clock Clock, nowMs float64) (*Report, error) {
+	return BuildWith(files, person, machine, timezone, clock, nowMs, nil)
+}
+
+// BuildWith is Build with the account each session ran on: accountOf names it by the agent and its session, "" for a
+// session without one; nil knows no accounts.
+func BuildWith(files []*Facts, person, machine, timezone string, clock Clock, nowMs float64, accountOf func(provider, session string) string) (*Report, error) {
 	cutoff := math.Floor(nowMs/1000) - WindowDays*daySec
 	// Originals first: a resumed or forked copy re-lists history under old ids.
 	ordered := append([]*Facts(nil), files...)
@@ -218,6 +227,10 @@ func Build(files []*Facts, person, machine, timezone string, clock Clock, nowMs 
 
 	for _, f := range ordered {
 		id := f.Provider + ":" + f.SessionID
+		account := ""
+		if accountOf != nil {
+			account = accountOf(f.Provider, f.SessionID)
+		}
 		session, ok := sessions.get(id)
 		if !ok {
 			session = &Session{ID: id, Provider: f.Provider, Tasks: []string{}, PRs: []string{}}
@@ -272,9 +285,12 @@ func Build(files []*Facts, person, machine, timezone string, clock Clock, nowMs 
 			name := model.(string)
 			day := keys.key(clock, m.Ts)
 			rowKey := day + "|" + f.Provider + "|" + name + "|" + project
+			if account != "" {
+				rowKey += "|" + account
+			}
 			row, ok := usage.get(rowKey)
 			if !ok {
-				row = &UsageRow{Day: day, Provider: f.Provider, Model: name, Project: project}
+				row = &UsageRow{Day: day, Provider: f.Provider, Model: name, Project: project, Account: account}
 				usage.set(rowKey, row)
 			}
 			row.Input += m.Input
@@ -471,6 +487,11 @@ func (r *Report) write(w *jw) {
 		for _, x := range []float64{u.Input, u.Output, u.CacheRead, u.CacheWrite, u.Cost, u.APICalls} {
 			w.WriteByte(',')
 			w.num(x)
+		}
+		// The account comes last and only where there is one: a reader from before accounts takes the row as it was.
+		if u.Account != "" {
+			w.WriteByte(',')
+			w.str(u.Account)
 		}
 		w.WriteByte(']')
 	}

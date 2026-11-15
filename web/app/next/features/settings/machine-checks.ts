@@ -37,6 +37,7 @@ export const KNOWN_CHECKS = [
   'disk',
   'apps_boundary',
   'preview_dns',
+  'launch_env_reserved',
   'pane_shell',
   'pane_program',
   'pane_keys',

@@ -196,6 +196,9 @@ type CodexProfile struct {
 	// KeyEnv is the variable Codex reads the key from, KeyFile the file the key is in. The pane's shell fills the variable
 	// from the file (`VAR="$(cat file)"`), so the key is not in the line that is typed.
 	KeyEnv, KeyFile string
+	// Home, when set, is the CODEX_HOME the chat runs with: another sign-in of the CLI (internal/codexaccounts). The
+	// launch line sets it for this one command.
+	Home string
 }
 
 // Efforts are every reasoning level the CLIs know, weakest first.

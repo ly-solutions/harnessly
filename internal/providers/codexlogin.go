@@ -211,3 +211,9 @@ func (c *CodexLogin) renew(ctx context.Context) error {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	return cmd.Run()
 }
+
+// codexSignedIn says whether a Codex home holds a sign-in by a ChatGPT plan (its auth.json is read, nothing is renewed).
+func codexSignedIn(home string) bool {
+	_, ok := (&CodexLogin{Path: filepath.Join(home, "auth.json")}).Account()
+	return ok
+}

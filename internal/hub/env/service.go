@@ -116,6 +116,9 @@ func (s *Service) Mount(mux *http.ServeMux) {
 	mux.Handle("PATCH /api/orgs/{org}/env/presets/{presetId}", s.gate(s.patchPreset))
 	mux.Handle("DELETE /api/orgs/{org}/env/presets/{presetId}", s.gate(s.deletePreset))
 	mux.Handle("POST /api/orgs/{org}/env/apply", s.gate(s.apply))
+	mux.Handle("GET /api/orgs/{org}/env/proposals", s.gate(s.listProposals))
+	mux.Handle("POST /api/orgs/{org}/env/proposals/{proposalId}/apply", s.gate(s.applyProposal))
+	mux.Handle("POST /api/orgs/{org}/env/proposals/{proposalId}/decline", s.gate(s.declineProposal))
 	mux.Handle("POST /api/orgs/{org}/env/groups", s.gate(s.addGroup))
 	mux.Handle("PATCH /api/orgs/{org}/env/groups/{groupId}", s.gate(s.patchGroup))
 	mux.Handle("DELETE /api/orgs/{org}/env/groups/{groupId}", s.gate(s.deleteGroup))
@@ -376,7 +379,7 @@ func (r *rights) visibleTenants(w *world) ([]store.Space, error) {
 
 var kindRu = map[string]string{store.CatalogSkill: "скилл", store.CatalogMCP: "MCP", store.CatalogRepo: "репозиторий", store.CatalogDoc: "документ",
 	store.CatalogScript: "скрипт", store.CatalogAccess: "доступ", store.CatalogPlugin: "плагин", store.CatalogClaudeSettings: "настройки Claude",
-	store.CatalogApp: "приложение", store.CatalogPack: "пакет окружения"}
+	store.CatalogApp: "приложение", store.CatalogPack: "пакет окружения", store.CatalogProvider: "провайдер моделей"}
 
 // whereRu says where a layer is, for the title of a change.
 func (w *world) whereRu(layer, scopeID string) string {
@@ -428,7 +431,7 @@ func (s *Service) record(ctx context.Context, st store.Store, w *world, p *auth.
 	if err != nil {
 		return err
 	}
-	if _, err = st.AddChange(ctx, store.Change{OrgKey: w.org.ID, ScopeKind: sc.Kind, ScopeID: sc.ID, Kind: ChangeKind, Title: title, At: now,
+	if _, err = st.AddChange(ctx, store.Change{OrgKey: w.org.ID, ScopeKind: sc.Kind, ScopeID: sc.ID, Kind: ChangeKind, Title: title + agentNote(ctx), At: now,
 		AuthorID: p.User.ID, Source: store.ChangeManual, Machines: n, CreatedAt: now}); err != nil {
 		return err
 	}

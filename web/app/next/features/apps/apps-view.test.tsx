@@ -43,6 +43,7 @@ const row = (patch: Partial<AppRow>): AppRow => ({
   closedAt: null,
   author: null,
   avatar: null,
+  bot: false,
   assignees: [],
   reviewers: [],
   me: [],

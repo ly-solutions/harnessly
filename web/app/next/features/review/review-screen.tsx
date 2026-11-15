@@ -21,7 +21,7 @@ import ReviewHeader from '@/next/features/review/review-header';
 import ReviewTree, { Counts } from '@/next/features/review/review-tree';
 import { ancestorsOf, buildTree, dirPaths, treeOrder, type IDirNode } from '@/next/features/review/tree';
 import { useReviewFile, type TStepDir } from '@/next/features/review/use-review-file';
-import { useViewed } from '@/next/features/review/viewed';
+import { useViewed, type IViewedIo } from '@/next/features/review/viewed';
 import { personKey, useMe } from '@/next/stores/me';
 import { Button, RoundButton } from '@/next/ui/button';
 import Icon from '@/next/ui/icon';
@@ -47,6 +47,9 @@ export interface IReviewScreenProps {
   commentLayer?: (file: IReviewFile, side: TLineSide) => Extension[];
   /** A mark next to a file in the tree: its comments. */
   fileBadge?: (file: IReviewFile) => ReactNode;
+  /** The machine's «viewed» marks of a change on a code host, as the «Ревью кода» app has them; local work keeps
+   *  them in this browser. */
+  viewedIo?: IViewedIo | null;
 }
 
 const scopeOf = (source: IReviewSource): string => {
@@ -70,11 +73,13 @@ const initialOpen = (tree: IDirNode, files: number, first: string | null): Reado
   return new Set(first ? ancestorsOf(tree, first) : []);
 };
 
-const ReviewScreen = ({ source, actions, intro, commentLayer, fileBadge }: IReviewScreenProps) => {
+const ReviewScreen = ({ source, actions, intro, commentLayer, fileBadge, viewedIo }: IReviewScreenProps) => {
   const prefs = useReviewPrefs();
   const me = useMe();
   const person = me.k === 'ready' ? personKey(me.me) : LOCAL_PERSON;
-  const { viewed, toggle } = useViewed(person, scopeOf(source));
+  const { viewed, toggle } = useViewed(person, scopeOf(source), {
+    io: source.meta.kind === 'local' ? null : viewedIo,
+  });
 
   const [filter, setFilter] = useState('');
   const [full, setFull] = useState(false);

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ly-solutions/harnessly/internal/cliversion"
+	"github.com/ly-solutions/harnessly/internal/screen"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
@@ -145,5 +146,27 @@ func TestAnUncheckedVersionStillTypesIntoAnIdleBox(t *testing.T) {
 	}
 	if res := TypeChecked(Message{Text: "hello"}, claude, p, newClock()); res.Outcome != Sent || !res.Typed {
 		t.Fatalf("%+v %v", res, p.sent())
+	}
+}
+
+// The send-now chord on Claude Code 2.1.323: a message queued behind a running command is seen in the prompt box, is
+// still there right after the chord, and is gone once the agent took it and handed the command to the background.
+func TestTheSendNowScreensOfTheNewestCheckedClaude(t *testing.T) {
+	for _, c := range []struct {
+		file   string
+		queued bool
+	}{
+		{"claude-2.1.323-queued-bash.ansi.txt", true},
+		{"claude-2.1.323-queued-bash-chord-pending.ansi.txt", true},
+		{"claude-2.1.323-queued-bash-after-send-now.ansi.txt", false},
+	} {
+		raw, err := os.ReadFile("testdata/tui/" + c.file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := screen.ObserveSendNow(string(raw))
+		if !f.InputLine || f.Menu || f.Input != "" || f.Queued != c.queued {
+			t.Errorf("%s: read as %+v, want queued %v on an empty input line", c.file, f, c.queued)
+		}
 	}
 }

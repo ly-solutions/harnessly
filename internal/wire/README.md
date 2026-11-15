@@ -320,9 +320,13 @@ event (`prompt_state`, `message_upsert`); the page never decides that a message 
       replaces its old socket.
     - The socket speaks the Legacy terminal protocol, binary frames of one byte of type and a payload. Page to runtime:
       `0x00` keystrokes (UTF-8), `0x02` resize (uint16 cols, uint16 rows, big endian), `0x03` heartbeat (every 30 s, the
-      runtime answers `0x03`; 90 s without one closes the socket). Runtime to page: `0x01` output (UTF-8, whole
+      runtime answers `0x03`; 90 s without one closes the socket), `0x07` back from the history to the live screen (the
+      pane leaves tmux's copy mode; keys sent after it reach the program). Runtime to page: `0x01` output (UTF-8, whole
       characters), `0x03` heartbeat answer. The screen of the pane arrives first, as the output a terminal would draw to
       catch up. The page keeps the socket by reconnecting when it closes; nothing is lost, tmux holds the session.
+      The history lives in tmux: the wheel reaches it as a mouse report and scrolls the pane in copy mode, or goes to a
+      program that asked for the mouse. While the runtime's tmux.conf is in force, the window title is
+      `hx-scroll:1` while the pane is scrolled back and `hx-scroll:0` at the live screen (the page's "Down").
     - `GET /api/v2/conversations/{id}/terminals` lists the own terminals `[{id, createdAt}]`, oldest first;
       `POST` makes one (a shell in the conversation's folder) and answers `{id, createdAt}`; `DELETE .../{terminalId}`
       ends it (204). A ninth is 409. The shells are tmux sessions, so they outlive a restart of the runtime; deleting the
@@ -695,7 +699,8 @@ event (`prompt_state`, `message_upsert`); the page never decides that a message 
 63. **Delegated chats.** `conversation.create` may carry `parentId` (a conversation of this machine; an unknown one is
     `refused{not_found}`) and `title` (at most 200 characters, the name from the start): an agent's `delegate_task`
     starts a chat so, and the record carries `parentId` for as long as it lives. `RuntimeSettings.delegation`
-    `{maxChildren 1–10, anyChat}` bounds what agents may delegate; a PUT without it keeps the saved one. Both go only to
+    `{maxChildren 1–10, anyChat, delivery?}` bounds what agents may delegate (`delivery`: `step`, the default — an
+    agent's message goes into the running turn of the chat it is sent to — or `turn`, after that turn); a PUT without it keeps the saved one. Both go only to
     a page that names the cap (`/api/v2/socket?caps=delegation`, and `?caps=delegation` on `/api/v2/runtime-settings`):
     any other page gets the record without `parentId` (an event's older form is encoded with the same seq) and the
     settings without `delegation`.
@@ -808,3 +813,13 @@ event (`prompt_state`, `message_upsert`); the page never decides that a message 
     starts gathering when a page first asks for its snapshot. A runtime that does not gather it (an older one, or
     `RUNTIME_PANE_FEED=0`) sends no `pane`; only then does the page read the conversation for its pane by itself, over
     the Legacy timeline socket. No feature names it: a snapshot with `pane` is the sign.
+72. **Tasks and commits among what a turn made.** `Turn.outputs` may hold `{kind: task}` (a task of the
+    tracker the agent showed: `harnessly open HRN-1` or the task's address; `ref` is the task's address, `title` its
+    key) and `{kind: commit}` (a commit of GitLab or GitHub; `ref` its address, `title` «project sha»). Only a page
+    that names the cap (`?caps=links` on the socket and on `GET …/turns`) gets them: any other page gets the turn
+    without them. The card's live title and state come from `GET /api/platform/link-meta?url=`, which reads, besides a
+    task and a merge request (now with `pipeline: {status, url}` when it has one), a commit
+    (`{kind: commit, title, sha, project, pipeline}`) and a feature stand under the stands' domain
+    (`{kind: stand, up, title}`: a redirect to a sign-in is up, no answer or a 5xx is down). Which addresses are
+    stands, the tracker, GitLab, documents and boards is the organization's word when the hub sends it
+    (`env.set` `links`, hubproto.LinkSettings), the machine's environment otherwise.

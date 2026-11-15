@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ly-solutions/harnessly/internal/convo"
 	"github.com/ly-solutions/harnessly/internal/peers"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
@@ -54,12 +55,17 @@ func stateWords(c wire.Conversation) string {
 }
 
 func person(text string) string {
-	if e, ok := peers.Parse(text); ok {
-		from := e.Chat
-		if from == "" {
-			from = e.Person
+	// Several agents' messages typed as one are a line each.
+	if all := peers.ParseAll(text); len(all) > 0 {
+		lines := make([]string, len(all))
+		for i, e := range all {
+			from := e.Chat
+			if from == "" {
+				from = e.Person
+			}
+			lines[i] = "[agent of «" + from + "»] " + clip(e.Text, textMax)
 		}
-		return "[agent of «" + from + "»] " + clip(e.Text, textMax)
+		return strings.Join(lines, "\n")
 	}
 	return "[person] " + clip(text, textMax)
 }
@@ -268,4 +274,45 @@ func wakeText(r Result) string {
 	}
 	b.WriteString("\n\nread_conversation gives the whole chat; send_to_conversation gives it more work.")
 	return b.String()
+}
+
+// SentText is the answer of send_to_conversation: where the message went, in words the sender can act on.
+func SentText(s Sent) string {
+	var line string
+	switch s.Where {
+	case convo.PeerInTurn:
+		line = "delivered into the running turn of " + Head(s.To) + ": the agent reads it at its next step."
+		if s.How == DeliverNow {
+			// The chord that hands the running tool over is not pressed for a CLI version the screen reading was not
+			// checked against, so «at once» is not promised.
+			line = "delivered into the running turn of " + Head(s.To) + ": the tool it runs is handed to the background so that it " +
+				"reads the message now; where the agent's CLI does not allow that, it reads it at its next step."
+		}
+	case convo.PeerStarted:
+		line = "delivered to " + Head(s.To) + ": the agent was free and works on it now."
+	case convo.PeerFailed:
+		line = "not delivered to " + Head(s.To) + ": the message did not stay in its queue; read_conversation before sending it again."
+	default:
+		line = "queued in " + Head(s.To) + ": " + queuedWhy(s.Reason) + " It is not lost and is typed once; do not send it again."
+	}
+	return line + "\nwait_conversation for its answer."
+}
+
+// queuedWhy says what a message waits for in the line.
+func queuedWhy(r wire.QueueReason) string {
+	switch r {
+	case wire.QueuedBlockedMenu:
+		return "the agent asks the person for a permission or an answer, and the message goes in when they have answered."
+	case wire.QueuedBlockedText:
+		return "the agent's input box holds text someone is typing, and the message goes in when the box is free."
+	case wire.QueuedLaunching, wire.QueuedResuming:
+		return "the agent is starting, and the message goes in when it is up."
+	case wire.QueuedPaused:
+		return "the chat's queue is paused (the agent is not running, a usage limit, or the person stopped it)."
+	case wire.QueuedStalled:
+		return "an earlier message was not taken by the agent, and the person decides what to do with it."
+	case wire.QueuedBehind:
+		return "it waits behind the messages ahead of it."
+	}
+	return "the agent works, and the message goes in when it can take it (at the end of its turn at the latest)."
 }

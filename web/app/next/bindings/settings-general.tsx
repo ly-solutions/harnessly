@@ -35,7 +35,7 @@ import { goTo, ROUTE } from '@/next/routes/routes';
 import { bootNext, shutdownNext } from '@/next/boot';
 import { appConfig, saveLanguage, type TLanguage } from '@/platform/config';
 import { offeredLanguages } from '@/platform/languages';
-import { hasFeature, useMachine, useMachines } from '@/next/stores/machines';
+import { hasFeature, useMachines } from '@/next/stores/machines';
 import { useDeadline } from '@/next/ui/use-deadline';
 import {
   DEFAULT_SETTINGS,
@@ -255,9 +255,6 @@ export const GeneralPage = ({ machine, name, pending, changes }: IGeneralPagePro
   const browserAgent = useBrowserAgent();
   const feedKinds = useFeedKinds();
   const runtime = useRuntimeSettings(machine, changes.stampOf('runtime.'));
-  const machineView = useMachine(machine);
-  const modelsOf = (provider: 'claude' | 'codex') =>
-    machineView?.machine.agents.find((agent) => agent.provider === provider)?.models ?? [];
   const update = useUpdateInfo(machine);
   const machineChecks = useMachineChecks(machine);
   const baseSkipped = useBaseSkipped(machine);
@@ -300,8 +297,6 @@ export const GeneralPage = ({ machine, name, pending, changes }: IGeneralPagePro
       limitContinue={runtime.value?.limitContinue ?? null}
       restartContinue={runtime.value?.restartContinue ?? null}
       delegation={runtime.value ? (runtime.value.delegation ?? DEFAULT_DELEGATION) : null}
-      noticeSummary={runtime.value?.noticeSummary ?? null}
-      summaryModels={runtime.value ? { claude: modelsOf('claude'), codex: modelsOf('codex') } : null}
       busy={new Set(waiting.keys())}
       onEnterSends={(enterSends) => void run('enterSends', failure, () => savePerson({ enterSends }))}
       onDayStartHour={(dayStartHour) => void run('dayStartHour', failure, () => savePerson({ dayStartHour }))}
@@ -317,11 +312,6 @@ export const GeneralPage = ({ machine, name, pending, changes }: IGeneralPagePro
       }
       onDelegation={(delegation: DelegationSettings) =>
         void run('delegation', failure, () => runtime.save({ delegation }))
-      }
-      onNoticeSummary={(value) =>
-        void run('noticeSummary', failure, () =>
-          runtime.save(value ? { noticeSummary: value } : { noticeSummary: { provider: 'auto' } }),
-        )
       }
       updates={
         update.value ? (

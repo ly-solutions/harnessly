@@ -25,7 +25,10 @@ import (
 	"github.com/ly-solutions/harnessly/internal/apps"
 	"github.com/ly-solutions/harnessly/internal/browser"
 	"github.com/ly-solutions/harnessly/internal/design"
+	"github.com/ly-solutions/harnessly/internal/designrec"
 	"github.com/ly-solutions/harnessly/internal/envsetup"
+	"github.com/ly-solutions/harnessly/internal/extproviders"
+	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/integrations"
 	"github.com/ly-solutions/harnessly/internal/journal"
@@ -143,7 +146,11 @@ type runtimeGate struct {
 	revisions func(design.Revisions)
 	// pusher gives the library the way to put a project into the store at once.
 	pusher func(design.StorePusher)
-	store  *storelink.Link
+	// records is what the library says of its entities, watch calls fn on each change of it.
+	records func() []filestore.Record
+	watch   func(func()) func()
+	covers  func(context.Context, *designrec.Syncer)
+	store   *storelink.Link
 }
 
 // configFileOf is the runtime's config (the pair's secret, the person's settings).
@@ -320,6 +327,11 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 		routes = append(routes, gate.Route{
 			Match:   func(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, providers.GPTRelayPath+"/") },
 			Handler: gptRelay,
+		})
+		// The relay the same proxy reaches the OpenAI-compatible providers through, with their keys from the safe.
+		routes = append(routes, gate.Route{
+			Match:   func(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, providers.ExtRelayPath+"/") },
+			Handler: extRelay(cfg.DataDir, ref.c.agents.gpt),
 		})
 	}
 	if ref.c.agents != nil && ref.c.agents.router != nil {
@@ -505,6 +517,9 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	for _, group := range bodyRouteGroups {
 		f.Add(f.AsBodyRoutes(group(d)...)...)
 	}
+	f.Add(designHomeRoutes(f)...)
+	f.Add(indexSearchRoutes(d, f)...)
+	f.Add(designRecordsRoutes()...)
 	settingsStore := stateSettings(d) // the one writer of the settings files in this process
 	f.Add(f.AsRoutes(stateRoutes(d, settingsStore, ref.c.agents.ValidateLaunch)...)...)
 	f.Add(f.AsRoutes(ref.c.stateCoreRoutes(d)...)...)
@@ -519,6 +534,10 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	self := newSelfUpdater(cfg.DataDir)
 	f.Add(updateRoutes(d, checker, checkOn, self)...)
 	f.Add(machineCheckRoutes(d, self)...)
+	if launchEnvUndeclared(os.Getenv, os.LookupEnv) {
+		agent.Log("warn", "the reserved launch variables of this deployment are not set: a provider's launch is checked against harnessly's own only",
+			agent.F{K: "variable", V: extproviders.ReservedPrefixesEnv})
+	}
 	f.Add(moveRoutes(d)...)
 	f.Add(selftestRoutes(d)...)
 	startKeeper(d)
@@ -527,7 +546,11 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(askRoutes(d, ref.c)...)
 	f.Add(secretRoutes(d, ref.c)...)
 	f.Add(extProviderRoutes(d)...)
+	f.Add(codexLoginRoutes(d)...)
+	f.Add(chatgptRoutes(d)...)
 	f.Add(backgroundRoutes(d)...)
+	f.Add(searchRoutes(d)...)
+	f.Add(uiAgentRoutes(d)...)
 	f.Add(settingsCtlRoutes(d, ref.c)...)
 	setupRunners := envSetupRunners(d, os.Getenv("AGENT_HUB_OBSERVE_FILE"), cfg.Version)
 	// The organization's rule for apps comes with the hub's list (apps_consent_policy.go).
@@ -557,33 +580,12 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 		envSetup: setupRunners, library: func() string { return designAPI(d).L.Root() },
 		kits:      func() string { return designAPI(d).L.KitsDir() },
 		revisions: func(r design.Revisions) { designAPI(d).L.UseRevisions(r) },
-		pusher:    func(p design.StorePusher) { designAPI(d).L.UseStorePusher(p) }}
+		pusher:    func(p design.StorePusher) { designAPI(d).L.UseStorePusher(p) },
+		records:   func() []filestore.Record { return libraryRecords(d) }, watch: watchLibrary(d), covers: pushCovers(d)}
 	if checkOn {
 		rg.update = checker
 	}
 	return rg, nil
-}
-
-// defaultTmuxConf is the tmux.conf a standalone runtime writes when none is named: the page's terminals have tabs
-// of their own, so tmux's status bar (with the host name and clock) stays off.
-const defaultTmuxConf = `# Written by the runtime because RUNTIME_TMUX_CONF names no file. It is never overwritten: edit it freely.
-set -g status off
-`
-
-// tmuxConfigFile is RUNTIME_TMUX_CONF; set but empty, tmux's defaults. Unset on a standalone runtime, it is tmux.conf in
-// the data directory, written with defaultTmuxConf when missing; in front of the previous runtime, none.
-func tmuxConfigFile(cfg gate.Config) string {
-	if f, ok := os.LookupEnv("RUNTIME_TMUX_CONF"); ok || !cfg.Standalone() || cfg.DataDir == "" {
-		return f
-	}
-	f := filepath.Join(cfg.DataDir, "tmux.conf")
-	if _, err := os.Stat(f); errors.Is(err, os.ErrNotExist) {
-		if err := os.WriteFile(f, []byte(defaultTmuxConf), 0o644); err != nil {
-			agent.Log("warn", "standalone: default tmux.conf not written; tmux runs with its defaults", agent.F{K: "err", V: err.Error()})
-			return ""
-		}
-	}
-	return f
 }
 
 // runtimePort is the port the previous runtime reported as its own: its inner one in front of it, the gate's alone.
@@ -648,6 +650,10 @@ func run(ctx context.Context, cfg gate.Config) error {
 	if jl := openJournal(cfg.DataDir); jl != nil {
 		defer jl.Close()
 	}
+	// The organization's links go over the environment before the routes read it (hub_links.go).
+	links := newHubLinks(hubLinkDirs(cfg.DataDir, os.Getenv("AGENT_HUB_OBSERVE_FILE")))
+	links.apply()
+	go links.watch(ctx, hubLinksEvery)
 	f, err := build(cfg)
 	if err != nil {
 		_ = ln.Close()

@@ -11,6 +11,7 @@ package connections
 
 import (
 	"errors"
+	"regexp"
 	"time"
 )
 
@@ -119,7 +120,15 @@ type Person struct {
 	Name   string `json:"name"`
 	Email  string `json:"email,omitempty"`
 	Avatar string `json:"avatar,omitempty"`
+	// Bot: the account is a bot of the host (an app, an access token's user), not a person.
+	Bot bool `json:"bot,omitempty"`
 }
+
+var botLogin = regexp.MustCompile(`(?i)^((project|group)_\d+_bot(_|$)|service_account_|dependabot$|renovate$)|(\[bot\]|[-_]bot)$`)
+
+// BotLogin says whether a login is one the hosts give their bots: GitHub's apps ("dependabot[bot]"), the users of
+// GitLab's access tokens ("project_12_bot_ab34") and service accounts, and the usual names of dependency bots.
+func BotLogin(login string) bool { return botLogin.MatchString(login) }
 
 // Category is a status reduced to what every product can say.
 type Category string

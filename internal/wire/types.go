@@ -192,6 +192,7 @@ type Conversation struct {
 	TitleSource    TitleSource  `json:"titleSource"`
 	Pinned         bool         `json:"pinned"`
 	Test           bool         `json:"test,omitempty"` // a chat an agent made to check something (HRN-842): the sidebar leaves it out unless asked
+	From           *ChatFrom    `json:"from,omitempty"` // an app started the chat for the person (HRN-1393): its folder in the sidebar until the person takes it
 	CreatedAt      Ms           `json:"createdAt"`
 	LastActivityAt Ms           `json:"lastActivityAt"`
 	LastPromptAt   Ms           `json:"lastPromptAt"` // the person's last real message (createdAt until then); the sidebar orders by it
@@ -253,6 +254,11 @@ type Conversation struct {
 	Session        string `json:"-"`
 	TranscriptPath string `json:"-"`
 	AgentSessionID string `json:"-"`
+	// Person is the address of the person the conversation was started for (whose page session asked; a delegated
+	// one is its root's person). Server only: the design library names the people who worked on a project by it
+	// and no page ever gets another person's address. Empty: the runtime's own person (and every chat
+	// from before it was recorded).
+	Person string `json:"-"`
 }
 
 // TerminalStop is when and why a conversation's terminal was stopped. IdleMs is how long it had stood idle when the
@@ -586,11 +592,30 @@ func (m *NoticeSummaryModel) Auto() bool {
 }
 
 // DelegationSettings bound the agents' delegation: how many chats one conversation may have delegated (not deleted),
-// and whether an agent may write to any chat of the machine rather than only to the ones it delegated.
+// whether an agent may write to any chat of the machine rather than only to the ones it delegated, and when a message
+// one agent sends another reaches an agent that works (absent: DelegationStep).
 type DelegationSettings struct {
-	MaxChildren int  `json:"maxChildren"`
-	AnyChat     bool `json:"anyChat"`
+	MaxChildren int                `json:"maxChildren"`
+	AnyChat     bool               `json:"anyChat"`
+	Delivery    DelegationDelivery `json:"delivery,omitempty"`
 }
+
+// DelegationDelivery is when a message an agent sends to another chat (send_to_conversation without its own choice, the
+// news that a delegated chat finished) reaches an agent in the middle of a turn.
+type DelegationDelivery string
+
+const (
+	// DelegationStep: inside the running turn, at the agent's next step.
+	DelegationStep DelegationDelivery = "step"
+	// DelegationTurn: when the turn ends, as the head of the queue.
+	DelegationTurn DelegationDelivery = "turn"
+)
+
+// DelegationDeliveries is every DelegationDelivery, in the schema's order.
+var DelegationDeliveries = []DelegationDelivery{DelegationStep, DelegationTurn}
+
+// Steers says whether a message without a choice of its own goes into the running turn.
+func (d DelegationSettings) Steers() bool { return d.Delivery != DelegationTurn }
 
 // DelegationMaxChildren is the most a person may let one conversation delegate; DefaultDelegation the setting nobody set.
 const DelegationMaxChildren = 10
@@ -1878,6 +1903,40 @@ type ConversationCreateCmd struct {
 	Test bool `json:"test,omitempty"`
 }
 
+// ChatFrom is the app that started a conversation for the person (an inbox, a trigger): App is its id, Label how the
+// sidebar names its folder, Title the chat's name from the start. The person's move of the chat to a project, to the
+// favorites or to the recent chats takes it, and the mark goes.
+type ChatFrom struct {
+	App   string `json:"app"`
+	Label string `json:"label"`
+	Title string `json:"title,omitempty"`
+}
+
+// ChatFromMax caps each field of a ChatFrom, in runes.
+const ChatFromMax = 120
+
+// Clean is the mark with its fields trimmed and cut to ChatFromMax; nil when it names no app.
+func (f *ChatFrom) Clean() *ChatFrom {
+	if f == nil {
+		return nil
+	}
+	cut := func(s string) string {
+		s = strings.TrimSpace(s)
+		if r := []rune(s); len(r) > ChatFromMax {
+			s = string(r[:ChatFromMax])
+		}
+		return s
+	}
+	out := &ChatFrom{App: cut(f.App), Label: cut(f.Label), Title: cut(f.Title)}
+	if out.App == "" {
+		return nil
+	}
+	if out.Label == "" {
+		out.Label = out.App
+	}
+	return out
+}
+
 // Launch is what the conversations of one prompt started on several models share: the id of the launch and the prompt.
 type Launch struct {
 	ID     string `json:"id"`
@@ -2513,10 +2572,17 @@ const (
 	OutputStand    OutputKind = "stand"
 	// OutputDelivery is a file the agent handed to the person on purpose (harnessly deliver).
 	OutputDelivery OutputKind = "delivery"
+	// OutputTask is a task of the tracker the agent showed; OutputCommit a commit of the forge. Only a page
+	// with CapLinks gets them (README 72).
+	OutputTask   OutputKind = "task"
+	OutputCommit OutputKind = "commit"
 )
 
 // OutputKinds is every OutputKind, in the schema's order.
-var OutputKinds = []OutputKind{OutputArtifact, OutputDesign, OutputDoc, OutputMR, OutputStand, OutputDelivery}
+var OutputKinds = []OutputKind{OutputArtifact, OutputDesign, OutputDoc, OutputMR, OutputStand, OutputDelivery, OutputTask, OutputCommit}
+
+// linkOutput says whether an output is of a kind a page without CapLinks does not read.
+func linkOutput(o TurnOutput) bool { return o.Kind == OutputTask || o.Kind == OutputCommit }
 
 // OutputOp is whether the turn made the thing or changed one there was.
 type OutputOp string

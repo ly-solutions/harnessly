@@ -325,6 +325,8 @@ func (t *transcript) rowsNow(path string, keepFrom float64) []msgRow {
 type Usage struct {
 	ClaudeRoot string // <claude config>/projects
 	CodexRoot  string // <codex home>/sessions
+	// MoreCodexRoots, when set, are the sessions folders of the other homes Codex is run in (other sign-ins).
+	MoreCodexRoots func() []string
 	// TZOffset (seconds east of UTC) is the zone whose weekend the usual hours know.
 	TZOffset float64
 	// CacheFile keeps what was read of the transcripts across restarts (none when empty): a first pass over weeks of
@@ -405,8 +407,14 @@ func (u *Usage) Build() map[string]*Activity {
 	for _, p := range walk(u.ClaudeRoot, 3) {
 		list = append(list, item{p, "claude"})
 	}
-	for _, p := range walk(u.CodexRoot, 4) {
-		list = append(list, item{p, "codex"})
+	codexRoots := []string{u.CodexRoot}
+	if u.MoreCodexRoots != nil {
+		codexRoots = append(codexRoots, u.MoreCodexRoots()...)
+	}
+	for _, root := range codexRoots {
+		for _, p := range walk(root, 4) {
+			list = append(list, item{p, "codex"})
+		}
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].path < list[j].path })
 	u.mu.Lock()

@@ -41,6 +41,8 @@ export interface IUsageFact {
   cacheWrite: number;
   cost: number;
   calls: number;
+  /** The account of the provider that paid; null where the machine noted none. */
+  account: string | null;
 }
 
 export interface ITeamData {
@@ -123,6 +125,7 @@ export const mergeTeam = (team: ITeamUsage): ITeamData => {
       cacheWrite,
       cost,
       calls,
+      account,
     ] of report.usage) {
       facts.push({
         day,
@@ -136,6 +139,7 @@ export const mergeTeam = (team: ITeamUsage): ITeamData => {
         cacheWrite,
         cost,
         calls,
+        account: account ?? null,
       });
       if (day > latestDay) latestDay = day;
     }

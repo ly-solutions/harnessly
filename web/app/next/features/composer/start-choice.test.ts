@@ -119,4 +119,27 @@ describe('ultracode of a new chat', () => {
     const haiku = { ...last, model: 'haiku' } as const;
     expect(startChoice({ ready: [ultra], picked: null, last: haiku, settings: NONE })?.ultracode).toBe(false);
   });
+
+  it('starts a Codex chat on the main sign-in in place of the CLI itself, until another is picked', () => {
+    const work: IPickerAgent = {
+      ...codex,
+      profile: 'cx-work',
+      name: 'Рабочий',
+      short: 'Рабочий',
+      preferred: true,
+    };
+    const home: IPickerAgent = { ...codex, profile: 'cx-home', name: 'Личный', short: 'Личный' };
+    const ready = [codex, work, home];
+    const onCodex = { provider: 'codex' as const, model: 'gpt-6', effort: 'high' as const, ultracode: false };
+    expect(startChoice({ ready, picked: null, last: onCodex, settings: NONE })?.profile).toBe('cx-work');
+    expect(startChoice({ ready, picked: null, last: null, settings: NONE })?.profile).toBe('cx-work');
+    // Another sign-in picked last stays; a pick on this page is the person's word.
+    expect(
+      startChoice({ ready, picked: null, last: { ...onCodex, profile: 'cx-home' }, settings: NONE })?.profile,
+    ).toBe('cx-home');
+    expect(startChoice({ ready, picked: onCodex, last: null, settings: NONE })?.profile).toBeUndefined();
+    // A main sign-in that cannot run is not stood in.
+    const off = [codex, { ...work, available: false }];
+    expect(startChoice({ ready: off, picked: null, last: onCodex, settings: NONE })?.profile).toBeUndefined();
+  });
 });

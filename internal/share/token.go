@@ -35,10 +35,14 @@ func (c TokenConfig) key(secret []byte) []byte {
 
 var shareBaseRe = regexp.MustCompile(`^https://[a-z0-9.-]+(?::\d{1,5})?/share/[A-Za-z0-9_-]{12}/$`)
 
-// ParseShareBase is the link prefix the platform sent ("https://<share host>/share/<route key>/"); "" when sharing is
+// hubShareBaseRe is the prefix a hub gives: the hub keeps the published page itself and opens it to the
+// signed-in people of the space under its own workspace API, "<hub>[/base]/agents/api/<platform>/chat-shares/".
+var hubShareBaseRe = regexp.MustCompile(`^https?://[a-z0-9.-]+(?::\d{1,5})?(?:/[A-Za-z0-9_-]+)*/chat-shares/$`)
+
+// ParseShareBase is the link prefix the platform sent ("https://<share host>/share/<route key>/", or a hub's own); "" when sharing is
 // not set up (no header, or a malformed one).
 func ParseShareBase(v string) string {
-	if shareBaseRe.MatchString(v) {
+	if shareBaseRe.MatchString(v) || (len(v) <= 512 && hubShareBaseRe.MatchString(v)) {
 		return v
 	}
 	return ""

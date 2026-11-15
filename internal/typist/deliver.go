@@ -24,6 +24,9 @@ type Message struct {
 	// HandOverOK, when set, is asked right before the chord: the tool may have ended while the text was typed, and then
 	// the chord would cut the model's answer short instead of handing a call over. Nil: go ahead.
 	HandOverOK func() bool
+	// Agent: another agent wrote the message. A question the agent asks is the person's to answer: the message waits
+	// for the dialog to close and is never typed in as the reply.
+	Agent bool
 	// EnterOnly: a restart found the text in the box; only its Enter is pressed, and a box without it types nothing.
 	EnterOnly bool
 	// ClearOnly: the message is not to be sent but taken out of the box, where an earlier try left it (it stalled):
@@ -141,6 +144,9 @@ func Decide(m Message, s Screen, provider wire.Provider) Plan {
 	}
 	// The agent asks a question and the person wrote instead of picking: «Chat about this» closes the dialog and the
 	// message goes in as the reply.
+	if s.Menu == MenuQuestion && m.Agent && !m.EnterOnly {
+		return Plan{Decision: DecideBlockedMenu}
+	}
 	if s.Menu == MenuQuestion && !blank(m.Text) && provider != wire.ProviderCodex && !m.EnterOnly {
 		return Plan{Decision: DecideSend, ChatAbout: true}
 	}
@@ -226,7 +232,7 @@ func Type(m Message, provider wire.Provider, p Pane, c Clock) Result {
 			res.ChatAbout = true
 			view = Look(p, provider)
 		}
-		plan = Decide(Message{Text: m.Text, Images: m.Images, Steer: m.Steer}, view, provider)
+		plan = Decide(Message{Text: m.Text, Images: m.Images, Steer: m.Steer, Agent: m.Agent}, view, provider)
 		if plan.ChatAbout {
 			res.Outcome = BlockedMenu
 			return res

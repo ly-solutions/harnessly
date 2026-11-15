@@ -20,6 +20,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/agentbrowser/provision"
 	"github.com/ly-solutions/harnessly/internal/apps"
 	"github.com/ly-solutions/harnessly/internal/basepkg"
+	"github.com/ly-solutions/harnessly/internal/extproviders"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/preflight"
 	"github.com/ly-solutions/harnessly/internal/preview"
@@ -94,6 +95,9 @@ type machineProbe struct {
 	PreviewOrigins func() []string
 	// PreviewDNS resolves the slots' names (preview.CheckOrigins).
 	PreviewDNS func(ctx context.Context, origins []string) []preview.OriginCheck
+	// LaunchEnvUndeclared: the machine is a hub's and its deployment has not said which variables of its own a
+	// provider's launch may not set (extproviders.ReservedPrefixesEnv; set and empty says "none").
+	LaunchEnvUndeclared func() bool
 }
 
 // pkgInstall is the command that installs an item of the base package here (internal/basepkg: one list for the checks,
@@ -354,6 +358,10 @@ func (p machineProbe) run(ctx context.Context) []machineCheck {
 	if c := p.previewCheck(ctx); c != nil {
 		add(*c)
 	}
+	if p.LaunchEnvUndeclared != nil && p.LaunchEnvUndeclared() {
+		add(machineCheck{ID: "launch_env_reserved", Title: extproviders.ReservedPrefixesEnv,
+			FixCommand: extproviders.ReservedPrefixesEnv + "=ACME_,WRAPPER_"})
+	}
 	return out
 }
 
@@ -609,6 +617,7 @@ func newMachineProbe(d deps, self *selfupdate.Updater) machineProbe {
 		Update: self, Free: freeBytes, Reach: reach, GitEmail: func() string { return gitEmail(tools.ShellPath())() },
 		SetGitIdentity: func(name, email string) error { return setGitIdentity(tools.ShellPath())(name, email) },
 		LookPath:       exec.LookPath, Exists: pathExists, Invalidate: tools.Invalidate, ReadFile: os.ReadFile,
+		LaunchEnvUndeclared: func() bool { return launchEnvUndeclared(os.Getenv, os.LookupEnv) },
 		AppsBoundary: func() (bool, error) {
 			root := apps.Open(d.DataDir).Root
 			if _, err := os.Stat(root); err != nil {
@@ -781,4 +790,14 @@ func checkAgentBrowser(ctx context.Context, data string) machineCheck {
 		}
 	}
 	return check
+}
+
+// launchEnvUndeclared: a hub's machine whose deployment did not set extproviders.ReservedPrefixesEnv, so a provider's
+// launch variables are checked against harnessly's own families only.
+func launchEnvUndeclared(get func(string) string, look func(string) (string, bool)) bool {
+	if strings.TrimSpace(get("RUNTIME_HUB_URL")) == "" {
+		return false
+	}
+	_, set := look(extproviders.ReservedPrefixesEnv)
+	return !set
 }

@@ -118,7 +118,7 @@ type LaunchConfig struct {
 // inputSocket is the app-server socket this launch starts with, "" for a launch that starts Codex as ever.
 func (c LaunchConfig) inputSocket(session string, prof agents.CodexProfile, launch *agents.Launch) string {
 	if c.InputSocket == nil || session != "" || launch == nil || launch.Input == "" || len(launch.Apps) > 0 ||
-		prof.KeyEnv != "" || len(prof.Args) > 0 {
+		prof.KeyEnv != "" || len(prof.Args) > 0 || prof.Home != "" {
 		return ""
 	}
 	return c.InputSocket(launch.Input)
@@ -428,6 +428,10 @@ func (c LaunchConfig) launcherLine(workspaceID, flag, session string, launch *ag
 		// The pane's shell reads the key from its file into the variable of this one command: the key is not in the
 		// line that is typed, and not in the shell's own environment.
 		parts = append([]string{prof.KeyEnv + `="$(cat ` + agents.ShellQuote(prof.KeyFile) + `)"`}, parts...)
+	}
+	if prof.Home != "" {
+		// Another sign-in of the CLI: its home for this one command, not for the pane's shell.
+		parts = append([]string{"CODEX_HOME=" + agents.ShellQuote(prof.Home)}, parts...)
 	}
 	if workspaceID != "" {
 		parts = append(parts, "--workspace-id", agents.ShellQuote(workspaceID))

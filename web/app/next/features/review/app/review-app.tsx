@@ -49,7 +49,8 @@ import {
   MrThreadsPanel,
   type IMrContext,
 } from '@/next/features/review/app/mr-threads';
-import { draftAt, openThreadsByFile, type IMrThread } from '@/next/features/review/app/mr-review';
+import { MR_ACT, draftAt, openThreadsByFile, type IMrThread } from '@/next/features/review/app/mr-review';
+import { instructionsFor, repoKeyOf, type IReviewRulesApi } from '@/next/features/review/app/rules';
 import type { IReviewNotesApi } from '@/next/features/review/app/use-review-notes';
 import { neighbour, nextUnviewed, reviewOrder } from '@/next/features/review/app/order';
 import { setReviewPrefs, useReviewPrefs } from '@/next/features/review/prefs';
@@ -58,7 +59,7 @@ import ReviewHeader from '@/next/features/review/review-header';
 import ReviewTree from '@/next/features/review/review-tree';
 import { ancestorsOf, buildTree, dirPaths, treeOrder } from '@/next/features/review/tree';
 import { useReviewFile } from '@/next/features/review/use-review-file';
-import { useViewed } from '@/next/features/review/viewed';
+import { useViewed, type IViewedIo } from '@/next/features/review/viewed';
 import { personKey, useMe } from '@/next/stores/me';
 import { Button, RoundButton } from '@/next/ui/button';
 import Icon from '@/next/ui/icon';
@@ -101,6 +102,10 @@ export interface IReviewAppProps {
   edit?: IReviewEdit | null;
   /** «Пройти ревью»: the agent beside goes through the change and its suggestions lie at the lines. */
   agent?: IAgentReviewApi | null;
+  /** The person's instructions for the agent's review, and a way to change them; none where they are not kept. */
+  rules?: IReviewRulesApi | null;
+  /** The machine's «viewed» marks of a change on a code host; without it they are this browser's. */
+  viewedIo?: IViewedIo | null;
   /** In a pane: opens the change in the «Ревью кода» app on the whole screen. */
   expand?: () => void;
 }
@@ -248,12 +253,27 @@ const ReviewApp = ({
   worktree,
   edit,
   agent,
+  rules,
+  viewedIo,
   expand,
 }: IReviewAppProps) => {
   const prefs = useReviewPrefs();
   const me = useMe();
   const person = me.k === 'ready' ? personKey(me.me) : LOCAL_PERSON;
-  const { viewed, toggle } = useViewed(person, scopeOf(source));
+  // GitHub keeps the marks itself, and takes one only over the person's own connection; elsewhere the machine does.
+  const hostViewed = useMemo(() => {
+    if (!mr?.review.hostViewed || !mr.writable) return null;
+    const act = mr.mr.act;
+    return {
+      paths: mr.review.viewed ?? [],
+      set: async (path: string, on: boolean) =>
+        (await act({ op: on ? MR_ACT.viewed : MR_ACT.unviewed, path })) === null,
+    };
+  }, [mr]);
+  const { viewed, toggle } = useViewed(person, scopeOf(source), {
+    io: source.meta.kind === 'local' ? null : viewedIo,
+    host: hostViewed,
+  });
 
   const [filter, setFilter] = useState('');
   const [whole, setWhole] = useState(false);
@@ -423,13 +443,17 @@ const ReviewApp = ({
         ? t('next.reviewApp.agent.takeWithEdit')
         : t('next.reviewApp.agent.take'),
   };
-  const askAgent = () =>
-    agent?.ask(
+  const repoKey = repoKeyOf(source.meta);
+  const askAgent = () => {
+    const own = rules ? instructionsFor(rules.rules, repoKey) : '';
+    return agent?.ask(
       reviewRequest(source.files, whereOf(source), {
         ask: t('next.reviewApp.agent.request'),
         format: t('next.reviewApp.agent.format'),
+        ...(own ? { rules: `${t('next.reviewApp.agent.rules')}\n${own}` } : {}),
       }),
     );
+  };
   const canEdit =
     Boolean(edit) &&
     file !== null &&
@@ -713,6 +737,9 @@ const ReviewApp = ({
                     api={agent}
                     files={source.files}
                     onAsk={askAgent}
+                    rules={rules ?? null}
+                    repo={repoKey}
+                    repoName={source.meta.kind === 'local' ? null : source.meta.project}
                     onOpen={(f, line) => go(f, line)}
                   />
                 )}

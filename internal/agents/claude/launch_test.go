@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/ly-solutions/harnessly/internal/agents"
+	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
 const session = "11111111-2222-4333-8444-555555555555"
@@ -442,5 +443,35 @@ func TestAppsDoNotKeepTheChatFromStarting(t *testing.T) {
 	}
 	if f.dropped["acme.a"] != "the guard does not answer" || f.dropped["acme.gone"] != "not installed" {
 		t.Fatalf("dropped %v", f.dropped)
+	}
+}
+
+type pinProfiles struct{ pinned bool }
+
+func (pinProfiles) ClaudeSettings(profile, model, hooks string) (string, error) {
+	return "/tmp/profile.json", nil
+}
+func (pinProfiles) Codex(string) (agents.CodexProfile, error)    { return agents.CodexProfile{}, nil }
+func (pinProfiles) Model(string, string) (wire.AgentModel, bool) { return wire.AgentModel{}, true }
+func (p pinProfiles) ClaudeModelPinned(string) bool              { return p.pinned }
+
+// A chat on the person's own provider runs on the model they typed for it (ANTHROPIC_MODEL): Claude Code takes --model
+// over the variable, so a launch on such a profile gives no --model and the variable of the settings file decides.
+func TestAProfileWithItsOwnModelIsLaunchedWithoutTheModelFlag(t *testing.T) {
+	c := testConfig(t)
+	l := launch("corp-large", "")
+	l.Profile = "x-corp"
+	c.Profiles = pinProfiles{pinned: true}
+	line, err := c.LaunchCommand("ws", l, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(line, "--model") || !strings.Contains(line, "--settings '/tmp/profile.json'") && !strings.Contains(line, "--settings /tmp/profile.json") {
+		t.Fatalf("%q", line)
+	}
+	// A profile whose model field is empty is launched as before: the picker's model in the flag.
+	c.Profiles = pinProfiles{}
+	if line, err = c.LaunchCommand("ws", l, nil); err != nil || !strings.Contains(line, "--model 'corp-large'") {
+		t.Fatalf("%q %v", line, err)
 	}
 }

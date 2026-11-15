@@ -14,11 +14,12 @@ export const ADD_KINDS = [
   'app',
   'plugin',
   'claude-settings',
+  'provider',
 ] as const;
 export type AddKind = (typeof ADD_KINDS)[number];
 
 /** What only an organization's admin adds: it works in every chat of the people it reaches. */
-export const ADMIN_KINDS: readonly AddKind[] = ['access', 'app', 'plugin', 'claude-settings'];
+export const ADMIN_KINDS: readonly AddKind[] = ['access', 'app', 'plugin', 'claude-settings', 'provider'];
 
 /** The order of the groups in a layer; a document (made elsewhere) is shown last. */
 export const GROUP_ORDER: readonly CatalogKind[] = [
@@ -29,6 +30,7 @@ export const GROUP_ORDER: readonly CatalogKind[] = [
   'mcp',
   'plugin',
   'claude-settings',
+  'provider',
   'app',
   'doc',
 ];
@@ -91,6 +93,13 @@ export const KIND: Record<CatalogKind, KindMeta> = {
     many: 'Настройки Claude',
     about: 'Ключи settings.json и правила в CLAUDE.md',
     newT: 'Новые настройки',
+  },
+  provider: {
+    icon: 'cpu',
+    one: 'Провайдер моделей',
+    many: 'Провайдеры моделей',
+    about: 'Свой адрес моделей на машине каждого: ключ и токены — секретами, не текстом',
+    newT: 'Новый провайдер',
   },
   app: {
     icon: 'layout-grid',
@@ -158,6 +167,11 @@ export interface Fields {
   secrets: string[];
   marketplace: string;
   plugin: string; // name@marketplace
+  /** provider: the kind of its API, the models (a line each), the variables of a launch (a line each). */
+  api: 'anthropic' | 'openai';
+  models: string;
+  env: string; // NAME=value
+  secretEnv: string; // NAME=<the secret's name or vault: reference>
 }
 
 export interface Draft {
@@ -184,6 +198,7 @@ export const blankFields = (k: AddKind, repos: readonly RepoRef[] = []): Fields 
     app: '',
     plugin: '',
     'claude-settings': '',
+    provider: '',
   }[k],
   name: '',
   about: '',
@@ -209,6 +224,10 @@ export const blankFields = (k: AddKind, repos: readonly RepoRef[] = []): Fields 
   secrets: [],
   marketplace: '',
   plugin: '',
+  api: 'anthropic',
+  models: '',
+  env: '',
+  secretEnv: '',
 });
 
 export const blankDraft = (k: AddKind, repos: readonly RepoRef[] = []): Draft => ({
@@ -219,6 +238,58 @@ export const blankDraft = (k: AddKind, repos: readonly RepoRef[] = []): Draft =>
 // ── small text helpers ────────────────────────────────────────────────────────────────────────────────────────────
 
 const has = (v: string): boolean => v.trim() !== '';
+
+/** The non-empty lines of a box, trimmed. */
+const lines = (v: string): string[] =>
+  v
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '');
+
+const orNone = (list: string[]): string[] | undefined => (list.length > 0 ? list : undefined);
+
+export const PROVIDER_API = { anthropic: 'как у Anthropic', openai: 'как у OpenAI' } as const;
+
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+/** A credential by its name: its value is never typed into the environment, only the name of its secret. */
+const SECRET_NAME_RE = /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)$/i;
+/** A secret of the person's safe by its name, or a reference to the organization's. */
+const SECRET_REF_RE =
+  /^([A-Za-z0-9][A-Za-z0-9._-]{0,63}|vault:[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*(#[A-Za-z0-9._-]{1,128})?)$/;
+
+const hostOf = (address: string): string => {
+  const m = address.trim().match(/^(?:https?:\/\/)?([^/\s]+)/);
+  return m?.[1] ?? '';
+};
+
+/** What a provider's form lacks or has wrong, in the words under the button; null when it can be saved. */
+export const providerProblem = (f: Fields): string | null => {
+  if (!has(f.url)) return 'Добавьте адрес провайдера';
+  if (/\s/.test(f.url.trim()) || hostOf(f.url) === '')
+    return 'Адрес не похож на адрес: нужен сервер, например api.example.ru/anthropic';
+  if (lines(f.models).some((model) => /\s/.test(model)))
+    return 'Название модели — одно слово, по модели на строку';
+  if (has(f.secret) && !SECRET_REF_RE.test(f.secret.trim()))
+    return 'Ключ называют именем секрета в сейфе или ссылкой vault:путь#ключ';
+  const names = new Set<string>();
+  for (const [box, secret] of [
+    [f.env, false],
+    [f.secretEnv, true],
+  ] as const)
+    for (const line of lines(box)) {
+      const at = line.indexOf('=');
+      const name = at < 0 ? '' : line.slice(0, at).trim();
+      const value = at < 0 ? '' : line.slice(at + 1).trim();
+      if (!ENV_NAME_RE.test(name) || value === '') return `Переменная пишется ИМЯ=значение: «${line}»`;
+      if (names.has(name)) return `Переменная ${name} задана дважды`;
+      names.add(name);
+      if (!secret && SECRET_NAME_RE.test(name))
+        return `${name} — секрет: перенесите в секретные переменные и назовите секрет, а не значение`;
+      if (secret && !SECRET_REF_RE.test(value))
+        return `У ${name} нужен секрет: имя в сейфе или ссылка vault:путь#ключ`;
+    }
+  return null;
+};
 export const lastSeg = (u: string): string =>
   (u.split('/').filter(Boolean).pop() ?? '').replace(/\.git$/, '').replace(/^.*:/, '');
 export const pretty = (x: string): string => {
@@ -395,6 +466,7 @@ export const nameOf = (d: Draft): string => {
   if (d.k === 'app') return typed || pretty(f.path.split('/').filter(Boolean).pop() ?? '') || 'Приложение';
   if (d.k === 'plugin') return typed || pretty(f.plugin.split('@')[0] ?? '') || 'Плагин';
   if (d.k === 'claude-settings') return typed || 'Настройки Claude';
+  if (d.k === 'provider') return typed || hostOf(f.url) || 'Провайдер моделей';
   if (typed) return typed;
   if (f.src === 'text') return 'Команды';
   if (f.src === 'file') return pretty(f.fileName) || 'Скрипт';
@@ -428,6 +500,7 @@ const hintTail = (d: Draft, repos: readonly RepoRef[]): string => {
   if (d.k === 'plugin')
     return `плагин Claude Code${f.plugin.includes('@') ? ` · ${f.plugin.split('@')[1]}` : ''}`;
   if (d.k === 'claude-settings') return settingsLine(parseSettings(f.json));
+  if (d.k === 'provider') return `${PROVIDER_API[f.api]} · ${hostOf(f.url) || '…'}`;
   const n = f.body.split('\n').filter((x) => x.trim()).length;
   if (f.src === 'text') return `${n} ${plural(n, 'команда', 'команды', 'команд')} · при настройке машины`;
   if (f.src === 'file') return `файл ${f.fileName || '…'} · при настройке машины`;
@@ -488,6 +561,19 @@ export const viewOf = (d: Draft, repos: readonly RepoRef[] = []): ItemView => {
       lines: [
         ['Плагин', f.plugin],
         ['Маркетплейс', f.marketplace],
+      ],
+    };
+  if (d.k === 'provider')
+    return {
+      name,
+      hint,
+      does: `добавит провайдера ${hostOf(f.url) || '…'} в настройки каждого: его модели можно выбрать для чатов и фоновых задач. Убрать или изменить его на машине нельзя`,
+      lines: [
+        ['Адрес', withScheme(f.url)],
+        ['API', PROVIDER_API[f.api]],
+        ['Модели', lines(f.models).join(', ')],
+        ['Ключ', has(f.secret) ? `секрет ${f.secret.trim()}` : ''],
+        ['Переменные', [...lines(f.env), ...lines(f.secretEnv)].map((l) => l.split('=')[0]).join(', ')],
       ],
     };
   if (d.k === 'claude-settings') {
@@ -677,6 +763,7 @@ export const valid = (d: Draft): boolean => {
   if (d.k === 'app') return has(f.path) && !badPath(f.path) && (f.repoOther ? has(f.repoUrl) : has(f.repo));
   if (d.k === 'plugin') return PLUGIN_RE.test(f.plugin.trim()) && has(f.marketplace);
   if (d.k === 'claude-settings') return parseSettings(f.json) !== null;
+  if (d.k === 'provider') return providerProblem(f) === null;
   if (d.k === 'skill') {
     if (f.src === 'link') return has(f.url);
     if (f.src === 'file') return has(f.body);
@@ -719,6 +806,7 @@ export const need = (d: Draft): string => {
       : 'ссылку на репозиторий';
   }
   if (d.k === 'plugin') t = has(f.plugin) ? 'адрес маркетплейса' : 'плагин в виде имя@маркетплейс';
+  if (d.k === 'provider') return providerProblem(f) ?? '';
   if (d.k === 'claude-settings') {
     if (has(f.json)) return 'JSON не разобран: нужны always, ifAbsent или claudeMd, и что-то одно непустое';
     t = 'настройки в JSON';
@@ -754,6 +842,15 @@ export const toSource = (d: Draft): CatalogSource => {
     return out;
   }
   if (d.k === 'plugin') return { plugin: f.plugin.trim(), marketplace: f.marketplace.trim() };
+  if (d.k === 'provider')
+    return {
+      api: f.api,
+      baseUrl: withScheme(f.url),
+      models: orNone(lines(f.models)),
+      key: orUndef(f.secret),
+      env: orNone(lines(f.env)),
+      secretEnv: orNone(lines(f.secretEnv)),
+    };
   if (d.k === 'claude-settings') {
     const st = parseSettings(f.json);
     return {
@@ -827,6 +924,15 @@ export const fromItem = (it: CatalogItem): Draft | null => {
     f.name = it.name;
     f.plugin = s.plugin ?? '';
     f.marketplace = s.marketplace ?? '';
+  }
+  if (it.kind === 'provider') {
+    f.name = it.name;
+    f.api = s.api ?? 'anthropic';
+    f.url = s.baseUrl ?? '';
+    f.models = (s.models ?? []).join('\n');
+    f.secret = s.key ?? '';
+    f.env = (s.env ?? []).join('\n');
+    f.secretEnv = (s.secretEnv ?? []).join('\n');
   }
   if (it.kind === 'claude-settings') {
     f.name = it.name;

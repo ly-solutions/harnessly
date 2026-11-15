@@ -3,6 +3,7 @@
 // messages come as <cross-session-message>. Neither is the person's words: the feed draws them as another agent's card.
 // A message our agent sends is a tool step: Claude's SendMessage, or `harnessly peers send` in the shell.
 import { createContext } from 'react';
+import { t } from '@/next/i18n';
 
 /** The runtime's refusals (internal/peers/policy.go), each a key of next.peers.reason.*. */
 export const PEER_REASONS = [
@@ -51,7 +52,8 @@ export interface IPeerMessage {
 }
 
 const PASTED = /^\s*<pasted_content id="([^"]+)">\n?([\s\S]*?)\n?<\/pasted_content id="\1">\s*$/;
-const ENVELOPE = /^\s*<peer-message\b([^>]*)>\n?([\s\S]*?)\n?<\/peer-message>\s*$/;
+/** One envelope. A body cannot hold the closing tag (the runtime neutralizes it), so the shortest match is all of it. */
+const ENVELOPE = /<peer-message\b([^>]*)>\n?([\s\S]*?)\n?<\/peer-message>/g;
 const SESSION = /^\s*<cross-session-message\b([^>]*)>\n?([\s\S]*?)\n?<\/cross-session-message>\s*$/;
 const SUBAGENT = /^\s*<agent-message\b([^>]*)>\n?([\s\S]*?)\n?<\/agent-message>\s*$/;
 /** A tag of the envelope inside the text, which the runtime marked with a zero-width space (internal/peers.Wrap). */
@@ -75,6 +77,41 @@ const attrs = (raw: string): Record<string, string> => {
   return out;
 };
 
+/** The envelopes a text is made of, in order; none when it holds anything but envelopes. */
+const envelopes = (text: string): IPeerMessage[] => {
+  const out: IPeerMessage[] = [];
+  let at = 0;
+  for (const m of text.matchAll(ENVELOPE)) {
+    const from = m.index ?? 0;
+    if (text.slice(at, from).trim() !== '') return [];
+    at = from + m[0].length;
+    const a = attrs(m[1]);
+    out.push({
+      kind: PEER_KIND.fleet,
+      id: a.id ?? null,
+      person: a.person ?? a.machine ?? '',
+      machine: a.machine ?? null,
+      chat: a.chat ?? null,
+      ref: a.ref && REF.test(a.ref) ? a.ref : null,
+      byPerson: a.via === 'person',
+      text: m[2].replace(NEUTRALIZED_TAG, '<$1peer-message').trim(),
+    });
+  }
+  return text.slice(at).trim() === '' ? out : [];
+};
+
+/**
+ * Every message of another agent this text is: one, or the several that waited in the line and reached the agent as one
+ * message (each keeps its own sender). Empty for the person's own words.
+ */
+export const parsePeers = (input: string): IPeerMessage[] => {
+  const pasted = PASTED.exec(input);
+  const fleet = envelopes(pasted ? pasted[2] : input);
+  if (fleet.length > 0) return fleet;
+  const one = parsePeer(input);
+  return one ? [one] : [];
+};
+
 /**
  * The message of another agent this text is, or null for the person's own words. The envelope's attributes are the
  * runtime's id, person, machine, chat, ref and via; the answer is built from `ref` alone, so an envelope of an older
@@ -83,21 +120,9 @@ const attrs = (raw: string): Record<string, string> => {
 export const parsePeer = (input: string): IPeerMessage | null => {
   const pasted = PASTED.exec(input);
   const text = pasted ? pasted[2] : input;
-  const envelope = ENVELOPE.exec(text);
-  if (envelope) {
-    const a = attrs(envelope[1]);
-    const ref = a.ref && REF.test(a.ref) ? a.ref : null;
-    return {
-      kind: PEER_KIND.fleet,
-      id: a.id ?? null,
-      person: a.person ?? a.machine ?? '',
-      machine: a.machine ?? null,
-      chat: a.chat ?? null,
-      ref,
-      byPerson: a.via === 'person',
-      text: envelope[2].replace(NEUTRALIZED_TAG, '<$1peer-message').trim(),
-    };
-  }
+  const fleet = envelopes(text);
+  // Several agents' messages typed as one read here as the first of them with the words of all (parsePeers has each).
+  if (fleet.length > 0) return { ...fleet[0], text: fleet.map((one) => one.text).join('\n\n') };
   const session = SESSION.exec(text);
   if (session) {
     const a = attrs(session[1]);
@@ -198,3 +223,30 @@ export interface IPeerActions {
 }
 
 export const PeerActions = createContext<IPeerActions | null>(null);
+
+/** «От «<chat>»: <text>» as the runtime gives another agent's message outside the chat. */
+const FROM_LINE = /^От «([^»]+)»: ([\s\S]*)$/;
+
+export interface IPeerFrom {
+  /** The sender's chat (or its owner); null for the person's own words. */
+  from: string | null;
+  text: string;
+}
+
+/**
+ * Who wrote a message as a line outside the chat shows it (the ⌘K side, a search hit, a tab's snippet): another
+ * chat with its words without the envelope, or the person. Takes both the raw envelope (an older runtime) and the
+ * runtime's «От «<chat>»: <text>».
+ */
+export const peerFrom = (input: string): IPeerFrom => {
+  const peer = parsePeer(input);
+  if (peer) return { from: peer.chat || peer.person || null, text: peer.text };
+  const line = FROM_LINE.exec(input);
+  return line ? { from: line[1] ?? null, text: line[2] ?? '' } : { from: null, text: input };
+};
+
+/** A message as one line outside the chat: «От «<chat>»: <text>» for another agent's, as it is for the person's. */
+export const peerLine = (input: string): string => {
+  const said = peerFrom(input);
+  return said.from === null ? said.text : `${t('next.search.from', { chat: said.from })}: ${said.text}`;
+};

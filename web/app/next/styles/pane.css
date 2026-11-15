@@ -1822,6 +1822,23 @@ input.hx-tbrowser__url:focus {
 .hx-legacy__sk:first-child {
   width: 60%;
 }
+/* A tab a subchat opened: whose it is, quiet, after the name; the active tab keeps its room for the name. */
+.hx-tab__from {
+  flex: 0 2 auto;
+  min-width: 0;
+  max-width: 120px;
+  margin-left: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--hx-text-xs);
+  color: var(--hx-fg-3);
+}
+@media (max-width: 700px) {
+  .hx-tab:not([aria-selected='true']) .hx-tab__from {
+    display: none;
+  }
+}
 /* A tab the agent opened behind the one on screen: a dot by its name until it is looked at. */
 .hx-tab[data-unread] .hx-tab__name::after {
   content: '';
@@ -2133,6 +2150,39 @@ input.hx-tbrowser__url:focus {
   box-shadow: inset 0 0 0 2px var(--hx-accent);
   pointer-events: none;
   transform: translate(var(--x), var(--y));
+}
+/* The pencil in the picture's corner: it opens the picture in the editor. */
+.hx-deliv__mark {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-full);
+  background: var(--hx-bg-raised);
+  color: var(--hx-fg-2);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 160ms var(--hx-ease-out),
+    color 160ms var(--hx-ease-out);
+}
+.hx-deliv__stage:hover .hx-deliv__mark,
+.hx-deliv__mark:focus-visible {
+  opacity: 1;
+}
+.hx-deliv__mark:hover {
+  color: var(--hx-fg-1);
+}
+@media (pointer: coarse) {
+  .hx-deliv__mark {
+    opacity: 1;
+    width: 40px;
+    height: 40px;
+  }
 }
 .hx-deliv__image {
   max-width: 100%;

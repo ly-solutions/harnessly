@@ -212,7 +212,9 @@ type AppRow struct {
 	ClosedAt  *int64   `json:"closedAt"`
 	Author    *string  `json:"author"`
 	// Avatar is the author's picture as the page loads it: a route of this runtime, never the code host's address.
-	Avatar    *string      `json:"avatar"`
+	Avatar *string `json:"avatar"`
+	// Bot: the author is a bot of the code host (a dependency bot, an access token's user), not a person.
+	Bot       bool         `json:"bot"`
 	Assignees []string     `json:"assignees"`
 	Reviewers []string     `json:"reviewers"`
 	Me        []AppRole    `json:"me"`

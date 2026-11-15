@@ -72,6 +72,22 @@ describe('equal data, the same items', () => {
     expect(after[2]).toBe(before[2]);
   });
 
+  // the machine's item is made anew with its `machine` object on every recompute; compared by reference it
+  // never came back the same, the stack set its state on each render and the chat went blank (React #301).
+  it("a machine's item made anew with the same machine is the same list; another metric is a change", () => {
+    const sick = (metric: 'disk' | 'mem', waiting: readonly string[] = []): ISmartItem => ({
+      ...item('machine:local:1'),
+      kind: SMART_KIND.machine,
+      chatId: null,
+      machine: { id: 'local', metric, waiting: [...waiting] },
+      urgent: true,
+    });
+    const before = [sick('disk', ['postgres']), item('a')];
+    expect(stableItems(before, [sick('disk', ['postgres']), item('a')])).toBe(before);
+    expect(stableItems(before, [sick('mem', ['postgres']), item('a')])[0].machine?.metric).toBe('mem');
+    expect(stableItems(before, [sick('disk', ['node']), item('a')])).not.toBe(before);
+  });
+
   it('a refetch of the same item keeps its detail; another item may load', () => {
     const shown = { key: 'q', detail: { k: 'question' as const, text: 'Which?', options: ['A'] } };
     expect(steadyDetail(shown, 'q', { k: 'loading' })).toBe(shown.detail);

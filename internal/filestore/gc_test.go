@@ -2,7 +2,11 @@ package filestore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,6 +91,55 @@ func TestRetentionAndGarbageCollection(t *testing.T) {
 		// Still works end to end after the collection.
 		if e, conflict := write(t, s, "p/a.html", 6, "a-v7"); conflict || e.Rev != 9 {
 			t.Fatalf("write after gc: %+v %v", e, conflict)
+		}
+	})
+}
+
+// A blob something outside the store refers to (the hub's own tables) is kept though no revision names it; one
+// nothing refers to goes; a pass that cannot read the pins deletes nothing.
+func TestPinnedBlobsAreKept(t *testing.T) {
+	eachCombo(t, func(t *testing.T, r *rig) {
+		s := r.store(DefaultRoom)
+		write(t, s, "p/a.html", 0, "kept by a revision")
+		put := func(body string) string {
+			t.Helper()
+			sum := sha256.Sum256([]byte(body))
+			sha := hex.EncodeToString(sum[:])
+			if err := r.blobs.Put(bg, DefaultRoom, sha, strings.NewReader(body)); err != nil {
+				t.Fatal(err)
+			}
+			return sha
+		}
+		held, loose := put("the hub's own"), put("nobody's")
+		pins := func(context.Context) (map[string]map[string]struct{}, error) {
+			return map[string]map[string]struct{}{DefaultRoom: {held: {}}}, nil
+		}
+		has := func(sha string) bool {
+			t.Helper()
+			rc, err := r.blobs.Open(bg, DefaultRoom, sha)
+			if err != nil {
+				return false
+			}
+			rc.Close()
+			return true
+		}
+		ret := Retention{Grace: time.Millisecond}
+		if _, err := RunGCPinned(bg, r.meta, r.blobs, ret, func(context.Context) (map[string]map[string]struct{}, error) {
+			return nil, errors.New("the database is away")
+		}, false); err == nil {
+			t.Fatal("a pass without the pins went on")
+		}
+		for i := 0; i < 3; i++ {
+			if _, err := RunGCPinned(bg, r.meta, r.blobs, ret, pins, false); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if !has(held) {
+			t.Fatal("a pinned blob was deleted")
+		}
+		if has(loose) {
+			t.Fatal("a blob nothing refers to stayed")
 		}
 	})
 }

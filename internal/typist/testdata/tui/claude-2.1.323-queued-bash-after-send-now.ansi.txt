@@ -1,0 +1,40 @@
+
+[38;5;174m ▐[48;5;16m▛███▛█[39m[49m   [1mClaude Code[0m [38;5;246mv2.1.323[39m
+[38;5;174m▝▜[48;5;16m█████[49m█▀[39m  [38;5;246mHaiku 5.5 · Claude Ultra[39m
+[38;5;174m ▝▝   ▝▝ [39m  [38;5;246m/…/95e9f525-b02f-4154-b0e2-2a16777998cc/scratchpad/cap/work[39m
+
+  Fable 5.2 is here for your longest and toughest coding tasks. It draws down usage faster than Opus 5.5. Switch with
+  [38;5;153m/model[39m.
+
+[38;5;246m●[39m [38;5;246mAuto mode lets Claude handle permission prompts automatically — Claude checks each tool call for risky actions[39m
+  [38;5;246mand prompt injection before executing. Actions Claude identifies as safe are executed, while actions Claude [39m
+  [38;5;246midentifies as risky are blocked and Claude may try a different approach. Ideal for long-running tasks. Claude [39m
+  [38;5;246mcan make mistakes that allow harmful commands to run, it's recommended to only use in isolated environments. [39m
+  [38;5;246mShift+Tab to change mode.[39m
+
+[38;5;246m[48;5;237m❯ [38;5;231mThis is an automated self-test of the terminal harness. Call the AskUserQuestion tool exactly once with one question,[39m
+  [38;5;231mheader Selftest, text: Pick one, multiSelect false, and exactly two options labelled Alpha and Bravo. When the [39m
+  [38;5;231manswer comes back, reply with only HS-SELFTEST-PICKED- followed by the label that was chosen, in capitals, and [39m
+  [38;5;231mnothing else. Do not use any other tool.[39m
+
+[38;5;246m[49m● [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Pick one → Bravo[39m
+
+[38;5;231m●[39m HS-SELFTEST-PICKED-BRAVO
+
+[38;5;246m✻[39m [38;5;246mCooked for 4s · done 5:46 PM · 1 shell still running[39m
+
+[38;5;246m[48;5;237m❯ [38;5;231mRun this exact Bash command and nothing else, then reply DONE: for i in $(seq 1 45); do sleep 1; done; echo finished[39m
+
+[49m  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;246m[48;5;237m❯ [38;5;231mAfter that reply with exactly QUEUED-MSG-1 as the first word[39m
+[49m
+
+[38;5;174m*[39m [38;5;174mTransmuting… [38;5;246m(11s · ↓[39m [38;5;246m108 tokens · [38;5;249mthinking[38;5;246m)[39m
+[38;5;246m  ⎿  Tip: See an artifact you'd like to build on? Duplicate, in its title menu, gives you your own editable copy.[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [39m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;220m⏵⏵ auto mode on[38;5;246m · [38;5;44m1 shell[38;5;246m · esc to interrupt · ↓ to manage

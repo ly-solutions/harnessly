@@ -36,6 +36,8 @@ const (
 	KindBool Kind = "bool"
 	// KindNumber: a whole number from Min to Max.
 	KindNumber Kind = "number"
+	// KindText: a text the setting itself checks (Free), such as a description in JSON.
+	KindText Kind = "text"
 )
 
 // The values of a switch.
@@ -76,8 +78,20 @@ type Item struct {
 	Get      func() (string, error)
 	// Set is given a value that passed the check of its kind.
 	Set func(value string) error
-	// Free lets an enum take a value that is none of Options when it says so (a model the provider does not list).
+	// SetBy, when set, is called in place of Set and is also told who asks (a change that is made elsewhere, in the
+	// hub, says the chat it comes from). Its note, when not empty, says what became of the value in place of a
+	// change made here: it was passed on and waits for someone else's yes.
+	SetBy func(value string, by Actor) (note string, err error)
+	// Free lets an enum take a value that is none of Options when it says so (a model the provider does not list);
+	// for a text it is the whole check.
 	Free func(value string) bool
+	// Why says in words why a value was not taken, when the setting can tell; nil or "": the common words.
+	Why func(value string) string
+	// Label says a text's value in words for the person (the card of a change, the journal); nil: the value itself.
+	Label func(value string) string
+	// Replaces says what a value that changes a part of a text takes the place of, in words ("" when it only adds);
+	// part is false when the value is the whole text. nil: every value is the whole.
+	Replaces func(value string) (label string, part bool)
 }
 
 func boolLabel(v string) string {
@@ -89,6 +103,9 @@ func boolLabel(v string) string {
 
 // label is a value in words.
 func (it Item) label(v string) string {
+	if it.Label != nil {
+		return it.Label(v)
+	}
 	switch it.Kind {
 	case KindBool:
 		return boolLabel(v)
@@ -116,6 +133,8 @@ func (it Item) check(v string) bool {
 		if it.Options != nil && slices.ContainsFunc(it.Options(), func(o Option) bool { return o.Value == v }) {
 			return true
 		}
+		return it.Free != nil && it.Free(v)
+	case KindText:
 		return it.Free != nil && it.Free(v)
 	}
 	return false
@@ -160,9 +179,17 @@ type Refusal struct {
 	Reason  string
 	Setting *Setting
 	Err     error
+	// Message is the setting's own words for the refusal, when it has some.
+	Message string
 }
 
 func (r *Refusal) Error() string { return "settingsctl: " + r.Reason }
+
+// Said is an error of a setting's Set whose words are for the person and the agent: a change that was refused where it
+// is made (the hub said the person has no right to it).
+type Said struct{ Message string }
+
+func (e *Said) Error() string    { return e.Message }
 func (r *Refusal) Unwrap() error { return r.Err }
 
 // RefusalOf is the refusal of any error of the service.
@@ -213,6 +240,8 @@ type Change struct {
 	Via      string `json:"via"`
 	// Why is the agent's one line of why it changed the setting.
 	Why string `json:"why,omitempty"`
+	// Note, when not empty, says that the value was not set here but passed on, and what it waits for.
+	Note string `json:"note,omitempty"`
 }
 
 // The states of a proposal.
@@ -238,6 +267,9 @@ type Proposal struct {
 	Conv      string `json:"conv"`
 	ConvTitle string `json:"convTitle"`
 	State     string `json:"state"`
+	// Failed says why a change the person agreed to was not made, in the setting's words; "" for one that was not
+	// tried or was made. Such a proposal is declined: nothing changed.
+	Failed string `json:"failed,omitempty"`
 }
 
 type proposal struct {
@@ -272,6 +304,8 @@ type Service struct {
 	recent map[string][]time.Time
 	// apply serializes the changes: the old value of a journal line is the one the change replaced.
 	apply sync.Mutex
+
+	watch watch
 }
 
 func (s *Service) now() time.Time {
@@ -340,7 +374,11 @@ func (s *Service) checked(key, value string) (Item, Setting, error) {
 		return Item{}, Setting{}, &Refusal{Reason: ReasonFailed, Err: err}
 	}
 	if !it.check(value) {
-		return Item{}, Setting{}, &Refusal{Reason: ReasonBadValue, Setting: &cur}
+		r := &Refusal{Reason: ReasonBadValue, Setting: &cur}
+		if it.Why != nil {
+			r.Message = it.Why(value)
+		}
+		return Item{}, Setting{}, r
 	}
 	if cur.Value == value {
 		return Item{}, Setting{}, &Refusal{Reason: ReasonSame, Setting: &cur}
@@ -356,14 +394,33 @@ func (s *Service) Apply(key, value string, by Actor, via, why string) (Change, e
 	if err != nil {
 		return Change{}, err
 	}
-	if err := it.Set(value); err != nil {
-		return Change{}, &Refusal{Reason: ReasonFailed, Setting: &cur, Err: err}
+	set := it.Set
+	note := ""
+	if it.SetBy != nil {
+		set = func(v string) (err error) { note, err = it.SetBy(v, by); return err }
+	}
+	if err := set(value); err != nil {
+		r := &Refusal{Reason: ReasonFailed, Setting: &cur, Err: err}
+		var said *Said
+		if errors.As(err, &said) {
+			r.Message = said.Message
+		}
+		return Change{}, r
+	}
+	said := it.label(value)
+	if it.Kind == KindText {
+		// A text may be a change of a part (one account of the list): the journal keeps what the setting became, so
+		// that «Вернуть» brings back the whole of what it was.
+		if now, err := it.Get(); err == nil {
+			value = now
+		}
 	}
 	ch := Change{ID: newID("sc_"), At: s.now().UnixMilli(), Key: key, Title: it.Title, Old: cur.Value, New: value,
-		OldLabel: cur.ValueLabel, NewLabel: it.label(value), By: by, Via: via, Why: CleanWhy(why)}
+		OldLabel: cur.ValueLabel, NewLabel: said, By: by, Via: via, Why: CleanWhy(why), Note: note}
 	if s.Journal != nil {
 		_ = s.Journal.Append(ch)
 	}
+	s.bump()
 	return ch, nil
 }
 
@@ -376,6 +433,7 @@ func (s *Service) Record(key, old, value string, by Actor, via string) {
 	}
 	_ = s.Journal.Append(Change{ID: newID("sc_"), At: s.now().UnixMilli(), Key: key, Title: it.Title, Old: old, New: value,
 		OldLabel: it.label(old), NewLabel: it.label(value), By: by, Via: via})
+	s.bump()
 }
 
 // prune closes what waited too long and drops what was answered long ago; the caller holds mu.
@@ -385,6 +443,7 @@ func (s *Service) prune(now time.Time) {
 		case p.State == StateWaiting && now.Sub(time.UnixMilli(p.At)) >= proposalTTL:
 			p.State, p.settled = StateExpired, now
 			close(p.done)
+			s.bump()
 		// A yes being applied (Approve between its two locks) has no settled time yet: it stays.
 		case p.State != StateWaiting && !p.settled.IsZero() && now.Sub(p.settled) >= settledKept:
 			delete(s.list, id)
@@ -449,13 +508,21 @@ func (s *Service) Propose(key, value, why string, by Actor) (Outcome, error) {
 		s.recent = map[string][]time.Time{}
 	}
 	s.recent[by.Conv] = append(fresh, now)
+	was := cur.ValueLabel
+	if it.Replaces != nil {
+		// The card strikes out only what the change takes away: a new account does not replace the others.
+		if label, part := it.Replaces(value); part {
+			was = label
+		}
+	}
 	p := &proposal{Proposal: Proposal{ID: newID("sp_"), At: now.UnixMilli(), Key: key, Title: it.Title, Old: cur.Value, New: value,
-		OldLabel: cur.ValueLabel, NewLabel: it.label(value), Why: CleanWhy(why), Conv: by.Conv, ConvTitle: by.Title, State: StateWaiting},
+		OldLabel: was, NewLabel: it.label(value), Why: CleanWhy(why), Conv: by.Conv, ConvTitle: by.Title, State: StateWaiting},
 		done: make(chan struct{})}
 	if s.list == nil {
 		s.list = map[string]*proposal{}
 	}
 	s.list[p.ID] = p
+	s.bump()
 	out := p.Proposal
 	return Outcome{State: StateWaiting, Proposal: &out}, nil
 }
@@ -532,10 +599,15 @@ func (s *Service) Approve(id string) (Outcome, error) {
 	p.settled = s.now()
 	if err != nil {
 		p.State = StateDeclined
+		if p.Failed = RefusalOf(err).Message; p.Failed == "" {
+			p.Failed = "the change was not made"
+		}
 		close(p.done)
+		s.bump()
 		return Outcome{}, err
 	}
 	close(p.done)
+	s.bump()
 	out := p.Proposal
 	return Outcome{State: StateApplied, Change: &ch, Proposal: &out}, nil
 }
@@ -554,6 +626,7 @@ func (s *Service) Decline(id string) (Outcome, error) {
 	}
 	p.State, p.settled = StateDeclined, s.now()
 	close(p.done)
+	s.bump()
 	out := p.Proposal
 	return Outcome{State: StateDeclined, Proposal: &out}, nil
 }

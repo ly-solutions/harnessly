@@ -6,6 +6,7 @@ import useIsMobile from '@/hooks/use-is-mobile';
 import { formatModelDisplayName } from '@/lib/claude-tokens';
 import { appConfig } from '@/platform/config';
 import { useTeamUsage } from '@/components/agents/stats/use-team-usage';
+import { useHubSwitches } from '@/next/features/manage/hub-switches';
 import EChart from '@/components/agents/stats/echart';
 import {
   activityByDay,
@@ -77,6 +78,20 @@ const PERIODS: { value: TPeriod; label: string }[] = [
   { value: 90, label: t('stats.statsView.period90') },
   { value: 365, label: t('stats.statsView.periodYear') },
 ];
+/** What the chart of cost is split by. */
+const COST_BY = { model: 'model', account: 'account', person: 'person' } as const;
+type TCostBy = (typeof COST_BY)[keyof typeof COST_BY];
+const COST_TITLE: Record<TCostBy, string> = {
+  model: 'stats.statsView.costByModel',
+  account: 'stats.statsView.costByAccount',
+  person: 'stats.statsView.costByPerson',
+};
+const COST_ARIA: Record<TCostBy, string> = {
+  model: 'stats.statsView.costByModelAria',
+  account: 'stats.statsView.costByAccountAria',
+  person: 'stats.statsView.costByPersonAria',
+};
+
 const PROVIDERS: { value: TProviderFilter; label: string }[] = [
   { value: 'all', label: t('stats.statsView.allAgents') },
   { value: 'claude', label: 'Claude' },
@@ -179,12 +194,22 @@ const Segmented = <T extends string | number>({ label, value, options, onChange 
 
 // --- chart options ---
 
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+/** Text as markup shows it: a tooltip is built as HTML, and its names (an account, a project, a person) are typed by people. */
+const esc = (text: string): string => text.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
+
 const tooltipRows = (rows: { color?: string; label: string; value: string }[], head: string) =>
-  `<div style="font-weight:600;margin-bottom:6px">${head}</div>` +
+  `<div style="font-weight:600;margin-bottom:6px">${esc(head)}</div>` +
   rows
     .map(
       (r) =>
-        `<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;min-width:170px"><span style="display:inline-flex;align-items:center;gap:6px">${r.color ? `<span style="width:8px;height:8px;border-radius:3px;background:${r.color}"></span>` : ''}${r.label}</span><b style="font-variant-numeric:tabular-nums">${r.value}</b></div>`,
+        `<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;min-width:170px"><span style="display:inline-flex;align-items:center;gap:6px">${r.color ? `<span style="width:8px;height:8px;border-radius:3px;background:${esc(r.color)}"></span>` : ''}${esc(r.label)}</span><b style="font-variant-numeric:tabular-nums">${esc(r.value)}</b></div>`,
     )
     .join('');
 
@@ -441,9 +466,13 @@ const rateLine = (
 // --- view ---
 
 const StatsView = () => {
-  // RUNTIME_HUB_ANALYTICS: this machine counts nothing, the report comes from the hub.
-  const hubBase = appConfig().hubAnalytics ? appConfig().hubUrl : null;
-  const { team, error, loading, reload } = useTeamUsage(false, hubBase);
+  // RUNTIME_HUB_ANALYTICS: this machine counts nothing, the report comes from the hub. The switch hub-stats
+  // moves the report to the hub per person; until the hub has answered, nothing is asked of either.
+  const hubSwitches = useHubSwitches();
+  const hubBase = appConfig().hubAnalytics || hubSwitches?.stats ? appConfig().hubUrl : null;
+  const waiting = hubSwitches === null && !appConfig().hubAnalytics;
+  const { team, error, loading: loadingReport, reload } = useTeamUsage(waiting, hubBase);
+  const loading = loadingReport || waiting;
   const theme = useChartTheme();
   const [period, setPeriod] = useState<TPeriod>(30);
   const [people, setPeople] = useState<string[]>([]);
@@ -689,7 +718,18 @@ const StatsBody = ({
   );
 
   const promptsOption = useMemo(() => stackedBars(th, w.days, promptsByPerson, n0), [th, w, promptsByPerson]);
-  const [costBy, setCostBy] = useState<'model' | 'person'>('model');
+  const [costBy, setCostBy] = useState<TCostBy>(COST_BY.model);
+  const costByAccount = useMemo(
+    () =>
+      seriesByKey(
+        facts,
+        w,
+        (f) => f.account ?? t('stats.statsView.noAccount'),
+        (f) => f.cost,
+        5,
+      ).map((s) => ({ name: s.name, color: colorAt(th, s.colorIndex), values: s.values })),
+    [facts, w, th],
+  );
   const costByPerson = useMemo(
     () =>
       picked.map((person) => {
@@ -704,7 +744,7 @@ const StatsBody = ({
       }),
     [facts, w, picked, personColor],
   );
-  const costSeries = costBy === 'model' ? costByModel : costByPerson;
+  const costSeries = { model: costByModel, account: costByAccount, person: costByPerson }[costBy];
   const costOption = useMemo(() => stackedBars(th, w.days, costSeries, money), [th, w, costSeries]);
   const hoursOption = useMemo(() => stackedBars(th, w.days, hoursByPerson, hours), [th, w, hoursByPerson]);
   const isMobile = useIsMobile();
@@ -945,7 +985,7 @@ const StatsBody = ({
 
         <Panel
           span={8}
-          title={costBy === 'model' ? t('stats.statsView.costByModel') : t('stats.statsView.costByPerson')}
+          title={t(COST_TITLE[costBy])}
           sub={t('stats.statsView.atApiPrices', { period: periodLabel })}
           hint={t('stats.statsView.costHint')}
         >
@@ -954,8 +994,9 @@ const StatsBody = ({
               label={t('stats.statsView.costSplit')}
               value={costBy}
               options={[
-                { value: 'model', label: t('stats.statsView.byModel') },
-                { value: 'person', label: t('stats.statsView.byPerson') },
+                { value: COST_BY.model, label: t('stats.statsView.byModel') },
+                { value: COST_BY.account, label: t('stats.statsView.byAccount') },
+                { value: COST_BY.person, label: t('stats.statsView.byPerson') },
               ]}
               onChange={setCostBy}
             />
@@ -963,15 +1004,7 @@ const StatsBody = ({
           {costSeries.length === 0 || cur.cost === 0 ? (
             <Empty height={300} />
           ) : (
-            <EChart
-              option={costOption}
-              height={300}
-              ariaLabel={
-                costBy === 'model'
-                  ? t('stats.statsView.costByModelAria')
-                  : t('stats.statsView.costByPersonAria')
-              }
-            />
+            <EChart option={costOption} height={300} ariaLabel={t(COST_ARIA[costBy])} />
           )}
         </Panel>
         <Panel

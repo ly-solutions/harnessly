@@ -2,21 +2,25 @@ import { describe, expect, it } from 'vitest';
 import {
   dayStartOf,
   describeForecast,
-  modelName,
-  showsSpend,
-  spentSince,
   FORECAST,
   FORECAST_TONE,
   leftAtReset,
   leftOf,
   LEVEL,
   levelOf,
+  limitsOfOwner,
+  modelName,
+  money,
+  profileLimitsOf,
+  readLimitsOf,
   readMachineLimits,
+  showsSpend,
   span,
-  WINDOW,
-  windowsOf,
+  spentSince,
   type ClaudeSpend,
   type LimitForecast,
+  WINDOW,
+  windowsOf,
 } from '@/next/features/limits/model';
 
 const window5 = {
@@ -106,6 +110,16 @@ describe('what is left', () => {
     expect(windowsOf(limits?.claude ?? null).map((w) => w.kind)).toEqual([WINDOW.fiveHour, WINDOW.sevenDay]);
     expect(leftAtReset(limits!.claude!.fiveHour!)).toBe(69);
     expect(leftAtReset(limits!.claude!.sevenDay!)).toBeNull();
+  });
+
+  it('leaves out a window whose reset has passed: an old copy is not what is left now (HRN-1431)', () => {
+    const claude = {
+      fiveHour: { usedPct: 11, resetsAt: 1000, forecast: null },
+      sevenDay: { usedPct: 10, resetsAt: 5000, forecast: null },
+      month: null,
+    } as unknown as Parameters<typeof windowsOf>[0];
+    expect(windowsOf(claude, 2000).map((w) => w.kind)).toEqual([WINDOW.sevenDay]);
+    expect(windowsOf(claude, 500).map((w) => w.kind)).toEqual([WINDOW.fiveHour, WINDOW.sevenDay]);
   });
 
   it('tells a span in days, hours and minutes', () => {
@@ -231,5 +245,71 @@ describe('the spend of a machine that pays by the API', () => {
     expect(showsSpend(null, { ...spend, billing: null })).toBe(true);
     expect(showsSpend(null, null)).toBe(false);
     expect(readMachineLimits({ machines: [{ id: 'm', limits: {} }] }, 'm')?.claudeSpend).toBeNull();
+  });
+});
+
+describe("the limits of the vendors' profiles", () => {
+  const doc = {
+    claude: null,
+    codex: { fiveHour: { usedPct: 5, resetsAt: 1_800_000_000 }, sevenDay: null },
+    profiles: {
+      glm: {
+        profile: 'glm',
+        account: '',
+        fiveHour: { usedPct: 25, resetsAt: 1_800_000_000, forecast: { status: 'insufficient_data' } },
+        sevenDay: { usedPct: 9, resetsAt: 1_800_400_000 },
+        month: { usedPct: 3, resetsAt: 1_802_000_000 },
+        plan: 'GLM Pro',
+        error: null,
+      },
+      'kimi-code/work': { profile: 'kimi-code', account: 'work', fiveHour: null, sevenDay: null },
+      'kimi-code/home': { profile: 'kimi-code', account: 'home', fiveHour: null, sevenDay: null },
+      kimi: { profile: 'kimi', account: '', balance: { amount: 49.58, currency: 'USD' } },
+      broken: { fiveHour: { usedPct: 1, resetsAt: 2 } },
+    },
+  };
+
+  it('reads each account with its three windows and no forecast, and skips an entry that names no profile', () => {
+    const limits = readLimitsOf(doc);
+    if (!limits) throw new Error('no limits');
+    expect(Object.keys(limits.profiles).sort()).toEqual(['glm', 'kimi', 'kimi-code/home', 'kimi-code/work']);
+    const glm = profileLimitsOf(limits, 'glm');
+    expect(windowsOf(glm).map((w) => w.kind)).toEqual([WINDOW.fiveHour, WINDOW.sevenDay, WINDOW.month]);
+    expect(glm?.fiveHour?.forecast).toBeNull();
+    expect(glm?.plan).toBe('GLM Pro');
+  });
+
+  it("shows a chat on a provider's account the limits of that account and of no other", () => {
+    const limits = readLimitsOf(doc);
+    if (!limits) throw new Error('no limits');
+    const own = {
+      ...limits,
+      profiles: {
+        ...limits.profiles,
+        'api:glm/glm-work': { ...limits.profiles.glm, profile: 'api:glm', account: 'glm-work', plan: 'Work' },
+        'api:glm/glm-home': { ...limits.profiles.glm, profile: 'api:glm', account: 'glm-home', plan: 'Home' },
+      },
+    };
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-glm-home' })?.plan).toBe('Home');
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-glm-work' })?.plan).toBe('Work');
+    // An account the machine has no limits of shows none, not its neighbour's.
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-glm-third' })).toBeNull();
+    expect(limitsOfOwner(own, { provider: 'claude', profile: 'x-home' })).toBeNull();
+  });
+
+  it('finds an account by its name, and the balance of a platform paid by the token', () => {
+    const limits = readLimitsOf(doc);
+    if (!limits) throw new Error('no limits');
+    expect(profileLimitsOf(limits, 'kimi-code', 'home')?.account).toBe('home');
+    expect(profileLimitsOf(limits, 'kimi-code', 'gone')).toBeNull();
+    expect(profileLimitsOf(limits, 'xai')).toBeNull();
+    const kimi = limitsOfOwner(limits, { provider: 'claude', profile: 'kimi' });
+    expect(kimi?.balance).toEqual({ amount: 49.58, currency: 'USD' });
+    expect(money({ amount: 49.58, currency: 'USD' })).toMatch(/49[.,]58/);
+    expect(limitsOfOwner(limits, { provider: 'codex', profile: null })?.fiveHour?.usedPct).toBe(5);
+  });
+
+  it('is empty for a machine that lists none', () => {
+    expect(readLimitsOf({ claude: null, codex: null })?.profiles).toEqual({});
   });
 });

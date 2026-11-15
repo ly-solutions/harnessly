@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -92,7 +93,7 @@ func (s *Service) serveWorkspace(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, httpx.ErrNotFound)
 		return
 	}
-	if refuseCrossSite(w, r) {
+	if !s.sandboxStoreFile(r) && refuseCrossSite(w, r) {
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, workspaceBase)
@@ -141,6 +142,10 @@ func (s *Service) workspaceAPI(w http.ResponseWriter, r *http.Request, p *auth.P
 		s.serveUploads(w, r, p, rest)
 		return
 	}
+	if match := chatSharePage.FindStringSubmatch(rest); match != nil {
+		s.serveChatSharePage(w, r, p, match[1])
+		return
+	}
 	if v := s.vaultService(); v != nil && vaultPath.MatchString(rest) {
 		v.Serve(w, r, vaultsvc.Person{ID: p.User.ID, Email: p.User.Email}, vaultPath.ReplaceAllString(rest, ""))
 		return
@@ -167,6 +172,9 @@ func (s *Service) workspaceAPI(w http.ResponseWriter, r *http.Request, p *auth.P
 	q := r.URL.Query()
 	id := q.Get("machine")
 	if id == "" || id == "local" {
+		id = s.anchorOf(r.Context(), p.User.ID, rest)
+	}
+	if id == "" {
 		if id = s.home(r.Context(), p.User.ID, true); id == "" {
 			s.fail(w, r, s.workspaceEmpty(r.Context(), p.User.ID))
 			return
@@ -201,6 +209,16 @@ func (s *Service) workspaceAPI(w http.ResponseWriter, r *http.Request, p *auth.P
 		u := url.URL{Path: rest, RawQuery: q.Encode()}
 		asked.URL = &u
 		asked.RequestURI = ""
+		home := func(ctx context.Context, w http.ResponseWriter) {
+			to := r.Clone(ctx)
+			u := url.URL{Path: workspaceBase + rest, RawQuery: q.Encode()}
+			to.URL = &u
+			to.RequestURI = ""
+			s.forward(w, to, p.User, m)
+		}
+		if s.serveHome(w, asked, p.User, m, home) {
+			return
+		}
 		if s.design.ServeMachine(w, asked, p.User, m) {
 			return
 		}
@@ -210,6 +228,9 @@ func (s *Service) workspaceAPI(w http.ResponseWriter, r *http.Request, p *auth.P
 	u := url.URL{Path: workspaceBase + rest, RawQuery: q.Encode()}
 	clone.URL = &u
 	clone.RequestURI = ""
+	if s.serveChatShares(w, clone, p.User, m, rest) {
+		return
+	}
 	if r.Method == http.MethodGet && platformMachines.MatchString(rest) {
 		// what is left of the agents' subscriptions is kept as it passes, for the page to draw before any
 		// machine answers.
@@ -416,3 +437,76 @@ func (p *pageRecorder) Write(b []byte) (int, error) {
 }
 
 func (p *pageRecorder) Flush() {}
+
+// storeFilePath is a file of a project in the hub's store (designaccess team.go): <base>/api/<name>/design/store/<id>/f/….
+var storeFilePath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/f/.`)
+
+// storeKeyedPath is the same file at the board's keyed address (designaccess filekey.go): <id>/k/<key>/f/….
+var storeKeyedPath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/k/[0-9a-z]+\.[A-Za-z0-9_-]+/f/.`)
+
+// sandboxStoreFile: a board shown from the hub's store loads its own files (support.js, styles, scripts). The board runs
+// sandboxed on an opaque origin, so the browser asks for them as «cross-site», and the cross-site refusal turned every
+// one away with 403: the board drew as raw markup. Such a request reads a file and changes nothing, and its
+// Referer names this host: the store's answers ask for it (Referrer-Policy strict-origin), and a page of another site
+// cannot make its browser send it. The person is still checked as for any other request, and the answer stays inert.
+func (s *Service) sandboxStoreFile(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if r.Header.Get("Sec-Fetch-Site") != "cross-site" {
+		return false
+	}
+	// A sandboxed board sends no Referer at all (its origin is opaque): its files come at its keyed address, whose key
+	// designaccess checks against the signed-in person before anything is read.
+	if storeKeyedPath.MatchString(r.URL.Path) {
+		return true
+	}
+	if !storeFilePath.MatchString(r.URL.Path) {
+		return false
+	}
+	ref, err := url.Parse(r.Header.Get("Referer"))
+	if err != nil || ref.Host == "" {
+		return false
+	}
+	fwd, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Host"), ",")
+	for _, own := range []string{r.Host, strings.TrimSpace(fwd), hostOf(s.cfg.PublicURL)} {
+		if own != "" && strings.EqualFold(ref.Host, own) {
+			return true
+		}
+	}
+	return false
+}
+
+func hostOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
+// anchorOf is the machine that holds the project a hub route names and the person may open (admit), "" when the path
+// is not one or no such machine holds it: the route is then answered as for the home machine. A project
+// held only on a teammate's own machine is closed to the others by the owner's rule (own-work): taking that machine
+// would refuse the person at the door instead of letting the hub answer «ask for access» from the home machine.
+func (s *Service) anchorOf(ctx context.Context, userID, rest string) string {
+	a, ok := s.design.(Anchor)
+	if !ok {
+		return ""
+	}
+	byID, _, err := s.fleetSpaces(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range a.AnchorMachines(ctx, ids, rest) {
+		if m, err := s.admit(ctx, userID, id); err == nil && s.trustedOnHub(ctx, m) == nil {
+			return id
+		}
+	}
+	return ""
+}

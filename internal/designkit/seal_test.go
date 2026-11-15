@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeVersion(t *testing.T, dir, id, v string, files map[string]string) string {
@@ -85,5 +86,50 @@ func TestSealLegacyKeepsOldVersionsVisible(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "new", "1.0.0", SealFile)); err == nil {
 		t.Fatal("the arriving version got a seal")
+	}
+}
+
+// A runtime that starts again trusts the versions an earlier start hashed while their files stand as they were: the
+// kits' screens of a machine with thousands of kit files waited half a minute and more on every restart.
+func TestARestartDoesNotHashAnUnchangedVersionAgain(t *testing.T) {
+	dir := t.TempDir()
+	root := writeVersion(t, dir, "acme", "1.0.0", sealFiles)
+	if err := WriteSeal("acme", "1.0.0", root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, SealRequired), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if len(List(dir)) != 1 {
+		t.Fatal("a sealed version is not installed")
+	}
+	// The next start: nothing in memory, and a file that cannot be read any more though it stands as it was hashed.
+	sealCache = map[string]*sealInfo{}
+	tokens := filepath.Join(root, "tokens.json")
+	if err := os.Chmod(tokens, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tokens, 0o644) })
+	if _, err := os.ReadFile(tokens); err == nil {
+		t.Skip("files are read whatever their mode here (root)")
+	}
+	if len(List(dir)) != 1 || len(Files(dir, "acme", "1.0.0")) != 3 {
+		t.Fatalf("an unchanged version was hashed again at the next start: %v", Files(dir, "acme", "1.0.0"))
+	}
+	// A file that moved since is hashed again: the same size, another content.
+	_ = os.Chmod(tokens, 0o644)
+	old, _ := os.ReadFile(tokens)
+	changed := make([]byte, len(old))
+	for i := range changed {
+		changed[i] = ' '
+	}
+	if err := os.WriteFile(tokens, changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Minute)
+	_ = os.Chtimes(tokens, later, later)
+	sealCache = map[string]*sealInfo{}
+	if len(List(dir)) != 0 {
+		t.Fatal("a version whose file changed at the same size is still installed after a restart")
 	}
 }

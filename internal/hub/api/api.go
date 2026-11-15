@@ -9,11 +9,13 @@ import (
 	"github.com/ly-solutions/harnessly/internal/apptoken"
 	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/analytics"
+	"github.com/ly-solutions/harnessly/internal/hub/searchsync"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -39,12 +41,15 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/leader"
 	"github.com/ly-solutions/harnessly/internal/hub/limits"
 	"github.com/ly-solutions/harnessly/internal/hub/link"
+	"github.com/ly-solutions/harnessly/internal/hub/machaccess"
 	"github.com/ly-solutions/harnessly/internal/hub/machines"
 	"github.com/ly-solutions/harnessly/internal/hub/mail"
 	"github.com/ly-solutions/harnessly/internal/hub/metrics"
 	"github.com/ly-solutions/harnessly/internal/hub/migration"
 	"github.com/ly-solutions/harnessly/internal/hub/mrsource"
+	"github.com/ly-solutions/harnessly/internal/hub/noticehub"
 	"github.com/ly-solutions/harnessly/internal/hub/orgs"
+	"github.com/ly-solutions/harnessly/internal/hub/projreg"
 	"github.com/ly-solutions/harnessly/internal/hub/provider"
 	"github.com/ly-solutions/harnessly/internal/hub/proxy"
 	"github.com/ly-solutions/harnessly/internal/hub/ratelimit"
@@ -113,6 +118,8 @@ type Options struct {
 
 // Hub is the assembled hub.
 type Hub struct {
+	// search keeps the hub's search index up to date from the store's writes; nil without a store.
+	search  *searchsync.Sync
 	Handler http.Handler
 	// Internal serves what the hub's replicas say to one another (HUB_REPLICAS); nil without them. It gets a listener
 	// of its own (HUB_REPLICA_LISTEN) and is never mounted on Handler.
@@ -151,7 +158,9 @@ type Hub struct {
 	// Automations is the rules and runs of the installation (HUB_AUTOMATIONS).
 	Automations *automations.Service
 	// Design is who may see and change a machine's designs, and the guest links to them.
-	Design   *designaccess.Service
+	Design *designaccess.Service
+	// Notices keeps the person's notices in the hub's database, behind the switch hub-notices.
+	Notices  *noticehub.Service
 	Dist     *dist.Handler
 	SSH      *sshinstall.Service
 	Dialer   *link.Dialer
@@ -196,7 +205,7 @@ var AppsView func(st *storehub.Store, dataDir string, log *slog.Logger) storehub
 // DesignView makes the store's view of design projects (designview.Hub): guest links and the team's reads and edits
 // through the hub with no machine. The hub's main sets it; this package does not import the view, whose design code
 // imports the agent, whose tests import this package. Nil: projects are read from the machines only.
-var DesignView func(st *storehub.Store, dataDir string, app fs.FS, log *slog.Logger) designaccess.Viewer
+var DesignView func(st *storehub.Store, db *store.DB, derived bool, dataDir string, app fs.FS, log *slog.Logger) designaccess.Viewer
 
 // New builds the hub.
 func New(o Options) (*Hub, error) {
@@ -273,6 +282,7 @@ func New(o Options) (*Hub, error) {
 	rb := &rates.Book{DB: db, URL: cfg.RatesURL, Client: o.HTTPClient, Log: log, Now: o.Now}
 	h.Features = features.New(db, cfg.Features, o.Now)
 	h.Switches = switches.New(db, o.Now)
+	h.Auth.SetSwitches(h.Switches)
 	if kv := o.SafeKV; kv != nil || cfg.SafeVault != nil {
 		if kv == nil {
 			c, err := vaultkv.New(*cfg.SafeVault)
@@ -402,9 +412,25 @@ func New(o Options) (*Hub, error) {
 	h.Design = designaccess.New(designaccess.Deps{
 		DB: db, Reg: h.Registry, Log: log, Now: o.Now, HubURL: cfg.PublicURL, ShareURL: cfg.DesignShareURL,
 		ShareAliases: cfg.DesignShareAliases, PlatformAPI: cfg.DesignPlatformAPI, Transport: func(id string) http.RoundTripper { return px.Transport(id) },
-		LinkKey: linkKey, Notice: notice, Shared: !cfg.Store.Off, Kits: kitAccess(cfg, db, o),
+		LinkKey: linkKey, Notice: notice,
+		Bell: func(ctx context.Context, machineID, to, key, title, text, link string) {
+			h.Notices.Ring(ctx, machineID, to, key, title, text, link)
+		}, Shared: !cfg.Store.Off, Kits: kitAccess(cfg, db, o),
 		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: cfg.DesignAccess.ClosedUnrecorded,
+		Opens: (&machaccess.Checker{Config: cfg, DB: db, Authz: h.Spaces.Authz, IsAdmin: h.Auth.IsInstanceAdmin, Log: log,
+			Switches: h.Switches, Now: o.Now}).Opens,
+		HomeOn: func(ctx context.Context, email, machineID string) bool {
+			return h.Switches != nil && h.Switches.On(ctx, designaccess.HomeSwitch, email, machineID)
+		},
+		OwnerOn: func(ctx context.Context, email, machineID string) bool {
+			return h.Switches != nil && h.Switches.On(ctx, designaccess.OwnerSwitch, email, machineID)
+		},
 	})
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		h.Design.ReconcileLinks(ctx)
+	}()
 	h.Efficiency = &efficiency.Service{DB: db, OrgGate: h.Orgs.OrgGate, Features: h.Features, Switches: h.Switches, Now: o.Now}
 	h.Docs = docs.New(docs.Deps{Config: cfg, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry, Gate: h.Switches, Notice: func(ctx context.Context, to, subject, body, link string) error {
 		if n, ok := o.Mailer.(mail.Noticer); ok {
@@ -425,7 +451,7 @@ func New(o Options) (*Hub, error) {
 	h.Machines = machines.New(machines.Deps{
 		Config: cfg, DB: db, Auth: h.Auth, Spaces: h.Spaces, Reg: h.Registry, Tickets: h.Tickets, Limiter: o.Limiter, Log: log, Now: o.Now,
 		OnRevoked: func(machineID string) { px.Forget(machineID) }, Usage: usageSink, Budget: budgetSink, Env: envSink,
-		Provider: prov, Features: machineFeatures, Publisher: o.Publisher, Design: h.Design, Docs: h.Docs, Automations: h.Automations,
+		Provider: prov, Features: machineFeatures, Publisher: o.Publisher, Design: h.Design, Projects: &projreg.Service{DB: db, Log: log, Now: o.Now}, Docs: h.Docs, Proposals: h.Env, Automations: h.Automations,
 		History: historySink, Switches: h.Switches, Notice: noticeOf(o.Mailer),
 	})
 	h.Analytics.UseMachines(h.Machines)
@@ -434,8 +460,21 @@ func New(o Options) (*Hub, error) {
 		h.Analytics.UseLeader(h.lead.Held)
 	}
 	h.Analytics.UseFeatures(h.Features)
+	h.Analytics.UseSwitches(h.Switches)
 	h.Relay = relay.New(relay.Deps{Auth: h.Auth, DB: db, Machines: h.Machines, Reg: h.Registry, Log: log, Now: o.Now, Timeout: o.AgentTimeout})
-	px = proxy.New(proxy.Deps{Config: cfg, DB: db, Auth: h.Auth, Spaces: h.Spaces, Reg: h.Registry, Tickets: h.Tickets, Log: log, Now: o.Now, Design: h.Design, Features: h.Features, Workspace: o.Workspace, History: cfg.History, VoiceTakes: cfg.VoiceTakes, Fleet: h.Fleet, Switches: h.Switches, SlotKey: slotKey})
+	// The person's notices from the hub's database, before the design access: behind the switch hub-notices.
+	h.Notices = noticehub.New(db, func(r *http.Request, email, machineID string) bool {
+		return h.Switches != nil && h.Switches.On(r.Context(), noticehub.Switch, email, machineID)
+	})
+	h.Notices.Notices.Now = o.Now
+	h.Notices.OnFor = func(ctx context.Context, email, machineID string) bool {
+		return h.Switches != nil && h.Switches.On(ctx, noticehub.Switch, email, machineID)
+	}
+	h.Notices.UserID = func(ctx context.Context, email string) (string, bool) {
+		u, err := db.S().UserByEmail(ctx, email)
+		return u.ID, err == nil && u.DisabledAt == nil && u.ID != ""
+	}
+	px = proxy.New(proxy.Deps{Config: cfg, DB: db, Auth: h.Auth, Spaces: h.Spaces, Reg: h.Registry, Tickets: h.Tickets, Log: log, Now: o.Now, Design: noticehub.Chain{h.Notices, h.Design}, Features: h.Features, Workspace: o.Workspace, History: cfg.History, VoiceTakes: cfg.VoiceTakes, Fleet: h.Fleet, Switches: h.Switches, SlotKey: slotKey})
 	// A person whose sessions were all ended at once holds nothing open: neither the live streams of their spaces nor
 	// what they had open on the machines.
 	h.Auth.OnSessionsEnded(func(userID string) {
@@ -496,15 +535,18 @@ func New(o Options) (*Hub, error) {
 			h.Migration.UseSidebars(h.db, func() int64 { return now().UnixMilli() })
 		}
 		// guest links read their projects from the store, put into folders of the hub; no machine takes part.
+		var designV designaccess.Viewer
 		if DesignView != nil {
-			if v := DesignView(h.Store, cfg.DataDir, o.Workspace, log); v != nil {
+			if v := DesignView(h.Store, h.db, cfg.DesignDerived, cfg.DataDir, o.Workspace, log); v != nil {
 				h.Design.UseView(v)
+				designV = v
 			}
 		}
 		// an app's guest link opens from the store, with the machine that made it off.
 		if AppsView != nil && appsView == nil {
 			appsView = AppsView(h.Store, cfg.DataDir, log)
 		}
+		h.newSearch(designV, appsView)
 	}
 
 	var page http.Handler
@@ -667,6 +709,9 @@ func New(o Options) (*Hub, error) {
 }
 
 // collectMetrics writes the gauges read from the hub's state at the moment of a scrape.
+// metricLabel is a value fit for a label of a metric.
+var metricLabel = regexp.MustCompile(`^[a-z_]{1,32}$`)
+
 func (h *Hub) collectMetrics(w *metrics.Writer) {
 	st := h.Registry.Stats()
 	w.Gauge("links", "Agent links this hub process holds.", float64(st.Links))
@@ -699,9 +744,29 @@ func (h *Hub) collectMetrics(w *metrics.Writer) {
 		h.Machines.Repl().Write(w, time.Now(), repl.Measured(), map[string]time.Duration{
 			"usage": usageLag, hubproto.ReplHistoryEvents: st.OldestBulk, hubproto.ReplHistoryBackfill: st.OldestBulk})
 	}
+	// how much of people's data is in the hub. The designs: recorded projects by whether the store has a
+	// revision of them (counted now and then, designaccess.Coverage).
+	if h.Design != nil {
+		if c := h.Design.Coverage(); !c.At.IsZero() {
+			const help = "Recorded design projects, by whether the hub's store has a revision of them (missing: they open only from a machine)."
+			w.Gauge("design_projects", help, float64(c.Stored), "state", "stored")
+			w.Gauge("design_projects", help, float64(c.Missing), "state", "missing")
+		}
+	}
 	// The hub's own queues, read from the database at the scrape: how much waits and for how long.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	// The machines' own data (chat attachments, handed-over files, handoff notes) by how far its move into the hub is.
+	if rows, err := h.db.S().Q().Query(ctx, `SELECT state, COUNT(*) FROM migration_objects GROUP BY state ORDER BY state`); err == nil {
+		for rows.Next() {
+			var state string
+			var n int64
+			if rows.Scan(&state, &n) == nil && metricLabel.MatchString(state) {
+				w.Gauge("migration_objects", "Objects of the machines' own data by the state of their move into the hub.", float64(n), "state", state)
+			}
+		}
+		_ = rows.Close()
+	}
 	now := time.Now()
 	queue := func(name, rowsHelp, ageHelp string, read func(context.Context) (store.QueueStat, error)) {
 		st, err := read(ctx)
@@ -773,6 +838,9 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 	safego.Go("live analytics", func() { h.Analytics.RunLive(ctx, h.OrgEvents.Active) })
 	safego.Go("design", func() { h.Design.Run(ctx) })
+	if h.search != nil {
+		safego.Go("search index", func() { h.runSearch(ctx) })
+	}
 	// messages written to a machine that was off, handed over once it is back
 	safego.Go("outbox", func() { h.lead.Lead(ctx, "outbox", h.Proxy.RunOutbox) })
 	// new chats started while no machine answered, made once their machine is back
@@ -973,12 +1041,12 @@ func noticeOf(m any) func(ctx context.Context, to, subject, body, link string) e
 	}
 }
 
-// docGuestLink is a request the documents' guest page answers (GET /d/<token>): the route is looked up in the mux,
+// docGuestLink is a request the documents' guest page answers (GET /d/<token>, and the fonts the page names): the route is looked up in the mux,
 // so with documents or their access off nothing is served and the request is not the hub's page by accident.
 func docGuestLink(mux *http.ServeMux, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
 	_, pattern := mux.Handler(r)
-	return pattern == "GET /d/{token}"
+	return pattern == "GET /d/{token}" || pattern == "GET /static/fonts/{name}"
 }

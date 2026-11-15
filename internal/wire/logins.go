@@ -229,34 +229,47 @@ func (s *Server) logins(w http.ResponseWriter, r *http.Request, rest string) {
 		return
 	}
 	route := strings.Join(parts[1:], "/")
+	src := s.Logins
+	if account := r.URL.Query().Get("account"); account != "" {
+		// One more sign-in of the CLI, with a home of its own (Server.AccountLogins); the main one is asked without it.
+		var ok bool
+		if s.AccountLogins == nil {
+			refuse(w, RefuseNotFound)
+			return
+		}
+		if src, ok = s.AccountLogins(p, account); !ok {
+			refuse(w, RefuseNotFound)
+			return
+		}
+	}
 	var status LoginStatus
 	var err error
 	switch {
 	case route == "login" && r.Method == http.MethodGet:
-		status, err = s.Logins.Login(r.Context(), p)
+		status, err = src.Login(r.Context(), p)
 	case route == "login" && r.Method == http.MethodPost:
 		var body LoginStart
 		if !s.readLoginBody(w, r, &body) {
 			return
 		}
-		status, err = s.Logins.StartLogin(r.Context(), p, body.Mode)
+		status, err = src.StartLogin(r.Context(), p, body.Mode)
 	case route == "login/code" && r.Method == http.MethodPost:
 		var body LoginCode
 		if !s.readLoginBody(w, r, &body) {
 			return
 		}
-		status, err = s.Logins.SubmitLoginCode(r.Context(), p, body.ID, body.Code)
+		status, err = src.SubmitLoginCode(r.Context(), p, body.ID, body.Code)
 	case route == "login" && r.Method == http.MethodDelete:
-		status, err = s.Logins.CancelLogin(r.Context(), p)
+		status, err = src.CancelLogin(r.Context(), p)
 	case route == "key" && r.Method == http.MethodPut:
 		var body ProfileKeyEdit
 		if !s.readLoginBody(w, r, &body) {
 			return
 		}
-		s.loginAnswer(w, r, LoginOK{OK: true}, s.Logins.SaveAPIKey(r.Context(), p, body.Key))
+		s.loginAnswer(w, r, LoginOK{OK: true}, src.SaveAPIKey(r.Context(), p, body.Key))
 		return
 	case route == "logout" && r.Method == http.MethodPost:
-		s.loginAnswer(w, r, LoginOK{OK: true}, s.Logins.Logout(r.Context(), p))
+		s.loginAnswer(w, r, LoginOK{OK: true}, src.Logout(r.Context(), p))
 		return
 	case route == "login" || route == "login/code" || route == "key" || route == "logout":
 		w.WriteHeader(http.StatusMethodNotAllowed)

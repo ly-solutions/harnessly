@@ -79,7 +79,7 @@ export const latestSuggestions = (texts: readonly string[]): IAgentSuggestion[] 
 export const reviewRequest = (
   files: readonly Pick<IReviewFile, 'path' | 'additions' | 'deletions'>[],
   where: string,
-  words: { ask: string; format: string },
+  words: { ask: string; format: string; rules?: string },
 ): string => {
   const list = files.map((f) => `- ${f.path} (+${f.additions} −${f.deletions})`).join('\n');
   const sample = JSON.stringify(
@@ -87,7 +87,8 @@ export const reviewRequest = (
     null,
     0,
   );
-  return `${words.ask}\n${where}\n\n${list}\n\n${words.format}\n\`\`\`${SUGGESTIONS_FENCE}\n${sample}\n\`\`\``;
+  const rules = words.rules ? `${words.rules}\n\n` : '';
+  return `${words.ask}\n${where}\n\n${list}\n\n${rules}${words.format}\n\`\`\`${SUGGESTIONS_FENCE}\n${sample}\n\`\`\``;
 };
 
 /** The lines of a text with the suggestion's replacement in place of lines from–to (1-based, inclusive). */

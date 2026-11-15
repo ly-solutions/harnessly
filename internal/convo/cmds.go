@@ -94,6 +94,9 @@ func (c *conv) do(device string, cmd wire.Command, now time.Time) wire.CmdResult
 		return c.recResult(now)
 	case wire.ConversationPinCmd:
 		c.rec.Pinned = m.Pinned
+		if m.Pinned {
+			c.rec.From = nil // pinned, the chat is the person's own (HRN-1393)
+		}
 		return c.recResult(now)
 	case wire.ConversationTestCmd:
 		c.rec.Test = m.Test
@@ -104,6 +107,7 @@ func (c *conv) do(device string, cmd wire.Command, now time.Time) wire.CmdResult
 		return c.setApps(m.Apps, now)
 	case wire.ConversationMoveCmd:
 		c.rec.ProjectID = m.ProjectID
+		c.rec.From = nil // moved anywhere, even to the recent chats, the chat an app started is the person's (HRN-1393)
 		return c.recResult(now)
 	case wire.ConversationDeleteCmd:
 		if c.rec.State.K == wire.StateWorking && (m.Force == nil || !*m.Force) {
@@ -258,6 +262,13 @@ func (c *conv) send(m wire.SendCmd, now time.Time) wire.CmdResult {
 		return wire.Refused(wire.RefuseForbidden)
 	}
 	d := outbox.Draft{ClientID: m.ClientID, Text: m.Text, Mode: m.Mode, Kind: m.Kind, Attachments: []wire.AttachmentRef{}}
+	// Another agent's message is known by its client id: it never answers the person's question, and it is read at the
+	// agent's next step. Only this machine's own delegation marks one to be read at once (DeliverPeerAtOnce): nothing
+	// in the message, whose id its sender chose, can say so.
+	d.Agent = IsPeerClientID(m.ClientID)
+	_, atOnce := c.peerAtOnce[m.ClientID]
+	delete(c.peerAtOnce, m.ClientID)
+	d.Soft = d.Agent && !atOnce
 	if ch, ok := c.box.TakenBack(d, now); ok {
 		// The person took the message back before it came: it is shown as cancelled, and the agent is not woken for it.
 		return c.result(ch, "", wire.ResultAccepted, now)

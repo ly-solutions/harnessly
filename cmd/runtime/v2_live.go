@@ -24,6 +24,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/catalog"
 	"github.com/ly-solutions/harnessly/internal/chatmove"
 	"github.com/ly-solutions/harnessly/internal/chatwork"
+	"github.com/ly-solutions/harnessly/internal/codexaccounts"
 	"github.com/ly-solutions/harnessly/internal/convo"
 	"github.com/ly-solutions/harnessly/internal/delegation"
 	"github.com/ly-solutions/harnessly/internal/design"
@@ -34,6 +35,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/machine"
 	"github.com/ly-solutions/harnessly/internal/msgindex"
 	"github.com/ly-solutions/harnessly/internal/outbox"
+	"github.com/ly-solutions/harnessly/internal/paneauto"
 	"github.com/ly-solutions/harnessly/internal/preflight"
 	"github.com/ly-solutions/harnessly/internal/prompts"
 	"github.com/ly-solutions/harnessly/internal/providers"
@@ -143,8 +145,10 @@ func newV2Live(d deps, c *core) *v2Live {
 	// A snapshot after an entry carries the turns from that entry's on: the page may open a chat from the cluster's copy.
 	features = append(features, wire.FeatureSnapshotAfter)
 	// Dictation is announced when this machine is set up for it at start: ffmpeg and the recognition service's socket.
+	// a socket set for the machine (RUNTIME_VOICE_SOCKET) counts before it is there; the service starts with
+	// the machine beside the runtime, and a runtime that looked first went the whole day without a microphone.
 	var dictation *voice.Server
-	if dv := newVoice(d.DataDir); dv.Available() {
+	if dv := newVoice(d.DataDir); dv.Available() || (os.Getenv("RUNTIME_VOICE_SOCKET") != "" && dv.Decodes()) {
 		dictation = dv
 		features = append(features, wire.FeatureVoice)
 	}
@@ -154,8 +158,21 @@ func newV2Live(d deps, c *core) *v2Live {
 		v.profiles = c.agents.profiles
 	}
 	shareProviders(d.DataDir, v.profiles)
+	// The providers the person added by API start Claude Code chats too: their keys and secret variables come from the
+	// machine's safe, and the profiles follow the registry.
+	extSvc := extProvidersFor(d)
+	v.profiles.Safe = extSvc.Secrets.Reveal
+	moveVendorKeys(extSvc, v.profiles)
+	syncExtProfiles(extSvc, v.profiles)
+	// The other sign-ins of the Codex CLI start Codex chats in their own homes.
+	codexLogins := &codexaccounts.Store{Dir: d.DataDir, Main: providers.CodexHome(d.Home)}
+	codexLoginStore.Store(codexLogins)
+	syncCodexLoginProfiles(codexLogins)
+	codexHub := &codexLoginFlows{store: codexLogins}
+	codexLoginHub.Store(codexHub)
 	v.machine = newLiveMachine(v2Machine, version, features, d.DataDir, func() int { return v.rt.Busy() }, c.preflight, c.v2Models)
 	v.machine.offers = profileOffers(v.profiles)
+	followExtProviders(d.DataDir, extSvc, v.profiles, v.machine.republishProfiles)
 	if c.agents != nil {
 		v.machine.skip = c.agents.claude.SkipPermissions
 		v.machine.codexConfig = filepath.Join(d.Home, ".codex", "config.toml")
@@ -168,6 +185,7 @@ func newV2Live(d deps, c *core) *v2Live {
 	ses := newV2Sessions(d.Home, func() map[string]string { return v.rt.AttachedSessions() })
 	v.ses = ses
 	publisher := autoOpenPublisher{hub: v.hub, watch: v.newPaneWatcher()}
+	v.liftIntents()
 	if d.BrowserTools != nil {
 		publisher.browser = d.BrowserTools.Access
 	}
@@ -195,8 +213,9 @@ func newV2Live(d deps, c *core) *v2Live {
 	summarizer.models = v.machine.modelsOf
 	var noticesRT atomic.Pointer[convo.Runtime]
 	notices := newChatNotices(c, &noticesRT)
-	v.rt = convo.New(convo.Deps{Notify: notices.notice, Moves: moveStore, Index: index, Digest: digest, ExportDir: filepath.Join(d.DataDir, "v2", "chat-exports"), AgentSession: ses.Find, MachineID: v2Machine, Publisher: publisher, Machine: v.tm, Launcher: v.starter, Input: codexInputOf(c), Handoffs: handoffs,
-		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{Index: c.transcripts}, Transcripts: c.transcripts, Shots: &shots.Reader{Index: c.transcripts}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir, imagesDir(d), codexImagesDir(d)}, Titler: titler.Title, Summarizer: summarizer.Summarize, SummaryModel: func() *wire.NoticeSummaryModel { return runtimeSettings.RuntimeSettings().NoticeSummary }, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
+	var projects atomic.Pointer[projectsFeed]
+	v.rt = convo.New(convo.Deps{PersonOf: design.PersonIn, ProjectsChanged: func([]wire.Project) { projects.Load().changed() }, Notify: notices.notice, Moves: moveStore, Index: index, Digest: digest, ExportDir: filepath.Join(d.DataDir, "v2", "chat-exports"), AgentSession: ses.Find, SessionAccount: noteSessionAccount(d.DataDir, v.profiles), MachineID: v2Machine, Publisher: publisher, Machine: v.tm, Launcher: v.starter, Input: codexInputOf(c), Handoffs: handoffs,
+		Uploads: v2Uploads{uploads}, Refs: v2Refs{v}, Store: convo.NewStore(filepath.Join(d.DataDir, "v2")), Log: v2Log{}, Limits: wire.DefaultLimits, Models: v.machine.modelsOf, Background: v2Background{reader: c.bg, flows: &workflows.Reader{}}, Meta: &sessionmeta.Reader{Index: c.transcripts}, Transcripts: c.transcripts, Shots: &shots.Reader{Index: c.transcripts}, PictureRoots: []string{shots.ScratchRoot(), uploadsDir(d), uploads.Dir, imagesDir(d), codexImagesDir(d)}, Titler: titler.Title, Summarizer: turnSummarizer(d.DataDir, summarizer.Summarize), SummaryModel: func() *wire.NoticeSummaryModel { return runtimeSettings.RuntimeSettings().NoticeSummary }, Closer: v2Closer{v}, DefaultCwd: d.WorkspaceRoot,
 		Terminals: terminals, IdleStop: func() time.Duration { return runtimeSettings.RuntimeSettings().IdleStop.After() },
 		IdleFloor: idleFloor, MemoryShort: memoryShort, PressureStop: pressureFloor, LegacyLife: !sessionOwnerOn(os.Getenv),
 		TerminalOff: chatGuard.Off,
@@ -215,6 +234,9 @@ func newV2Live(d deps, c *core) *v2Live {
 			return wire.Ms(limits.ExhaustedReset(c.limits.Read()[string(p)], float64(now.Unix())) * 1000)
 		}})
 	noticesRT.Store(v.rt)
+	feed := newProjectsFeed(v.rt.ProjectList, d.DataDir, os.Getenv("RUNTIME_AGENT_TOKEN_HEADER"))
+	projects.Store(feed)
+	go feed.run()
 	if c.agents != nil && c.agents.codexInput != nil {
 		c.agents.codexInput.rt.Store(v.rt)
 	}
@@ -247,7 +269,14 @@ func newV2Live(d deps, c *core) *v2Live {
 	v.srv.HandoffDraft = (&v2Handoff{rt: v.rt, runtimeFile: os.Getenv("RUNTIME_SIDE_CHAT_CONFIG")}).Draft
 	// The start page's pane browses the machine's own place without a chat (wire.HomeConv).
 	place := homeRecord(homePlace(d), v.rt.Record)
-	v2f := &v2Files{record: place, touched: v.rt.Touched, delivered: v.rt.Delivered, access: workspaceAccess(d)}
+	v2f := &v2Files{record: place, touched: v.rt.Touched, delivered: v.rt.Delivered, access: workspaceAccess(d),
+		own: []string{d.Home, d.WorkspaceRoot}}
+	if c.cfg.Tmux != nil && c.intents != nil {
+		v2f.asked = func(conv, path string) bool {
+			tab, err := legacyTabOf(v.rt.Record, c.cfg.Tmux.ParseSessionName, conv)
+			return err == nil && tab.TabID != "" && paneauto.AskedFile(c.intents, tab.TabID, path)
+		}
+	}
 	v.srv.Files = v2f
 	v.srv.Download = v2f.ServeDownload
 	v.srv.GitSide = v2f.ServeGitSide
@@ -260,6 +289,7 @@ func newV2Live(d deps, c *core) *v2Live {
 	if index != nil {
 		v.srv.Search = v.rt.SearchMessages
 		v.srv.Digest = v.rt.ChatDigest
+		v.srv.Glance = v.rt.ChatGlance
 	}
 	v.srv.MachineTool = v2MachineTool{ref: d.MachineKit}
 	v.srv.Apps = v2Apps{d: d}
@@ -281,6 +311,7 @@ func newV2Live(d deps, c *core) *v2Live {
 	checker := newMRChecker(handlers.S)
 	targets := panelTargets()
 	targets.Resolve = linkResolver(connectionsFor(d), docsProviderOf(), targets)
+	targets.DesignBoard = designAPI(d).L.BoardOfPath
 	open := v2Open{record: v.rt.Record, targets: targets, mrLinks: transcriptMRs(chatSources), mr: checker.lookup, projects: checker.projects, state: &mrState{}}
 	v.srv.Open = open.Open
 	v.srv.OpenAll = open.OpenAll
@@ -297,11 +328,23 @@ func newV2Live(d deps, c *core) *v2Live {
 	// A key an agent printed (a `cat` of its file, an environment dump) leaves the machine masked.
 	wire.SetRedactor(v.profiles.Redact)
 	if c.agents != nil && c.agents.checker != nil {
-		v.srv.Logins = v2Logins(d.Home, cachedPath(c.agents.checker.ShellPath), func(wire.Provider) {
+		shellPath := cachedPath(c.agents.checker.ShellPath)
+		v.srv.Logins = v2Logins(d.Home, shellPath, func(wire.Provider) {
 			// The account changed: the next look at the CLIs is a fresh one, and the page hears it.
 			c.agents.checker.Invalidate()
 			safego.Go("machine refresh", func() { v.machine.refresh() })
 		})
+		// One more sign-in of Codex signs in and out in its own home; the profiles of the sign-ins follow.
+		codexHub.make = func(codexHome string, changed func(wire.Provider)) wire.LoginSource {
+			return v2LoginsIn(d.Home, codexHome, shellPath, changed)
+		}
+		codexHub.changed = v.machine.republishProfiles
+		codexHub.inUse = func(profile string) bool {
+			snap, err := v.rt.Conversations(context.Background())
+			// A list that could not be read does not say the sign-in is free.
+			return err != nil || liveOn(profile, snap.Conversations)
+		}
+		v.srv.AccountLogins = codexHub.of
 	}
 	v.srv.Context = v.rt.Context
 	v.srv.MessageStatus = v.rt.MessageStatus
@@ -1042,7 +1085,7 @@ func profileOffers(store *providers.Store) func(wire.Provider) []wire.ProfileOff
 	return func(p wire.Provider) []wire.ProfileOffer {
 		var out []wire.ProfileOffer
 		for _, pr := range providers.Presets() {
-			if pr.Via == p {
+			if pr.Via == p && !pr.Unlisted {
 				out = append(out, wire.ProfileOffer{ID: pr.ID, Label: pr.Label, Vendor: pr.Vendor,
 					Configured: store.Ready(pr.ID), Models: store.AgentModels(pr)})
 			}

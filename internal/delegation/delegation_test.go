@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/convo"
 	"github.com/ly-solutions/harnessly/internal/jsvalue"
 	"github.com/ly-solutions/harnessly/internal/mcpserver"
 	"github.com/ly-solutions/harnessly/internal/peers"
@@ -27,6 +28,9 @@ type fakeConvs struct {
 	sent     map[string][]string // the texts DeliverPeer queued, by conversation
 	told     map[string][]string // the texts the platform sent a chat with Do (reminders), by conversation
 	queued   bool                // DeliverPeer answers queued: the agent is starting
+	steers   map[string][]bool   // whether each of them was steered into the running turn, by conversation
+	atOnce   map[string][]bool   // whether each of them was marked urgent (DeliverPeerAtOnce), by conversation
+	outcome  convo.PeerOutcome   // what PeerOutcome answers
 	projects []wire.Project
 	n        int
 	now      func() time.Time
@@ -129,13 +133,31 @@ func (f *fakeConvs) Do(_ context.Context, _ string, cmd wire.Command) wire.CmdRe
 	return wire.CmdResult{R: wire.ResultAccepted, ID: &id}
 }
 
-func (f *fakeConvs) DeliverPeer(_ context.Context, conv, clientID, text string, _ bool) wire.CmdResult {
+func (f *fakeConvs) PeerOutcome(context.Context, string, string, time.Duration) convo.PeerOutcome {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.outcome
+}
+
+func (f *fakeConvs) DeliverPeerAtOnce(ctx context.Context, conv, clientID, text string) wire.CmdResult {
+	return f.deliver(conv, clientID, text, true, true)
+}
+
+func (f *fakeConvs) DeliverPeer(_ context.Context, conv, clientID, text string, steer bool) wire.CmdResult {
+	return f.deliver(conv, clientID, text, steer, false)
+}
+
+func (f *fakeConvs) deliver(conv, clientID, text string, steer, atOnce bool) wire.CmdResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	rec, ok := f.recs[conv]
 	if !ok || !strings.HasPrefix(clientID, "peer-") {
 		return wire.Refused(wire.RefuseNotFound)
 	}
+	if f.steers == nil {
+		f.steers, f.atOnce = map[string][]bool{}, map[string][]bool{}
+	}
+	f.steers[conv], f.atOnce[conv] = append(f.steers[conv], steer), append(f.atOnce[conv], atOnce)
 	f.sent[conv] = append(f.sent[conv], text)
 	f.entry(conv, wire.Entry{T: wire.EntryUser, Text: text})
 	rec.State.K = wire.StateWorking
@@ -704,5 +726,104 @@ func TestWaitDoesNotTakeAPauseForTheAnswer(t *testing.T) {
 	text, _ := r.call("tab-root", "wait_conversation", map[string]any{"id": child, "timeout_s": 1.0})
 	if !strings.Contains(text, "outcome: done") || !strings.Contains(text, "All fixed.") || strings.Contains(text, MarkDone) {
 		t.Fatalf("wait: %s", text)
+	}
+}
+
+// A message to a delegated chat goes into its running turn unless the sender, or the person's setting, says
+// to wait for the turn's end; "now" also marks it as urgent. The answer says where it went.
+func TestSendChoosesWhenTheMessageIsDelivered(t *testing.T) {
+	r := newTestRig(t)
+	text, isErr := r.call("tab-root", "delegate_task", map[string]any{"provider": "claude", "prompt": "Fix the parser"})
+	if isErr {
+		t.Fatal(text)
+	}
+	child := r.convs.order[len(r.convs.order)-1]
+	send := func(args map[string]any) string {
+		t.Helper()
+		args["id"], args["text"] = child, "rebase first"
+		out, isErr := r.call("tab-root", "send_to_conversation", args)
+		if isErr {
+			t.Fatal(out)
+		}
+		return out
+	}
+	last := func() (steer, atOnce bool) {
+		n := len(r.convs.steers[child])
+		return r.convs.steers[child][n-1], r.convs.atOnce[child][n-1]
+	}
+
+	r.convs.outcome = convo.PeerOutcome{Where: convo.PeerInTurn}
+	out := send(map[string]any{})
+	if steer, atOnce := last(); !steer || atOnce || !strings.Contains(out, "delivered into the running turn") {
+		t.Fatalf("the default: steer %v at once %v: %s", steer, atOnce, out)
+	}
+	out = send(map[string]any{"deliver": "now"})
+	if steer, atOnce := last(); !steer || !atOnce || !strings.Contains(out, "delivered into the running turn") || !strings.Contains(out, "handed to the background") {
+		t.Fatalf("now: steer %v at once %v: %s", steer, atOnce, out)
+	}
+	out = send(map[string]any{"deliver": "queue"})
+	if steer, _ := last(); steer || !strings.HasPrefix(out, "queued in ") || !strings.Contains(out, "do not send it again") {
+		t.Fatalf("queue: steer %v: %s", steer, out)
+	}
+
+	// The agent could not take it now: the sender learns why, and that the message is kept.
+	r.convs.outcome = convo.PeerOutcome{Where: convo.PeerQueued, Reason: wire.QueuedBlockedMenu}
+	if out = send(map[string]any{"deliver": "now"}); !strings.HasPrefix(out, "queued in ") || !strings.Contains(out, "permission") {
+		t.Fatalf("held by a menu: %s", out)
+	}
+	r.convs.outcome = convo.PeerOutcome{Where: convo.PeerStarted}
+	if out = send(map[string]any{}); !strings.Contains(out, "was free") {
+		t.Fatalf("a free agent: %s", out)
+	}
+
+	// The person chose «after the turn»: a message without a choice waits, one marked "now" still goes in.
+	r.svc.Settings = func() wire.DelegationSettings {
+		return wire.DelegationSettings{MaxChildren: 5, Delivery: wire.DelegationTurn}
+	}
+	send(map[string]any{})
+	if steer, _ := last(); steer {
+		t.Fatal("the setting «after the turn» was not kept")
+	}
+	send(map[string]any{"deliver": "now"})
+	if steer, _ := last(); !steer {
+		t.Fatal("an explicit now lost to the setting")
+	}
+	if out, isErr := r.call("tab-root", "send_to_conversation", map[string]any{"id": child, "text": "x", "deliver": "soon"}); !isErr {
+		t.Fatalf("an unknown deliver was taken: %s", out)
+	}
+}
+
+// The news that a delegated chat finished goes into its parent's running turn, as another agent's message
+// naming the chat; with «after the turn» set it waits for that turn to end.
+func TestTheWakeUpGoesIntoTheParentsRunningTurn(t *testing.T) {
+	for _, tc := range []struct {
+		delivery wire.DelegationDelivery
+		answer   string
+		steer    bool
+	}{
+		{"", "Fixed.\n\n[[done]]", true},
+		{wire.DelegationStep, "Fixed.\n\n[[done]]", true},
+		{wire.DelegationTurn, "Fixed.\n\n[[done]]", false},
+		// A question does not wait for the end of the parent's turn, whatever the person chose for the rest.
+		{wire.DelegationTurn, "Which parser, the old one or the new?\n\n[[question]]", true},
+	} {
+		r := newTestRig(t)
+		r.svc.Settings = func() wire.DelegationSettings {
+			return wire.DelegationSettings{MaxChildren: 5, Delivery: tc.delivery}
+		}
+		text, isErr := r.call("tab-root", "delegate_task", map[string]any{"provider": "claude", "prompt": "Fix the parser",
+			"title": "Parser tests", "notify": true})
+		if isErr {
+			t.Fatal(text)
+		}
+		child := r.convs.order[len(r.convs.order)-1]
+		r.svc.Observe(r.convs.finish(child, tc.answer))
+		woken, steers := r.convs.sent["tab-root"], r.convs.steers["tab-root"]
+		if len(woken) != 1 || len(steers) != 1 || steers[0] != tc.steer {
+			t.Fatalf("delivery %q, answer %q: woken %d, steered %v", tc.delivery, tc.answer, len(woken), steers)
+		}
+		if env, ok := peers.Parse(woken[0]); !ok || env.Chat != "Parser tests" || env.Via != "agent" || env.Ref != "dev-box/"+child {
+			t.Fatalf("the wake-up is not the chat's envelope: %q", woken[0])
+		}
 	}
 }

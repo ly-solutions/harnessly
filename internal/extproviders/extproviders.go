@@ -18,10 +18,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/ly-solutions/harnessly/internal/agents"
 )
 
 // API is the protocol a provider speaks.
@@ -45,18 +48,22 @@ const (
 	MaxKey       = 4096
 	MaxModels    = 500
 	MaxModelID   = 200
+	// MaxWindow bounds a model's context window (tokens).
+	MaxWindow = 100 << 20
 )
 
 // Reasons of a refusal, as the page is told them.
 const (
-	ReasonBadName  = "bad-name"
-	ReasonBadURL   = "bad-url"
-	ReasonBadAPI   = "bad-api"
-	ReasonBadKey   = "bad-key"
-	ReasonBadModel = "bad-model"
-	ReasonNotFound = "not-found"
-	ReasonTooMany  = "too-many"
-	ReasonFailed   = "failed"
+	ReasonBadName = "bad-name"
+	// ReasonNameTaken: another account is called so already.
+	ReasonNameTaken = "name-taken"
+	ReasonBadURL    = "bad-url"
+	ReasonBadAPI    = "bad-api"
+	ReasonBadKey    = "bad-key"
+	ReasonBadModel  = "bad-model"
+	ReasonNotFound  = "not-found"
+	ReasonTooMany   = "too-many"
+	ReasonFailed    = "failed"
 )
 
 // Refusal is a reason the caller is told.
@@ -85,10 +92,60 @@ func ReasonOf(err error) string {
 	return ReasonFailed
 }
 
-// Model is one model of a provider, as the provider lists it.
+// Model is one model of a provider: as the provider lists it, or as the person typed or corrected it.
 type Model struct {
 	ID    string `json:"id"`
 	Label string `json:"label,omitempty"`
+	// Efforts are the reasoning efforts the model takes (wire.Efforts, in their order); none: the model has no choice.
+	Efforts []string `json:"efforts,omitempty"`
+	// DefaultEffort is the one of Efforts a chat starts on; "" is the model's own.
+	DefaultEffort string `json:"defaultEffort,omitempty"`
+	// Window is the model's context window in tokens, as the provider lists it or the person typed it; 0: unknown
+	// (Claude Code then keeps its own and compacts the chat late on a smaller window).
+	Window int `json:"window,omitempty"`
+	// Manual: the person added the model; a refresh from the provider keeps it even when the provider does not list it.
+	Manual bool `json:"manual,omitempty"`
+	// Edited: the person gave the model its name or efforts; a refresh keeps what they gave.
+	Edited bool `json:"edited,omitempty"`
+}
+
+// Equal says whether two models are the same in every field.
+func (m Model) Equal(o Model) bool {
+	return m.ID == o.ID && m.Label == o.Label && slices.Equal(m.Efforts, o.Efforts) && m.DefaultEffort == o.DefaultEffort && m.Window == o.Window &&
+		m.Manual == o.Manual && m.Edited == o.Edited
+}
+
+// ModelEfforts are the efforts a model may be given, in their order: those of the wire.
+var ModelEfforts = []string{"low", "medium", "high", "xhigh", "max", "ultra"}
+
+// MergeModels is a provider's fresh list with what the person did to the kept one: a model they named or gave efforts
+// keeps their name and efforts, a model they added stays when the provider does not list it.
+func MergeModels(kept, fresh []Model) []Model {
+	byID := map[string]Model{}
+	for _, m := range kept {
+		byID[m.ID] = m
+	}
+	out := make([]Model, 0, len(fresh)+len(kept))
+	seen := map[string]bool{}
+	for _, f := range fresh {
+		if k, ok := byID[f.ID]; ok && (k.Edited || k.Manual) {
+			k.Manual = false
+			k.Edited = true
+			if k.Window == 0 {
+				// The provider says the window the person did not give.
+				k.Window = f.Window
+			}
+			f = k
+		}
+		seen[f.ID] = true
+		out = append(out, f)
+	}
+	for _, k := range kept {
+		if k.Manual && !seen[k.ID] && len(out) < MaxModels {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // Provider is one provider as the registry file keeps it.
@@ -103,9 +160,63 @@ type Provider struct {
 	KeyRef string  `json:"keyRef,omitempty"`
 	Models []Model `json:"models"`
 	// ModelsAt is when the models were last taken from the provider (ms); 0 when they never were.
-	ModelsAt  int64 `json:"modelsAt,omitempty"`
-	CreatedAt int64 `json:"createdAt"`
-	UpdatedAt int64 `json:"updatedAt"`
+	ModelsAt int64 `json:"modelsAt,omitempty"`
+	// Env are the variables the provider adds to the launch of an agent on it (launchenv.go).
+	Env []EnvVar `json:"env,omitempty"`
+	// Default marks the account of its provider that is used where no account is named: one of every Group.
+	Default bool `json:"default,omitempty"`
+	// Origin is the environment item the provider comes from; "" for one the person added.
+	Origin    string `json:"origin,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
+// Group is what the accounts of one provider share: the template they were made from, or the host of an address of
+// the person's own. A person may add several accounts of a provider, each a record with a key of its own.
+func (p Provider) Group() string {
+	if p.Preset != "" && p.Preset != PresetCustom {
+		return "preset:" + p.Preset
+	}
+	return "host:" + strings.ToLower(p.Host())
+}
+
+// settleDefaults leaves every group with one default account: the one marked first, else the one added first. A
+// registry written before accounts had a default is read so, each provider the only account of its group.
+func settleDefaults(list []Provider) {
+	has := map[string]bool{}
+	for i := range list {
+		g := list[i].Group()
+		if list[i].Default && has[g] {
+			list[i].Default = false
+		}
+		has[g] = has[g] || list[i].Default
+	}
+	for i := range list {
+		if g := list[i].Group(); !has[g] {
+			list[i].Default, has[g] = true, true
+		}
+	}
+}
+
+// sameName says whether two names read the same to a person: the case and the spaces around do not tell them apart.
+func sameName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+// freeName is name, or name with the first number that no other account has («DeepSeek 2»): two accounts are never
+// called the same.
+func freeName(list []Provider, name string) string {
+	taken := func(n string) bool {
+		return slices.ContainsFunc(list, func(p Provider) bool { return sameName(p.Name, n) })
+	}
+	if !taken(name) {
+		return name
+	}
+	for n := 2; ; n++ {
+		if next := name + " " + strconv.Itoa(n); !taken(next) {
+			return next
+		}
+	}
 }
 
 // View is a provider as the page sees it: everything but the name of its secret, and whether a key is saved.
@@ -119,14 +230,27 @@ type View struct {
 	HasKey   bool    `json:"hasKey"`
 	Models   []Model `json:"models"`
 	ModelsAt int64   `json:"modelsAt,omitempty"`
-	// ClaudeCLI: the provider speaks the Anthropic API, so Claude CLI could run a chat on it.
-	ClaudeCLI bool  `json:"claudeCli"`
+	// ClaudeCLI: Claude Code runs a chat on the provider; Proxied: through the runtime's proxy (an OpenAI-compatible
+	// one), not straight to its address.
+	ClaudeCLI bool `json:"claudeCli"`
+	Proxied   bool `json:"proxied"`
+	// Env are the variables of a launch on the provider; a secret one comes without its value.
+	Env []EnvView `json:"env"`
+	// Group is shared by the accounts of one provider; Default marks the one used where no account is named.
+	Group   string `json:"group"`
+	Default bool   `json:"default"`
+	// Managed: the provider is the environment's; the page shows it and does not let it be changed or removed.
+	Managed   bool  `json:"managed"`
 	CreatedAt int64 `json:"createdAt"`
 	UpdatedAt int64 `json:"updatedAt"`
 }
 
-// ClaudeCLI says whether Claude CLI could run a chat on the provider.
+// ClaudeCLI says whether Claude Code runs a chat straight on the provider: it speaks the Anthropic API.
 func (p Provider) ClaudeCLI() bool { return p.API == APIAnthropic }
+
+// Proxied says whether Claude Code runs a chat on the provider through the runtime's proxy, which turns Anthropic's
+// Messages into the provider's /chat/completions: it speaks the OpenAI API.
+func (p Provider) Proxied() bool { return p.API == APIOpenAI }
 
 // Host is the host of the provider's address.
 func (p Provider) Host() string {
@@ -150,6 +274,9 @@ type Preset struct {
 	API     API    `json:"api"`
 	// KeyURL is the page of the vendor where a key is made.
 	KeyURL string `json:"keyUrl,omitempty"`
+	// Models are the models an account of the template starts with when the form names none: a vendor that speaks the
+	// Anthropic API may list no models at its address.
+	Models []Model `json:"models,omitempty"`
 }
 
 // PresetCustom is the template of an address of the person's own.
@@ -160,6 +287,17 @@ var presets = []Preset{
 	{ID: "groq", Name: "Groq", BaseURL: "https://api.groq.com/openai/v1", API: APIOpenAI, KeyURL: "https://console.groq.com/keys"},
 	{ID: "xai", Name: "xAI", BaseURL: "https://api.x.ai/v1", API: APIOpenAI, KeyURL: "https://console.x.ai"},
 	{ID: "openrouter", Name: "OpenRouter", BaseURL: "https://openrouter.ai/api/v1", API: APIOpenAI, KeyURL: "https://openrouter.ai/keys"},
+	// The vendors Claude Code runs chats on by a key. A person adds as many accounts of one as they have keys, each
+	// under a name of its own; the sign-in by a Claude subscription is not among them (one for the machine, the CLI's).
+	{ID: "anthropic", Name: "Anthropic API", BaseURL: "https://api.anthropic.com", API: APIAnthropic, KeyURL: "https://console.anthropic.com/settings/keys"},
+	{ID: "kimi-code", Name: "Kimi Code", BaseURL: "https://api.kimi.com/coding", API: APIAnthropic, KeyURL: "https://www.kimi.com/code",
+		Models: []Model{{ID: "k3.1-pro", Label: "K3.1 Pro"}, {ID: "k3", Label: "K3"}, {ID: "kimi-for-coding", Label: "Kimi for Coding"}}},
+	{ID: "kimi", Name: "Kimi · Moonshot", BaseURL: "https://api.moonshot.ai/anthropic", API: APIAnthropic, KeyURL: "https://platform.moonshot.ai/console/api-keys",
+		Models: []Model{{ID: "kimi-k3.1-pro", Label: "K3.1 Pro"}, {ID: "kimi-k2.7-code", Label: "K2.7 Code"}}},
+	{ID: "glm", Name: "GLM · Z.ai", BaseURL: "https://api.z.ai/api/anthropic", API: APIAnthropic, KeyURL: "https://z.ai/manage-apikey/apikey-list",
+		Models: []Model{{ID: "glm-5.3", Label: "GLM 5.3"}, {ID: "glm-5.3-flash", Label: "GLM 5.3 Flash"}}},
+	{ID: "glm-cn", Name: "GLM · bigmodel.cn", BaseURL: "https://open.bigmodel.cn/api/anthropic", API: APIAnthropic, KeyURL: "https://open.bigmodel.cn/usercenter/apikeys",
+		Models: []Model{{ID: "glm-5.3", Label: "GLM 5.3"}, {ID: "glm-5.3-flash", Label: "GLM 5.3 Flash"}}},
 	{ID: PresetCustom, Name: "Свой адрес", API: APIOpenAI},
 }
 
@@ -196,6 +334,9 @@ func cleanKey(s string) (string, error) {
 	if len(s) > MaxKey || strings.ContainsAny(s, "\r\n\x00") {
 		return "", refuse(ReasonBadKey)
 	}
+	if agents.ClaudeSubscriptionToken(s) {
+		return "", refuse(ReasonSubscriptionToken)
+	}
 	return s, nil
 }
 
@@ -211,6 +352,14 @@ func cleanModels(in []Model) ([]Model, error) {
 		if m.ID == "" || len(m.ID) > MaxModelID || len(m.Label) > MaxModelID || strings.ContainsAny(m.ID, " \t\r\n") {
 			return nil, refuse(ReasonBadModel)
 		}
+		efforts, ok := cleanEfforts(m.Efforts)
+		if !ok || m.DefaultEffort != "" && !slices.Contains(efforts, m.DefaultEffort) {
+			return nil, refuse(ReasonBadModel)
+		}
+		m.Efforts = efforts
+		if m.Window < 0 || m.Window > MaxWindow {
+			return nil, refuse(ReasonBadModel)
+		}
 		if seen[m.ID] {
 			continue
 		}
@@ -218,6 +367,25 @@ func cleanModels(in []Model) ([]Model, error) {
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// cleanEfforts is a model's efforts in the wire's order, each once; ok is false for one the wire does not know.
+func cleanEfforts(in []string) ([]string, bool) {
+	if len(in) == 0 {
+		return nil, true
+	}
+	for _, e := range in {
+		if !slices.Contains(ModelEfforts, e) {
+			return nil, false
+		}
+	}
+	var out []string
+	for _, e := range ModelEfforts {
+		if slices.Contains(in, e) {
+			out = append(out, e)
+		}
+	}
+	return out, true
 }
 
 var notSlug = regexp.MustCompile(`[^a-z0-9]+`)
@@ -282,6 +450,7 @@ func (s *Store) read() (fileBody, error) {
 			body.Providers[i].Models = []Model{}
 		}
 	}
+	settleDefaults(body.Providers)
 	return body, nil
 }
 

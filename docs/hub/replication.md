@@ -13,11 +13,13 @@ machine has no transport there.
 | chat history, backfill (`history.backfill`) | **batches** (old: event) | `repl.batch` + `repl.ack` | the walk cursor of each chat (`history.start.pending`) + the batch number | same as above; old agents: none (a page not stored was lost) | the backfill goroutine waits for room up to 1 min; old agents: dropped |
 | spend (`usage`) | pull | `usage.available` → `usage.read` → `usage.ack` | `ingest_cursors` (epoch, seq) | a failed pull is tried again after the same pause (1 s doubling to 1 min) | the outbox waits on the machine |
 | what a machine reports about itself (`metrics.sample`, `env.state`, `env.run`, `restart`) | **batches** (old: event) | `repl.batch` + `repl.ack`, data = the old event frame | the last report replaces the one before | go-back-N on a lost batch | events wait on the machine (256 per kind, the oldest dropped past it); old agents: the event queue, a full queue closes the link |
+| the registry of projects (`projects`) | **batches** (old: event) | `repl.batch` + `repl.ack`, data = `ProjectsEvent` (`projects.full` on every link, then `project.created`, `project.renamed`, `project.path`, `project.deleted`) | the full list replaces the machine's rows | go-back-N on a lost batch | events wait on the machine; the full list is sent again on the next link |
 | documents' events (`doc.publish`, `doc.acl`, `docs.bound`, `docs.reply`) | **batches** (old: event) | same; `doc.result` answers publish and acl as before | the request id | go-back-N on a lost batch | same |
 | designs (`design`) | **batches** (old: event) | same; `design.access` back | none | go-back-N on a lost batch | same |
 | automation results (`automations.result`) | **batches** (old: not sent to a hub link at all) | same; the hub checks the run's one-use token | the run id | go-back-N on a lost batch | same |
 | agent memory | HTTP | `/agent/memory/pull`, `/agent/memory/put` signed by the machine | per note revision | the machine's own timer | — |
 | chat attachments | HTTP | the page puts the bytes into the hub (`/uploads/blobs`, `/uploads/refs`) | sha256 | the page | — |
+| chat snapshots shared with the space | HTTP | the hub keeps the page the machine answers a publish with (`/shares`); a revoke ends in the hub | the snapshot's id and sha256 | the author publishes again | — |
 | the machine's `hello` | answer to a call | `hello` | replaced on every link | the next link | — |
 
 ## The protocol (`hubproto.FeatureRepl`)

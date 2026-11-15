@@ -285,3 +285,34 @@ func TestForkKeepsTheProfile(t *testing.T) {
 		t.Fatalf("launched %+v", got)
 	}
 }
+
+// The session of a conversation on a profile is told to whoever counts spend by account, once it is known; a
+// conversation on the CLI's own sign-in tells nobody.
+func TestTheSessionOfAProfileIsToldItsAccount(t *testing.T) {
+	r := profileRig(t, fakeProfiles{via: wire.ProviderClaude, configured: true})
+	var told []string
+	r.rt.d.SessionAccount = func(p wire.Provider, session, profile string) {
+		told = append(told, string(p)+"|"+session+"|"+profile)
+	}
+	res := r.do(wire.ConversationCreateCmd{OpID: "c1", Cwd: "/w", Provider: wire.ProviderClaude, Profile: "glm", Model: &wire.Model{ID: "glm-5"}})
+	if res.R != wire.ResultAccepted || res.ID == nil {
+		t.Fatalf("%+v", res)
+	}
+	if err := r.rt.Attach(*res.ID, "s1", "", ""); err != nil || len(told) != 0 {
+		t.Fatalf("told before the session is known: %v %v", err, told)
+	}
+	if err := r.rt.Attach(*res.ID, "s1", r.path, "sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(told) != 1 || told[0] != "claude|sess-1|glm" {
+		t.Fatalf("told %v", told)
+	}
+
+	own := r.do(wire.ConversationCreateCmd{OpID: "c2", Cwd: "/w", Provider: wire.ProviderClaude})
+	if own.R != wire.ResultAccepted || own.ID == nil {
+		t.Fatalf("%+v", own)
+	}
+	if err := r.rt.Attach(*own.ID, "s1", "", "sess-2"); err != nil || len(told) != 1 {
+		t.Fatalf("the CLI's own sign-in was told as an account: %v %v", err, told)
+	}
+}

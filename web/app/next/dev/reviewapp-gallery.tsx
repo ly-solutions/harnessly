@@ -18,6 +18,7 @@ import type { IReviewNotesApi } from '@/next/features/review/app/use-review-note
 import { FORGE, type IMrAct, type IMrReview } from '@/next/features/review/app/mr-review';
 import type { IMrContext } from '@/next/features/review/app/mr-threads';
 import type { IReviewEdit } from '@/next/features/review/app/file-edit';
+import { NO_RULES, type IReviewRules, type IReviewRulesApi } from '@/next/features/review/app/rules';
 import { AGENT_STATE, type IAgentReviewApi } from '@/next/features/review/app/use-agent-review';
 import type { IAgentSuggestion } from '@/next/features/review/app/agent-review';
 import type { AppFeed, AppRow } from '@/next/protocol/v2';
@@ -41,6 +42,7 @@ const row = (over: Partial<AppRow> & Pick<AppRow, 'id' | 'title'>): AppRow => ({
   closedAt: null,
   author: 'Олег Лунин',
   avatar: null,
+  bot: false,
   assignees: [],
   reviewers: [],
   me: [],
@@ -515,6 +517,26 @@ const useGalleryAgent = (asking: boolean): IAgentReviewApi => {
   };
 };
 
+/** The person's review rules kept in the page (&rules=1 starts with some written, &bots=hide hides the bots). */
+const useGalleryRules = (written: boolean, hideBots: boolean): IReviewRulesApi => {
+  const [rules, setRules] = useState<IReviewRules>(() => ({
+    ...NO_RULES,
+    hideBots,
+    instructions: written ? 'Смотри на обработку ошибок и на тесты к новому коду.' : '',
+  }));
+  return {
+    rules,
+    change: (patch) => {
+      setRules((was) => ({
+        ...was,
+        instructions: patch.instructions ?? was.instructions,
+        repos: patch.repo ? { ...was.repos, [patch.repo.key]: patch.repo.text } : was.repos,
+      }));
+      return Promise.resolve(true);
+    },
+  };
+};
+
 const ReviewAppGallery = () => {
   const { query: params } = useRouter();
   const dark = params.theme === 'dark';
@@ -524,6 +546,7 @@ const ReviewAppGallery = () => {
   const notes = useGalleryNotes();
   const mr = useGalleryMr(params.gl !== 'shared', params.host === 'github');
   const agent = useGalleryAgent(params.asking === '1');
+  const rules = useGalleryRules(params.rules === '1', params.bots === 'hide');
   const own = view === 'notes' || view === 'agent';
   const withAgent = view === 'agent' || view === 'mragent';
   useEffect(() => {
@@ -565,6 +588,7 @@ const ReviewAppGallery = () => {
         worktree={own ? '/repo/.worktrees/hrn-720' : undefined}
         edit={view === 'agent' ? GALLERY_EDIT : null}
         agent={withAgent ? agent : null}
+        rules={rules}
         actions={
           <a className="hx-rvapp__out" href="https://gitlab.example.com">
             GitLab <span aria-hidden="true">↗</span>
@@ -580,6 +604,7 @@ const ReviewAppGallery = () => {
           {home ? (
             <ReviewHome
               feed={homeFeed}
+              rules={rules.rules}
               now={NOW}
               onOpen={() => {}}
               onRetry={() => {}}

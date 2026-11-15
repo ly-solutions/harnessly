@@ -96,6 +96,7 @@ func (r *Runner) execute(ctx context.Context, req hubproto.EnvRunRequest, hash s
 	if ex.modifies && !ex.sandbox && ctx.Err() == nil {
 		ex.saveState()
 		ex.pruneApps()
+		ex.pruneProviders()
 		ex.prunePacks()
 	}
 	if req.Mode != hubproto.RunCheck && !ex.sandbox {
@@ -161,6 +162,8 @@ func (ex *execution) step(i int) {
 		ex.app(i)
 	case ex.items[i].Kind == hubproto.EnvKindPack:
 		ex.pack(i)
+	case ex.items[i].Kind == hubproto.EnvKindProvider:
+		ex.provider(i)
 	}
 	st.Message = ex.mask(st.Message)
 	st.Ms = ex.r.now().Sub(start).Milliseconds()

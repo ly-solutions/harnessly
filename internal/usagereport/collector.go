@@ -26,6 +26,8 @@ const (
 type Config struct {
 	// ClaudeRoot is Claude Code's projects folder, CodexRoot Codex's sessions folder.
 	ClaudeRoot, CodexRoot string
+	// MoreCodexRoots, when set, are the sessions folders of the other homes Codex is run in (other sign-ins).
+	MoreCodexRoots func() []string
 	// CacheFile keeps the facts of every transcript between runs (the previous runtime reads and writes the same file).
 	CacheFile string
 	// SQLiteFacts keeps the facts in a database beside CacheFile too (HARNESSLY_USAGE_SQLITE=1 does the same); sqlitefacts.go.
@@ -40,6 +42,9 @@ type Config struct {
 	Workers int
 	// Now is the clock (tests move it); nil is the real one.
 	Now func() time.Time
+	// AccountOf names the account of a provider a session ran on, by the agent and its session; "" for a session
+	// without one. nil knows no accounts: every row is without one.
+	AccountOf func(provider, session string) string
 }
 
 type cachedFile struct {
@@ -155,7 +160,7 @@ func (c *Collector) rebuild(b *build) {
 	}
 	started := time.Now()
 	c.Refresh()
-	b.report, b.err = Build(c.Facts(), "", c.cfg.Machine, c.cfg.Timezone, c.cfg.Clock, nowMs(c.now()))
+	b.report, b.err = BuildWith(c.Facts(), "", c.cfg.Machine, c.cfg.Timezone, c.cfg.Clock, nowMs(c.now()), c.cfg.AccountOf)
 	if b.err == nil {
 		jsonlog.Log("info", "usage report built", jsonlog.F{K: "ms", V: time.Since(started).Milliseconds()}, jsonlog.F{K: "files", V: c.FileCount()})
 	}
@@ -238,8 +243,14 @@ func (c *Collector) list() []transcriptFile {
 	for _, f := range walk(c.cfg.ClaudeRoot, 3) {
 		out = append(out, transcriptFile{f, "claude"})
 	}
-	for _, f := range walk(c.cfg.CodexRoot, 4) {
-		out = append(out, transcriptFile{f, "codex"})
+	codexRoots := []string{c.cfg.CodexRoot}
+	if c.cfg.MoreCodexRoots != nil {
+		codexRoots = append(codexRoots, c.cfg.MoreCodexRoots()...)
+	}
+	for _, root := range codexRoots {
+		for _, f := range walk(root, 4) {
+			out = append(out, transcriptFile{f, "codex"})
+		}
 	}
 	return out
 }

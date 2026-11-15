@@ -11,6 +11,9 @@ import { useTourStep } from '@/next/features/tour/use-tour-step';
 import { tourFact } from '@/next/stores/tour';
 import { readLastChoice, rememberChoice, startChoice } from '@/next/features/composer/start-choice';
 import { useAgentSettings } from '@/next/bindings/settings-data';
+import { loadCodexLogins } from '@/next/features/settings/codex-logins-api';
+import { isRefused } from '@/next/features/settings/platform-answer';
+import { noteCodexMain, useCodexMain } from '@/next/stores/codex-main';
 import type { MachineId } from '@/next/protocol/v2';
 import { useMachine } from '@/next/stores/machines';
 
@@ -33,9 +36,29 @@ export const cheapestChoice = (ready: readonly IPickerAgent[]): IModelChoice | n
   return null;
 };
 
+/** The profiles of the other sign-ins of Codex start so (cmd/runtime/codex_logins.go). */
+const CODEX_LOGIN = 'cx-';
+
+/** The main sign-in of Codex on the machine, read once when the machine has other sign-ins at all. */
+const useCodexMainOf = (machine: MachineId | null, agents: readonly IPickerAgent[]): string | null => {
+  const main = useCodexMain(machine);
+  const asks =
+    machine !== null && main === undefined && agents.some((a) => a.profile?.startsWith(CODEX_LOGIN));
+  useEffect(() => {
+    if (!asks || machine === null) return;
+    void loadCodexLogins(machine).then((res) => {
+      if (!('ok' in res) || isRefused(res.value)) return;
+      noteCodexMain(machine, res.value.logins.find((l) => l.main)?.profile ?? null);
+    });
+  }, [asks, machine]);
+  return main ?? null;
+};
+
 export const useStartChoice = (machine: MachineId | null) => {
   const machineView = useMachine(machine);
-  const agents = pickerAgents(machineView?.machine.agents ?? []);
+  const offered = pickerAgents(machineView?.machine.agents ?? []);
+  const main = useCodexMainOf(machine, offered);
+  const agents = offered.map((a) => (main !== null && a.profile === main ? { ...a, preferred: true } : a));
   const [picked, setPicked] = useState<IModelChoice | null>(null);
   const [last] = useState(readLastChoice);
   // A new chat starts on the person's pick, else the default of the agent's settings file, else the last pick, and

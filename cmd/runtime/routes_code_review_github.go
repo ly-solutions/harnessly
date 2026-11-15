@@ -90,6 +90,7 @@ func pullRow(p connections.PullSummary) (wire.AppRow, bool) {
 	if p.Author != nil {
 		row.Author = &p.Author.Name
 		row.Person = row.Author
+		row.Bot = p.Author.Bot
 		if link := services.AvatarLink(forgeAvatarPath, p.Author.Avatar); link != "" {
 			row.Avatar = &link
 		}

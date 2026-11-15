@@ -1,10 +1,10 @@
-// The journal of the settings' changes on the machine the Settings screen is about: read every few seconds
-// while the page is visible, so a row an agent has just changed lights up with what it was and «Вернуть». Taking a
+// The journal of the settings' changes on the machine the Settings screen is about: read when the screen
+// opens and when the machine says it moved, so a row an agent has just changed lights up with what it was and «Вернуть». Taking a
 // change back is the person's own change of the same setting to the old value; the row goes dark when the machine has
 // written that into the journal.
-import { useCallback, useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { pageText } from '@/next/bindings/outcome';
-import { pageClock } from '@/next/core/clock';
+import { useSettingsTick } from '@/next/bindings/settings-watch';
 import type { TChangedMarks, TJournal } from '@/next/features/settings/changed-mark';
 import {
   CHANGE_BY,
@@ -17,9 +17,6 @@ import { t } from '@/next/i18n';
 import type { MachineId } from '@/next/protocol/v2';
 import { toast } from '@/next/ui/toast';
 
-export const CHANGES_POLL_MS = 5000;
-/** A machine that did not answer (an older runtime has no journal) is asked again only now and then. */
-const QUIET_POLL_MS = 60_000;
 /** How many lines of the journal the page reads. */
 const JOURNAL_LINES = 30;
 /** How long a row an agent changed stays lit. */
@@ -64,46 +61,32 @@ export const useSettingChanges = (machine: MachineId, now: number): ISettingChan
   // Moves to read the journal again now, out of the poll's turn.
   const [attempt, setAttempt] = useState(0);
 
-  /** Reads the journal; false when the machine did not give it. */
-  const look = useEffectEvent(async (m: MachineId): Promise<boolean> => {
-    const res = await loadSettingChanges(m, JOURNAL_LINES);
-    const refused = refusalOf(res);
-    if (refused !== null || !('ok' in res) || isRefused(res.value)) {
-      setFailure({ machine: m, text: refused ?? '' });
-      return false;
-    }
-    const next = res.value;
-    setFailure(null);
-    setRead((was) => {
-      const same =
-        was?.machine === m &&
-        was.changes.length === next.length &&
-        was.changes.every((change, i) => change.id === next[i]?.id);
-      return same ? was : { machine: m, changes: next };
-    });
-    return true;
-  });
-
+  // Read when the screen opens and whenever the machine says the journal moved (bindings/settings-watch.ts).
+  const tick = useSettingsTick(machine);
   useEffect(() => {
-    const clock = pageClock();
-    let timer: unknown = null;
-    let looking = false;
-    let wait = CHANGES_POLL_MS;
-    const again = () => {
-      clock.clearTimeout(timer);
-      timer = clock.setTimeout(again, wait);
-      if (looking || document.visibilityState !== 'visible') return;
-      looking = true;
-      void look(machine)
-        .catch(() => false)
-        .then((read) => {
-          looking = false;
-          wait = read ? CHANGES_POLL_MS : QUIET_POLL_MS;
-        });
+    if (document.visibilityState !== 'visible') return;
+    let stale = false;
+    void loadSettingChanges(machine, JOURNAL_LINES).then((res) => {
+      if (stale) return;
+      const refused = refusalOf(res);
+      if (refused !== null || !('ok' in res) || isRefused(res.value)) {
+        setFailure({ machine, text: refused ?? '' });
+        return;
+      }
+      const next = res.value;
+      setFailure(null);
+      setRead((was) => {
+        const same =
+          was?.machine === machine &&
+          was.changes.length === next.length &&
+          was.changes.every((change, i) => change.id === next[i]?.id);
+        return same ? was : { machine, changes: next };
+      });
+    });
+    return () => {
+      stale = true;
     };
-    again();
-    return () => clock.clearTimeout(timer);
-  }, [machine, attempt]);
+  }, [machine, attempt, tick]);
 
   const changes = read?.machine === machine ? read.changes : null;
   const refresh = useCallback(() => setAttempt((n) => n + 1), []);

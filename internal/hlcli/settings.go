@@ -66,12 +66,18 @@ var settingsReasons = map[string]string{
 func (c *cli) settingsRefused(status int, raw []byte) error {
 	var r struct {
 		Error   string      `json:"error"`
+		Message string      `json:"message"`
 		Setting *cliSetting `json:"setting"`
 	}
 	_ = json.Unmarshal(raw, &r)
 	why := settingsReasons[r.Error]
 	if why == "" {
 		return apiError(status, raw)
+	}
+	// A setting that takes free text says itself what is wrong with the value: its list of values is empty and its
+	// current value is no hint.
+	if r.Setting != nil && len(r.Setting.Options) == 0 && r.Message != "" {
+		return fail("refused: %s — %s", r.Error, r.Message)
 	}
 	if r.Setting != nil {
 		return fail("refused: %s — %s. %s is %s now and takes: %s", r.Error, why, r.Setting.Key, r.Setting.Value, r.Setting.takes())
@@ -202,11 +208,13 @@ func (c *cli) settingsSet(args []string) error {
 		var r struct {
 			Status string `json:"status"`
 			Change *struct {
-				Old string `json:"old"`
-				New string `json:"new"`
+				Old  string `json:"old"`
+				New  string `json:"new"`
+				Note string `json:"note"`
 			} `json:"change"`
 			Proposal *struct {
-				ID string `json:"id"`
+				ID     string `json:"id"`
+				Failed string `json:"failed"`
 			} `json:"proposal"`
 		}
 		_ = json.Unmarshal(raw, &r)
@@ -219,13 +227,18 @@ func (c *cli) settingsSet(args []string) error {
 				c.printRaw(raw)
 				return nil
 			}
-			if r.Change != nil {
+			if r.Change != nil && r.Change.Note != "" {
+				c.out("proposed, nothing is changed yet: %s\n", r.Change.Note)
+			} else if r.Change != nil {
 				c.out("changed: %s was %s, is %s now\n", key, r.Change.Old, r.Change.New)
 			} else {
 				c.out("changed: %s is %s now (the person confirmed)\n", key, value)
 			}
 			return nil
 		case "declined":
+			if r.Proposal != nil && r.Proposal.Failed != "" {
+				return fail("failed: the person agreed to %s, but the change was not made — %s", key, r.Proposal.Failed)
+			}
 			return fail("declined: the person said no to %s = %s. Do not propose it again; ask them what they want instead", key, value)
 		case "expired":
 			return fail("expired: the person did not answer about %s = %s in time. Tell them the setting is unchanged", key, value)

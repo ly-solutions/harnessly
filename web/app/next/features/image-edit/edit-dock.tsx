@@ -2,7 +2,8 @@
 // field with the round send button; and the versions as thumbnails. One layout for every screen: the dock is a
 // container, and when it is narrow (a phone, a phone held sideways) the tools are a five-column grid with a short label
 // under each icon.
-import { useEffect, useRef, type FormEvent } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { CardReply } from '@/next/bindings/reply-field';
 import useKeyboardInset from '@/next/features/composer/use-keyboard-inset';
 import { EDIT_FORMATS, type IImageVersion, type TEditFormat } from '@/next/features/image-edit/host';
 import { BRUSH_IDS, MARK_COLORS, type TBrushId } from '@/next/features/image-edit/marks';
@@ -24,6 +25,8 @@ export interface IFailure {
 }
 
 interface IEditDockProps {
+  /** Over the tools: the switch to the person's own marks, where the picture has them. */
+  switcher?: ReactNode;
   tool: TTool | null;
   onTool: (tool: TTool) => void;
   running: boolean;
@@ -54,14 +57,11 @@ export const EditDock = (props: IEditDockProps) => {
   }, [focusField]);
   // Over the phone's keyboard: the dock is lifted by what the keyboard covers (as the composer's is).
   useKeyboardInset(root, '.hx-imgview__dock');
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (props.canSend) props.onSend();
-  };
   const drawsLine = tool === TOOL.mark || tool === TOOL.erase;
   const hasOptions = drawsLine || tool === TOOL.size;
   return (
     <div ref={root} className="hx-ie">
+      {props.switcher}
       {hasOptions && (
         <div className="hx-ie__opts" key={tool}>
           {tool === TOOL.mark &&
@@ -145,34 +145,18 @@ export const EditDock = (props: IEditDockProps) => {
           </button>
         </p>
       )}
-      <form className="hx-ie__field" onSubmit={submit}>
-        <textarea
-          ref={field}
-          className="hx-ie__input"
-          rows={1}
-          enterKeyHint="send"
-          autoComplete="off"
+      {/* The chat's own field (HRN-1362), words to the picture model, with the voice where the host gives it. */}
+      <div className="hx-ie__field">
+        <CardReply
           value={props.text}
-          disabled={running}
+          onChange={props.onText}
+          busy={running}
           placeholder={t(hintKey(tool, running))}
-          aria-label={t('next.imageEdit.hint.text')}
-          onChange={(event) => props.onText(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter sends, Shift+Enter is a new line; a key of the IME is not Enter.
-            if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            if (props.canSend) props.onSend();
-          }}
+          onSend={() => props.canSend && props.onSend()}
+          ready={props.canSend}
+          inputRef={field}
         />
-        <button
-          type="submit"
-          className="hx-ie__send"
-          disabled={!props.canSend}
-          aria-label={t('next.imageEdit.send')}
-        >
-          <Icon name="arrow-up" />
-        </button>
-      </form>
+      </div>
     </div>
   );
 };

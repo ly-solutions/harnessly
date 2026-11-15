@@ -199,8 +199,16 @@ func (h *hub) handle(l *link, req map[string]json.RawMessage) (any, func(), erro
 	case hubproto.OpLinkSubscribe:
 		events, _ := field[[]string](req, "events")
 		l.subscribe(events)
-		if slices.Contains(events, hubproto.EventChatWork) {
-			return empty(), func() { h.sendWork(l) }, nil
+		work, projects := slices.Contains(events, hubproto.EventChatWork), slices.Contains(events, hubproto.EventProjects)
+		if work || projects {
+			return empty(), func() {
+				if work {
+					h.sendWork(l)
+				}
+				if projects {
+					h.sendProjectsFull(l)
+				}
+			}, nil
 		}
 		return empty(), nil, nil
 	case hubproto.OpPreflightRun:
@@ -278,6 +286,11 @@ func (h *hub) handle(l *link, req map[string]json.RawMessage) (any, func(), erro
 		return h.opRepl(l, op, req)
 	case opConversationsStart:
 		return h.opAutomationStart(req, pol)
+	case hubproto.OpEnvProposed:
+		if h.observe {
+			return nil, nil, h.allow(op, false, "changes of the organization's environment")
+		}
+		return h.opEnvProposed(req)
 	case hubproto.OpDocResult, hubproto.OpDocsDeliver:
 		// Served on an observe link only when the operator opted in with AGENT_HUB_DOCS=on (hubdocs.go).
 		return h.opDocs(op, req)

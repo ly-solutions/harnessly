@@ -41,6 +41,10 @@ func (b *Box) plan(a Agent, head *Record) headPlan {
 	case wire.StateLaunchFailed:
 		return headPlan{reason: wire.QueuedPaused, pause: wire.PausedLaunchFailed}
 	case wire.StateWorking:
+		if head.Agent && st.Compacting {
+			// A compaction reads nothing: another agent's message waits it out in the line, where it cannot be lost.
+			return headPlan{reason: wire.QueuedAgentBusy}
+		}
 		if head.Message.Mode == wire.ModeSteer {
 			return headPlan{reason: wire.QueuedAgentBusy, typing: true, steer: true}
 		}
@@ -49,6 +53,10 @@ func (b *Box) plan(a Agent, head *Record) headPlan {
 		// A permission menu takes keys as its answer: nothing is ever typed into it.
 		return headPlan{reason: wire.QueuedBlockedMenu}
 	case wire.StateWaitingQuestion, wire.StateIdle, wire.StateReady:
+		if head.Agent && st.K == wire.StateWaitingQuestion {
+			// The question is the person's to answer: another agent's words are never typed into it as the answer.
+			return headPlan{reason: wire.QueuedBlockedMenu}
+		}
 		// Text written into an open question is the person's answer in words: the typist chats about it first.
 		return headPlan{reason: wire.QueuedAgentBusy, typing: true}
 	case wire.StateUnknown:
@@ -61,6 +69,9 @@ func (b *Box) plan(a Agent, head *Record) headPlan {
 // Pump looks at the head of the queue on any change — the agent's state, a new message, the clock — and returns the
 // try to type when the agent can take it. size is the transcript's length now: the message's user entry, if it
 // takes, is written after it. One message is on its way at a time.
+// transcriptWait: how often a message back by its term looks again whether its transcript is read.
+const transcriptWait = 2 * time.Second
+
 func (b *Box) Pump(a Agent, size int64, now time.Time) (*Job, Change) {
 	ch := b.Tick(now)
 	if job := b.clearJob(a, now); job != nil {
@@ -147,8 +158,27 @@ func (b *Box) Pump(a Agent, size int64, now time.Time) (*Job, Change) {
 			return nil, ch
 		}
 	}
-	msg := typist.Message{Text: head.Message.Text, Images: head.Images, Steer: p.steer, HandOver: p.steer && a.HandOver,
-		Leftovers: b.pasted(), Typed: b.typedTexts(head.Message.ClientID)}
+	if b.HookConfirms && head.Retyped && !b.transcriptRead() && ms(now) < head.TypedAt+2*ConfirmWindow.Milliseconds() {
+		// The transcript is only behind the file (a write the feed reads in a moment) or still looked for: the head
+		// waits a little and is looked at again — the entry or the late hook usually comes in that time.
+		head.NextTry = ms(now) + transcriptWait.Milliseconds()
+		b.positions(&ch, head.Reason, now)
+		return nil, ch
+	}
+	if b.HookConfirms && head.Retyped && !b.transcriptRead() {
+		// Back by its term with no word from the agent, and the transcript that would hold its entry is not read: not
+		// found yet (a new chat's file is written after the hook, and found later) or read behind the file. «No entry»
+		// says nothing then, and the hook may come late on a loaded machine: the box does not type it a second time on
+		// the guess — it stalls, the late hook or entry still accepts it, and otherwise the person decides.
+		if b.log != nil {
+			b.log.Warn("unconfirmed message not typed again: the transcript is not read to check it", "conversationId", b.conv,
+				"clientId", head.Message.ClientID, "send", head.Send)
+		}
+		b.stall(&ch, head, now)
+		return nil, ch
+	}
+	msg := typist.Message{Text: head.Message.Text, Images: head.Images, Steer: p.steer, HandOver: p.steer && a.HandOver && !head.Soft,
+		Agent: head.Agent, Leftovers: b.pasted(), Typed: b.typedTexts(head.Message.ClientID)}
 	if a.Screen != nil {
 		switch typist.Decide(msg, *a.Screen, a.Provider).Decision {
 		case typist.DecideBlockedMenu:
@@ -972,6 +1002,18 @@ func (b *Box) Status(ids []string) []wire.MessageStatus {
 		out = append(out, wire.MessageStatus{ClientID: id, K: wire.StatusKnown, Message: &m, Handed: r.handed()})
 	}
 	return out
+}
+
+// Steered says whether the message was typed into a turn that ran (it is, or was, read inside that turn).
+func (b *Box) Steered(clientID string) bool {
+	r, ok := b.recs[clientID]
+	return ok && r.Steered && r.TypedAt > 0
+}
+
+// Soft says whether the message, another agent's, is read at the agent's next step rather than at once.
+func (b *Box) Soft(clientID string) bool {
+	r, ok := b.recs[clientID]
+	return ok && r.Soft
 }
 
 // handed is when and where a typed message went: in the agent's input box, in its own queue (steered), with the agent

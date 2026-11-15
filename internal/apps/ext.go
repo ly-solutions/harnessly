@@ -10,7 +10,7 @@ import (
 // and a check can say what a package is:
 //
 //   - ui      an extension of the interface: it only fills slots (settings, onboarding, object-action, hub-settings,
-//     branding) with sandboxed views. No agent, no chat, no backend.
+//     branding, home) with sandboxed views. No agent, no chat, no backend.
 //   - runtime an extension of the runtime: views in a pane or a screen of its own, chat cards and commands, Sinopia
 //     documents, a backend; it may carry an agent profile too.
 //   - tool    a tool for the agent: instructions, skills, MCP servers, no view at all.

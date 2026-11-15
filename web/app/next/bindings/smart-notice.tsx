@@ -8,7 +8,17 @@
 // while its card is open, and a program can be stopped from there. Put away, what waits goes into a drop in the chat's
 // right column (stores/smart-drops.ts) and stays there, the only reminder of it, until it is answered or pressed back;
 // put away by hand (not thrown), the black shape flows into the drop, and pressed, out of it back into the card.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react';
 import { useCodeAsks } from '@/next/bindings/code-asks';
 import {
   SLOT_ANSWER,
@@ -71,6 +81,14 @@ import { platformPath } from '@/next/core/net/machine';
 import { postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { toast } from '@/next/ui/toast';
 import { useFieldCovered } from '@/next/stores/field-cover';
+import { usePhone } from '@/next/ui/use-media';
+import {
+  isPutAway,
+  setSnoozePerson,
+  snoozeLevel,
+  snoozeMachine,
+  useMachineSnoozes,
+} from '@/next/stores/machine-snooze';
 
 /** The newest of what waits tells what came this long in two lines, then folds into the line. */
 export const ANNOUNCE_MS = 5000;
@@ -137,6 +155,7 @@ const NOTICE_KIND_OF: Record<Exclude<INotice['kind'], 'waiting'>, TSmartKind> = 
   done: SMART_KIND.done,
   failed: SMART_KIND.failed,
   limit: SMART_KIND.limit,
+  access: SMART_KIND.info,
 };
 
 /** A finished chat's recap the machine wrote for its notice (the notification centre's chat adds it; none before). */
@@ -147,9 +166,22 @@ const summaryOf = (n: INotice): string | null => {
 
 /** The notices as items: what waits while its chat's gate is open, the rest while it is `live` news (each on its own
  *  clock, paused while the plate is held: features/smart-notice/flow.ts). */
+// A machine's item carries its machine as an object made anew on each recompute: it is equal by what it says, not by
+// reference, or the list never comes back the same and the stack sets its state on every render (React #301).
+const sameMachine = (a: ISmartItem['machine'], b: ISmartItem['machine']): boolean =>
+  a === b ||
+  (a !== undefined &&
+    b !== undefined &&
+    a.id === b.id &&
+    a.metric === b.metric &&
+    a.waiting.length === b.waiting.length &&
+    a.waiting.every((name, i) => name === b.waiting[i]));
+
 const sameItem = (a: ISmartItem, b: ISmartItem): boolean => {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof ISmartItem)[]);
-  for (const k of keys) if (a[k] !== b[k]) return false;
+  for (const k of keys) {
+    if (k === 'machine' ? !sameMachine(a.machine, b.machine) : a[k] !== b[k]) return false;
+  }
   return true;
 };
 
@@ -212,6 +244,7 @@ export const itemsOfNotices = (
       text: n.text,
       at: n.at,
       until: null,
+      ...(n.link ? { href: n.link } : {}),
     };
     if (n.chatId === SAMPLE_CHAT)
       return live.has(n.key) ? [{ ...base, kind: SMART_KIND.done, chatId: null }] : [];
@@ -318,9 +351,11 @@ export const machineDetail = (
         stoppable: false,
       })),
     };
-  if (!stats) return { k: 'machine', text, level: 1, heavy: [] };
+  // A full disk says what can go, figures or not: that is what the person does about it.
+  const hint = metric === 'disk' ? { hint: t('next.smart.machine.diskHint') } : {};
+  if (!stats) return { k: 'machine', text, level: 1, heavy: [], ...hint };
   const level = Math.max(0, Math.min(1, LEVEL[metric](stats)));
-  if (metric === 'disk') return { k: 'machine', text, level, heavy: [] };
+  if (metric === 'disk') return { k: 'machine', text, level, heavy: [], ...hint };
   const weight = WEIGHT[metric];
   const agents = stats.procs.filter((p) => p.kind === 'agent');
   const rows: { weight: number; heavy: ISmartHeavy }[] = stats.procs
@@ -470,6 +505,18 @@ const SmartNoticeHost = ({
   quiet = false,
 }: ISmartNoticeHostProps) => {
   setHistoryPerson(person);
+  setSnoozePerson(person);
+  // On the plate only a machine whose work stops (a stall, a disk at nothing) and that was not put away with
+  // «Не сейчас»; a warning stays in the bell and on the machine's card. An unchanged list is the same list: the items
+  // made of it compare by content (React #301).
+  const snoozes = useMachineSnoozes();
+  const plateMachines = useMemo(() => {
+    const kept = machineNotices.filter(
+      (n) => n.urgent && !isPutAway(snoozes, n.id, snoozeLevel(n.alert.metric, n.urgent)),
+    );
+    return kept.length === machineNotices.length ? machineNotices : kept;
+  }, [machineNotices, snoozes]);
+  const phone = usePhone();
   const settings = useNotify();
   const convs = useConversationList(null);
   const codes = useCodeAsks(machine);
@@ -479,7 +526,7 @@ const SmartNoticeHost = ({
   const [byKeys, setByKeys] = useState(false);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const now = useTick(
-    notices.length > 0 || codes.asks.length > 0 || machineNotices.length > 0 || slot.notices.length > 0,
+    notices.length > 0 || codes.asks.length > 0 || plateMachines.length > 0 || slot.notices.length > 0,
   );
   // Held: the pointer or the focus is on the plate, the card is open, or a reply shows «sent». The news' clocks stand
   // still meanwhile; let go, each goes on from what it had left.
@@ -496,11 +543,11 @@ const SmartNoticeHost = ({
   const byId = useMemo(() => new Map<string, Conversation>((convs ?? []).map((c) => [c.id, c])), [convs]);
   // The figures of the machine in trouble (the open card's, else the first one's): its line names who is behind it.
   const [statsOf, setStatsOf] = useState<MachineId | null>(null);
-  const firstSick = settings.cards && settings.machine ? (machineNotices[0] ?? null) : null;
+  const firstSick = settings.cards && settings.machine ? (plateMachines[0] ?? null) : null;
   const watched = statsOf ?? (firstSick ? (firstSick.id as MachineId) : null);
   const needsFigures = (n: IMachineNotice | null) =>
     n !== null && n.alert.metric !== 'io' && n.alert.metric !== 'disk';
-  const watchedNotice = machineNotices.find((n) => n.id === watched) ?? null;
+  const watchedNotice = plateMachines.find((n) => n.id === watched) ?? null;
   const reading = open && statsOf !== null;
   const stats = useMachineStats(
     watched !== null && (reading || needsFigures(watchedNotice)) ? watched : null,
@@ -518,7 +565,7 @@ const SmartNoticeHost = ({
         ? orderItems(
             onePerChat([
               ...itemsOfCodes(codes.asks, codes.skew),
-              ...(settings.machine ? itemsOfMachines(machineNotices, topOf) : []),
+              ...(settings.machine ? itemsOfMachines(plateMachines, topOf) : []),
               ...itemsOfSlot(slot.notices),
               ...itemsOfNotices(notices, byId, live),
             ]),
@@ -529,7 +576,7 @@ const SmartNoticeHost = ({
       settings.machine,
       codes.asks,
       codes.skew,
-      machineNotices,
+      plateMachines,
       topOf,
       slot.notices,
       notices,
@@ -601,7 +648,7 @@ const SmartNoticeHost = ({
   const conv = main?.chatId ? (byId.get(main.chatId) ?? null) : null;
   const sick =
     main?.kind === SMART_KIND.machine
-      ? (machineNotices.find((n) => main.key === `machine:${n.alert.key}`) ?? null)
+      ? (plateMachines.find((n) => main.key === `machine:${n.alert.key}`) ?? null)
       : null;
   const sickId = sick ? (sick.id as MachineId) : null;
   if (sickId !== statsOf) setStatsOf(sickId);
@@ -639,15 +686,15 @@ const SmartNoticeHost = ({
   // A machine going into the red sounds as urgent, once.
   const sickHeard = useRef<ReadonlySet<string> | null>(null);
   useEffect(() => {
-    const keys = new Set(machineNotices.map((n) => n.alert.key));
+    const keys = new Set(plateMachines.map((n) => n.alert.key));
     const before = sickHeard.current;
     sickHeard.current = keys;
     if (before === null || document.visibilityState !== 'visible' || !settings.cards || !settings.machine)
       return;
-    const fresh = machineNotices.find((n) => !before.has(n.alert.key));
+    const fresh = plateMachines.find((n) => !before.has(n.alert.key));
     if (fresh && soundOn(settings, 'urgent') && firstToPing(`machine:${fresh.alert.key}`))
       playSound('urgent');
-  }, [machineNotices, settings]);
+  }, [plateMachines, settings]);
 
   // The open card's question or permission: the chat's channel, held while the card shows it.
   const needsGate =
@@ -709,7 +756,8 @@ const SmartNoticeHost = ({
     heldNow.current = held;
   });
   useEffect(() => {
-    if (urgentKey === null || urgentId === null) return;
+    // Not on a phone: there the open card stands over the chat and its field; the line opens by a tap.
+    if (urgentKey === null || urgentId === null || phone) return;
     // Once the line has come: a plate that opens while it still arrives reads as a jump.
     const timer = window.setTimeout(() => {
       if (busyNow.current || document.visibilityState !== 'visible') return;
@@ -720,7 +768,7 @@ const SmartNoticeHost = ({
       setOpen(true);
     }, AUTO_OPEN_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [urgentKey, urgentId]);
+  }, [urgentKey, urgentId, phone]);
   useEffect(() => {
     if (autoKey === null) return;
     const timer = window.setTimeout(() => {
@@ -862,6 +910,11 @@ const SmartNoticeHost = ({
   };
 
   const onHide = (item: ISmartItem, from: DOMRect | null) => {
+    // «Не сейчас» on a machine: away for hours, or until its level changes (stores/machine-snooze.ts), not into a drop.
+    if (item.kind === SMART_KIND.machine && item.machine) {
+      snoozeMachine(item.machine.id, snoozeLevel(item.machine.metric, item.urgent === true));
+      return;
+    }
     // What it shows now, before it goes: the flight carries it into the drop.
     const view = from ? snap(document.querySelector('.hx-sn .hx-sn__body:not([data-ghost])')) : null;
     // News put away is gone; what waits goes into its drop, flowing there when it was put away by hand. The drop is
@@ -952,7 +1005,8 @@ const SmartNoticeHost = ({
       onMain={setMainKey}
       onOpenChat={(item) => {
         setOpen(false);
-        if (item.chatId) onOpenChat(item.chatId);
+        if (item.href) window.location.assign(item.href);
+        else if (item.chatId) onOpenChat(item.chatId);
       }}
       onAnswer={onAnswer}
       onDecide={onDecide}
@@ -961,7 +1015,7 @@ const SmartNoticeHost = ({
       onStop={onStop}
       onOpenMachine={(item) => {
         setOpen(false);
-        const of = machineNotices.find((n) => item.key === `machine:${n.alert.key}`);
+        const of = plateMachines.find((n) => item.key === `machine:${n.alert.key}`);
         if (of) onOpenMachine(of.id);
       }}
       onHide={onHide}
@@ -988,4 +1042,28 @@ const SmartNoticeHost = ({
   );
 };
 
-export default SmartNoticeHost;
+/** The plate floats over the page: one of its failures takes the plate away and says so in the console (the journal),
+ *  never the chat under it. */
+class NoticeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(failure: Error, info: ErrorInfo) {
+    console.error(`smart notice failed: ${failure.message}${info.componentStack ?? ''}`.slice(0, 2000));
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+const GuardedSmartNoticeHost = (props: ISmartNoticeHostProps) => (
+  <NoticeBoundary>
+    <SmartNoticeHost {...props} />
+  </NoticeBoundary>
+);
+
+export default GuardedSmartNoticeHost;

@@ -176,6 +176,9 @@ func (s *Service) connected(l *link.Link, m store.Machine) {
 	if s.design != nil && slices.Contains(hello.Features, hubproto.FeatureDesignAccess) {
 		events = append(slices.Clone(events), hubproto.EventDesign)
 	}
+	if s.projects != nil && slices.Contains(hello.Features, hubproto.FeatureProjects) {
+		events = append(slices.Clone(events), hubproto.EventProjects)
+	}
 	if s.history != nil && slices.Contains(hello.Features, hubproto.FeatureHistory) {
 		events = append(slices.Clone(events), hubproto.EventHistoryEvents, hubproto.EventHistoryBackfill)
 	}
@@ -307,6 +310,11 @@ func (s *Service) dispatch(ctx context.Context, l *link.Link, m store.Machine, e
 		if s.env != nil && json.Unmarshal(ev.Raw, &e) == nil {
 			s.env.Run(m.ID, e.Run)
 		}
+	case hubproto.EventProjects:
+		var e struct{ Projects hubproto.ProjectsEvent }
+		if s.projects != nil && json.Unmarshal(ev.Raw, &e) == nil {
+			safego.Go("machines projects", func() { s.projects.Event(m, e.Projects) })
+		}
 	case hubproto.EventDesign:
 		var e struct{ Design hubproto.DesignEvent }
 		if s.design != nil && json.Unmarshal(ev.Raw, &e) == nil {
@@ -315,6 +323,21 @@ func (s *Service) dispatch(ctx context.Context, l *link.Link, m store.Machine, e
 	case hubproto.EventDocPublish, hubproto.EventDocACL, hubproto.EventDocBound, hubproto.EventDocReply:
 		if s.docs != nil {
 			s.docs.Event(l, m, ev)
+		}
+	case hubproto.EventEnvPropose:
+		if s.proposals != nil {
+			raw := ev.Raw
+			safego.Go("machines env.propose", func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+				defer cancel()
+				res := s.proposals.Proposed(ctx, m, raw)
+				if res.RequestID == "" {
+					return
+				}
+				if _, err := l.Call(ctx, hubproto.OpEnvProposed, res); err != nil {
+					s.log.Warn("env.proposed not delivered", "machine", m.ID, "error", err)
+				}
+			})
 		}
 	case hubproto.EventAutomationResult:
 		if s.automations != nil {

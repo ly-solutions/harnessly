@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A view of the start page can take the whole stage: `"height": "stage"` on a `home` view puts the greeting and
+  the field at the top and fills the rest of the stage with the view, which scrolls inside itself; `hl.slot.greet({title,
+  sub})` (`harnessly/slot.greet`) puts its own greeting in place of the host's question.
+- The `home` slot of the interface (under `HARNESSLY_UI_SLOTS=on`): an app's view as a block on the start page,
+  under the field of a new chat, as tall as its content and held by a boundary of its own; without an app that fills it the
+  page stays as it was.
 - The evaluation's runner on a machine, `internal/evalrun` and the agent operations `eval.run.start`, `eval.run.poll`
   and `eval.run.stop` (feature `eval.run`): runs a golden task in a bubblewrap sandbox with an access-only copy of the owner's
   subscription login. Offered only with `AGENT_HUB_EVAL=on` on Linux with bubblewrap; the hub's scheduler reaches it with

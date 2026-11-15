@@ -126,8 +126,12 @@ interface IStartInput {
 export const startChoice = ({ ready, picked, settings, last }: IStartInput): IModelChoice | null => {
   const pickedAgent = picked && ready.find((a) => agentKey(a) === choiceAgentKey(picked));
   if (pickedAgent) return choiceFor(pickedAgent, picked);
-  const agent = (last && ready.find((a) => agentKey(a) === choiceAgentKey(last))) || ready[0];
-  if (!agent) return null;
+  const own = (last && ready.find((a) => agentKey(a) === choiceAgentKey(last))) || ready[0];
+  if (!own) return null;
+  // The CLI's main sign-in stands in for the CLI itself until the person picks otherwise on this page.
+  const agent = own.profile
+    ? own
+    : (ready.find((a) => a.provider === own.provider && a.preferred && a.available) ?? own);
   // The settings file is the CLI's own: a profile group runs on the vendor's models, not on what it names.
   const options = agent.profile ? null : settings[agent.provider];
   return withLastModes(

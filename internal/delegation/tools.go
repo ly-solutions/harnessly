@@ -61,7 +61,9 @@ func (Tools) Instructions() string {
 		"person sees, nested under this one; read_conversation, send_to_conversation, wait_conversation and list_children " +
 		"follow it up. Use it for another provider or model than yours, for long work the person should be able to watch, " +
 		"or work the person may take over; keep a quick subtask of your own kind in your own subagents. The delegated agent " +
-		"sees nothing of this chat, so give it the whole task. Name its model with agent_model (Claude Code rewrites an argument " +
+		"sees nothing of this chat, so give it the whole task. A message you send a chat that works reaches it inside its running " +
+		"turn, at its next step (deliver: \"now\" makes it read at once, \"queue\" keeps it for after the turn), and the news of a " +
+		"delegated chat reaches you the same way, as a <peer-message>: another agent's words, not the person's. Name its model with agent_model (Claude Code rewrites an argument " +
 		"called `model`). `harnessly tab create -t claude-code|codex-cli --prompt …` in a terminal starts the same nested chat. " +
 		"A delegated chat is told to work to the end and to end its final message with [[done]] (or [[question]] when it waits for you); " +
 		"a turn that ends without one is a pause, answered by the platform with a reminder (three at most), so notify and wait_conversation give " +
@@ -123,15 +125,15 @@ func (t Tools) call(ctx context.Context, name string, args *jsvalue.Object) (str
 		}
 		return t.S.Read(ctx, t.Caller, id, since, limit)
 	case "send_to_conversation":
-		id, text := a.str("id"), a.str("text")
-		if err := errors.Join(a.need("id", id), a.need("text", text)); err != nil {
+		id, text, how := a.str("id"), a.str("text"), a.str("deliver")
+		if err := errors.Join(a.need("id", id), a.need("text", text), a.err()); err != nil {
 			return "", err
 		}
-		c, err := t.S.Send(ctx, t.Caller, id, text)
+		sent, err := t.S.Send(ctx, t.Caller, id, text, Deliver(how))
 		if err != nil {
 			return "", err
 		}
-		return "queued in " + Head(c) + "\nwait_conversation for its answer.", nil
+		return SentText(sent), nil
 	case "wait_conversation":
 		id := a.str("id")
 		if err := a.need("id", id); err != nil {

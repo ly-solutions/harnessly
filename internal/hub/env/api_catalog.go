@@ -129,6 +129,7 @@ const consentMsg = "Токены из сейфа и доступы подклю�
 const claudeMsg = "Плагины и настройки Claude подключает админ организации"
 
 // appMsg: an app works in every chat of the people it reaches, with the rights it asks.
+const providerMsg = "Провайдеров моделей в окружение добавляет админ организации"
 const appMsg = "Приложения в окружение ставит админ организации"
 
 // packMsg: a pack brings hooks that run with every tool call and tools on the PATH of every chat.
@@ -146,6 +147,8 @@ func CheckConsent(kind string, src json.RawMessage) error {
 		return httpx.Invalid("kind", appMsg)
 	case store.CatalogPack:
 		return httpx.Invalid("kind", packMsg)
+	case store.CatalogProvider:
+		return httpx.Invalid("kind", providerMsg)
 	case store.CatalogScript:
 		var s struct {
 			Secrets []string `json:"secrets"`

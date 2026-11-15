@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/ly-solutions/harnessly/internal/agents"
 )
 
 // OAuthStub is the Claude Code OAuth token of a profile's chat. Claude Code takes the key of apiKeyHelper before an
@@ -22,6 +26,11 @@ var (
 	ErrNotClaude = errors.New("providers: the profile does not run through Claude Code")
 	// ErrUnknownModel: the model is none of the preset's.
 	ErrUnknownModel = errors.New("providers: the preset has no such model")
+	// ErrNoSecret: a secret variable of the profile has no value in the safe.
+	ErrNoSecret = errors.New("providers: a secret variable of the profile has no value in the safe")
+	// ErrSubscriptionToken: the key or a secret variable of a provider is the token of a Claude subscription's sign-in.
+	// The machine has one such sign-in, the CLI's own; a chat is not started on a second one.
+	ErrSubscriptionToken = errors.New("providers: a provider holds the token of a Claude subscription, not a key of the API")
 	// ErrSwitchOff: the profile's switch is off, or its proxy has no address yet.
 	ErrSwitchOff = errors.New("providers: the profile is switched off")
 
@@ -47,6 +56,10 @@ func (p Preset) claudeEnv(base string, model Model) map[string]string {
 		"ANTHROPIC_AUTH_TOKEN":                     "",
 		"ANTHROPIC_API_KEY":                        "",
 		"CLAUDE_CODE_OAUTH_TOKEN":                  OAuthStub,
+	}
+	if p.Custom && model.Window == 0 {
+		// A provider the person added says nothing of its models' windows: Claude Code keeps its own.
+		delete(env, "CLAUDE_CODE_MAX_CONTEXT_TOKENS")
 	}
 	for k, v := range p.Env {
 		env[k] = v
@@ -76,11 +89,31 @@ func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 	if p.Switched {
 		sw := s.SwitchOf(id)
 		var ok bool
+		if e, starts := sw.(interface{ Ensure(context.Context) error }); starts {
+			// A switch on by default: its proxy is started by the first chat that needs it.
+			ctx, cancel := context.WithTimeout(context.Background(), proxyLaunchWait)
+			err := e.Ensure(ctx)
+			cancel()
+			if err != nil {
+				return "", err
+			}
+		}
 		if sw != nil {
 			base, keyFile, ok = sw.Endpoint()
 		}
 		if !ok {
 			return "", ErrSwitchOff
+		}
+	}
+	if p.Proxied != "" {
+		if s.Proxy == nil {
+			return "", ErrSwitchOff
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), proxyLaunchWait)
+		defer cancel()
+		var err error
+		if base, keyFile, err = s.Proxy.ExtEndpoint(ctx); err != nil {
+			return "", err
 		}
 	}
 	raw, err := os.ReadFile(hooksPath)
@@ -100,8 +133,35 @@ func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 	for k, v := range p.claudeEnv(base, m) {
 		env[k] = v
 	}
+	// What the person typed for the provider replaces whatever stands there: the values come from the safe into this
+	// file (0600, in the profiles' folder of 0700) and nowhere else.
+	var taken []string
+	for name, ref := range p.SecretEnv {
+		if !p.Custom || s.Safe == nil {
+			return "", ErrNoSecret
+		}
+		val, err := s.Safe(ref)
+		if val = strings.TrimSpace(val); err != nil || val == "" {
+			return "", fmt.Errorf("%w: %s", ErrNoSecret, name)
+		}
+		if agents.ClaudeSubscriptionToken(val) {
+			return "", fmt.Errorf("%w: %s", ErrSubscriptionToken, name)
+		}
+		env[name] = val
+		taken = append(taken, val)
+	}
+	// An agent that prints its environment prints these: the feed hides them from now on.
+	s.hide(taken)
 	settings["env"] = env
-	settings["apiKeyHelper"] = "cat " + shellQuote(keyFile)
+	if p.Proxied != "" {
+		// The proxy's own key: the provider's stays with the runtime's relay.
+		settings["apiKeyHelper"] = "cat " + shellQuote(keyFile)
+	} else if p.Custom && (p.ownCredential() || !s.Configured(id)) {
+		// The provider's own token goes in the environment; a helper would be asked before it.
+		delete(settings, "apiKeyHelper")
+	} else {
+		settings["apiKeyHelper"] = "cat " + shellQuote(keyFile)
+	}
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return "", err
@@ -123,5 +183,9 @@ func (s *Store) SettingsFile(id, model, hooksPath string) (string, error) {
 	}
 	return target, nil
 }
+
+// proxyLaunchWait bounds the start of the proxy a chat on an OpenAI-compatible provider waits for: its first start
+// downloads it.
+const proxyLaunchWait = 2 * time.Minute
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

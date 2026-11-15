@@ -58,9 +58,66 @@ type sealInfo struct {
 }
 
 var (
+	// sealMu guards the maps; a version is checked under its own lock, so a version being hashed holds up only the
+	// requests for that version, not every listing of the kits.
 	sealMu    sync.Mutex
 	sealCache = map[string]*sealInfo{}
+	sealLocks = map[string]*sync.Mutex{}
 )
+
+func sealLock(root string) *sync.Mutex {
+	sealMu.Lock()
+	defer sealMu.Unlock()
+	m := sealLocks[root]
+	if m == nil {
+		m = &sync.Mutex{}
+		sealLocks[root] = m
+	}
+	return m
+}
+
+func cachedSeal(root string) *sealInfo {
+	sealMu.Lock()
+	defer sealMu.Unlock()
+	return sealCache[root]
+}
+
+// sealCheckPath keeps a version's last whole check beside the version's folder, not in it (a dot file of the kit's
+// folder: no walk of the version, its export or its sync sees it): a runtime that starts again does not hash a version's thousands of files anew while every one of them stands with the
+// size and time it had when it was hashed. Without it every restart held the kits' screens for half a minute and more.
+func sealCheckPath(root string) string {
+	return filepath.Join(filepath.Dir(root), "."+filepath.Base(root)+".sealcheck.json")
+}
+
+type sealCheck struct {
+	Seal  string `json:"seal"`
+	Sig   string `json:"sig"`
+	Bytes int64  `json:"bytes"`
+}
+
+func sigSum(sig string) string {
+	h := sha256.Sum256([]byte(sig))
+	return hex.EncodeToString(h[:])
+}
+
+func readSealCheck(root string) (sealCheck, bool) {
+	var c sealCheck
+	raw, err := os.ReadFile(sealCheckPath(root))
+	if err != nil || json.Unmarshal(raw, &c) != nil {
+		return sealCheck{}, false
+	}
+	return c, true
+}
+
+// writeSealCheck is best effort: a version that cannot keep it is hashed again at the next start, as before.
+func writeSealCheck(root string, info *sealInfo) {
+	raw, _ := json.Marshal(sealCheck{Seal: info.sealStat, Sig: sigSum(info.sig), Bytes: info.bytes})
+	dst := sealCheckPath(root)
+	tmp := dst + ".tmp"
+	if os.WriteFile(tmp, raw, 0o600) == nil && os.Rename(tmp, dst) != nil {
+		_ = os.Remove(tmp)
+	}
+}
 
 func sealRequired(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, SealRequired))
@@ -174,14 +231,16 @@ func sealOf(id, version, root string) *sealInfo {
 		return &sealInfo{state: sealNone}
 	}
 	stat := st.ModTime().String() + "/" + itoa(st.Size())
-	sealMu.Lock()
-	defer sealMu.Unlock()
-	if c := sealCache[root]; c != nil && c.sealStat == stat && time.Since(c.at) < sealTTL {
-		return c
+	lock := sealLock(root)
+	lock.Lock()
+	defer lock.Unlock()
+	prev := cachedSeal(root)
+	if prev != nil && prev.sealStat == stat && time.Since(prev.at) < sealTTL {
+		return prev
 	}
 	var list []filestore.KitSealedFile
-	if c := sealCache[root]; c != nil && c.state == sealOK && c.sealStat == stat {
-		list = c.list
+	if prev != nil && prev.state == sealOK && prev.sealStat == stat {
+		list = prev.list
 	} else {
 		raw, err := os.ReadFile(filepath.Join(root, SealFile))
 		seal, perr := filestore.ParseKitSeal(raw)
@@ -199,11 +258,16 @@ func sealOf(id, version, root string) *sealInfo {
 		sig.WriteString(itoa(fi.ModTime().UnixNano()) + ";")
 	}
 	info := &sealInfo{state: sealOK, set: map[string]bool{}, files: len(list), sealStat: stat, list: list, sig: sig.String()}
-	if c := sealCache[root]; c != nil && c.state == sealOK && c.sealStat == stat && c.sig == info.sig {
-		info.set, info.bytes = c.set, c.bytes // nothing moved since the files were hashed
-		info.at = time.Now()
-		sealCache[root] = info
-		return info
+	if prev != nil && prev.state == sealOK && prev.sealStat == stat && prev.sig == info.sig {
+		info.set, info.bytes = prev.set, prev.bytes // nothing moved since the files were hashed
+		return cacheSeal(root, info)
+	}
+	if c, ok := readSealCheck(root); ok && c.Seal == stat && c.Sig == sigSum(info.sig) {
+		for _, f := range list {
+			info.set[f.Path] = true
+		}
+		info.bytes = c.Bytes // hashed by an earlier start, nothing moved since
+		return cacheSeal(root, info)
 	}
 	for _, f := range list {
 		sum, _, err := sealHash(filepath.Join(root, filepath.FromSlash(f.Path)))
@@ -213,12 +277,15 @@ func sealOf(id, version, root string) *sealInfo {
 		info.set[f.Path] = true
 		info.bytes += f.Size
 	}
+	writeSealCheck(root, info)
 	return cacheSeal(root, info)
 }
 
 func cacheSeal(root string, info *sealInfo) *sealInfo {
 	info.at = time.Now()
+	sealMu.Lock()
 	sealCache[root] = info
+	sealMu.Unlock()
 	return info
 }
 

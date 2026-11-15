@@ -78,7 +78,24 @@ func runStore(ctx context.Context, args []string, lookup func(string) (string, b
 		}
 		return 0
 	case "gc":
-		reps, err := filestore.RunGC(ctx, meta, blobs, filestore.Retention{Keep: *keep, Days: *days, Grace: *grace}, *dry)
+		// The hub keeps blobs whose only record is a row of its own database: the collection is told of them, and
+		// without the database it does not run.
+		db, err := openDB(ctx, cfg, logger(stderr, cfg.LogLevel))
+		if err != nil {
+			fmt.Fprintln(stderr, "hub store gc:", err)
+			return exitCode(err)
+		}
+		defer db.Close()
+		var legacy string
+		if cfg.Store.LegacySpace != "" {
+			sp, err := db.S().SpaceBySlug(ctx, cfg.Store.LegacySpace)
+			if err != nil {
+				fmt.Fprintf(stderr, "hub store gc: HUB_STORE_LEGACY_SPACE %q: %v\n", cfg.Store.LegacySpace, err)
+				return 1
+			}
+			legacy = sp.ID
+		}
+		reps, err := filestore.RunGCPinned(ctx, meta, blobs, filestore.Retention{Keep: *keep, Days: *days, Grace: *grace}, storehub.Pins(db, legacy), *dry)
 		for _, r := range reps {
 			fmt.Fprintf(stdout, "%-14s %d revisions pruned, %d blobs deleted (%d bytes), %d kept for the grace period\n", r.Room, r.RevisionsPruned, r.BlobsDeleted, r.BytesFreed, r.BlobsKept)
 		}

@@ -1,9 +1,12 @@
 import { Menu } from '@base-ui/react/menu';
 import { useKeyHint } from '@/next/features/keys/keys-help';
 import Logo from '@/next/ui/logo';
+import { useKeptItems } from '@/next/core/kept';
 import {
   cloneElement,
   Fragment,
+  useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -40,6 +43,7 @@ import {
   PLAN,
   favoritesOf,
   groupOfChat,
+  favRowCount,
   isFavEmpty,
   neighboursOf,
   resolveDrop,
@@ -48,9 +52,18 @@ import {
   type IFavGroupView,
   type TDropPlan,
 } from '@/next/features/sidebar/favorites';
-import { childrenOf, DAY_GROUP, folderRows, sectionsOf, type TDayGroup } from '@/next/features/sidebar/group';
+import {
+  childrenOf,
+  DAY_GROUP,
+  folderRows,
+  holdSections,
+  sectionsOf,
+  sidebarLayout,
+  type TDayGroup,
+} from '@/next/features/sidebar/group';
+import type { TShownLayout } from '@/next/core/steady-order';
 import type { IWorkingDesign } from '@/next/features/designly/working';
-import type { DesignKind } from '@/next/protocol/v2';
+import { designIcon } from '@/next/features/designly/design-icon';
 import MenuPanel, { useMenuActions } from '@/next/ui/menu-panel';
 import ProductSwitcher from '@/next/features/sidebar/product-switcher';
 import useDrag, { afterTouchClick } from '@/next/ui/use-drag';
@@ -75,9 +88,12 @@ import {
   type TSidebarView,
 } from '@/next/features/sidebar/types';
 import { withDelegationWait } from '@/next/features/sidebar/status';
+import { countRender } from '@/next/core/perf-journal';
 
 /** The delegated chats stay folded under their parent; they open by themselves only while one of them waits for the
  *  person (a question, a permission, a plan), unless the person folded them. */
+const favGroupKey = (group: { id: string }): string => group.id;
+
 const KIDS_SHOWN_BY: ReadonlySet<TChatStatus> = new Set([
   CHAT_STATUS.question,
   CHAT_STATUS.perm,
@@ -92,6 +108,15 @@ const DAY_LABEL: Record<TDayGroup, string> = {
 };
 
 /** Rows of the list skeleton under each of its three group labels. */
+/** Focus the keyboard brought (a click's focus does not hold the list). */
+const focusVisible = (target: Element): boolean => {
+  try {
+    return target.matches(':focus-visible');
+  } catch {
+    return false;
+  }
+};
+
 const SKELETON_GROUPS = [2, 3, 5] as const;
 
 /** A switch of the machine is pending under this key, a chat's action under the chat's id. */
@@ -109,6 +134,52 @@ const ListSkeleton = () => (
   </div>
 );
 
+// How many rows «Избранное» took the last time this browser drew it, so the skeleton of the next load is as
+// tall as the list that replaces it and nothing under it moves. 0: the favorites were not shown.
+const FAV_ROWS_KEY = 'hx-next:favorites-rows';
+
+export const readFavRows = (): number | null => {
+  try {
+    const raw = localStorage.getItem(FAV_ROWS_KEY);
+    const rows = raw === null ? Number.NaN : Number(raw);
+    return Number.isInteger(rows) && rows >= 0 ? rows : null;
+  } catch {
+    return null;
+  }
+};
+
+const keepFavRows = (rows: number) => {
+  try {
+    localStorage.setItem(FAV_ROWS_KEY, String(rows));
+  } catch {
+    // No storage: the next load sizes the skeleton by the pinned chats.
+  }
+};
+
+/**
+ * «Избранное» while its layout has not come: its own label and a row of the list's height for each row it
+ * will have (sidebar rows and skeleton rows are both 30 px).
+ */
+const FavoritesSkeleton = ({ rows, canCreate }: { rows: number; canCreate: boolean }) => (
+  <div role="status" aria-label={t('next.sidebar.favorites')} data-favorites-wait="">
+    <div className="hx-group__label hx-group__label--static">
+      {t('next.sidebar.favorites')}
+      <span className="hx-spacer" />
+      {/* The label's «+» as the list has it, so the label is as tall; it waits with the list. */}
+      {canCreate && (
+        <button type="button" className="hx-nav__add" aria-label={t('next.sidebar.newGroup')} disabled>
+          <Icon name="plus" size="sm" />
+        </button>
+      )}
+    </div>
+    <div className="hx-sbsk">
+      {Array.from({ length: rows }, (_, i) => (
+        <span key={i} className="hx-sk hx-sbsk__row" data-favorites-wait-row="" />
+      ))}
+    </div>
+  </div>
+);
+
 const renameOf = (renaming: { id: string; saving: boolean } | null, id: string): TRename => {
   if (renaming?.id !== id) return RENAME.off;
   return renaming.saving ? RENAME.saving : RENAME.editing;
@@ -122,8 +193,8 @@ export interface ISidebarProps {
   /** null while the list loads (a skeleton after 150 ms); [] is an empty list. */
   chats: readonly ISidebarChat[] | null;
   projects: readonly ISidebarProject[] | null;
-  /** How the favorites are grouped and ordered; none until the machine says. */
-  favorites?: ISidebarFavorites;
+  /** How the favorites are grouped and ordered; null while the layout that will stand has not come (a skeleton). */
+  favorites?: ISidebarFavorites | null;
   /** The list did not load; with chats === null the sidebar says so and offers to try again. */
   loadError: string | null;
   onRetryLoad?: () => void | Promise<unknown>;
@@ -162,6 +233,8 @@ export interface ISidebarProps {
   designs?: ISidebarDesigns | null;
   /** The installed apps that are on in the person's chats, under «Приложения»; null shows the item with no rows. */
   apps?: ISidebarApps | null;
+  /** «ChatGPT»: its plain chats under the item, which starts a new one; null shows no item. */
+  gpt?: ISidebarGpt | null;
   ref?: Ref<HTMLElement>;
 }
 
@@ -189,19 +262,20 @@ export interface ISidebarApps {
   onAll: () => void;
 }
 
+export interface ISidebarGpt {
+  rows: readonly { id: string; title: string }[];
+  /** The ChatGPT chat on screen; it is never hidden behind «Дальше». */
+  current: string | null;
+  onOpen: (id: string) => void;
+  onNew: () => void;
+}
+
 export interface ISidebarDesigns {
   rows: readonly IWorkingDesign[];
   /** The design on screen; it is never hidden behind «Дальше». */
   current: string | null;
   onOpen: (id: string) => void;
 }
-
-const DESIGN_ICON: Record<DesignKind, string> = {
-  site: 'app-window',
-  slides: 'presentation',
-  video: 'clapperboard',
-  ds: 'palette',
-};
 
 interface INavItemProps {
   icon: string;
@@ -366,8 +440,34 @@ const DesignRows = ({
           aria-current={d.id === designs.current ? 'page' : undefined}
           onClick={() => designs.onOpen(d.id)}
         >
-          <Icon name={DESIGN_ICON[d.kind]} size="sm" className="hx-nav__kid-icon" />
+          <Icon name={designIcon(d)} size="sm" className="hx-nav__kid-icon" />
           <span className="hx-item__title">{d.title}</span>
+        </button>
+      ))}
+      {hidden > 0 && (
+        <button type="button" className="hx-folder-more" onClick={onAll}>
+          {t('next.sidebar.folderMore')}
+        </button>
+      )}
+    </>
+  );
+};
+
+/** The ChatGPT chats under «ChatGPT»: five, then «Дальше» for the rest. */
+const GptRows = ({ gpt, all, onAll }: { gpt: ISidebarGpt; all: boolean; onAll: () => void }) => {
+  const { shown, hidden } = all ? { shown: gpt.rows, hidden: 0 } : folderRows(gpt.rows, gpt.current);
+  return (
+    <>
+      {shown.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          className="hx-nav__kid"
+          aria-current={c.id === gpt.current ? 'page' : undefined}
+          onClick={() => gpt.onOpen(c.id)}
+        >
+          <Icon name="message-square" size="sm" className="hx-nav__kid-icon" />
+          <span className="hx-item__title">{c.title || t('next.chatgpt.newChat')}</span>
         </button>
       ))}
       {hidden > 0 && (
@@ -508,17 +608,38 @@ const Sidebar = ({
   onManageMachines,
   people,
   designs = null,
+  gpt = null,
   ref,
 }: ISidebarProps) => {
+  countRender('sidebar');
   // A chat free itself while its delegated chats work shows that it waits for them.
   const chats = useMemo(() => (chatsIn === null ? null : withDelegationWait(chatsIn)), [chatsIn]);
   const railKey = useKeyHint('global.rail');
-  const { pending, run } = usePendingList();
+  const { pending, run: runPending } = usePendingList();
+  // The person asked for a change: the favorites' next move slides (favorites-section.tsx); a failure moves
+  // nothing, so it is taken back.
+  // The layout the list holds while the pointer or the keyboard is in it (holdSections below).
+  const [held, setHeld] = useState<TShownLayout | null>(null);
+  const movingRef = useRef(false);
+  const run = useCallback(
+    (key: string, failure: string, action: () => Promise<unknown>): Promise<boolean> => {
+      movingRef.current = true;
+      return runPending(key, failure, action).then((ok) => {
+        // The person's own change is shown where it goes: the hold starts again from the list as it is now.
+        setHeld(null);
+        if (!ok) movingRef.current = false;
+        return ok;
+      });
+    },
+    [runPending],
+  );
   const [renaming, setRenaming] = useState<{ id: string; saving: boolean } | null>(null);
   const [projectChoice, setProjectChoice] = useState<ReadonlyMap<string, boolean>>(new Map());
   // Folders whose «Дальше» was pressed: they show all their chats.
   const [longFolders, setLongFolders] = useState<ReadonlySet<string>>(new Set());
   const [allDesigns, setAllDesigns] = useState(false);
+  const [allGpt, setAllGpt] = useState(false);
+  const [gptFolded, setGptFolded] = useState(false);
   const [appsFolded, setAppsFolded] = useState(readAppsFolded);
   const foldApps = () => {
     keepAppsFolded(!appsFolded);
@@ -545,23 +666,41 @@ const Sidebar = ({
   const loading = chats === null && loadError === null;
   const showSkeleton = useDelayedFlag(loading);
 
-  if (chats !== null && (known === null || chats.some((chat) => !known.has(chat.id)))) {
+  // The first list is the one the favorites' layout came with: chats of a list that comes in pieces on a
+  // load are not fresh and do not slide in one by one.
+  const layoutKnown = favorites !== null;
+  // The favorites' rows of the last load in this browser, read once: the skeleton's height until the layout comes.
+  const [favRowsBefore] = useState(readFavRows);
+  if (chats !== null && layoutKnown && (known === null || chats.some((chat) => !known.has(chat.id)))) {
     const ids = new Set(chats.map((chat) => chat.id));
     if (known !== null) setFresh(new Set([...ids].filter((id) => !known.has(id))));
     setKnown(new Set([...(known ?? []), ...ids]));
   }
 
-  const sections = useMemo(
+  const natural = useMemo(
     () => (chats === null ? null : sectionsOf(chats, projects ?? [], now)),
     [chats, projects, now],
   );
+  // While the pointer or the keyboard is in the list, its rows hold their places (group.ts, holdSections).
+  const [pointerIn, setPointerIn] = useState(false);
+  const [keysIn, setKeysIn] = useState(false);
+  const holding = pointerIn || keysIn;
+  if (holding && held === null && natural !== null) setHeld(sidebarLayout(natural));
+  else if (!holding && held !== null) setHeld(null);
+  const sections = useMemo(
+    () => (natural === null || !holding ? natural : holdSections(natural, held)),
+    [natural, holding, held],
+  );
 
   const favView = useMemo(
-    () => (chats === null ? EMPTY_VIEW : favoritesOf(chats, favorites)),
+    () => (chats === null || favorites === null ? EMPTY_VIEW : favoritesOf(chats, favorites)),
     [chats, favorites],
   );
   // The groups for the menus, and where each favorite chat stands: both keep their identity while the view does.
-  const favGroups = useMemo(() => favView.groups.map(({ id, name }) => ({ id, name })), [favView]);
+  const favGroups = useKeptItems(
+    useMemo(() => favView.groups.map(({ id, name }) => ({ id, name })), [favView]),
+    favGroupKey,
+  );
   const slots = useMemo(() => {
     const out = new Map<string, IFavSlot>();
     for (const chat of [...favView.groups.flatMap((group) => group.chats), ...favView.loose]) {
@@ -849,11 +988,22 @@ const Sidebar = ({
     sections !== null &&
     sections.pinned.length === 0 &&
     sections.projects.length === 0 &&
+    sections.apps.length === 0 &&
     sections.days.length === 0;
 
+  const pinnedCount = (chats ?? []).filter((chat) => chat.pinned).length;
+  const skeletonRows = favRowsBefore ?? pinnedCount;
+  const favoritesWait = sections !== null && !layoutKnown && skeletonRows > 0;
   const showFavorites =
     sections !== null &&
+    layoutKnown &&
     (!isFavEmpty(favView) || (actions.onPlaceFavorite !== undefined && chats !== null && chats.length > 0));
+  // What the next load's skeleton is sized by: the rows drawn now, once the layout is known.
+  let favRows: number | null = null;
+  if (sections !== null && layoutKnown) favRows = showFavorites ? favRowCount(favView) : 0;
+  useEffect(() => {
+    if (favRows !== null) keepFavRows(favRows);
+  }, [favRows]);
 
   // Day groups share one cascade, a label and its chats in a row, as the design staggers them.
   let cascade = 0;
@@ -965,12 +1115,36 @@ const Sidebar = ({
             {appRowCount > 0 && <AppRows apps={apps} />}
           </NavItem>
         )}
+        {gpt && (
+          <NavItem
+            icon="message-square"
+            label={t('next.chatgpt.side.title')}
+            current={gpt.current !== null && gpt.rows.every((r) => r.id !== gpt.current)}
+            index={3}
+            onClick={gpt.onNew}
+            expanded={gpt.rows.length > 0 && !gptFolded}
+            list
+            onFold={gpt.rows.length > 0 ? () => setGptFolded(!gptFolded) : undefined}
+          >
+            {gpt.rows.length > 0 && <GptRows gpt={gpt} all={allGpt} onAll={() => setAllGpt(true)} />}
+          </NavItem>
+        )}
         {more.length > 0 && <MoreMenu items={more} />}
       </nav>
 
       <MachineAlert alert={machine?.alert ?? null} onMore={() => onManageMachines?.()} />
 
-      <div className="hx-sidebar__list" ref={listRef}>
+      <div
+        className="hx-sidebar__list"
+        ref={listRef}
+        onPointerEnter={() => setPointerIn(true)}
+        onPointerLeave={() => setPointerIn(false)}
+        onFocus={(event) => setKeysIn(focusVisible(event.target))}
+        onBlur={(event) => {
+          if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)))
+            setKeysIn(false);
+        }}
+      >
         {showSkeleton && <ListSkeleton />}
         {chats === null && loadError !== null && onRetryLoad && (
           <div className="hx-snote">
@@ -984,6 +1158,9 @@ const Sidebar = ({
         )}
         {empty && <p className="hx-snote">{t('next.sidebar.empty')}</p>}
 
+        {favoritesWait && (
+          <FavoritesSkeleton rows={skeletonRows} canCreate={actions.onCreateGroup !== undefined} />
+        )}
         {showFavorites && (
           <FavoritesSection
             view={favView}
@@ -1000,10 +1177,52 @@ const Sidebar = ({
             onDelete={deleteGroup}
             onShift={shiftGroup}
             pending={pending}
+            movingRef={movingRef}
           />
         )}
 
         {people}
+
+        {sections && sections.apps.length > 0 && (
+          <section aria-label={t('next.sidebar.appChats')}>
+            <div className="hx-group__label hx-group__label--static hx-enter" data-enter="up" data-eb="470">
+              {t('next.sidebar.appSection')}
+            </div>
+            {sections.apps.map(({ app, label, chats: ofApp }, i) => {
+              // An app's folder is open until the person folds it: its chats are there to be glanced at.
+              const open = projectChoice.get(`app:${app}`) ?? true;
+              return (
+                <div
+                  key={app}
+                  className="hx-nav__group hx-enter"
+                  data-enter="up"
+                  data-eb="500"
+                  data-i={Math.min(i, 24)}
+                  aria-expanded={open}
+                >
+                  <div className="hx-item hx-project">
+                    <button
+                      type="button"
+                      className="hx-project__open"
+                      aria-expanded={open}
+                      data-tip={t('next.sidebar.appFolderTip', { app: label })}
+                      onClick={() => toggleProject(`app:${app}`, open)}
+                    >
+                      <span className="hx-project__mark" aria-hidden="true">
+                        <Icon name="app-window" className="hx-project__icon" />
+                      </span>
+                      <span className="hx-item__title">{label}</span>
+                      <Icon name="chevron-right" size="sm" className="hx-nav__chev" />
+                    </button>
+                  </div>
+                  <div className="hx-nav__kids" inert={!open}>
+                    <div>{renderFolder(`app:${app}`, ofApp)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        )}
 
         {sections && (sections.projects.length > 0 || actions.onNewProject) && (
           <section aria-label={t('next.sidebar.projects')} data-empty={sections.projects.length === 0}>

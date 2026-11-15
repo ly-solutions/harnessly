@@ -225,3 +225,86 @@ func TestJournalKeepsTheLast(t *testing.T) {
 		t.Fatalf("%d, %s … %s", len(all), all[0].ID, all[len(all)-1].ID)
 	}
 }
+
+func TestWatchMovesWithEveryChange(t *testing.T) {
+	s := &Service{}
+	rev := s.Rev()
+	// Nothing moved: the wait runs out and answers the same revision.
+	if got := s.WaitRev(context.Background(), rev, 10*time.Millisecond); got != rev {
+		t.Fatalf("nothing moved: %d, was %d", got, rev)
+	}
+	// A page with an older revision is answered at once.
+	if got := s.WaitRev(context.Background(), rev-1, time.Minute); got != rev {
+		t.Fatalf("an older revision: %d, want %d", got, rev)
+	}
+	got := make(chan uint64, 1)
+	go func() { got <- s.WaitRev(context.Background(), rev, time.Minute) }()
+	time.Sleep(20 * time.Millisecond)
+	s.bump()
+	select {
+	case next := <-got:
+		if next == rev {
+			t.Fatal("the revision did not move")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the wait was not woken")
+	}
+}
+
+// A value that changes a part of a text strikes out on the card only what it replaces: nothing when it adds.
+func TestProposalOfAPartSaysWhatItReplaces(t *testing.T) {
+	s, _ := newService(t)
+	list := "a,b"
+	s.Items = append(s.Items, Item{Key: "list", Title: "Список", Kind: KindText,
+		Get: func() (string, error) { return list, nil }, Set: func(v string) error { list += "," + v; return nil },
+		Free:     func(string) bool { return true },
+		Replaces: func(v string) (string, bool) { return map[string]string{"b2": "b"}[v], v != "whole" }})
+	for value, want := range map[string]string{"c": "", "b2": "b", "whole": "a,b"} {
+		out, err := s.Propose("list", value, "", Actor{Conv: "chat-" + value})
+		if err != nil || out.Proposal == nil || out.Proposal.OldLabel != want {
+			t.Errorf("%s: %+v, %v; want the card to strike out %q", value, out.Proposal, err, want)
+		}
+	}
+}
+
+func TestAChangeMadeElsewhereIsToldWhoAndSaysItsRefusal(t *testing.T) {
+	s, _ := newService(t)
+	var by Actor
+	var refuse error
+	s.Items = append(s.Items, Item{Key: "shared", Title: "Общее", Kind: KindText, Get: func() (string, error) { return "[]", nil },
+		Free:  func(string) bool { return true },
+		SetBy: func(_ string, a Actor) (string, error) { by = a; return "ждёт админа", refuse }})
+
+	// In the Settings chat the change is made at once, and the setting is told the chat; what the setting says of a
+	// value it only passed on goes with the change.
+	out, err := s.Propose("shared", "one", "", Actor{Kind: ByAgent, Conv: "settings-chat", Title: "Настройки"})
+	if err != nil || out.Change == nil || out.Change.Note != "ждёт админа" {
+		t.Fatalf("%+v %v", out, err)
+	}
+	if by.Conv != "settings-chat" || by.Title != "Настройки" {
+		t.Fatalf("the setting was not told who: %+v", by)
+	}
+
+	// Where the change is made it may be refused: the words reach the caller.
+	refuse = &Said{Message: "нет права"}
+	_, err = s.Propose("shared", "two", "", Actor{Kind: ByAgent, Conv: "settings-chat"})
+	if r := RefusalOf(err); err == nil || r.Reason != ReasonFailed || r.Message != "нет права" {
+		t.Fatalf("%+v", r)
+	}
+
+	// From another chat the person agrees first; a refusal after that is kept with the proposal, which is declined.
+	out, err = s.Propose("shared", "three", "", Actor{Kind: ByAgent, Conv: "tab-1", Title: "Чат"})
+	if err != nil || out.State != StateWaiting {
+		t.Fatalf("%+v %v", out, err)
+	}
+	if _, err := s.Approve(out.Proposal.ID); RefusalOf(err).Message != "нет права" {
+		t.Fatalf("%v", err)
+	}
+	got := s.Wait(context.Background(), out.Proposal.ID, 0)
+	if got.State != StateDeclined || got.Proposal == nil || got.Proposal.Failed != "нет права" {
+		t.Fatalf("%+v", got)
+	}
+	if by.Conv != "tab-1" || by.Kind != ByAgent {
+		t.Fatalf("%+v", by)
+	}
+}

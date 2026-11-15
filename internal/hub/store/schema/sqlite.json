@@ -517,6 +517,81 @@
         }
       ]
     },
+    "api_tokens": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "user_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "token_hash",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "client",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "device",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "scopes",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "last_used_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "revoked_at",
+          "type": "BIGINT"
+        },
+        {
+          "name": "ip",
+          "type": "TEXT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "api_tokens_user",
+          "columns": [
+            "user_id"
+          ]
+        },
+        {
+          "unique": true,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      ]
+    },
     "audit_events": {
       "columns": [
         {
@@ -1072,6 +1147,75 @@
         }
       ]
     },
+    "chat_shares": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "space_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "owner_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "owner_email",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "sha256",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "size",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "revoked_at",
+          "type": "BIGINT"
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "chat_shares_machine",
+          "columns": [
+            "machine_id"
+          ]
+        }
+      ]
+    },
     "chat_work": {
       "columns": [
         {
@@ -1268,6 +1412,73 @@
             "machine_id",
             "project_id",
             "at"
+          ]
+        }
+      ]
+    },
+    "design_derived": {
+      "columns": [
+        {
+          "name": "key",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "space_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "project",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "rev",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "sha256",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "size",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "type",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "immutable",
+          "type": "INTEGER",
+          "notNull": true
+        },
+        {
+          "name": "headers",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "key"
+      ],
+      "indexes": [
+        {
+          "name": "design_derived_project",
+          "columns": [
+            "space_id",
+            "project",
+            "rev"
           ]
         }
       ]
@@ -1532,6 +1743,30 @@
           "name": "updated_at",
           "type": "BIGINT",
           "notNull": true
+        },
+        {
+          "name": "kind",
+          "type": "TEXT"
+        },
+        {
+          "name": "preview",
+          "type": "TEXT"
+        },
+        {
+          "name": "kit_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "work_machine_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "meta_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "meta_at",
+          "type": "BIGINT"
         }
       ],
       "primaryKey": [
@@ -2683,6 +2918,99 @@
             "layer",
             "scope_id",
             "name"
+          ]
+        }
+      ]
+    },
+    "env_proposals": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "org_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "machine_name",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "owner_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "conv",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "conv_title",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "hint",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "remove",
+          "type": "INTEGER",
+          "notNull": true
+        },
+        {
+          "name": "source",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "decided_at",
+          "type": "BIGINT"
+        },
+        {
+          "name": "decided_by",
+          "type": "TEXT"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "env_proposals_org",
+          "columns": [
+            "org_id",
+            "state"
           ]
         }
       ]
@@ -4386,6 +4714,39 @@
         }
       ]
     },
+    "machine_projects": {
+      "columns": [
+        {
+          "name": "machine_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "directories",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "machine_id",
+        "project_id"
+      ]
+    },
     "machine_provider_limits": {
       "columns": [
         {
@@ -4918,6 +5279,79 @@
         "migration"
       ]
     },
+    "notice_items": {
+      "columns": [
+        {
+          "name": "person",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "item_key",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "chat",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "item_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "doc",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "read_at",
+          "type": "BIGINT"
+        }
+      ],
+      "primaryKey": [
+        "person",
+        "item_key"
+      ],
+      "indexes": [
+        {
+          "name": "notice_items_person_at",
+          "columns": [
+            "person",
+            "item_at"
+          ]
+        }
+      ]
+    },
+    "notice_settings": {
+      "columns": [
+        {
+          "name": "person",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "doc",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "rev",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "person"
+      ]
+    },
     "offline_chats": {
       "columns": [
         {
@@ -5349,6 +5783,10 @@
         },
         {
           "name": "apps_consent",
+          "type": "TEXT"
+        },
+        {
+          "name": "links",
           "type": "TEXT"
         }
       ],
@@ -6316,6 +6754,103 @@
       ],
       "primaryKey": [
         "version"
+      ]
+    },
+    "search_docs": {
+      "columns": [
+        {
+          "name": "space_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "kind",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "doc_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "parent",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "body",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "norm",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "space_id",
+        "kind",
+        "doc_id"
+      ],
+      "indexes": [
+        {
+          "name": "search_docs_parent",
+          "columns": [
+            "space_id",
+            "parent"
+          ]
+        }
+      ]
+    },
+    "session_facts": {
+      "columns": [
+        {
+          "name": "org_key",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "provider",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "session_key",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "project",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "task_keys",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "org_key",
+        "provider",
+        "session_key"
       ]
     },
     "sessions": {

@@ -48,10 +48,14 @@ const (
 	TargetObjectAction = "object-action" // a button at an object (a machine, a chat) that opens the view
 	TargetHubSettings  = "hub-settings"  // a page in the settings of a Hub
 	TargetBranding     = "branding"      // the product's name and accent; no view, see Branding
+	TargetHome         = "home"          // a block on the start page, under the field of a new chat
 )
 
 // SlotTargets are the targets above, in the order the docs name them.
-var SlotTargets = []string{TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding}
+// HeightStage: a home view that fills the start page under the field, as the page of the day it brings.
+const HeightStage = "stage"
+
+var SlotTargets = []string{TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding, TargetHome}
 
 // IsSlot says whether a target is one of the slots.
 func IsSlot(target string) bool { return contains(SlotTargets, target) }
@@ -189,7 +193,9 @@ type View struct {
 	Title   string   `json:"title,omitempty"`
 	Entry   string   `json:"entry"`
 	Targets []string `json:"targets"`
-	Height  string   `json:"height,omitempty"`
+	// Height is "stage" for a view of the start page (home) that takes the whole stage under the field instead of a
+	// block there; nothing else is run.
+	Height string `json:"height,omitempty"`
 	// Label, Icon, Order and Objects are for the slots: the name on the settings entry, the step or the button (Title when
 	// empty), a name from the icon set, the place among its neighbours, and the kinds of object an object-action view is
 	// shown at (machine, chat; every kind when empty).
@@ -452,12 +458,12 @@ func (m *Manifest) Check() Problems {
 
 	targets := map[string]bool{}
 	if len(m.Targets) == 0 {
-		add("targets", "is required: where the app works (chat, pane, app, settings, onboarding, object-action, hub-settings, branding, sinopia.<kind>)")
+		add("targets", "is required: where the app works (chat, pane, app, settings, onboarding, object-action, hub-settings, branding, home, sinopia.<kind>)")
 	}
 	for i, t := range m.Targets {
 		path := fmt.Sprintf("targets[%d]", i)
 		if !validTarget(t) {
-			add(path, "%q is not a target: chat, pane, app, settings, onboarding, object-action, hub-settings, branding, sinopia.<kind> or sinopia.*", t)
+			add(path, "%q is not a target: chat, pane, app, settings, onboarding, object-action, hub-settings, branding, home, sinopia.<kind> or sinopia.*", t)
 			continue
 		}
 		if targets[t] {
@@ -688,7 +694,12 @@ func (m *Manifest) Check() Problems {
 		if m.Trust == TrustDeclarative && (strings.HasPrefix(v.Entry, "https://") || installAt(v.Entry, false)) {
 			add(path+".entry", "a declarative app serves its views from the package")
 		}
-		if v.Height != "" {
+		// The one height the host runs: a view of the start page that takes the whole stage under the field.
+		if v.Height == HeightStage {
+			if !contains(v.Targets, TargetHome) {
+				add(path+".height", "%q is for views of the home target", HeightStage)
+			}
+		} else if v.Height != "" {
 			notYet(path + ".height")
 		}
 		if len(v.Targets) == 0 {
@@ -834,7 +845,7 @@ func validTarget(t string) bool {
 	switch t {
 	case TargetChat, TargetPane, TargetApp:
 		return true
-	case TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding:
+	case TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding, TargetHome:
 		return true
 	}
 	_, scope, ok := aliasOwner(t)
@@ -843,7 +854,7 @@ func validTarget(t string) bool {
 
 func hasViewTarget(targets map[string]bool) bool {
 	return targets[TargetPane] || targets[TargetApp] || targets[TargetSettings] || targets[TargetOnboarding] ||
-		targets[TargetObjectAction] || targets[TargetHubSettings]
+		targets[TargetObjectAction] || targets[TargetHubSettings] || targets[TargetHome]
 }
 
 // hasSinopia says whether a target names Sinopia's screen through one of its aliases.

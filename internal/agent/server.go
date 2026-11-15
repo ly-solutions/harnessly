@@ -48,12 +48,20 @@ func (a *Agent) handler(w http.ResponseWriter, r *http.Request) {
 		a.docRelayRoute(w, r)
 		return
 	}
+	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/env/propose" {
+		a.envProposeRoute(w, r)
+		return
+	}
 	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/notify/call" {
 		a.notifyRoute(w, r)
 		return
 	}
 	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/design/event" {
 		a.designEventRoute(w, r)
+		return
+	}
+	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/projects/event" {
+		a.projectsEventRoute(w, r)
 		return
 	}
 	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/apps/event" {

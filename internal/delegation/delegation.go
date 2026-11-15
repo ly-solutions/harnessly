@@ -52,6 +52,35 @@ type Conversations interface {
 	ConversationAfter(ctx context.Context, id, afterEntryID string) (wire.ConvSnapshot, error)
 	Do(ctx context.Context, device string, cmd wire.Command) wire.CmdResult
 	DeliverPeer(ctx context.Context, convID, clientID, text string, steer bool) wire.CmdResult
+	DeliverPeerAtOnce(ctx context.Context, convID, clientID, text string) wire.CmdResult
+	PeerOutcome(ctx context.Context, convID, clientID string, wait time.Duration) convo.PeerOutcome
+}
+
+// Deliver is when the sender of a message wants the other agent to have it.
+type Deliver string
+
+const (
+	// DeliverDefault: as the person's setting says (wire.DelegationSettings.Delivery): into the running turn at the
+	// agent's next step, unless they chose «after the turn».
+	DeliverDefault Deliver = ""
+	// DeliverNow: at once — into the running turn, and the tool that runs is handed to the background for it.
+	DeliverNow Deliver = "now"
+	// DeliverQueue: when the turn ends, as the head of the queue.
+	DeliverQueue Deliver = "queue"
+	// deliverStep: into the running turn whatever the setting says. Not a value of the tools: the runtime uses it for
+	// a child's question, which nobody answers while it waits for the parent's turn to end.
+	deliverStep Deliver = "step"
+)
+
+// SentWait is how long a send waits to learn where its message went (it is typed a moment after it is queued).
+const SentWait = 6 * time.Second
+
+// Sent is a message that was taken and where it stands.
+type Sent struct {
+	To wire.Conversation
+	// How is what the sender asked for.
+	How Deliver
+	convo.PeerOutcome
 }
 
 // Service is the delegation of one runtime.
@@ -380,39 +409,62 @@ func (s *Service) Read(ctx context.Context, callerID, id, since string, limit in
 	return transcript(rec, snap, limit), nil
 }
 
-// Send puts a message into the chat's queue, as another agent's message (never as the person's words).
-func (s *Service) Send(ctx context.Context, callerID, id, text string) (wire.Conversation, error) {
+// Send gives the chat a message as another agent's message (never as the person's words): into its running turn or
+// into its queue, as how says, and the answer tells which it was. A message that could not go into the turn stays in
+// the queue and goes in when the agent can take it; it is never typed twice.
+func (s *Service) Send(ctx context.Context, callerID, id, text string, how Deliver) (Sent, error) {
 	caller, err := s.caller(callerID)
 	if err != nil {
-		return wire.Conversation{}, err
+		return Sent{}, err
 	}
 	rec, err := s.target(caller, id)
 	if err != nil {
-		return wire.Conversation{}, err
+		return Sent{}, err
 	}
 	text = strings.TrimSpace(text)
 	if text == "" || len([]rune(text)) > PromptMax {
-		return wire.Conversation{}, refuse("bad-request", "text: 1 to %d characters", PromptMax)
+		return Sent{}, refuse("bad-request", "text: 1 to %d characters", PromptMax)
+	}
+	if how != DeliverDefault && how != DeliverNow && how != DeliverQueue {
+		return Sent{}, refuse("bad-request", "deliver: now or queue")
 	}
 	asked := s.now().UnixMilli()
 	// Queued is delivered too: the chat takes it when it can. Calling that a refusal made an agent send the message again.
-	if res := s.deliver(ctx, caller, id, text); res.R == wire.ResultRefused {
-		return wire.Conversation{}, refuse(string(res.Code), "the message was not queued")
+	clientID, res := s.deliver(ctx, caller, id, text, how)
+	if res.R == wire.ResultRefused {
+		return Sent{}, refuse(string(res.Code), "the message was not queued")
 	}
 	if _, ok := s.Book.Get(id); ok {
 		s.Book.Update(id, func(p *Page) { p.asked(asked) })
 	}
-	return rec, nil
+	sent := Sent{To: rec, How: how, PeerOutcome: convo.PeerOutcome{Where: convo.PeerQueued, Reason: wire.QueuedAgentBusy}}
+	if s.steers(how) {
+		sent.PeerOutcome = s.Convs.PeerOutcome(ctx, id, clientID, SentWait)
+	}
+	if now, ok := s.Convs.Record(id); ok {
+		sent.To = now
+	}
+	return sent, nil
 }
 
-// deliver is a message of from's agent in to's queue, in the envelope another agent's message has (internal/peers).
-func (s *Service) deliver(ctx context.Context, from wire.Conversation, to, text string) wire.CmdResult {
+// steers says whether a message sent so goes into the running turn.
+func (s *Service) steers(how Deliver) bool {
+	return how == DeliverNow || how == deliverStep || how == DeliverDefault && s.settings().Steers()
+}
+
+// deliver is a message of from's agent for to, in the envelope another agent's message has (internal/peers); it
+// answers with the message's client id in to's queue.
+func (s *Service) deliver(ctx context.Context, from wire.Conversation, to, text string, how Deliver) (string, wire.CmdResult) {
 	id := peers.NewID()
 	env := peers.Envelope{ID: id, Person: s.Self.Name(), Machine: s.Self.MachineLabel(), Chat: from.Title, Via: "agent", Text: text}
 	if s.Self.Machine != "" {
 		env.Ref = s.Self.Machine + "/" + from.ID
 	}
-	return s.Convs.DeliverPeer(ctx, to, convo.PeerClientPrefix+id, peers.Wrap(env), false)
+	clientID := convo.PeerClientPrefix + id
+	if how == DeliverNow {
+		return clientID, s.Convs.DeliverPeerAtOnce(ctx, to, clientID, peers.Wrap(env))
+	}
+	return clientID, s.Convs.DeliverPeer(ctx, to, clientID, peers.Wrap(env), s.steers(how))
 }
 
 // Outcome is how a wait ended.
@@ -605,7 +657,14 @@ func (s *Service) Observe(rec wire.Conversation) {
 	if p, _ := s.Book.Get(rec.ID); p.Wakes >= MaxWakes {
 		text += fmt.Sprintf("\n\nThis chat has woken you %d times, the most it may: it will not wake you again. Use wait_conversation from now on.", MaxWakes)
 	}
-	if res := s.deliver(ctx, rec, parent.ID, text); res.R == wire.ResultRefused && s.Log != nil {
+	// The news goes into the parent's running turn (unless the person chose «after the turn»): a parent in the middle
+	// of an hour of work reads it at its next step, not when that hour ends. A question goes there whatever was chosen:
+	// the child stands still until it is answered.
+	how := DeliverDefault
+	if r.Marker == MarkQuestion {
+		how = deliverStep
+	}
+	if _, res := s.deliver(ctx, rec, parent.ID, text, how); res.R == wire.ResultRefused && s.Log != nil {
 		s.Log("delegation: the parent was not woken", "parent", parent.ID, "child", rec.ID, "code", string(res.Code))
 	}
 }

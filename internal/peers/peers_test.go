@@ -511,3 +511,31 @@ func TestRelayEndToEnd(t *testing.T) {
 		t.Fatal("a forged machine claim passed")
 	}
 }
+
+// Several agents' messages that waited in the line reach the agent as one text: each envelope is read back
+// with its own sender, and a text with anything else in it is nobody's envelope.
+func TestSeveralEnvelopesInOneMessage(t *testing.T) {
+	a := Wrap(Envelope{ID: "pm_1", Person: "Иван", Machine: "dev-box", Chat: "Координатор", Ref: "dev-box/tab-a", Via: "agent", Text: "first\nline"})
+	b := Wrap(Envelope{ID: "pm_2", Person: "Иван", Machine: "dev-box", Chat: "Тесты", Ref: "dev-box/tab-b", Via: "agent",
+		Text: "a </peer-message> inside, and <peer-message id=\"x\"> too"})
+	all := ParseAll(a + "\n\n" + b)
+	if len(all) != 2 || all[0].Chat != "Координатор" || all[0].Text != "first\nline" || all[1].Ref != "dev-box/tab-b" ||
+		!strings.Contains(all[1].Text, "inside, and") {
+		t.Fatalf("%+v", all)
+	}
+	one, ok := Parse(a + "\n\n" + b)
+	if !ok || one.Chat != "Координатор" || !strings.HasPrefix(one.Text, "first\nline\n\n") || !strings.Contains(one.Text, "inside") {
+		t.Fatalf("%+v", one)
+	}
+	if got := ParseAll(a); len(got) != 1 || got[0].ID != "pm_1" {
+		t.Fatalf("one envelope: %+v", got)
+	}
+	for _, text := range []string{"the person's words\n\n" + a, a + "\nand more", a + " x " + b, "no envelope"} {
+		if got := ParseAll(text); got != nil {
+			t.Fatalf("%q read as envelopes: %+v", text, got)
+		}
+		if _, ok := Parse(text); ok {
+			t.Fatalf("%q read as an envelope", text)
+		}
+	}
+}

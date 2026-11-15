@@ -1,4 +1,7 @@
-// The extra model vendors (Kimi, GLM, Grok) as the Settings page and the first-run step draw them. The runtime lists
+// The extra model vendors as the Settings page draws them. Kimi and GLM are accounts among the person's providers
+// (added by a template, several of one vendor); a card here is of a vendor that keeps a key of its own: Grok, and Kimi
+// or GLM while the machine has not moved their keys to accounts yet (their card is the way to the key until it has).
+// The runtime lists
 // the presets (GET /api/v2/providers): each has an address and models of its own, fixed there; the person picks a
 // preset and gives its key. The key is never read back: a saved one shows as its last digits.
 import type { ProfileInfo, ProfileTestReason, ProfileVendor } from '@/next/protocol/v2';
@@ -27,7 +30,15 @@ export const presetsOfVendor = (vendor: Vendor, presets: readonly IPresetState[]
 
 /** The vendors the runtime has presets of, in the page's order. */
 export const vendorsOf = (presets: readonly IPresetState[]): Vendor[] =>
-  VENDORS.filter((vendor) => presets.some((p) => p.vendor === vendor));
+  VENDORS.filter((vendor) => presets.some((p) => p.vendor === vendor && p.account !== true));
+
+/** The vendors whose keys are accounts of the person's providers on a machine that keeps them so. */
+const ACCOUNT_VENDORS: readonly Vendor[] = ['kimi', 'glm'];
+
+/** A key typed for the vendor that the machine has not moved to an account: it works, and is changed in its card. */
+export const keyNotMoved = (vendor: Vendor, presets: readonly IPresetState[]): boolean =>
+  ACCOUNT_VENDORS.includes(vendor) &&
+  presetsOfVendor(vendor, presets).some((p) => p.account !== true && p.key.configured);
 
 /** The preset a card opens on: the one that has a key, else the vendor's first. */
 export const defaultPreset = (vendor: Vendor, presets: readonly IPresetState[]): PresetId | null => {

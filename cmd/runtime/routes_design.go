@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/ly-solutions/harnessly/internal/agentcfg"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,7 +14,6 @@ import (
 	"github.com/ly-solutions/harnessly/internal/files"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/wire"
-	"github.com/ly-solutions/harnessly/web"
 )
 
 // The design library (slice "design"): the library's listing, its loopback server, board edits, imports and new
@@ -89,14 +87,6 @@ func designConfig(d deps) design.Config {
 	}
 }
 
-// webFiles are the built front-end the runtime serves: RUNTIME_WEB_DIR, else the files compiled in (nil without either).
-func webFiles() fs.FS {
-	if dir := os.Getenv("RUNTIME_WEB_DIR"); dir != "" {
-		return os.DirFS(dir)
-	}
-	return web.Dist()
-}
-
 // designAPI is one library per runtime, so every route shares its caches, server and background.
 func designAPI(d deps) *design.API {
 	designMu.Lock()
@@ -127,6 +117,10 @@ func designAPI(d deps) *design.API {
 		},
 	}
 	designAPIs[d.CLI] = a
+	// The kits' seals are checked once now, behind the start: the first open of the kits' screens after a restart
+	// found them cold and waited for every version's files to be hashed (half a minute and more on a big library).
+	// The home's kit cards are read with them: the first home after a start does not wait for them.
+	design.WarmKitCards(a.L.KitsDir())
 	return a
 }
 
@@ -172,6 +166,7 @@ func designRoutes(d deps) []gate.JSONRoute {
 		designRoute(platformAPI+"/design/library/send", a.Send),
 		designRoute("/api/cli/design/pages", a.CLIPages),
 		designRoute("/api/cli/design/notes", a.CLINotes),
+		designRoute("/api/cli/design/export", a.CLIExport),
 		designRoute(platformAPI+"/design/library/releases", a.Releases),
 		designRoute(platformAPI+"/design/access", a.PostAccess),
 		designRoute(platformAPI+"/design/guest-token", a.GuestToken),

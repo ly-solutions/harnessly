@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ly-solutions/harnessly/internal/blobserve"
 	"html"
 	"io"
 	"mime"
@@ -22,23 +23,13 @@ const TicketParam = "hl_site_ticket"
 // into an opaque one (no allow-same-origin) and cannot touch the server's cookies or API.
 const PathCSP = "sandbox allow-scripts allow-forms allow-popups allow-modals"
 
-var mimeTypes = map[string]string{
-	".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
-	".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json",
-	".map": "application/json", ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml",
-	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
-	".avif": "image/avif", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
-	".otf": "font/otf", ".wasm": "application/wasm", ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8",
-	".csv": "text/csv; charset=utf-8", ".xml": "application/xml", ".pdf": "application/pdf", ".mp4": "video/mp4",
-	".webm": "video/webm", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav", ".zip": "application/zip",
-}
-
+// contentType is a file's type by its name: the table every blob of the stores is served by (blobserve), then the
+// system's.
 func contentType(name string) string {
-	ext := strings.ToLower(path.Ext(name))
-	if t, ok := mimeTypes[ext]; ok {
+	if t := blobserve.TypeByName(name); t != "" {
 		return t
 	}
-	return mime.TypeByExtension(ext)
+	return mime.TypeByExtension(strings.ToLower(path.Ext(name)))
 }
 
 // hashed matches the file names a bundler gives its output (index-3f9a1c2b.js, app.4b2e9a7c1d.css): the name changes when

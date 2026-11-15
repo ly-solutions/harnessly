@@ -35,12 +35,13 @@
   },
   {
     "name": "send_to_conversation",
-    "description": "Give a chat you delegated more work: the message goes into its queue as a message from your agent (never as the person's words) and is typed in when the agent is free.",
+    "description": "Give a chat you delegated more work, an answer or an instruction, as a message from your agent (never as the person's words). An agent that works gets it inside its running turn, at its next step (the person may have set «after the turn» for this machine); a free one starts on it at once. The answer says what happened: delivered into the running turn, delivered, or queued and why. A queued message is not lost and is typed once: do not send it again.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "id": {"type": "string", "description": "The chat's id (tab-…)."},
-        "text": {"type": "string", "description": "The message."}
+        "text": {"type": "string", "description": "The message."},
+        "deliver": {"type": "string", "enum": ["now", "queue"], "description": "now: urgent — it goes into the running turn and the tool the agent runs is handed to the background, so it is read at once; use it for a change of plan the agent must not work past. queue: it waits for the agent's turn to end; use it for work to pick up after the current one. Omit for the machine's default (into the running turn, read at the agent's next step)."}
       },
       "required": ["id", "text"],
       "additionalProperties": false

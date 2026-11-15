@@ -125,6 +125,12 @@ type Record struct {
 	Waits     int     `json:"-"`
 	RecheckAt wire.Ms `json:"recheckAt"`
 	recheck   bool
+	// Agent: another agent wrote the message, not the person. It is never typed into a question the agent asks the
+	// person (that would answer it in the person's name) nor into a compaction, and it is gathered only with other
+	// agents' messages. Soft: steered, it is read at the agent's next step — the running tool is not handed to the
+	// background for it.
+	Agent bool `json:"agent,omitempty"`
+	Soft  bool `json:"soft,omitempty"`
 	// Carried: the message goes with the launch of the agent as its first prompt, never typed.
 	Carried bool `json:"carried"`
 	// First: the launch chose this message as its first prompt. If that launch fails, it stays ahead of later urgent
@@ -191,6 +197,9 @@ type Box struct {
 	// typed once is looked for there before it is typed again, and a retry or a restart asks it rather than taking the
 	// first user entry for the message: the transcript, not a timeout, says whether the agent has it.
 	Transcript FindText
+	// TranscriptRead says the transcript is found and read to its end, so Transcript's «no entry» means the agent
+	// wrote none. The one retype of an unconfirmed message (HookConfirms) waits for it; nil: always read (no follower).
+	TranscriptRead func() bool
 	// HookConfirms: the agent's prompt-submit hook names the prompt it took (ConfirmsByHook). A typed message is then
 	// delivered only by that hook or by its entry in the transcript; a box that no longer shows it proves nothing, and
 	// the box types it again by itself once, and only when neither came within ConfirmWindow. False is the path of an
@@ -220,6 +229,8 @@ func ConfirmsByHook(p wire.Provider) bool { return p == wire.ProviderClaude }
 // FindText looks for the user entry of a message with this text at or after offset (or, read without its offset,
 // written at or after typedAt).
 type FindText func(offset int64, typedAt wire.Ms, text string) (entryID string, ok bool)
+
+func (b *Box) transcriptRead() bool { return b.TranscriptRead == nil || b.TranscriptRead() }
 
 // found looks for r's own entry in the transcript, by its text; find (any user entry past the offset) only when there
 // is no transcript to read the text in.
@@ -318,6 +329,9 @@ type Draft struct {
 	Kind wire.MessageKind
 	// Auto: the runtime wrote it itself to go on (wire.Message.Auto).
 	Auto wire.AutoContinueWhy
+	// Agent: another agent wrote it (Record.Agent). Soft: steered, it waits for the agent's next step (Record.Soft).
+	Agent bool
+	Soft  bool
 }
 
 // Send queues a message. The same client id again gives back the message it queued (its answer, or its events, were
@@ -353,7 +367,7 @@ func (b *Box) Send(d Draft, agent wire.AgentState, now time.Time) (Change, wire.
 	r := &Record{Message: wire.Message{
 		ClientID: d.ClientID, ConversationID: b.conv, Text: d.Text, Attachments: nonNil(d.Attachments), Refs: d.Refs,
 		Mode: d.Mode, Kind: d.Kind, Auto: d.Auto, CreatedAt: ms, State: wire.MessageState{K: wire.MsgQueued, Position: 1, Reason: wire.QueuedBehind}, Rev: 1,
-	}, Images: d.Images, WaitSince: ms}
+	}, Images: d.Images, WaitSince: ms, Agent: d.Agent, Soft: d.Soft}
 	b.recs[d.ClientID] = r
 	if d.Mode == wire.ModeNow || d.Mode == wire.ModeSteer {
 		// «Сразу» while messages wait: they go with it as one message, theirs first, so nothing is held up behind it.
@@ -601,6 +615,18 @@ func (b *Box) gatherable(r *Record) bool {
 		r.Message.Auto == "" && !r.First && !r.Carried && !r.Stalled
 }
 
+// joins says whether r, waiting in the line, goes into the message into. The person's message takes the gatherable
+// ones. A steered message of another agent takes only the other agents' steered messages that still wait (a menu, a
+// compaction held them): several of them reach the agent as one, and the person's queued words are not pulled into the
+// running turn by an agent — the person chose to wait for its end.
+func (b *Box) joins(into, r *Record) bool {
+	if into.Agent && into.Message.Mode == wire.ModeSteer {
+		return r.Agent && r.Message.Mode == wire.ModeSteer && r.Message.State.K == wire.MsgQueued &&
+			r.Message.Kind != wire.KindCommand && !r.First && !r.Carried && !r.Stalled
+	}
+	return b.gatherable(r)
+}
+
 // gather makes into the one message of every gatherable one in the line, in the line's order — into at its own place
 // when it is in the line (promoted), after them all when it is new: their words joined by a blank line, their
 // attachments, pictures and places with them. Those taken in leave the line, cancelled; one that would make the
@@ -616,7 +642,7 @@ func (b *Box) gather(ch *Change, into *Record, now time.Time) {
 		if r == into {
 			in = true
 			order = append(order, r)
-		} else if r != nil && b.gatherable(r) {
+		} else if r != nil && b.joins(into, r) {
 			order = append(order, r)
 		}
 	}
@@ -650,6 +676,8 @@ func (b *Box) gather(ch *Change, into *Record, now time.Time) {
 		}
 		atts = append(atts, m.Attachments...)
 		images = append(images, r.Images...)
+		// One of them was to be read at once: so is the whole.
+		into.Soft = into.Soft && (!r.Agent || r.Soft)
 		for _, ref := range m.Refs {
 			if !slices.ContainsFunc(refs, func(x wire.MessageRef) bool { return x.Kind == ref.Kind && x.ID == ref.ID }) {
 				refs = append(refs, ref)

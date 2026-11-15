@@ -173,3 +173,28 @@ func TestAKitThemeThatLinksOutOfTheKitIsNotUsed(t *testing.T) {
 		t.Fatalf("a folder out of the kit goes with an export: %v", dirs)
 	}
 }
+
+// A role is asked for every design of the library: whether a kit's draft is for viewing only is read from the kit's
+// settings and draft, never from its versions' files (the library of a busy machine waited a minute on their seals).
+func TestTheRoleOfAKitDraftDoesNotReadTheKitsVersions(t *testing.T) {
+	l, _ := kitLibrary(t)
+	if err := l.SetKitPin("admin", &KitPin{ID: "acme-ds", Version: "1.0.0", Mounts: []string{"plain"}}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := l.EditKitFrom("admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetKitReadOnly("acme-ds", "", true); err != nil {
+		t.Fatal(err)
+	}
+	// Versions must be sealed now and this one is not: a role that still checked the versions would not find the kit.
+	writeFile(t, filepath.Join(l.KitsDir(), designkit.SealRequired), "")
+	if len(designkit.List(l.KitsDir())) != 0 {
+		t.Fatal("an unsealed version is listed")
+	}
+	readOnlyDrafts.forget()
+	if r := l.RoleFor(d.Project, ""); r.AtLeast(RoleEdit) || !r.AtLeast(RoleView) {
+		t.Fatalf("the draft's role while viewing only: %v", r)
+	}
+}

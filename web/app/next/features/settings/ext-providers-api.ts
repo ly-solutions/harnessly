@@ -12,9 +12,42 @@ const CHECK_TIMEOUT_MS = 40_000;
 export const EXT_API = { openai: 'openai', anthropic: 'anthropic' } as const;
 export type TExtApi = (typeof EXT_API)[keyof typeof EXT_API];
 
+/** The levels of reasoning a model may take (extproviders.ModelEfforts), in their order. */
+export const EXT_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
+export type TExtEffort = (typeof EXT_EFFORTS)[number];
+
 export interface IExtModel {
   id: string;
   label: string;
+  /** The levels of reasoning it takes; none: the model has no choice. */
+  efforts?: readonly TExtEffort[];
+  /** The one a chat starts on; '' is the model's own. */
+  defaultEffort?: TExtEffort | '';
+  /** The context window in tokens; 0 or absent: unknown. */
+  window?: number;
+  /** The person added it; a refresh keeps it. */
+  manual?: boolean;
+  /** The person named it or gave it its levels; a refresh keeps what they gave. */
+  edited?: boolean;
+}
+
+const isEffort = (v: unknown): v is TExtEffort =>
+  typeof v === 'string' && (EXT_EFFORTS as readonly string[]).includes(v);
+
+/** A variable a provider adds to the launch of an agent on it. A secret one comes without its value. */
+export interface IExtEnvVar {
+  name: string;
+  value: string;
+  secret: boolean;
+  /** The machine has a value for it (always so for a plain one). */
+  set: boolean;
+}
+
+/** A variable as it is sent: a secret one without a value keeps the value the safe has. */
+export interface IExtEnvInput {
+  name: string;
+  secret: boolean;
+  value?: string;
 }
 
 export interface IExtProvider {
@@ -27,6 +60,14 @@ export interface IExtProvider {
   preset: string;
   hasKey: boolean;
   models: readonly IExtModel[];
+  /** What the accounts of one provider share; '' from a runtime that keeps one account of a provider. */
+  group: string;
+  /** The account of its provider that is used where none is named. */
+  isDefault: boolean;
+  /** It comes from the team's environment: shown, checked and chosen, but changed only in the hub. */
+  managed: boolean;
+  /** The variables of a launch of Claude Code on it. */
+  env: readonly IExtEnvVar[];
 }
 
 export interface IExtPreset {
@@ -49,6 +90,10 @@ export interface IExtCheck {
 export interface IExtRegistry {
   providers: readonly IExtProvider[];
   presets: readonly IExtPreset[];
+  /** The runtime keeps several accounts of one provider (an older one keeps one). */
+  accounts: boolean;
+  /** The runtime starts Claude Code chats on an Anthropic-compatible provider, with the variables typed for it. */
+  launch: boolean;
 }
 
 const readApi = (v: unknown): TExtApi => {
@@ -59,7 +104,28 @@ const readApi = (v: unknown): TExtApi => {
 const readModel = (v: unknown): IExtModel => {
   const o = obj(v, 'model');
   const id = str(o.id, 'model.id');
-  return { id, label: opt(o.label) || id };
+  const efforts = Array.isArray(o.efforts) ? o.efforts.filter(isEffort) : [];
+  const defaultEffort = isEffort(o.defaultEffort) ? o.defaultEffort : '';
+  const window = typeof o.window === 'number' && o.window > 0 ? o.window : 0;
+  return {
+    id,
+    label: opt(o.label) || id,
+    efforts,
+    defaultEffort,
+    window,
+    manual: o.manual === true,
+    edited: o.edited === true,
+  };
+};
+
+const readEnvVar = (v: unknown): IExtEnvVar => {
+  const o = obj(v, 'env');
+  return {
+    name: str(o.name, 'env.name'),
+    value: opt(o.value),
+    secret: bool(o.secret, 'env.secret'),
+    set: bool(o.set, 'env.set'),
+  };
 };
 
 const readProvider = (v: unknown): IExtProvider => {
@@ -73,6 +139,11 @@ const readProvider = (v: unknown): IExtProvider => {
     preset: opt(o.preset),
     hasKey: bool(o.hasKey, 'hasKey'),
     models: list(o.models, 'models', readModel),
+    group: opt(o.group),
+    isDefault: o.default === true,
+    managed: o.managed === true,
+    // An older runtime keeps no variables and sends none.
+    env: o.env === undefined || o.env === null ? [] : list(o.env, 'env', readEnvVar),
   };
 };
 
@@ -103,6 +174,8 @@ const of = (id: string) => `/${encodeURIComponent(id)}`;
 export const readExtRegistry = answer((o): IExtRegistry => ({
   providers: list(o.providers, 'providers', readProvider),
   presets: list(o.presets, 'presets', readPreset),
+  accounts: o.accounts === true,
+  launch: o.launch === true,
 }));
 
 export const loadExtProviders = (machine: MachineId) => getPage(url(machine), readExtRegistry, TIMEOUT_MS);
@@ -123,7 +196,12 @@ export const createExtProvider = (machine: MachineId, draft: IExtDraft) =>
 export const patchExtProvider = (
   machine: MachineId,
   id: string,
-  patch: Partial<Pick<IExtDraft, 'name' | 'baseUrl' | 'api' | 'key'>>,
+  patch: Partial<Pick<IExtDraft, 'name' | 'baseUrl' | 'api' | 'key'>> & {
+    default?: true;
+    env?: readonly IExtEnvInput[];
+    /** The whole list of models, with what the person did to them. */
+    models?: readonly IExtModel[];
+  },
 ) => sendJson(url(machine, of(id)), patch, readOne, TIMEOUT_MS);
 
 export const removeExtProvider = (machine: MachineId, id: string) =>

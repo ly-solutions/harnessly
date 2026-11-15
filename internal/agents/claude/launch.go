@@ -431,6 +431,13 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 	if err != nil {
 		return "", "", err
 	}
+	// A profile whose person typed the model (ANTHROPIC_MODEL of their own provider) is launched on that model: Claude
+	// Code takes --model over the variable, so the flag is not given and the variable of the settings file decides.
+	if launch != nil && launch.Profile != "" {
+		if p, ok := c.Profiles.(profileModelPin); ok && p.ClaudeModelPinned(launch.Profile) {
+			flags = slices.DeleteFunc(flags, func(f string) bool { return strings.HasPrefix(f, "--model ") })
+		}
+	}
 	parts = append(parts, flags...)
 	journalLaunch(launch, c.MCPConfigPath, apps.RuntimeMCPConfig, apps.MCPConfig, extraMCP)
 	return strings.Join(parts, " "), strings.TrimSpace(lineEnv + " " + apps.Env + " " + apps.Wrap), nil
@@ -470,6 +477,11 @@ func journalLaunch(launch *agents.Launch, configs ...string) {
 		}
 	}
 	journal.Add(e)
+}
+
+// profileModelPin is a profile launcher that knows the profiles whose model the person set by hand.
+type profileModelPin interface {
+	ClaudeModelPinned(profile string) bool
 }
 
 // profileLineEnv is a profile launcher that adds words to a chat's launch-line environment: sh words, the pane's

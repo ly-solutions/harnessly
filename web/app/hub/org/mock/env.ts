@@ -5,6 +5,7 @@
 // A sandbox run goes step by step: it can fail (no pnpm yet, brew) and pass after the order is mended.
 import type {
   AddCatalogRequest,
+  EnvProposal,
   AddEntryRequest,
   AddGroupRequest,
   AddPresetRequest,
@@ -305,11 +306,33 @@ const logs = new Map<string, string>();
 let serial = 100;
 const timers: number[] = [];
 let machineCurrent = false;
+/** What an agent proposed for the organization and the admin has not decided. */
+let proposals: EnvProposal[] = [];
 let machineFailed = 1;
 
 const iso = (agoMin: number): string => new Date(Date.now() - agoMin * MIN).toISOString();
 
 const seed = () => {
+  proposals = [
+    {
+      id: 'prop-1',
+      change: 'add',
+      name: 'Шлюз команды',
+      hint: 'Модели через общий шлюз',
+      source: {
+        api: 'anthropic',
+        baseUrl: 'https://llm.acme.example/anthropic',
+        key: 'llm-gateway-key',
+        env: ['ANTHROPIC_MODEL=acme-large'],
+      },
+      machine: 'ноутбук Дины',
+      owner: 'Дина Орлова',
+      conv: 'tab-1',
+      convTitle: 'Подключить шлюз моделей',
+      createdAt: Date.now() - 40 * MIN,
+      expiresAt: Date.now() + 7 * 24 * 60 * MIN,
+    },
+  ];
   for (const t of timers) window.clearTimeout(t);
   timers.length = 0;
   items.clear();
@@ -1195,6 +1218,21 @@ export const envMock = (ctx: MockCtx): EnvApi => ({
     machineCurrent = false;
     const groups = mineGroups(mine);
     return later({ presets: minePresets(groups), groups }, 300);
+  },
+
+  envProposals: async () => {
+    guard(ctx.role, 'org', ORG_ID);
+    return later([...proposals], 200);
+  },
+  envProposalApply: async (_org, id) => {
+    guard(ctx.role, 'org', ORG_ID);
+    proposals = proposals.filter((p) => p.id !== id);
+    return later(undefined, 300);
+  },
+  envProposalDecline: async (_org, id) => {
+    guard(ctx.role, 'org', ORG_ID);
+    proposals = proposals.filter((p) => p.id !== id);
+    return later(undefined, 300);
   },
 
   envApply: async (_org, req: ApplyRequest) => {

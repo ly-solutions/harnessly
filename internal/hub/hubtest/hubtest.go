@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -187,6 +188,14 @@ func New(t *testing.T, opts ...Option) *Stack {
 	// cloud edition does not start without one.
 	env := map[string]string{"HUB_PUBLIC_URL": s.URL, "HUB_DATA_DIR": t.TempDir(), "HUB_PASSKEY": "off", "HUB_DIST_DIR": s.DistDir,
 		"HUB_SMTP_URL": "smtp://mail.hubtest.invalid:587", "HUB_RATES_URL": "off"}
+	// HUB_TEST_STORE_S3_BUCKET puts the contents of every stack's store into that bucket of the S3-compatible service the
+	// rigs already know (HUB_TEST_S3_ENDPOINT and its keys), each stack under a prefix of its own: the tests of reading
+	// with the machine off then run against a bucket, as the deployment does, not against a folder.
+	if bucket, endpoint := os.Getenv("HUB_TEST_STORE_S3_BUCKET"), os.Getenv("HUB_TEST_S3_ENDPOINT"); bucket != "" && endpoint != "" {
+		env["HUB_STORE_S3_ENDPOINT"], env["HUB_STORE_S3_REGION"], env["HUB_STORE_S3_BUCKET"] = endpoint, "us-east-1", bucket
+		env["HUB_STORE_S3_PREFIX"] = "t" + strconv.FormatInt(time.Now().UnixNano(), 36)
+		env["HUB_STORE_S3_ACCESS_KEY"], env["HUB_STORE_S3_SECRET_KEY"] = os.Getenv("HUB_TEST_S3_ACCESS_KEY"), os.Getenv("HUB_TEST_S3_SECRET_KEY")
+	}
 	o := api.Options{Mailer: s.Mail, Now: s.Clock.Now, Log: slog.New(slog.NewTextHandler(s.Logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
 	for _, opt := range opts {
 		opt(env, &o)

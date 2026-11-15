@@ -6,7 +6,11 @@ import { refusalOf, type ISettingChangesHandle } from '@/next/bindings/settings-
 import { ChangesGroup } from '@/next/features/settings/changed-mark';
 import { isRefused } from '@/next/features/settings/platform-answer';
 import { loadSmart, pickSmart, type ISmartChoice, type ISmartView } from '@/next/features/settings/smart-api';
-import SmartSection, { smartKey, type TSmartState } from '@/next/features/settings/smart-section';
+import SmartSection, {
+  smartKey,
+  type TAgentModels,
+  type TSmartState,
+} from '@/next/features/settings/smart-section';
 import type { MachineId } from '@/next/protocol/v2';
 import { goTo, ROUTE } from '@/next/routes/routes';
 import { toast } from '@/next/ui/toast';
@@ -17,9 +21,10 @@ interface ISmartPageProps {
   machine: MachineId;
   changes: ISettingChangesHandle;
   now: number;
+  agentModels: TAgentModels;
 }
 
-export const SmartPage = ({ machine, changes, now }: ISmartPageProps) => {
+export const SmartPage = ({ machine, changes, now, agentModels }: ISmartPageProps) => {
   const [box, setBox] = useState<{ machine: MachineId; load: TLoad }>({ machine, load: { k: 'loading' } });
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
@@ -78,6 +83,7 @@ export const SmartPage = ({ machine, changes, now }: ISmartPageProps) => {
         state={state}
         busy={busy}
         marks={changes.marks}
+        agentModels={agentModels}
         onPick={(feature, choice) => void onPick(feature, choice)}
         onOpenProviders={() => goTo({ kind: ROUTE.settings, section: 'accounts' })}
       />

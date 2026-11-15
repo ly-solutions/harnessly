@@ -560,3 +560,35 @@ func TestClassifyAsksTheResolverBeforeTheBrowserOnly(t *testing.T) {
 		t.Errorf("task key went to %q", tab)
 	}
 }
+
+// a file of a design opens the design, on the board the file is, whatever tab the agent named; any other
+// file stays a file.
+func TestFileOfADesignOpensTheDesign(t *testing.T) {
+	withLibrary := targets
+	withLibrary.DesignRef = func(text string) string { return "" }
+	withLibrary.DesignBoard = func(p string) (string, string) {
+		switch p {
+		case "/lib/landing/project/Лимиты — поповер.dc.html":
+			return "landing", "Лимиты — поповер.dc.html"
+		case "/lib/landing":
+			return "landing", ""
+		}
+		return "", ""
+	}
+	cases := []struct {
+		tab, target string
+		want        Command
+	}{
+		{"files", "/lib/landing/project/Лимиты — поповер.dc.html", Command{Kind: "open", Tab: "design", Target: "landing", Place: "Лимиты — поповер.dc.html"}},
+		{"design", "/lib/landing/project/Лимиты — поповер.dc.html", Command{Kind: "open", Tab: "design", Target: "landing", Place: "Лимиты — поповер.dc.html"}},
+		{"files", "/lib/landing", Command{Kind: "open", Tab: "design", Target: "landing"}},
+		{"files", "/work/report.md", Command{Kind: "open", Tab: "files", Target: "/work/report.md"}},
+		{"files", "./page.html", Command{Kind: "open", Tab: "files", Target: "./page.html"}},
+	}
+	for _, c := range cases {
+		got, err := withLibrary.Parse(open(c.tab, c.target))
+		if err != "" || got != c.want {
+			t.Errorf("%s %q → %+v %q, want %+v", c.tab, c.target, got, err, c.want)
+		}
+	}
+}

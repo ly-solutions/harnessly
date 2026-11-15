@@ -1,7 +1,11 @@
 // The Settings pages that are about the agent CLIs on the machine: one CLI's own page, «Models and keys», and
 // «Skills and MCP». They read the CLIs' files through the runtime and write one change at a time; a row shows the old
 // value until the machine has taken the new one.
-import { useState } from 'react';
+import { useMachineLimits } from '@/next/bindings/use-limits';
+import { useEffect, useState } from 'react';
+import { useAccountSpend } from '@/next/bindings/use-account-spend';
+import { loadCodexLogins } from '@/next/features/settings/codex-logins-api';
+import { isRefused } from '@/next/features/settings/platform-answer';
 import {
   useAgentSettings,
   useCatalog,
@@ -11,15 +15,22 @@ import {
 } from '@/next/bindings/settings-data';
 import { switchHubEnv } from '@/next/features/hub-env/api';
 import HubEnvSection from '@/next/features/settings/hub-env-section';
+import { CodexLogins } from '@/next/bindings/settings-codex-logins';
 import { useAgentCredentials } from '@/next/bindings/settings-credentials';
 import { useProviders } from '@/next/bindings/settings-providers';
 import { useSpeechKeys } from '@/next/bindings/settings-speech';
 import type { SpeechCards } from '@/next/features/providers/speech-cards';
 import AccountsSection, {
+  AgentConnection,
+  VendorKeys,
+  gptOf,
   type AccountCard,
+  type ICodexLoginCard,
   type VendorCards,
 } from '@/next/features/settings/accounts-section';
 import AgentSection from '@/next/features/settings/agent-section';
+import { AgentAccount, AgentFileNote } from '@/next/features/settings/agent-account';
+import { OWN_ACCOUNT, spendKey } from '@/next/features/limits/card-model';
 import { EnvGroup, RulesGroup } from '@/next/features/settings/rules-groups';
 import {
   EMPTY_RULES,
@@ -77,6 +88,9 @@ const busyOf = (pending: Pending['pending'], prefix: string): ReadonlySet<string
   );
 
 interface IAgentPageProps {
+  machine: MachineId;
+  /** The machine's name, said at the foot of the page beside the file. */
+  machineName: string;
   provider: Provider;
   handle: IAgentSettingsHandle;
   models: readonly AgentModel[];
@@ -93,7 +107,22 @@ export const AgentPage = (props: IAgentPageProps) => {
   );
 };
 
+const vendorsOf = ({
+  state,
+  onSave,
+  onRemove,
+  onTest,
+  onSwitch,
+  retry,
+}: ReturnType<typeof useProviders>): VendorCards => {
+  if (state.k === 'ready') return { k: 'ready', presets: state.presets, onSave, onRemove, onTest, onSwitch };
+  if (state.k === 'failed') return { k: 'failed', text: state.text, onRetry: retry };
+  return { k: 'loading' };
+};
+
 const AgentLoaded = ({
+  machine,
+  machineName,
   provider,
   handle,
   models,
@@ -101,6 +130,12 @@ const AgentLoaded = ({
   settings,
 }: IAgentPageProps & { settings: AgentSettings }) => {
   const { run, pending: waiting } = pending;
+  // «Подключение»: the agent is signed in on its own page. The vendors' profiles are read for what the page shows of
+  // them: the GPT switch on Codex's, the other vendors' keys on Claude Code's.
+  const credentials = useAgentCredentials(machine, provider, settings, handle.retry);
+  const vendors = vendorsOf(useProviders(machine));
+  const limits = useMachineLimits(machine);
+  const spend = useAccountSpend(machine);
   const key = (name: string) => `${provider}/${name}`;
   const onOption = (option: AgentOptionKey, value: AgentOptionValue) =>
     void run(key(option), t('next.settings.failed'), () =>
@@ -145,20 +180,41 @@ const AgentLoaded = ({
     ) : undefined;
 
   return (
-    <AgentSection
-      settings={settings}
-      models={models}
-      busy={busyOf(waiting, provider)}
-      onOption={onOption}
-      extra={extra}
-    />
+    <>
+      <AgentAccount
+        settings={settings}
+        credentials={credentials}
+        limits={limits?.[provider] ?? null}
+        spend={spend?.get(spendKey(provider, OWN_ACCOUNT)) ?? null}
+      />
+      <AgentConnection
+        settings={settings}
+        busy={waiting.has(key('baseUrl'))}
+        gpt={provider === 'codex' && vendors.k === 'ready' ? gptOf(vendors) : null}
+        onBaseUrl={(_, url) =>
+          run(key('baseUrl'), t('next.settings.failed'), () =>
+            handle.patch({ options: [{ key: 'baseUrl', value: url }] }),
+          )
+        }
+      />
+      {provider === 'codex' && <CodexLogins machine={machine} />}
+      <AgentSection
+        settings={settings}
+        models={models}
+        busy={busyOf(waiting, provider)}
+        onOption={onOption}
+        extra={extra}
+      />
+      {provider === 'claude' && <VendorKeys vendors={vendors} />}
+      <AgentFileNote path={settings.path} machine={machineName} />
+    </>
   );
 };
 
 interface IAccountsPageProps {
   machine: MachineId;
   pages: AgentPages;
-  pending: Pending;
+  onOpen: (provider: Provider) => void;
 }
 
 const cardOf = (provider: Provider, state: Loaded<AgentSettings>): AccountCard => {
@@ -167,55 +223,40 @@ const cardOf = (provider: Provider, state: Loaded<AgentSettings>): AccountCard =
   return { provider, k: 'loading' };
 };
 
-const readyOf = (state: Loaded<AgentSettings>): AgentSettings | null =>
-  state.k === 'ready' ? state.value : null;
-
-const vendorsOf = ({
-  state,
-  onSave,
-  onRemove,
-  onTest,
-  onSwitch,
-  retry,
-}: ReturnType<typeof useProviders>): VendorCards => {
-  if (state.k === 'ready') return { k: 'ready', presets: state.presets, onSave, onRemove, onTest, onSwitch };
-  if (state.k === 'failed') return { k: 'failed', text: state.text, onRetry: retry };
-  return { k: 'loading' };
-};
-
 const speechOf = ({ state, onSave, onRemove, retry }: ReturnType<typeof useSpeechKeys>): SpeechCards => {
   if (state.k === 'ready') return { k: 'ready', keys: state.keys, onSave, onRemove };
   if (state.k === 'failed') return { k: 'failed', text: state.text, onRetry: retry };
   return { k: 'loading' };
 };
 
-export const AccountsPage = ({ machine, pages, pending }: IAccountsPageProps) => {
-  const [open, setOpen] = useState<string | null>('claude');
-  const providers = useProviders(machine);
-  const credentials = {
-    claude: useAgentCredentials(machine, 'claude', readyOf(pages.claude.state), pages.claude.retry),
-    codex: useAgentCredentials(machine, 'codex', readyOf(pages.codex.state), pages.codex.retry),
-  };
-  const vendors = vendorsOf(providers);
+/** The other sign-ins of Codex, read once for the cards: their limits and spend go on Codex's card. */
+const useCodexLoginCards = (machine: MachineId): readonly ICodexLoginCard[] => {
+  const [logins, setLogins] = useState<readonly ICodexLoginCard[]>([]);
+  useEffect(() => {
+    let live = true;
+    void loadCodexLogins(machine).then((answer) => {
+      if (live && 'ok' in answer && !isRefused(answer.value)) setLogins(answer.value.logins);
+    });
+    return () => {
+      live = false;
+    };
+  }, [machine]);
+  return logins;
+};
+
+export const AccountsPage = ({ machine, pages, onOpen }: IAccountsPageProps) => {
+  const limits = useMachineLimits(machine);
+  const spend = useAccountSpend(machine);
+  const codexLogins = useCodexLoginCards(machine);
   const speech = speechOf(useSpeechKeys(machine));
-  const { run, pending: waiting } = pending;
-  const cards = PROVIDER_LIST.map((provider) => cardOf(provider, pages[provider].state));
-  const busy = new Set(PROVIDER_LIST.filter((provider) => waiting.has(`${provider}/baseUrl`)));
   return (
     <AccountsSection
-      cards={cards}
-      credentials={credentials}
-      vendors={vendors}
+      cards={PROVIDER_LIST.map((provider) => cardOf(provider, pages[provider].state))}
+      limits={limits}
+      spend={spend}
+      codexLogins={codexLogins}
       speech={speech}
-      open={open}
-      busy={busy}
-      onToggle={(provider) => setOpen((now) => (now === provider ? null : provider))}
-      onBaseUrl={(provider, url) =>
-        run(`${provider}/baseUrl`, t('next.settings.failed'), () =>
-          pages[provider].patch({ options: [{ key: 'baseUrl', value: url }] }),
-        )
-      }
-      onRetry={(provider) => pages[provider].retry()}
+      onOpen={onOpen}
     />
   );
 };

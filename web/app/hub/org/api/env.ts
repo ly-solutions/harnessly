@@ -2,6 +2,7 @@
 // switches. The wire types are the hub's own (hub-api/env.ts); the screens use them as they are.
 import type {
   AddCatalogRequest,
+  EnvProposal,
   AddGroupRequest,
   AddPresetRequest,
   ApplyRequest,
@@ -68,6 +69,11 @@ export interface EnvApi {
   envPresetRemove(org: string, presetId: string): Promise<void>;
   /** «Применить на машинах»: an update run on the machines a layer reaches, now or at their next connection. */
   envApply(org: string, req: ApplyRequest): Promise<ApplyResponse>;
+  /** What agents proposed for the organization's environment and nobody decided yet (the organization's admins only). */
+  envProposals(org: string): Promise<EnvProposal[]>;
+  /** Makes the proposed change as the admin who asks; it no longer waits. */
+  envProposalApply(org: string, proposalId: string): Promise<void>;
+  envProposalDecline(org: string, proposalId: string): Promise<void>;
 
   /** Changes an item of the catalog (its owner layer's managers, the organization's admins); the change shows in every layer that has it. */
   catalogPatch(org: string, itemId: string, req: PatchCatalogRequest): Promise<CatalogItem>;

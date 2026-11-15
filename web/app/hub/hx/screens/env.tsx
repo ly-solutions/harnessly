@@ -22,6 +22,7 @@ import { LogsBody } from './env/logs';
 import { MachineStrip } from './env/machine';
 import { GROUP_ORDER, KIND } from './env/model';
 import { ScopePicker } from './env/picker';
+import { AgentProposals } from './env/proposals';
 import { TestBody } from './env/sandbox';
 import { blocksOf, chainOf, firstTarget, keyOf, metaOf, same, type Target } from './env/scope';
 import { Sheet } from './env/sheet';
@@ -145,6 +146,7 @@ const Screen = () => {
     setSheetOpen(false);
     timers.current.push(window.setTimeout(() => setSheet(null), 220));
   };
+  const orgAdmin = layers.some((l) => l.layer === 'org' && !l.locked);
   const ctx: SheetCtx = {
     role,
     view,
@@ -160,7 +162,7 @@ const Screen = () => {
     catalog: catalog.items,
     repos,
     secretNames,
-    orgAdmin: layers.some((l) => l.layer === 'org' && !l.locked),
+    orgAdmin,
     actions,
     go: (m) => setSheet(m),
     close: closeSheet,
@@ -255,6 +257,7 @@ const Screen = () => {
           </div>
         </div>
       )}
+      {orgAdmin && <AgentProposals onChanged={data.refresh} say={toast.say} fail={toast.fail} />}
       {member && (
         <MachineStrip machines={data.machines} refresh={data.refresh} say={toast.say} fail={toast.fail} />
       )}

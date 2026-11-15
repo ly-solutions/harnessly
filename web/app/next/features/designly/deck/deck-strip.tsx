@@ -26,6 +26,33 @@ export interface IDeckStripProps {
 /** How many placeholders stand for the first slides being made. */
 export const DECK_PENDING_THUMBS = 3;
 
+/**
+ * How many slide pictures are asked for at once. The platform's address is served over HTTP/1.1 (Teleport's app proxy),
+ * so the browser has six connections to it, and a picture not drawn yet holds one for up to 20 s while the machine draws
+ * it: a strip of 17 asked all together kept the slide itself, the library and every other call waiting.
+ */
+export const STRIP_PICTURES_AT_ONCE = 2;
+
+/**
+ * Which pictures of the strip are asked for now: every one already loaded (or failed), and the first
+ * STRIP_PICTURES_AT_ONCE of the others in the strip's order. A picture the browser keeps answers at once and frees its
+ * turn as fast.
+ */
+export const stripTurns = (
+  srcs: readonly (string | null)[],
+  settled: ReadonlySet<string>,
+  atOnce = STRIP_PICTURES_AT_ONCE,
+): boolean[] => {
+  let asking = 0;
+  return srcs.map((src) => {
+    if (src === null) return false;
+    if (settled.has(src)) return true;
+    if (asking >= atOnce) return false;
+    asking += 1;
+    return true;
+  });
+};
+
 const DeckStrip = ({
   boards,
   index,
@@ -39,6 +66,10 @@ const DeckStrip = ({
 }: IDeckStripProps) => {
   const ref = useRef<HTMLElement>(null);
   const [menu, setMenu] = useState(false);
+  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
+  const settle = (src: string) => setSettled((was) => (was.has(src) ? was : new Set(was).add(src)));
+  const srcs = boards.map((board) => (making(board.path) ? null : thumb(board.path)));
+  const turns = stripTurns(srcs, settled);
   const offered = onLayout && layouts && layouts.length > 0 ? layouts : null;
   // The slide on screen stays in view as the arrows turn the slides.
   useEffect(() => {
@@ -49,8 +80,8 @@ const DeckStrip = ({
   return (
     <nav ref={ref} className="hx-deck__strip" aria-label={t('next.deck.strip.label')}>
       {boards.map((board, i) => {
-        const src = thumb(board.path);
         const busy = making(board.path);
+        const src = turns[i] ? srcs[i] : null;
         return (
           <button
             key={board.path}
@@ -69,11 +100,18 @@ const DeckStrip = ({
                 <img
                   src={src}
                   alt=""
-                  loading="lazy"
+                  // Not lazy: a picture out of view would hold its turn without ever being asked for.
+                  fetchPriority="low"
                   draggable={false}
                   // A picture that could not be drawn leaves the slide's own colour, not a broken image.
-                  onError={(event) => event.currentTarget.setAttribute('data-failed', '1')}
-                  onLoad={(event) => event.currentTarget.removeAttribute('data-failed')}
+                  onError={(event) => {
+                    event.currentTarget.setAttribute('data-failed', '1');
+                    settle(src);
+                  }}
+                  onLoad={(event) => {
+                    event.currentTarget.removeAttribute('data-failed');
+                    settle(src);
+                  }}
                 />
               )}
             </div>

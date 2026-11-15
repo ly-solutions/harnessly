@@ -268,7 +268,7 @@ func (s *Service) ImportGateway(ctx context.Context, data GatewayData, opt Impor
 			if err != nil {
 				return err
 			}
-			t := &txn{ctx: ctx, st: st, q: st.Q(), pg: s.db.Driver() == store.Postgres, m: m, w: w, now: s.now(), seal: s.seal, shared: s.shared, closed: s.closed}
+			t := &txn{ctx: ctx, st: st, q: st.Q(), pg: s.db.Driver() == store.Postgres, m: m, w: w, now: s.now(), seal: s.seal, shared: s.shared, closed: s.closed, opens: s.opens}
 			if err := t.importProject(sp.ID, p, teams, moved[normEmail(p.Owner)], opt.By, &pr); err != nil {
 				return err
 			}
@@ -428,6 +428,9 @@ func (t *txn) importProject(spaceID string, p GwProject, teams map[string]string
 			expires_at, revoked_at, created_by, created_at, opens, last_opened_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 			l.ID, key, p.ID, l.TokenHash, l.Title, l.Rights, version, l.Rev, l.Pages, l.View, l.ExpiresAt, l.RevokedAt, l.CreatedBy, l.CreatedAt, l.Opens, l.LastOpenedAt))
 		if err != nil {
+			return err
+		}
+		if err := t.enterLink(l.ID); err != nil {
 			return err
 		}
 		if !ok {

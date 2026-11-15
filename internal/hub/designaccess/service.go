@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/ly-solutions/harnessly/internal/searchindex"
 	"io"
 	"log/slog"
 	"net/http"
@@ -55,6 +56,9 @@ type Deps struct {
 	LinkKey []byte
 	// Notice mails a person about access to a project (a request, a decision); nil sends nothing.
 	Notice Notice
+	// Bell puts the same news into the bell of the person's hub notices; nil, or a person without the switch
+	// hub-notices, leaves the mail alone.
+	Bell Bell
 	// Shared: the hub's store keeps every space's design library, so a project is the space's, not one
 	// machine's: its access rows are found under whichever machine of the space recorded it first, and a change of
 	// them reaches the snapshot of every machine of the space.
@@ -70,26 +74,49 @@ type Deps struct {
 	// ClosedUnrecorded: a project the hub has no row for gives nobody a role, its files reach no other machine, and the
 	// runtimes are told so; false keeps it open to everyone who may open the machine (HUB_DESIGN_UNRECORDED=closed).
 	ClosedUnrecorded bool
+	// Opens says whether a person may read what a machine holds (machaccess.Checker.Opens). A project's team level
+	// counts only for the people who may open the machine its rows are under: a private machine's projects are open to
+	// their owner, members and granted teams, never to the space by default. nil opens every machine.
+	Opens func(ctx context.Context, userID string, m store.Machine) bool
+	// HomeOn says whether Sinopia's home in one answer (GET <platform>/design/home) is on for a person on a
+	// machine: the rollout switch hub-design-home. Off, the hub answers 404 and the page asks part by part, as before;
+	// on, the request goes on to the machine. nil is off.
+	HomeOn func(ctx context.Context, email, machineID string) bool
+	// OwnerOn says whether the hub owns the design facts (the rollout switch hub-design-owner): off, the
+	// library is what the store's files say, as before. nil is off.
+	OwnerOn func(ctx context.Context, email, machineID string) bool
 }
 
 type Service struct {
-	db          *store.DB
-	reg         *link.Registry
-	log         *slog.Logger
-	now         func() time.Time
-	hubURL      string
-	shareURL    string
-	shareHost   string
-	aliasHosts  map[string]bool
-	platformAPI string
-	transport   func(id string) http.RoundTripper
-	seal        *sealer
-	notice      Notice
-	shared      bool
-	view        Viewer
-	kits        *resaccess.Service
-	teamLevel   string
-	closed      bool
+	db            *store.DB
+	reg           *link.Registry
+	log           *slog.Logger
+	now           func() time.Time
+	hubURL        string
+	shareURL      string
+	shareHost     string
+	aliasHosts    map[string]bool
+	platformAPI   string
+	transport     func(id string) http.RoundTripper
+	seal          *sealer
+	files         *fileKeyer // the keys of the store's board addresses (filekey.go)
+	notice        Notice
+	bell          Bell
+	shared        bool
+	opens         func(ctx context.Context, userID string, m store.Machine) bool
+	homeOn        func(ctx context.Context, email, machineID string) bool
+	ownerOn       func(ctx context.Context, email, machineID string) bool
+	search        searchindex.Index
+	searchOn      func(ctx context.Context, email, machineID string) bool
+	appKinds      AppKinder
+	appsCatalogOn func(ctx context.Context, email, machineID string) bool
+	view          Viewer
+	// cover is the count of the recorded projects the store has (coverage.go).
+	cover     coverage
+	warm      warmState
+	kits      *resaccess.Service
+	teamLevel string
+	closed    bool
 
 	mu       sync.Mutex
 	serving  map[string]bool   // machines whose agent serves design-access
@@ -109,7 +136,7 @@ type dayCount struct {
 func New(d Deps) *Service {
 	s := &Service{
 		db: d.DB, reg: d.Reg, log: d.Log, now: d.Now, hubURL: strings.TrimRight(d.HubURL, "/"), platformAPI: d.PlatformAPI,
-		transport: d.Transport, seal: newSealer(d.LinkKey), notice: d.Notice, shared: d.Shared, view: d.View, kits: d.Kits,
+		transport: d.Transport, seal: newSealer(d.LinkKey), files: newFileKeyer(d.LinkKey), notice: d.Notice, bell: d.Bell, shared: d.Shared, opens: d.Opens, homeOn: d.HomeOn, ownerOn: d.OwnerOn, view: d.View, kits: d.Kits,
 		serving: map[string]bool{}, prefixes: map[string]string{}, timers: map[string]*time.Timer{},
 		events: map[string]*dayCount{}, tokens: map[string]cachedToken{}, budget: newBudget(),
 		teamLevel: roleEdit, closed: d.ClosedUnrecorded,
@@ -302,6 +329,7 @@ func (s *Service) kick(id string) {
 
 // Run sweeps what ran out (grants, invites) and keeps every machine's snapshot fresh.
 func (s *Service) Run(ctx context.Context) {
+	s.warmOnce()
 	sweep := time.NewTicker(sweepEvery)
 	defer sweep.Stop()
 	last := s.now()
@@ -320,6 +348,7 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		s.budget.sweep(s.now())
 		s.dropTokens()
+		s.coverageDue()
 		if s.now().Sub(last) >= refreshEvery {
 			last = s.now()
 			s.mu.Lock()
@@ -341,7 +370,13 @@ func (s *Service) Run(ctx context.Context) {
 
 // apiPath: <prefix>/design/access[/...], <prefix>/design/store/<project>/... (team.go), <prefix>/docs/people or the one access API <prefix>/access/{design/...,me,
 // directory} under a platform prefix /api/<name>.
-var apiPath = regexp.MustCompile(`^(/api/[A-Za-z0-9_-]+)(/design/access(?:/.*)?|/design/store/.+|/design/store-library|/docs/people|/access/(?:design(?:/.*)?|kit(?:/.*)?|me|directory))$`)
+var apiPath = regexp.MustCompile(`^(/api/[A-Za-z0-9_-]+)(/design/access(?:/.*)?|/design/store/.+|/design/store-library(?:/changes)?|/design/store-(?:cover|records-check|work-machine)|/docs/people|/access/(?:design(?:/.*)?|kit(?:/.*)?|me|directory))$`)
+
+// homePath is Sinopia's home in one answer, which the machine serves behind the switch hub-design-home.
+var homePath = regexp.MustCompile(`^/api/[A-Za-z0-9_-]+/design/home$`)
+
+// HomeSwitch is the rollout switch of Sinopia's home in one answer.
+const HomeSwitch = "hub-design-home"
 
 // ServeMachine answers the design access API of a machine the person may open; anything else goes to the machine.
 func (s *Service) ServeMachine(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine) bool {
@@ -350,6 +385,20 @@ func (s *Service) ServeMachine(w http.ResponseWriter, r *http.Request, u store.U
 	}
 	p := r.URL.EscapedPath()
 	p = strings.TrimPrefix(p, "/m/"+m.ID)
+	if r.Method == http.MethodGet && homePath.MatchString(p) {
+		if s.homeOn == nil || !s.homeOn(r.Context(), normEmail(u.Email), m.ID) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"code": "home_off", "error": "Главная Синопии одним ответом выключена"})
+			return true
+		}
+		return false
+	}
+	if r.Method == http.MethodGet && searchPath.MatchString(p) {
+		s.searchRoute(w, r, u, m)
+		return true
+	}
+	if mm := appsKindsPath.FindStringSubmatch(p); mm != nil && r.Method == http.MethodGet {
+		return s.appsCatalogRoute(w, r, u, m, mm[1] != "")
+	}
 	match := apiPath.FindStringSubmatch(p)
 	if match == nil {
 		return false
@@ -363,6 +412,51 @@ func (s *Service) ServeMachine(w http.ResponseWriter, r *http.Request, u store.U
 			return false
 		}
 		s.people(w, r, m)
+		return true
+	}
+	if rest == storeLibraryPath+"/changes" {
+		if r.Method != http.MethodGet {
+			return false
+		}
+		s.libraryChanges(w, r, u, m)
+		return true
+	}
+	if rest == storeCoverPath {
+		if r.Method != http.MethodGet {
+			return false
+		}
+		if err := s.coverRoute(w, r, u, m); err != nil {
+			s.writeError(w, err)
+		}
+		return true
+	}
+	if rest == takeWorkPath {
+		if r.Method != http.MethodPost {
+			return false
+		}
+		body, err := readBody(r)
+		if err == nil {
+			project, _ := body["project"].(string)
+			err = s.TakeWork(r.Context(), u, m, project)
+		}
+		if err != nil {
+			s.writeError(w, err)
+			return true
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "workMachine": m.ID})
+		return true
+	}
+	if rest == recordsCheckPath {
+		if r.Method != http.MethodGet {
+			return false
+		}
+		rep, err := s.RecordsCheck(r.Context(), u, m)
+		if err != nil {
+			s.writeError(w, err)
+			return true
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, rep)
 		return true
 	}
 	if rest == storeLibraryPath {

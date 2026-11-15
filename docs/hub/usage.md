@@ -67,6 +67,9 @@ type UsageSessionFact = {
   attribution: 'exact' | 'guessed';
   metrics?: Record<string, number>;   // the machine's scanner (analytics.md, «KPI»); absent until it ran
   mrKeys?: string[];                  // merge requests the session mentioned, host/project/!iid (host lower case), up to 200; analytics.md, «Merged MRs». The hub ignores unknown fields, so a machine may send it before the hub knows it
+  project?: string;                   // the project (repository or folder name) most of the session's prompts were in; the hub keeps it in session_facts
+  taskKeys?: string[];                // tracker task keys the session mentions, up to 20; the same
+
 };
 
 type UsageWindowFact = {
@@ -119,6 +122,12 @@ machine creator's on the machine's login, `attribution: 'guessed'`; the UI shows
 | Another endpoint behind Claude Code or Codex (Kimi, Z.ai, OpenRouter, …) | `key:sha256:<16 hex>` of that endpoint's key; `baseUrlHost` names the provider |
 
 The hash is computed on the machine. A test puts a fake key in the environment and checks it is nowhere in the outbox.
+
+**The account of a session.** A chat started on a provider the person added, or on another account of one (several
+Kimi, GLM or Anthropic API keys), is that account's and not the CLI's own sign-in's: the runtime notes
+`session → { ref, host }` when it learns the agent's session (`<data>/v2/session-accounts.jsonl`, the same digest of the
+key), and the machine's agent names the session and its calls by that note. A session nobody noted is the CLI's own, as
+before. The runtime's own report (`/stats`) counts such a session under the name the person gave the account.
 
 **Price by provider.** The price of a call is looked up by the provider the call went to — from `baseUrlHost`
 (`api.kimi.com` → Kimi, `api.z.ai` → Z.ai, `openrouter.ai` → OpenRouter, empty or `api.anthropic.com` → Anthropic) — and

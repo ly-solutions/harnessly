@@ -10,6 +10,7 @@ import {
 } from '@/next/protocol/v2';
 import { plural, t } from '@/next/i18n';
 import { stateText } from '@/next/features/apps/model';
+import { designIcon } from '@/next/features/designly/design-icon';
 import type { IMadeCard, IMadeKid } from '@/next/features/pane/made-block';
 
 export interface IMadeImage {
@@ -49,10 +50,13 @@ const ICON_OF: Record<MadeItem['kind'], string> = {
   design: 'palette',
   task: 'square-check-big',
   mr: 'git-pull-request',
+  stand: 'rocket',
+  commit: 'git-commit-horizontal',
+  file: 'file-down',
 };
 
 export const iconOf = (item: MadeItem): string => {
-  if (item.kind === 'design' && item.designKind === 'slides') return 'presentation';
+  if (item.kind === 'design') return designIcon({ kind: item.designKind });
   if (item.kind === 'task' && isEpic(item)) return 'layers';
   return ICON_OF[item.kind];
 };
@@ -66,7 +70,7 @@ export const taskKey = (item: MadeItem): string =>
 
 /** The host of a link, short; empty for a design or text that is not a link. */
 export const hostOf = (item: MadeItem): string => {
-  if (item.kind === 'design' || item.kind === 'task') return '';
+  if (item.kind === 'design' || item.kind === 'task' || item.kind === 'file') return '';
   try {
     return new URL(item.ref).host;
   } catch {
@@ -138,12 +142,16 @@ export const kindWord = (item: MadeItem): string => {
   if (item.kind === 'board') return t('next.made.board');
   if (item.kind === 'task') return isEpic(item) ? t('next.made.epic') : t('next.made.task');
   if (item.kind === 'mr') return t('next.made.mr');
+  if (item.kind === 'stand') return t('next.made.stand');
+  if (item.kind === 'commit') return t('next.made.commit');
+  if (item.kind === 'file') return t('next.made.file');
   return t('next.made.design');
 };
 
 /** Where a page lives, short: its host and, for a page named by a slug, the slug (what tells two unnamed ones apart). */
 export const whereOf = (item: MadeItem): string => {
   if (item.kind === 'task') return taskKey(item);
+  if (item.kind === 'file') return item.ref.slice(0, item.ref.lastIndexOf('/')) || '/';
   const host = hostOf(item);
   const slug = PAGE_PATH.exec(pathOf(item.ref))?.[2];
   return slug ? `${host}/${slug}` : host;

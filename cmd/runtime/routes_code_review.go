@@ -215,6 +215,7 @@ func codeReviewRoutes(d deps) []gate.JSONRoute {
 			return answerJSON(r, http.StatusOK, map[string]any{"url": link}, noStore)
 		},
 	}}
+	routes = append(routes, reviewPrefsRoutes(d, refuse, noStore)...)
 	return append(routes, githubPullsRoute(d, refuse, noStore))
 }
 

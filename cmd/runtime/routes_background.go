@@ -33,6 +33,11 @@ type backgroundFeature struct {
 	// Provider and Model are the choice; both null is «as now».
 	Provider *string `json:"provider"`
 	Model    *string `json:"model"`
+	// Effort is the reasoning effort the model is asked for; "" is the model's own.
+	Effort string `json:"effort,omitempty"`
+	// Agents: the feature may also be given a model of an agent of the machine (provider "claude" or "codex"), or
+	// turned off (provider "off").
+	Agents bool `json:"agents,omitempty"`
 	// Last is how the feature's last call to its provider went; absent when it was not called since the runtime
 	// started.
 	Last *bgmodel.Outcome `json:"last,omitempty"`
@@ -70,11 +75,16 @@ func bgRunnerFor(d deps) *bgmodel.Runner {
 		},
 	}
 	bgRunners[d.DataDir] = r
-	// A removed provider leaves no feature pointing at it.
+	// A removed account leaves no feature pointing at it: what ran on it goes on with the default account of the same
+	// provider when that one has the model, and back to «as now» otherwise.
 	onExtProviderChange(d.DataDir, func(what string, before, _ *extproviders.Provider) {
-		if what == "removed" && before != nil {
-			r.Forget(before.ID)
+		if what != "removed" || before == nil {
+			return
 		}
+		if next, ok := providers.DefaultOf(*before); ok {
+			r.Move(before.ID, next.ID, next.HasModel)
+		}
+		r.Forget(before.ID)
 	})
 	return r
 }
@@ -103,13 +113,20 @@ func (p pushSummary) Summarize(ctx context.Context, answer string) (string, erro
 	return summary, err
 }
 
-func backgroundView(r *bgmodel.Runner) []backgroundFeature {
+func backgroundView(r *bgmodel.Runner, summary noticeSummary) []backgroundFeature {
 	choices, last := r.Store.All(), r.Last()
 	out := []backgroundFeature{}
 	for _, f := range bgmodel.Features() {
 		v := backgroundFeature{Feature: f}
 		if c, ok := choices[f.ID]; ok {
-			v.Provider, v.Model = &c.Provider, &c.Model
+			v.Provider, v.Model, v.Effort = &c.Provider, &c.Model, c.Effort
+		}
+		// The summaries may also be an agent's model, or off (notice_summary.go).
+		if f.ID == bgmodel.FeatureNotifySummary {
+			v.Agents = true
+			if provider, model := summary.Pick(); provider != "" {
+				v.Provider, v.Model = &provider, &model
+			}
 		}
 		if l, ok := last[f.ID]; ok {
 			v.Last = &l
@@ -127,6 +144,8 @@ func backgroundMessage(err error) (int, string, string) {
 		return http.StatusBadRequest, "unknown-provider", locale.Pick("There is no such provider any more. Pick another.", "Такого провайдера уже нет. Выберите другого.")
 	case errors.Is(err, bgmodel.ErrBadModel):
 		return http.StatusBadRequest, "bad-model", locale.Pick("Pick a model.", "Выберите модель.")
+	case errors.Is(err, bgmodel.ErrBadEffort):
+		return http.StatusBadRequest, "bad-effort", locale.Pick("Pick a level of reasoning the model has.", "Выберите уровень рассуждения, который есть у модели.")
 	}
 	return http.StatusInternalServerError, "failed", locale.Pick("It did not work. Try again.", "Не получилось. Попробуйте ещё раз.")
 }
@@ -134,6 +153,7 @@ func backgroundMessage(err error) (int, string, string) {
 func backgroundRoutes(d deps) []gate.Route {
 	runner := bgRunnerFor(d)
 	providers := extProvidersFor(d)
+	summary := noticeSummaryFor(d)
 	base := platformAPI + "/background-tasks"
 	under := func(r *http.Request) (string, bool) {
 		for _, prefix := range []string{base + "/", "/agents" + base + "/"} {
@@ -170,7 +190,7 @@ func backgroundRoutes(d deps) []gate.Route {
 		for _, v := range views {
 			offered = append(offered, backgroundProvider{ID: v.ID, Name: v.Name, API: v.API, Models: v.Models})
 		}
-		secretJSON(w, http.StatusOK, map[string]any{"features": backgroundView(runner), "providers": offered})
+		secretJSON(w, http.StatusOK, map[string]any{"features": backgroundView(runner, summary), "providers": offered})
 	}
 	one := func(w http.ResponseWriter, r *http.Request) {
 		if !pageOK(w, r) {
@@ -184,6 +204,7 @@ func backgroundRoutes(d deps) []gate.Route {
 		var b struct {
 			Provider *string `json:"provider"`
 			Model    string  `json:"model"`
+			Effort   string  `json:"effort"`
 		}
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<10))
 		if err != nil || json.Unmarshal(raw, &b) != nil {
@@ -192,9 +213,29 @@ func backgroundRoutes(d deps) []gate.Route {
 		}
 		var choice *bgmodel.Choice
 		if b.Provider != nil && *b.Provider != "" {
-			choice = &bgmodel.Choice{Provider: *b.Provider, Model: b.Model}
+			choice = &bgmodel.Choice{Provider: *b.Provider, Model: b.Model, Effort: b.Effort}
 		}
-		before, err := runner.Pick(feature, choice)
+		value := func(c *bgmodel.Choice) string {
+			if c == nil {
+				return backgroundAsNow
+			}
+			return c.String()
+		}
+		var was, now string
+		if feature == bgmodel.FeatureNotifySummary {
+			// One setting over the agents' models and the providers' (notice_summary.go).
+			was = summary.Value()
+			provider := ""
+			if b.Provider != nil {
+				provider = *b.Provider
+			}
+			err = summary.Set(provider, b.Model)
+			now = summary.Value()
+		} else {
+			var before *bgmodel.Choice
+			before, err = runner.Pick(feature, choice)
+			was, now = value(before), value(choice)
+		}
 		if err != nil {
 			status, reason, message := backgroundMessage(err)
 			secretJSON(w, status, map[string]string{"error": reason, "message": message})
@@ -202,15 +243,9 @@ func backgroundRoutes(d deps) []gate.Route {
 		}
 		if ctl := settingsCtlOf(d.DataDir); ctl != nil {
 			// The person's change goes into the journal of the settings' changes.
-			value := func(c *bgmodel.Choice) string {
-				if c == nil {
-					return backgroundAsNow
-				}
-				return c.String()
-			}
-			ctl.Record("background."+feature, value(before), value(choice), settingsctl.Actor{Kind: settingsctl.ByPerson}, settingsctl.ViaPage)
+			ctl.Record("background."+feature, was, now, settingsctl.Actor{Kind: settingsctl.ByPerson}, settingsctl.ViaPage)
 		}
-		for _, v := range backgroundView(runner) {
+		for _, v := range backgroundView(runner, summary) {
 			if v.ID == feature {
 				secretJSON(w, http.StatusOK, map[string]any{"feature": v})
 				return

@@ -12,6 +12,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/attach"
 	"github.com/ly-solutions/harnessly/internal/feed"
 	"github.com/ly-solutions/harnessly/internal/msgindex"
+	"github.com/ly-solutions/harnessly/internal/peers"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
@@ -38,7 +39,7 @@ func messageDoc(conv string, e wire.Entry) (msgindex.Doc, bool) {
 	switch e.T {
 	case wire.EntryUser:
 		// The block of places under the person's words (another chat's excerpt among them) is not what they wrote.
-		role, text = msgindex.RoleUser, attach.Strip(e.Text)
+		role, text = msgindex.RoleUser, peers.Plain(attach.Strip(e.Text))
 	case wire.EntrySay:
 		role, text = msgindex.RoleAgent, e.MD
 	default:
@@ -198,7 +199,7 @@ func (r *Runtime) SearchMessages(_ context.Context, query string, limit int) (wi
 		if _, ok := alive[h.Conv]; !ok {
 			continue
 		}
-		hit := wire.MessageHit{ConvID: h.Conv, EntryID: h.Entry, At: h.At, Role: wire.MessageUser, Snippet: h.Snippet}
+		hit := wire.MessageHit{ConvID: h.Conv, EntryID: h.Entry, At: h.At, Role: wire.MessageUser, Snippet: peers.Plain(h.Snippet)}
 		if h.Role == msgindex.RoleAgent {
 			hit.Role = wire.MessageAgent
 		}
@@ -260,6 +261,49 @@ func (r *Runtime) ChatDigest(ctx context.Context, id string, budget int) (wire.C
 	}
 	text, truncated := digestText(rec, msgs, budget)
 	return wire.ChatDigest{ConvID: id, Title: rec.Title, Text: text, Path: path, Truncated: truncated}, nil
+}
+
+// The longest text of a message in a glance, in characters.
+const (
+	glanceUserMax  = 600
+	glanceAgentMax = 1200
+)
+
+// ChatGlance gives the newest message of each side of a conversation, cut short, and how many messages the index holds
+// for it. Unlike ChatDigest it writes nothing.
+func (r *Runtime) ChatGlance(ctx context.Context, id string) (wire.ChatGlance, error) {
+	rec, ok := r.liveIDs()[id]
+	if !ok {
+		return wire.ChatGlance{}, ErrNotFound
+	}
+	if r.d.Index == nil {
+		return wire.ChatGlance{}, fmt.Errorf("convo: no glance on this runtime")
+	}
+	if !r.d.Index.Read(id) && rec.TranscriptPath != "" {
+		r.indexChat(rec)
+	}
+	if err := ctx.Err(); err != nil {
+		return wire.ChatGlance{}, err
+	}
+	msgs := r.d.Index.Messages(id)
+	out := wire.ChatGlance{ConvID: id, Messages: len(msgs)}
+	var user, agent *msgindex.Doc
+	for i := range msgs {
+		m := &msgs[i]
+		switch {
+		case m.Role == msgindex.RoleUser && (user == nil || m.At >= user.At):
+			user = m
+		case m.Role != msgindex.RoleUser && (agent == nil || m.At >= agent.At):
+			agent = m
+		}
+	}
+	if user != nil {
+		out.LastUser = &wire.GlanceMessage{At: user.At, Text: cut(peers.Plain(user.Text), glanceUserMax)}
+	}
+	if agent != nil {
+		out.LastAgent = &wire.GlanceMessage{At: agent.At, Text: cut(agent.Text, glanceAgentMax)}
+	}
+	return out, nil
 }
 
 func writeExport(path string, rec wire.Conversation, msgs []msgindex.Doc) error {

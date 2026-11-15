@@ -1,19 +1,8 @@
-// «Models and keys»: per agent and per vendor, how it is signed in on the machine and where its requests go. Everything
-// is entered here: a subscription is signed in through a login the machine runs (its link and code are on the card), a
-// key goes into a write-only field. The page never holds a saved key, only its last digits; the address of the requests
-// is a setting of the CLI's file and is changed here.
+// The agents' sign-in. «Провайдеры» lists the agents (a card leads to the agent's page); the agent's own page has its
+// account on top (agent-account.tsx) and «Запросы»: where its requests go, a setting of the CLI's file changed here,
+// and on Codex's the switch of its models in Claude Code. The page never holds a saved key, only its last digits.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import LoginPanel from '@/next/features/accounts/login-panel';
-import SeenAccounts from '@/next/features/accounts/seen-accounts';
-import {
-  METHODS_OF,
-  type ICredentialActions,
-  type ISavedKey,
-  type LoginMethod,
-  type LoginVia,
-  type LoginState,
-} from '@/next/features/accounts/model';
-import KeyPanel from '@/next/features/providers/key-panel';
+import { type ICredentialActions, type ISavedKey, type LoginState } from '@/next/features/accounts/model';
 import {
   vendorsOf,
   type IPresetActions,
@@ -23,12 +12,18 @@ import {
 import GptSwitch from '@/next/features/providers/gpt-switch';
 import SpeechKeyCards, { type SpeechCards } from '@/next/features/providers/speech-cards';
 import VendorCard from '@/next/features/providers/vendor-card';
+import { OWN_ACCOUNT, spendKey, type AccountSpendMap } from '@/next/features/limits/card-model';
+import { profileLimitsOf, type MachineLimits } from '@/next/features/limits/model';
+import ProviderCard, {
+  PROVIDER_CARD_STATE,
+  type IProviderCardAccount,
+  type ProviderCardState,
+} from '@/next/features/limits/provider-card';
 import { optionValue } from '@/next/features/settings/options';
-import { FormError, Group, SetButton } from '@/next/features/settings/rows';
+import { FormError, Group, Row, SegControl, SetButton } from '@/next/features/settings/rows';
 import { t } from '@/next/i18n';
 import type { AgentSettings, Provider } from '@/next/protocol/v2';
 import Icon from '@/next/ui/icon';
-import Segmented from '@/next/ui/segmented';
 import LoadFailed, { LOAD_FAILED_SIZE } from '@/next/ui/load-failed';
 import { Skeleton } from '@/next/ui/skeleton';
 
@@ -76,19 +71,29 @@ export type VendorCards =
     } & IPresetActions);
 
 export interface IAccountsSectionProps {
+  /** The agents of the machine: how each is signed in. Signing in is on the agent's own page. */
   cards: readonly AccountCard[];
-  credentials: Readonly<Record<Provider, IAgentCredentials>>;
-  vendors: VendorCards;
-  /** The keys of the cloud recognition models, under the vendors'. */
+  /** The keys of the cloud recognition models. */
   speech: SpeechCards;
-  /** The open card: an agent or a vendor. */
-  open: string | null;
-  /** The providers whose address is being written. */
-  busy: ReadonlySet<Provider>;
-  onToggle: (card: string) => void;
+  /** Opens the agent's page, where it is signed in. */
+  onOpen: (provider: Provider) => void;
+  /** What is left of each account's subscription, as the machine says it; absent or null while it has not. */
+  limits?: MachineLimits | null;
+  /** What each account spent (the machine's report); absent or null while it has not said. */
+  spend?: AccountSpendMap | null;
+  /** The other sign-ins of Codex, whose limits and spend are on Codex's card. */
+  codexLogins?: readonly ICodexLoginCard[];
+}
+
+/** «Запросы» on an agent's own page: where its requests go and, on Codex's, its models in Claude Code. */
+export interface IAgentConnectionProps {
+  settings: AgentSettings;
+  /** The address of the requests is being written. */
+  busy: boolean;
+  /** The `gpt` profile and its switch, for Codex; null on the other pages. */
+  gpt: { preset: IPresetState | undefined; onSwitch: (on: boolean) => Promise<string | null> } | null;
   /** Resolves true when the machine took the new address (null: the requests go direct). */
   onBaseUrl: (provider: Provider, url: string | null) => Promise<boolean>;
-  onRetry: (provider: Provider) => void;
 }
 
 const statusText = (settings: AgentSettings): string => {
@@ -101,74 +106,10 @@ const statusText = (settings: AgentSettings): string => {
   return account.who ? `${how} · ${account.who}` : how;
 };
 
-const SignIn = ({ settings, credentials }: { settings: AgentSettings; credentials: IAgentCredentials }) => {
-  const { account, provider } = settings;
-  const methods = METHODS_OF[provider];
-  const [method, setMethod] = useState<LoginMethod>(
-    account.method === 'key' && methods.some((m) => m === 'key') ? 'key' : 'subscription',
-  );
-  const name = t(`next.settings.accounts.name.${provider}`);
-  const open = (value: LoginMethod) => ({ 'data-open': method === value }) as const;
-  const inert = (value: LoginMethod) => (method !== value ? true : undefined);
-  const panel = (via: LoginVia) => (
-    <LoginPanel
-      via={via}
-      account={account}
-      login={credentials.login}
-      onLogin={credentials.onLogin}
-      onSubmitCode={credentials.onSubmitCode}
-      onCancel={credentials.onCancelLogin}
-      onLogout={credentials.onLogout}
-    />
-  );
-  return (
-    <>
-      <SeenAccounts seen={credentials.seen} />
-      <div className="hx-acct__label">{t('next.settings.accounts.how')}</div>
-      <div className="hx-acct__how">
-        <Segmented
-          label={t('next.settings.accounts.how')}
-          value={method}
-          options={methods.map((value) => ({
-            value,
-            label: t(`next.settings.accounts.method.${value}`),
-          }))}
-          onChange={setMethod}
-        />
-        <div className="hx-reveal" {...open('subscription')}>
-          <div className="hx-reveal__in" inert={inert('subscription')}>
-            {panel('subscription')}
-          </div>
-        </div>
-        {provider === 'claude' && (
-          <div className="hx-reveal" {...open('console')}>
-            <div className="hx-reveal__in" inert={inert('console')}>
-              {panel('console')}
-            </div>
-          </div>
-        )}
-        {provider === 'codex' && (
-          <div className="hx-reveal" {...open('key')}>
-            <div className="hx-reveal__in" inert={inert('key')}>
-              <KeyPanel
-                hint={t('next.settings.accounts.keyHint.codex')}
-                label={t('next.providers.keyAria', { vendor: name })}
-                saved={credentials.key}
-                onSave={credentials.onSaveKey}
-                onRemove={credentials.onLogout}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-};
-
 interface IProxyProps {
   settings: AgentSettings;
   busy: boolean;
-  onBaseUrl: IAccountsSectionProps['onBaseUrl'];
+  onBaseUrl: IAgentConnectionProps['onBaseUrl'];
 }
 
 const Proxy = ({ settings, busy, onBaseUrl }: IProxyProps) => {
@@ -211,22 +152,23 @@ const Proxy = ({ settings, busy, onBaseUrl }: IProxyProps) => {
 
   return (
     <>
-      <div className="hx-acct__label">{t('next.settings.accounts.where')}</div>
-      <div className="hx-proxy" data-on={on}>
-        <Segmented
+      <Row type="seg" label={t('next.settings.accounts.where')} busy={busy}>
+        <SegControl
           label={t('next.settings.accounts.where')}
           value={on ? WHERE.proxy : WHERE.direct}
-          options={[
+          choices={[
             { value: WHERE.direct, label: t('next.settings.accounts.direct') },
             { value: WHERE.proxy, label: t('next.settings.accounts.viaProxy') },
           ]}
-          onChange={(value) => {
+          onPick={(value) => {
             if (value === WHERE.direct) void direct();
             else if (!on) edit();
           }}
         />
-        <div className="hx-proxy__body">
-          <div>
+      </Row>
+      <div className="hx-reveal" data-open={on}>
+        <div className="hx-reveal__in" inert={!on || undefined}>
+          <div className="hx-apage__sub">
             {editing && (
               <>
                 <div className="hx-proxy__edit">
@@ -250,6 +192,14 @@ const Proxy = ({ settings, busy, onBaseUrl }: IProxyProps) => {
                   </SetButton>
                 </div>
                 {error && <FormError>{error}</FormError>}
+                <div className="hx-proxy__env">
+                  <span>{t('next.settings.accounts.gets')}</span>
+                  <code className="hx-trunc">
+                    {BASE_URL_AT[settings.provider]}
+                    {settings.provider === 'claude' ? '=' : ' = '}
+                    {draft || '…'}
+                  </code>
+                </div>
               </>
             )}
             {!editing && url !== null && (
@@ -261,14 +211,6 @@ const Proxy = ({ settings, busy, onBaseUrl }: IProxyProps) => {
                 </button>
               </div>
             )}
-            <div className="hx-proxy__env">
-              <span>{t('next.settings.accounts.gets')}</span>
-              <code className="hx-trunc">
-                {BASE_URL_AT[settings.provider]}
-                {settings.provider === 'claude' ? '=' : ' = '}
-                {url ?? (draft || '…')}
-              </code>
-            </div>
           </div>
         </div>
       </div>
@@ -276,77 +218,31 @@ const Proxy = ({ settings, busy, onBaseUrl }: IProxyProps) => {
   );
 };
 
-const Card = ({
-  card,
-  open,
-  busy,
-  credentials,
-  gpt,
-  onToggle,
-  onBaseUrl,
-  onRetry,
-}: {
-  card: AccountCard;
-  open: boolean;
-  busy: boolean;
-  credentials: IAgentCredentials;
-  /** The Codex card's foot: the `gpt` profile and its switch; null on the other cards. */
-  gpt: { preset: IPresetState | undefined; onSwitch: (on: boolean) => Promise<string | null> } | null;
-} & Pick<IAccountsSectionProps, 'onToggle' | 'onBaseUrl' | 'onRetry'>) => {
-  const settings = card.k === 'ready' ? card.settings : null;
-  const connected = settings?.account.signedIn ?? false;
-  let status = t('next.settings.loading');
-  if (card.k === 'failed') status = card.text;
-  if (settings) status = statusText(settings);
-  return (
-    <div className="hx-acct" data-open={open} data-on={connected}>
-      <button
-        type="button"
-        className="hx-acct__head"
-        aria-expanded={open}
-        onClick={() => onToggle(card.provider)}
-      >
-        <span className="hx-acct__logo">
-          <i className="hx-agent" data-agent={card.provider} aria-hidden="true" />
-        </span>
-        <span className="hx-acct__text">
-          <span className="hx-acct__name">{t(`next.settings.accounts.name.${card.provider}`)}</span>
-          <span className="hx-acct__status">{status}</span>
-        </span>
-        <Icon name="chevron-down" size="sm" className="hx-acct__chev" />
-      </button>
-      <div className="hx-acct__body">
-        <div className="hx-acct__inner" inert={!open || undefined}>
-          {card.k === 'loading' && <Skeleton className="hx-set__sk" />}
-          {card.k === 'failed' && (
-            <LoadFailed
-              size={LOAD_FAILED_SIZE.inline}
-              title={t('next.load.failed')}
-              reason={card.text}
-              onRetry={() => onRetry(card.provider)}
-            />
-          )}
-          {settings && (
-            <>
-              <SignIn settings={settings} credentials={credentials} />
-              <Proxy key={settings.provider} settings={settings} busy={busy} onBaseUrl={onBaseUrl} />
-              {gpt && (
-                <GptSwitch
-                  preset={gpt.preset}
-                  ready={settings.account.signedIn && settings.account.method === 'subscription'}
-                  onSwitch={gpt.onSwitch}
-                />
-              )}
-            </>
-          )}
-        </div>
+export const AgentConnection = ({ settings, busy, gpt, onBaseUrl }: IAgentConnectionProps) => (
+  <Group
+    title={t('next.settings.agentPage.requests')}
+    foot={
+      settings.provider === 'claude'
+        ? t('next.settings.accounts.connectionFootClaude')
+        : t('next.settings.accounts.connectionFoot')
+    }
+  >
+    <Proxy key={settings.provider} settings={settings} busy={busy} onBaseUrl={onBaseUrl} />
+    {gpt && (
+      <div className="hx-apage__row">
+        <GptSwitch
+          quiet
+          preset={gpt.preset}
+          ready={settings.account.signedIn && settings.account.method === 'subscription'}
+          onSwitch={gpt.onSwitch}
+        />
       </div>
-    </div>
-  );
-};
+    )}
+  </Group>
+);
 
-/** The `gpt` profile of the runtime's list and its switch, for the Codex card. */
-const gptOf = (vendors: Extract<VendorCards, { k: 'ready' }>) => {
+/** The `gpt` profile of the runtime's list and its switch, for the Codex page. */
+export const gptOf = (vendors: Extract<VendorCards, { k: 'ready' }>) => {
   const preset = vendors.presets.find((p) => p.vendor === 'gpt');
   return {
     preset,
@@ -374,58 +270,126 @@ const AutoCard = ({ vendors }: { vendors: Extract<VendorCards, { k: 'ready' }> }
   );
 };
 
+/** The vendors whose models run in Claude Code in chats of their own (Kimi, GLM, Grok), on the Claude Code page. */
+export const VendorKeys = ({ vendors }: { vendors: VendorCards }) => {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <Group title={t('next.settings.accounts.vendors')} foot={t('next.settings.accounts.vendorsFoot')}>
+      {vendors.k === 'ready' &&
+        vendorsOf(vendors.presets).map((vendor) => (
+          <VendorCard
+            key={vendor}
+            vendor={vendor}
+            states={vendors.presets}
+            open={open === vendor}
+            onToggle={(card) => setOpen((now) => (now === card ? null : card))}
+            onSave={vendors.onSave}
+            onRemove={vendors.onRemove}
+            onTest={vendors.onTest}
+          />
+        ))}
+      {vendors.k === 'ready' && <AutoCard vendors={vendors} />}
+      {vendors.k === 'loading' && <Skeleton className="hx-set__sk" />}
+      {vendors.k === 'failed' && (
+        <div className="hx-acct hx-acct--solo">
+          <LoadFailed
+            size={LOAD_FAILED_SIZE.inline}
+            title={t('next.providers.loadFailed')}
+            reason={vendors.text}
+            onRetry={vendors.onRetry}
+          />
+        </div>
+      )}
+    </Group>
+  );
+};
+
+const agentStatus = (card: AccountCard): string => {
+  if (card.k === 'failed') return card.text;
+  if (card.k === 'loading') return t('next.settings.loading');
+  return statusText(card.settings);
+};
+
+/** One more sign-in of Codex on the machine: its launch profile carries its limits, its name its spend. */
+export interface ICodexLoginCard {
+  name: string;
+  profile: string;
+  /** Whose plan it is signed in with; '' when it is not signed in. */
+  account: string;
+}
+
+const agentStateOf = (card: AccountCard): ProviderCardState =>
+  card.k === 'ready' && !card.settings.account.signedIn ? PROVIDER_CARD_STATE.off : PROVIDER_CARD_STATE.on;
+
+/** The accounts of an agent's card: the CLI's own sign-in, and for Codex each other sign-in that is signed in. */
+const agentAccountsOf = (
+  card: AccountCard,
+  limits: MachineLimits | null | undefined,
+  spend: AccountSpendMap | null | undefined,
+  logins: readonly ICodexLoginCard[],
+): IProviderCardAccount[] => {
+  const { provider } = card;
+  const own = card.k === 'ready' ? card.settings.account : null;
+  const main: IProviderCardAccount = {
+    key: 'main',
+    name: own?.who ?? t(`next.settings.section.${provider}`),
+    plan: own?.plan ?? limits?.[provider]?.plan ?? null,
+    limits: limits?.[provider] ?? null,
+    spend: spend?.get(spendKey(provider, OWN_ACCOUNT)) ?? null,
+  };
+  if (provider !== 'codex') return [main];
+  const others = logins
+    .filter((login) => login.account !== '')
+    .map((login): IProviderCardAccount => ({
+      key: login.profile,
+      name: login.name,
+      plan: null,
+      limits: limits ? profileLimitsOf(limits, login.profile) : null,
+      spend: spend?.get(spendKey(provider, login.name)) ?? null,
+    }));
+  return own?.signedIn === false && others.length > 0 ? others : [main, ...others];
+};
+
+/** «Провайдеры», its agents: a card each with what is left of its subscription and what it spent; the card
+ *  leads to the agent's page, where it is signed in. */
 const AccountsSection = ({
   cards,
-  credentials,
-  vendors,
   speech,
-  open,
-  busy,
-  onToggle,
-  onBaseUrl,
-  onRetry,
+  limits,
+  spend,
+  codexLogins = [],
+  onOpen,
 }: IAccountsSectionProps) => (
-  <Group foot={t('next.settings.accounts.foot')}>
-    {cards.map((card) => (
-      <Card
-        key={card.provider}
-        card={card}
-        open={open === card.provider}
-        busy={busy.has(card.provider)}
-        credentials={credentials[card.provider]}
-        gpt={card.provider === 'codex' && vendors.k === 'ready' ? gptOf(vendors) : null}
-        onToggle={onToggle}
-        onBaseUrl={onBaseUrl}
-        onRetry={onRetry}
-      />
-    ))}
-    {vendors.k === 'ready' &&
-      vendorsOf(vendors.presets).map((vendor) => (
-        <VendorCard
-          key={vendor}
-          vendor={vendor}
-          states={vendors.presets}
-          open={open === vendor}
-          onToggle={onToggle}
-          onSave={vendors.onSave}
-          onRemove={vendors.onRemove}
-          onTest={vendors.onTest}
-        />
-      ))}
-    {vendors.k === 'ready' && <AutoCard vendors={vendors} />}
-    {vendors.k === 'loading' && <Skeleton className="hx-set__sk" />}
-    {vendors.k === 'failed' && (
-      <div className="hx-acct hx-acct--solo">
-        <LoadFailed
-          size={LOAD_FAILED_SIZE.inline}
-          title={t('next.providers.loadFailed')}
-          reason={vendors.text}
-          onRetry={vendors.onRetry}
-        />
-      </div>
-    )}
-    <SpeechKeyCards cards={speech} />
-  </Group>
+  <>
+    <Group
+      title={t('next.settings.accounts.agents')}
+      foot={t('next.settings.accounts.agentsFoot')}
+      card="hx-pcards"
+    >
+      {cards.map((card) => {
+        const logins = card.provider === 'codex' ? codexLogins : [];
+        // Another sign-in of Codex is signed in: the agent is connected though the CLI's own home is not.
+        const state = logins.some((login) => login.account !== '')
+          ? PROVIDER_CARD_STATE.on
+          : agentStateOf(card);
+        return (
+          <ProviderCard
+            key={card.provider}
+            logo={<i className="hx-agent" data-agent={card.provider} aria-hidden="true" />}
+            name={t(`next.settings.section.${card.provider}`)}
+            sub={agentStatus(card)}
+            state={state}
+            accounts={agentAccountsOf(card, limits, spend, logins)}
+            onOpen={() => onOpen(card.provider)}
+            onAction={() => onOpen(card.provider)}
+          />
+        );
+      })}
+    </Group>
+    <Group title={t('next.settings.accounts.speech')}>
+      <SpeechKeyCards cards={speech} />
+    </Group>
+  </>
 );
 
 export default AccountsSection;

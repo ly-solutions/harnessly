@@ -28,6 +28,8 @@ func TestDesignCreationKeepsBackendProfile(t *testing.T) {
 	for _, tc := range []struct{ profile, model string }{{"glm", "glm-5.3"}, {"kimi", "kimi-k3.1-pro"}, {"", "sonnet"}} {
 		t.Run(tc.profile+tc.model, func(t *testing.T) {
 			data := t.TempDir()
+			// The key is typed for the profile itself here: no account of the person's providers stands behind it.
+			providers.SetBacked(nil)
 			store := &providers.Store{Dir: filepath.Join(data, "providers")}
 			if tc.profile != "" {
 				if _, err := store.Set(tc.profile, strings.Repeat("test-only-", 4)); err != nil {

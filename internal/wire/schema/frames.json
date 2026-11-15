@@ -206,7 +206,8 @@
       "additionalProperties": false,
       "properties": {
         "maxChildren": {"type": "integer", "minimum": 1, "maximum": 10},
-        "anyChat": {"type": "boolean"}
+        "anyChat": {"type": "boolean"},
+        "delivery": {"enum": ["step", "turn"]}
       }
     },
     "LimitWindow": {"enum": ["session", "weekly", "other"]},
@@ -248,7 +249,7 @@
     "TurnStatus": {"enum": ["live", "done", "interrupted", "failed"]},
     "TurnFailureCode": {"enum": ["api-error", "rate-limit", "context-overflow", "agent-exited", "unknown"]},
     "FileOp": {"enum": ["created", "edited", "read"]},
-    "OutputKind": {"enum": ["artifact", "design", "doc", "mr", "stand", "delivery"]},
+    "OutputKind": {"enum": ["artifact", "design", "doc", "mr", "stand", "delivery", "task", "commit"]},
     "OutputOp": {"enum": ["created", "changed"]},
     "EntryKind": {
       "enum": ["user", "say", "think", "tool", "subagent", "answers", "gate", "compaction", "notice", "interrupt", "peer"]
@@ -314,7 +315,7 @@
       ]
     },
     "RetryableRefuseCode": {"enum": ["machine-offline", "rate-limited", "internal", "timeout"]},
-    "HttpKind": {"enum": ["hello", "turns", "entries", "output", "upload", "dirs", "sessions", "terminals", "terminal", "voice", "designlyCreate", "designlyLibrary", "designlySystems", "designlyPin", "designlyDemo", "designlyChat", "files", "file", "tasks", "legacy", "open", "openRefs", "made", "messageStatus", "context", "search", "digest", "machineStats", "machineStop", "apps", "agentSettings", "runtimeSettings", "rewindPlan", "handoffDraft", "profiles", "profileKey", "profileTest", "profileSwitch", "login", "loginOK"]},
+    "HttpKind": {"enum": ["hello", "turns", "entries", "output", "upload", "dirs", "sessions", "terminals", "terminal", "voice", "designlyCreate", "designlyLibrary", "designlySystems", "designlyPin", "designlyDemo", "designlyChat", "files", "file", "tasks", "legacy", "open", "openRefs", "made", "messageStatus", "context", "search", "digest", "glance", "machineStats", "machineStop", "apps", "agentSettings", "runtimeSettings", "rewindPlan", "handoffDraft", "profiles", "profileKey", "profileTest", "profileSwitch", "login", "loginOK"]},
     "Channel": {"type": "string", "pattern": "^(machine|convs|conv:tab-[A-Za-z0-9_-]+)$"},
     "EntryId": {"type": "string", "pattern": "^((c:[0-9a-f-]+|x:[0-9]+)#[0-9]+|live:(c:[0-9a-f-]+|x:[0-9]+)#[0-9]+)$"},
     "TurnId": {"type": "string", "pattern": "^(c:[0-9a-f-]+|x:[0-9]+)#[0-9]+$"},
@@ -407,7 +408,7 @@
       }
     },
     "ProfileId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
-    "ProfileVendor": {"enum": ["kimi", "glm", "grok", "gpt", "auto"]},
+    "ProfileVendor": {"enum": ["kimi", "glm", "grok", "gpt", "auto", "own"]},
     "ProfileTestReason": {"enum": ["no-key", "unauthorized", "forbidden", "rate-limited", "unreachable", "timeout", "rejected"]},
     "ProfileSwitchReason": {"enum": ["no-login", "download", "start"]},
     "ProfileOffer": {
@@ -836,6 +837,26 @@
         "truncated": {"type": "boolean"}
       }
     },
+    "GlanceMessage": {
+      "type": "object",
+      "required": ["at", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "at": {"type": "integer", "minimum": 0},
+        "text": {"type": "string"}
+      }
+    },
+    "ChatGlance": {
+      "type": "object",
+      "required": ["convId", "lastUser", "lastAgent", "messages"],
+      "additionalProperties": false,
+      "properties": {
+        "convId": {"type": "string", "minLength": 1},
+        "lastUser": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/GlanceMessage"}]},
+        "lastAgent": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/GlanceMessage"}]},
+        "messages": {"type": "integer", "minimum": 0}
+      }
+    },
     "DiskPartID": {"enum": ["workspace", "caches", "agents", "other", "free"]},
     "MachineDiskPart": {
       "type": "object",
@@ -972,7 +993,7 @@
       "type": "object",
       "required": [
         "key", "id", "title", "url", "state", "flag", "tone", "project", "person", "target", "createdAt", "updatedAt",
-        "closedAt", "author", "avatar", "assignees", "reviewers", "me", "labels", "priority", "kind", "parent",
+        "closedAt", "author", "avatar", "bot", "assignees", "reviewers", "me", "labels", "priority", "kind", "parent",
         "progress", "children", "mr"
       ],
       "additionalProperties": false,
@@ -992,6 +1013,7 @@
         "closedAt": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
         "author": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
         "avatar": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "bot": {"type": "boolean"},
         "assignees": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "reviewers": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "me": {"type": "array", "items": {"$ref": "#/$defs/AppRole"}},
@@ -1186,7 +1208,7 @@
         "cwd": {"type": "string"}
       }
     },
-    "OpenTab": {"enum": ["task", "gitlab", "artifacts", "browser", "link"]},
+    "OpenTab": {"enum": ["task", "gitlab", "artifacts", "browser", "design", "link"]},
     "OpenChoice": {
       "type": "object",
       "required": ["tab", "target", "label", "detail"],
@@ -1206,7 +1228,8 @@
         "tab": {"$ref": "#/$defs/OpenTab"},
         "target": {"type": "string", "minLength": 1},
         "choices": {"type": "array", "minItems": 2, "maxItems": 8, "items": {"$ref": "#/$defs/OpenChoice"}},
-        "reason": {"enum": ["connect", "embed"]}
+        "reason": {"enum": ["connect", "embed"]},
+        "board": {"type": "string", "minLength": 1}
       }
     },
     "OpenedRefs": {
@@ -1229,7 +1252,7 @@
         }
       }
     },
-    "MadeKind": {"enum": ["doc", "board", "design", "task", "mr"]},
+    "MadeKind": {"enum": ["doc", "board", "design", "task", "mr", "stand", "commit", "file"]},
     "MadeFrom": {
       "type": "object",
       "required": ["kind", "id", "title"],
@@ -1313,7 +1336,7 @@
       "type": "object",
       "required": ["path", "content", "revision", "bytes"],
       "additionalProperties": false,
-      "properties": {"path": {"type": "string", "minLength": 1}, "content": {"type": "string"}, "revision": {"type": "string", "minLength": 1}, "bytes": {"type": "integer", "minimum": 0}}
+      "properties": {"path": {"type": "string", "minLength": 1}, "content": {"type": "string"}, "revision": {"type": "string", "minLength": 1}, "bytes": {"type": "integer", "minimum": 0}, "readOnly": {"const": true}}
     },
     "FileSave": {
       "type": "object",
@@ -1600,6 +1623,16 @@
         "titleSource": {"$ref": "#/$defs/TitleSource"},
         "pinned": {"type": "boolean"},
         "test": {"type": "boolean"},
+        "from": {
+          "type": "object",
+          "required": ["app", "label"],
+          "additionalProperties": false,
+          "properties": {
+            "app": {"type": "string", "minLength": 1, "maxLength": 480},
+            "label": {"type": "string", "minLength": 1, "maxLength": 480},
+            "title": {"type": "string", "maxLength": 480}
+          }
+        },
         "createdAt": {"type": "integer", "minimum": 0},
         "lastActivityAt": {"type": "integer", "minimum": 0},
         "lastPromptAt": {"type": "integer", "minimum": 0},
@@ -4208,6 +4241,15 @@
           "properties": {
             "http": {"const": "digest"},
             "response": {"oneOf": [{"$ref": "#/$defs/ChatDigest"}, {"$ref": "#/$defs/Refusal"}]}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["http", "response"],
+          "additionalProperties": false,
+          "properties": {
+            "http": {"const": "glance"},
+            "response": {"oneOf": [{"$ref": "#/$defs/ChatGlance"}, {"$ref": "#/$defs/Refusal"}]}
           }
         },
         {

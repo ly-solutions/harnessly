@@ -74,6 +74,8 @@ export interface ISmartItem {
   machine?: ISmartMachine;
   /** Work is about to fail: the card may open by itself for a few seconds (features/notifications/auto-open.ts). */
   urgent?: boolean;
+  /** A notice with no chat that leads to a page (an access request): the card opens it. */
+  href?: string;
 }
 
 export interface ISmartMachine {
@@ -89,7 +91,14 @@ export type TSmartDetail =
   | { k: 'question'; text: string; options: readonly string[] }
   | { k: 'permission'; command: string }
   | { k: 'code'; why: string; digits: number }
-  | { k: 'machine'; text: string; level: number; heavy: readonly ISmartHeavy[] }
+  | {
+      k: 'machine';
+      text: string;
+      level: number;
+      heavy: readonly ISmartHeavy[];
+      /** What the person can do about it (a full disk: what can be deleted). */
+      hint?: string;
+    }
   /** A finished turn: the chat's short recap (when the machine made one) and a field to write on to the agent. */
   | { k: 'done'; summary: string | null; canReply: boolean }
   /** What an app or an agent asks through the open slot. */
@@ -528,6 +537,7 @@ const Body = ({
       <>
         <p className="hx-sn__q">{detail.text}</p>
         <progress className="hx-sn__tone" value={detail.level} max={1} aria-label={detail.text} />
+        {detail.hint && <p className="hx-sn__why">{detail.hint}</p>}
         {detail.heavy.length > 0 && (
           <>
             <p className="hx-sn__why">{t('next.smart.machine.heaviest')}</p>
@@ -1126,7 +1136,10 @@ const SmartNotice = ({
                 <div className="hx-sn__head">
                   <Chip item={shown} now={now} large sent={isSent} />
                   <b className="hx-sn__name">{shown.title}</b>
-                  <span className="hx-sn__ago">{ago(now, shown.at)}</span>
+                  {/* HRN-1377: a machine's card says what is wrong now; how long it lasts is not the point. */}
+                  {shown.kind !== SMART_KIND.machine && (
+                    <span className="hx-sn__ago">{ago(now, shown.at)}</span>
+                  )}
                 </div>
                 <Body
                   key={shown.key}
@@ -1155,7 +1168,11 @@ const SmartNotice = ({
                       data-sn-action
                       onClick={() => onOpenMachine(shown)}
                     >
-                      {t('next.smart.machine.open')}
+                      {t(
+                        shown.machine?.metric === 'disk'
+                          ? 'next.smart.machine.freeSpace'
+                          : 'next.smart.machine.open',
+                      )}
                     </button>
                   </div>
                 )}

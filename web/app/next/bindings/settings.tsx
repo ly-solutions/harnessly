@@ -28,8 +28,10 @@ import { ConnectionsPage } from '@/next/bindings/settings-connections';
 import { SafePage } from '@/next/bindings/settings-safe';
 import { useSettingChanges } from '@/next/bindings/settings-changes';
 import { ExtProvidersPage } from '@/next/bindings/settings-ext-providers';
+import ChatGptSettings from '@/next/features/chatgpt/settings-card';
 import { SmartPage } from '@/next/bindings/settings-smart';
 import { smartKey } from '@/next/features/settings/smart-section';
+import SettingsAgent from '@/next/bindings/settings-agent';
 import { TakesPage } from '@/next/bindings/settings-takes';
 import { PluginsPage } from '@/next/bindings/settings-plugins';
 import { ExtensionsPage, useHasExtensions } from '@/next/features/app-views/slot-pages';
@@ -64,10 +66,9 @@ interface ISettingsScreenProps {
   connect?: string;
   /** The name the sidebar shows for the person. */
   name: string;
-  onOpenDrawer: () => void;
 }
 
-const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISettingsScreenProps) => {
+const SettingsScreen = ({ machine, section, connect, name }: ISettingsScreenProps) => {
   const active = section ?? 'general';
   const view = useMachine(machine);
   const now = useClock();
@@ -82,15 +83,8 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
   const machineName = view?.machine.name ?? machine;
   const modelsOf = (provider: (typeof PROVIDER_LIST)[number]) =>
     view?.machine.agents.find((agent) => agent.provider === provider)?.models ?? [];
-  const path = (provider: (typeof PROVIDER_LIST)[number]) => {
-    const state = pages[provider].state;
-    if (state.k === 'ready') return state.value.path;
-    return provider === 'claude' ? '~/.claude/settings.json' : '~/.codex/config.toml';
-  };
-
-  let lead = t(`next.settings.lead.${active}`);
-  if (active === 'claude' || active === 'codex')
-    lead = t(`next.settings.lead.${active}`, { machine: machineName, path: path(active) });
+  // The agent's pages say where their file is and on which machine at their foot (AgentPage), not in the lead.
+  const lead = t(`next.settings.lead.${active}`);
 
   // Where an agent has just changed something: «Умные функции» for a feature's model, «Основные» for the runtime's.
   const lit = Object.keys(changes.marks);
@@ -118,17 +112,32 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
   else if (active === 'accounts')
     body = (
       <>
-        <AccountsPage machine={machine} pages={pages} pending={pending} />
+        <AccountsPage
+          machine={machine}
+          pages={pages}
+          onOpen={(provider) => goTo({ kind: ROUTE.settings, section: provider })}
+        />
+        <ChatGptSettings machine={machine} />
         <ExtProvidersPage machine={machine} />
       </>
     );
-  else if (active === 'smart') body = <SmartPage machine={machine} changes={changes} now={now} />;
+  else if (active === 'smart')
+    body = (
+      <SmartPage
+        machine={machine}
+        changes={changes}
+        now={now}
+        agentModels={{ claude: modelsOf('claude'), codex: modelsOf('codex') }}
+      />
+    );
   else if (active === 'claude' || active === 'codex')
     body = (
       <AgentPage
         key={active}
+        machine={machine}
         provider={active}
         handle={pages[active]}
+        machineName={machineName}
         models={modelsOf(active)}
         pending={pending}
       />
@@ -157,7 +166,7 @@ const SettingsScreen = ({ machine, section, connect, name, onOpenDrawer }: ISett
       changed={changedSections}
       onPick={(next) => goTo({ kind: ROUTE.settings, section: next })}
       onBack={() => goTo({ kind: ROUTE.settings, section: null })}
-      onOpenDrawer={onOpenDrawer}
+      island={<SettingsAgent machine={machine} changes={changes} />}
     >
       {body}
     </SettingsShell>

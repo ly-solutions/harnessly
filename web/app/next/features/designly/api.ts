@@ -1,10 +1,11 @@
 // Designly over v2 (/api/v2/designly/*): the library lists the machine's Claude Design projects with their boards,
 // kinds and the conversations drawing them; a new project opens a conversation of an agent in its folder. The pictures
 // come from the runtime's library route; a board opens in a preview slot of its own origin.
-import { platformPath, runtimePath } from '@/next/core/net/machine';
-import { postJson, runtimeJson } from '@/next/core/net/runtime-json';
+import { gatewayPath, platformPath, runtimePath } from '@/next/core/net/machine';
+import { hubJson, postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { readCheck, readPageLog } from '@/next/features/designly/server-data';
 import { wordedPage } from '@/next/core/net/worded';
+import { homeHas, viaHome } from '@/next/features/designly/home';
 import {
   parseDesignlyRefusal,
   parsePage,
@@ -43,7 +44,9 @@ export const keptLibrary = (m: MachineId): IDesignLibrary | null =>
   kept && kept.machine === m ? kept.library : null;
 
 export const fetchLibrary = async (m: MachineId, signal?: AbortSignal): Promise<IDesignLibrary> => {
-  const library = await page(m, '/designly/library', parsePage.designlyLibrary, { signal });
+  const library = await viaHome(m, 'library', parsePage.designlyLibrary, () =>
+    page(m, '/designly/library', parsePage.designlyLibrary, { signal }),
+  );
   const read = { port: library.port, root: library.root, designs: library.artifacts };
   kept = { machine: m, library: read };
   return read;
@@ -70,10 +73,16 @@ export const storeIsOff = (failure: unknown): boolean => {
 
 /** The hub answers it under any machine of the space, on or off; a runtime with no hub answers 404 (no copy). */
 export const fetchStoreLibrary = async (m: MachineId, signal?: AbortSignal): Promise<IStoreLibrary> => {
-  const raw = await runtimeJson<{ artifacts?: unknown; layout?: Partial<ILibraryLayout> }>(
+  type TRaw = { artifacts?: unknown; layout?: Partial<ILibraryLayout> };
+  // The hub's home gives the copy when the machine was slow; else its own route.
+  const raw = await viaHome(
     m,
-    platformPath('/design/store-library'),
-    { signal },
+    'storeLibrary',
+    (v) => {
+      if (typeof v !== 'object' || v === null) throw new Error('no copy');
+      return v as TRaw;
+    },
+    () => hubJson<TRaw>('/design/store-library', { signal }),
   );
   // The projects are the machine's v2 shape: checked by the same reader, with the port and folder the hub has not.
   const { artifacts } = parsePage.designlyLibrary({ port: 0, root: '-', artifacts: raw.artifacts ?? [] });
@@ -134,6 +143,10 @@ export const readLibrary = (
       );
     };
     const timer = setTimeout(askStore, wait);
+    // The hub answered the home with its copy (the machine is slow or off): it is on screen at once.
+    void homeHas(m, 'storeLibrary').then((has) => {
+      if (has) askStore();
+    });
     read.machine().then(
       (library) => {
         machineDone = true;
@@ -150,20 +163,22 @@ export const readLibrary = (
   });
 
 /** A board of a project read-only from the hub's store, for a machine that is off (designaccess design/store). */
-export const storeBoardHref = (m: MachineId, id: string, board: string) =>
-  runtimePath(
-    platformPath(
-      `/design/store/${encodeURIComponent(id)}/f/${board.split('/').map(encodeURIComponent).join('/')}`,
-    ),
-    m,
+export const storeBoardHref = (id: string, board: string, query = '') =>
+  gatewayPath(
+    `/design/store/${encodeURIComponent(id)}/f/${board.split('/').map(encodeURIComponent).join('/')}${query}`,
   );
+
+/** The board at one revision of the store: a newer revision is another address, so the frame loads again. The hub
+ *  finds the machine by the project, so the address names none. A video's scene asks
+ *  for the scene's runtime (design/public.go GuestSceneParam). */
+export const storeBoardAtHref = (id: string, board: string, rev: number, scene: boolean) =>
+  storeBoardHref(id, board, `?rev=${rev}${scene ? '&scene=1' : ''}`);
 
 /**
  * The hub's stream «the project is at revision N» (designaccess team.go, `events`): the first event is the newest
  * revision; a project the store has nothing of answers 404.
  */
-export const storeEventsHref = (m: MachineId, id: string) =>
-  runtimePath(platformPath(`/design/store/${encodeURIComponent(id)}/events`), m);
+export const storeEventsHref = (id: string) => gatewayPath(`/design/store/${encodeURIComponent(id)}/events`);
 
 /** A new project from the brief: the runtime copies the template and opens a conversation of an agent in it. */
 export const createDesign = (m: MachineId, body: DesignlyCreate) =>
@@ -171,7 +186,9 @@ export const createDesign = (m: MachineId, body: DesignlyCreate) =>
 
 /** The design systems a new project can take. */
 export const fetchSystems = (m: MachineId, signal?: AbortSignal) =>
-  page(m, '/designly/systems', parsePage.designlySystems, { signal });
+  viaHome(m, 'systems', parsePage.designlySystems, () =>
+    page(m, '/designly/systems', parsePage.designlySystems, { signal }),
+  );
 
 /** What the machine has for designs: where new designs' engine comes from, a browser, ffmpeg. */
 export interface IDesignEngine {
@@ -207,7 +224,9 @@ export const fetchDesignChats = async (
   design: string,
   signal?: AbortSignal,
 ): Promise<string[]> => {
-  const library = await page(m, '/designly/library', parsePage.designlyLibrary, { signal });
+  const library = await viaHome(m, 'library', parsePage.designlyLibrary, () =>
+    page(m, '/designly/library', parsePage.designlyLibrary, { signal }),
+  );
   const found = library.artifacts.find((a) => a.id === design);
   return found ? [...found.convs, ...(found.touchedBy ?? [])] : [];
 };
@@ -248,7 +267,12 @@ const layoutPost = <T>(m: MachineId, path: `/${string}`, body: object, signal?: 
 
 /** A runtime without folders answers nothing usable: the library then has none (an addition, not the library). */
 export const fetchLayout = async (m: MachineId, signal?: AbortSignal): Promise<ILibraryLayout> => {
-  const raw = await layoutPost<Partial<ILibraryLayout>>(m, '/design/library/layout', {}, signal);
+  const raw = await viaHome(
+    m,
+    'layout',
+    (v) => v as Partial<ILibraryLayout>,
+    () => layoutPost<Partial<ILibraryLayout>>(m, '/design/library/layout', {}, signal),
+  );
   return { folders: raw.folders ?? [], placed: raw.placed ?? {}, systems: raw.systems ?? {} };
 };
 

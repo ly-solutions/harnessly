@@ -1304,6 +1304,9 @@ func (s RuntimeSettings) Validate() error {
 	if d := s.Delegation; d != nil && (d.MaxChildren < 1 || d.MaxChildren > DelegationMaxChildren) {
 		errs = append(errs, errors.New("delegation.maxChildren: 1 to "+strconv.Itoa(DelegationMaxChildren)))
 	}
+	if d := s.Delegation; d != nil && d.Delivery != "" {
+		errs = append(errs, in("delegation.delivery", d.Delivery, DelegationDeliveries))
+	}
 	if n := s.NoticeSummary; n != nil {
 		errs = append(errs, n.Validate())
 	}

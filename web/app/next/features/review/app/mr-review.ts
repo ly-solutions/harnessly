@@ -56,6 +56,9 @@ export interface IMrReview {
   refs: IMrRefs;
   threads: IMrThread[];
   drafts: IMrDraft[];
+  /** The host keeps the person's «viewed» marks of the files itself (GitHub); `viewed` are the paths marked there. */
+  hostViewed?: boolean;
+  viewed?: string[];
 }
 
 /** The code host a review lives on, as the screen names it. */
@@ -127,6 +130,8 @@ export const MR_ACT = {
   approve: 'approve',
   unapprove: 'unapprove',
   ready: 'ready',
+  viewed: 'viewed',
+  unviewed: 'unviewed',
 } as const;
 export type TMrActOp = (typeof MR_ACT)[keyof typeof MR_ACT];
 
