@@ -38,7 +38,19 @@ type Viewer interface {
 }
 
 // UseView makes guest links read their projects from the store; it is set once, before the hub serves.
-func (s *Service) UseView(v Viewer) { s.view = v }
+// The lock keeps a swap from racing with a store listing ServeHome left in flight.
+func (s *Service) UseView(v Viewer) {
+	s.viewMu.Lock()
+	s.view = v
+	s.viewMu.Unlock()
+}
+
+// currentView reads the store view; use it from goroutines that can outlive the caller.
+func (s *Service) currentView() Viewer {
+	s.viewMu.RLock()
+	defer s.viewMu.RUnlock()
+	return s.view
+}
 
 // storeRev is the revision the store answers a scope at: the pinned one, or the project's newest; false when the
 // store cannot answer it.
@@ -130,7 +142,7 @@ func (s *Service) pinFromStore(ctx context.Context, m store.Machine, req hubprot
 
 // serveToResponse runs a handler and hands its answer over as a response whose body streams while the handler writes.
 // An error before the handler answered is returned as it is.
-func serveToResponse(r *http.Request, serve func(http.ResponseWriter, *http.Request) error) (*http.Response, error) {
+func serveToResponse(r *http.Request, serve func(w http.ResponseWriter, r *http.Request) error) (*http.Response, error) {
 	pr, pw := io.Pipe()
 	w := &pipeWriter{h: http.Header{}, pw: pw, pr: pr, got: make(chan *http.Response, 1)}
 	failed := make(chan error, 1)
