@@ -3,6 +3,8 @@
 // answer back; the model and the depth of thinking are the plan's own.
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Composer from '@/next/features/composer/composer';
+import KindSwitch, { CHAT_KIND, setChatKind } from '@/next/features/composer/kind-switch';
+import { NEW_CHAT, setDraftText } from '@/next/stores/drafts';
 import type { ComposerAttachment, ComposerMode } from '@/next/features/composer/types';
 import CopyButton from '@/next/features/chat/copy-button';
 import {
@@ -32,7 +34,10 @@ import {
 } from '@/next/features/chatgpt/model';
 import { gptChatsChanged, takeDraft } from '@/next/features/chatgpt/store';
 import { t } from '@/next/i18n';
+import { useMe } from '@/next/stores/me';
 import { goTo, HOME } from '@/next/routes/routes';
+import { GPT_VOICE_EVENT, gptConv, onGptVoice, setGptPick } from '@/next/features/chatgpt/voice-bridge';
+import { VoiceSlot } from '@/next/features/voice-live/voice-layer';
 import type { MachineId } from '@/next/protocol/v2';
 import Icon from '@/next/ui/icon';
 import LoadFailed, { LOAD_FAILED_SIZE } from '@/next/ui/load-failed';
@@ -158,12 +163,17 @@ interface IChatScreenProps {
 type TLoad = { k: 'loading' } | { k: 'failed'; reason: string } | { k: 'ready'; chat: IGptChat };
 
 const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenProps) => {
+  const me = useMe();
+  const myName = me.k === 'ready' ? me.me.name : null;
   const [load, setLoad] = useState<TLoad>({ k: 'loading' });
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [models, setModels] = useState<readonly IGptModel[]>([]);
   // The person's pick of model and depth in this screen; null: the chat's own, else the plan's first.
   const [pick, setPick] = useState<{ model: string; effort: string } | null>(null);
-  const [text, setText] = useState(() => takeDraft(id));
+  const [carried] = useState(() => takeDraft(id));
+  const [text, setText] = useState(carried.text);
+  // Words carried with «send» go once the chat has read: the person asked them on the start page.
+  const sendCarried = useRef(carried.send);
   const [picked, setPicked] = useState<readonly IPicked[]>([]);
   const [running, setRunning] = useState(false);
   const [live, setLive] = useState('');
@@ -205,6 +215,16 @@ const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenPr
     });
   }, [machine, id, read]);
 
+  // The voice lives in the app's layer (voice-live-gpt.tsx): what it sends is followed here, what it keeps is read.
+  useEffect(
+    () =>
+      onGptVoice(id, (event) => {
+        void read();
+        if (event === GPT_VOICE_EVENT.sent) follow();
+      }),
+    [id, follow, read],
+  );
+
   useEffect(() => {
     let live = true;
     void read().then((answer) => {
@@ -238,6 +258,11 @@ const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenPr
   let effort = chosen?.defaultEffort ?? '';
   if (pick && pick.model === chosen?.slug) effort = pick.effort;
   else if (!pick && kept?.effort && kept.model === chosen?.slug) effort = kept.effort;
+  // The voice writes with what is picked here.
+  const pickedModel = chosen?.slug ?? '';
+  useEffect(() => {
+    setGptPick(id, pickedModel ? { model: pickedModel, effort } : null);
+  }, [id, pickedModel, effort]);
 
   const messages = load.k === 'ready' ? (load.chat.messages ?? []) : [];
   // The feed follows the answer as it grows, unless the person scrolled up.
@@ -286,13 +311,14 @@ const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenPr
   const submit = () => {
     const words = text.trim();
     const uploads = picked.filter((p) => p.status === 'ready' && p.upload).map((p) => p.upload as IGptUpload);
-    if (running || !chosen || (!words && uploads.length === 0)) return;
+    // Before the plan's models come, the machine answers with the plan's first one.
+    if (running || (!words && uploads.length === 0)) return;
     if (picked.some((p) => p.status === 'uploading')) return;
     setFailure((f) => ({ ...f, open: false }));
     const was = { text, picked };
     setText('');
     setPicked([]);
-    sendMessage(machine, id, { text: words, model: chosen.slug, effort, files: uploads }).then(
+    sendMessage(machine, id, { text: words, model: chosen?.slug ?? '', effort, files: uploads }).then(
       (answer) => {
         setLoad((l) =>
           l.k === 'ready'
@@ -310,6 +336,14 @@ const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenPr
       },
     );
   };
+
+  useEffect(() => {
+    if (!sendCarried.current || load.k !== 'ready') return;
+    sendCarried.current = false;
+    submit();
+    // submit reads the field of this render; it runs once, when the chat has read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load.k]);
 
   let mode: ComposerMode = 'idle';
   if (running) mode = 'working';
@@ -364,9 +398,12 @@ const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenPr
             {load.k === 'ready' && (
               <div className="hx-thread">
                 {messages.length === 0 && !running && (
-                  <div className="hx-gpt__empty">
-                    <b>{t('next.chatgpt.emptyTitle')}</b>
-                    <span>{t('next.chatgpt.emptyNote')}</span>
+                  // The same empty screen as a new chat with any agent (the start page's greeting, «Главная»).
+                  <div className="hx-hello hx-gpt__hello">
+                    <div className="hx-hello__title">
+                      {myName ? t('next.greeting.title', { name: myName }) : t('next.greeting.titleNoName')}
+                    </div>
+                    <div className="hx-hello__sub">{t('next.chatgpt.emptyNote')}</div>
                   </div>
                 )}
                 {messages.map((m) =>
@@ -381,7 +418,17 @@ const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenPr
             )}
           </div>
         </div>
-        <div className="hx-dock" data-screen>
+        <div className="hx-dock" data-screen data-kind="talk">
+          {/* Back to a task: a new agent chat on the start page, with the words not sent yet. */}
+          <KindSwitch
+            value={CHAT_KIND.talk}
+            onChange={(kind) => {
+              if (kind !== CHAT_KIND.task) return;
+              setChatKind(CHAT_KIND.task);
+              if (text.trim()) setDraftText(NEW_CHAT, text);
+              goTo(HOME);
+            }}
+          />
           {signedIn === false && (
             <div className="hx-gpt__signin">
               <span>{t('next.chatgpt.signInFirst')}</span>
@@ -404,15 +451,18 @@ const ChatScreen = ({ machine, id, onOpenSettings, onOpenDrawer }: IChatScreenPr
             onStop={() => stopAnswer(machine, id)}
             picker={null}
             tools={
-              <ModelChip
-                models={models}
-                model={chosen}
-                effort={effort}
-                onModel={(m) => setPick({ model: m.slug, effort: m.defaultEffort ?? '' })}
-                onEffort={(e) => {
-                  if (chosen) setPick({ model: chosen.slug, effort: e });
-                }}
-              />
+              <>
+                <ModelChip
+                  models={models}
+                  model={chosen}
+                  effort={effort}
+                  onModel={(m) => setPick({ model: m.slug, effort: m.defaultEffort ?? '' })}
+                  onEffort={(e) => {
+                    if (chosen) setPick({ model: chosen.slug, effort: e });
+                  }}
+                />
+                <VoiceSlot machine={machine} conv={gptConv(id)} />
+              </>
             }
             attachments={[...picked]}
             onFiles={onFiles}

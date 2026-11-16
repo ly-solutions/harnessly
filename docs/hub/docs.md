@@ -48,7 +48,9 @@ without an address has no such app; with one, every organization has the app wit
 
 ### Rights for the documents service
 
-The documents service knows the person from the platform's token (`sub`), and the hub keeps who has access. It asks:
+The documents service knows the person from the platform's token (`sub`), and the hub keeps who has access. The
+boards service asks the same with its own secret (`HUB_BOARD_EVENTS_SECRET`) and, for a person signed in on the boards
+site, `email` in place of `sub`: only an address a person of the hub has proved names them. It asks:
 
 ```
 POST /api/platform/docs/_rights
@@ -58,10 +60,26 @@ Authorization: Bearer <HUB_ARTIFACTS_ACCESS_TOKEN>
 → {"rights": {"a": "edit", "b": "none"}}
 ```
 
-Up to 200 slugs. Each right is `none`, `view`, `comment` or `edit`, by the same rules as the person's own page (the
+The answer also names in `known` the slugs the hub keeps a record of: the boards service applies the hub's word to those
+and keeps its own rules for the rest. Up to 200 slugs. Each right is `none`, `view`, `comment` or `edit`, by the same rules as the person's own page (the
 owner and the administrators read as `edit`). A document the hub has no record of, one out of the person's reach and
 every document of a person the hub does not know are `none`. A missing or wrong token is 401. The service may keep an
 answer for up to 10 seconds.
+
+A link without sign-in to a board opens on the boards service, `<HUB_BOARDS_PUBLIC_URL>/b/<slug>?g=<token>`, while the
+hub has `HUB_BOARD_EVENTS_SECRET` and the public address; the service asks what the link allows:
+
+```
+POST /api/platform/docs/_guest
+Authorization: Bearer <HUB_BOARD_EVENTS_SECRET or HUB_ARTIFACTS_ACCESS_TOKEN>
+
+{"token": "<the link's token>", "slug": "<board>", "open": true}
+→ {"slug", "rights": "view" | "comment", "forWhom", "linkId", "expiresAt"}
+```
+
+A token nobody made, one for another slug, one switched off or run out and a board in the trash are `404`. `open: true`
+counts an opening of the link. A guest with `comment` comments on the board under the name the link was made for; with
+`view` they only read. A document's link stays the hub's page, `/d/<token>`.
 
 `GET /api/platform/docs/_status` tells what is set up and why not, without signing anything.
 
@@ -133,6 +151,45 @@ administrators, and the hub's log names such documents once at the start, so tha
 Agent visibility maps to levels: `private` none, `team` or `view` view, `comment`, `edit`, and
 `public` view with a public link.
 
+## Make, copy, rename and the trash
+
+The hub owns the records of the installation's documents and boards, so documents and boards are made, copied, renamed
+and put into the trash through it (`internal/hub/docs/manage.go`); the hub then asks the documents or boards
+service with its own token. The rights are the boards' ones:
+
+| Route | Body | Who | Answer |
+| --- | --- | --- | --- |
+| `POST <p>` | `{kind?: "artifact" \| "board", title?, markdown? \| html? \| template?, spaceId?}` | anybody in the space | `201 {doc}` |
+| `POST <p>/{slug}/duplicate` | `{title?, spaceId?}` (may be empty) | who may read it | `201 {doc}` |
+| `PATCH <p>/{slug}` | `{title}` (2 to 200 characters) | who may edit it | `200 {doc}` |
+| `DELETE <p>/{slug}` | none | the owner or an administrator | `200 {slug, kind, trashedAt, trashedBy}` |
+| `POST <p>/{slug}/restore` | none | the owner or an administrator | `200 {doc}` |
+| `GET <p>/_trash` | none | the owner (an administrator sees all) | `200 {docs: [{slug, kind, title, owner, trashedAt, trashedBy}]}` |
+
+`<p>` is `<platform api>/docs` (`/api/platform/docs`). `{doc}` is the record the list shows (`slug, kind, title, url,
+owner, openThreads, lastActivityAt, …`). A new document or board belongs to whoever made it, sits in `spaceId` or in the
+person's only space (several spaces and no `spaceId`: `400 space_required` naming them) and the space edits it. A
+document is made from `html`, from `markdown`, from a `template` (`meeting`, `plan`, `review`, the app's three) or, with
+none, as an empty page with its title; a board from the boards service's `template`. A copy takes the current version
+of a document or the scene of a board as it is now and gets the title `<title> (копия)` unless one is given. A thing in
+the trash opens for nobody, a guest link included, and leaves every list. The services close it themselves too: a board
+through `POST /b/api/boards/{slug}/trash|restore`, a document through `POST <documents>/api/v1/artifacts/{slug}/trash
+{trashed, by}` with the hub's editor token, after which `/a/{slug}`, `/embed/{slug}` and the API answer `404` to all
+but that token. The documents service may not answer: the hub hides the document anyway, answers
+`serviceConfirmed: false`, writes the failure to its log and keeps `doc_meta.trash_sync` set; the leader sends the current
+state again at start and every minute (`trashsync.go`) until the service confirms it. Nothing is deleted for good: the
+trash keeps everything until it is taken out.
+
+The agent of the owner's machine reaches the same trash through its sharing route (`POST /docs/acl` of the machine,
+`route` ending in `/trash`, body `{trashed: true|false}`): the machine's owner must own the document.
+
+The documents and boards apps call the same routes on a person's behalf: `Authorization: Bearer <HUB_ARTIFACTS_ACCESS_TOKEN
+or HUB_BOARD_EVENTS_SECRET>` and `X-Harnessly-Token: <the person's platform token>` — the `harnessly-app+jwt` the hub
+signed for that service (audience: the documents' or boards' origin), alive. The secret alone names nobody; a token for
+another audience, an expired one or one of a person switched off is `401`; a service acts with the person's own rights,
+never as an administrator. Putting a document into the trash revokes its public link; taking it out does not bring the
+link back.
+
 ## Comments reach the conversation
 
 A document published from a conversation is bound to it: after the publish the agent sends `docs.bound` with the tab,
@@ -175,12 +232,56 @@ address of the webhook move to the hub first and the boards move over one person
 The machine must serve documents to send the binding: always on a machine's own hub link, on an observer link only with
 `AGENT_HUB_DOCS=on`.
 
+## Mentions on a board
+
+A comment on a board that calls a person by `@Name` rings that person's bell in harnessly, whoever drew the
+board and whatever the owner's `hub-board-events` switch. The boards service names the people a message calls in
+`message.mentions`: `{name, agent: true}` for `@harnessly`, `{name, id}` for a person of the board. It keeps an id only
+for the people who were on the board signed in (opened it, edited it, commented), so a mention never shows a board to
+someone who has not had it; a name typed by hand that is not one of them stays text. The id is:
+
+- `hub:<user id>` for a person signed in from the harnessly app view (`board_signin`): their id in this hub;
+- `mail:<hex>` for a person signed in any other way: HMAC-SHA256 of the lower-case e-mail keyed with the webhook secret
+  (`HUB_BOARD_EVENTS_SECRET`, the same as the boards service's). The hub finds its own user with that e-mail; nobody
+  without the secret can read the id, and no e-mail travels for a mention.
+
+The hub tells each person once per message (`mention:<slug>:<message id>`), never the author (`message.authorId`), not
+the agent, not a person the hub does not know or has switched off, at most ten a message, and only for
+`thread.created` and `thread.replied`. The notice is of kind `access` with an `@` icon, no chat: «Упоминание на доске
+«<title>»», the author and the comment's first 140 characters, and a link inside the page,
+`/apps/harnessly.boards?o=<slug>&th=<thread>`, which opens the board in the boards app with the thread's card open. It
+is put only for a person with the switch `hub-notices` on for every machine (`*`); without it there is nothing to show
+it in yet. An older boards service sent plain names in `mentions`: they name nobody.
+
+## @harnessly on a board
+
+A person who calls `@harnessly` in a comment (`mentions` has `{agent: true}`, or an older service left `@harnessly` in
+the words) gets the agent with the board closed (`internal/hub/docs/board_call.go`):
+
+- a board no conversation drew (made in the boards app) is bound to the caller's machine seen last, neither revoked nor
+  switched off; the caller is `message.authorId` (`hub:`/`mail:` as for mentions) or `authorEmail` of a hub user. A
+  caller the hub does not know, or one without a machine, binds nothing, and the event goes as before;
+- the binding names no chat yet (`tab_id` and `session_name` `board-call`): the machine starts a conversation for the
+  first comment and the hub keeps the id it answers (`tabId`), so the next comments go to the same chat. A board bound
+  this way is taken by the hub without the `hub-board-events` switch, replies without `@harnessly` too;
+- the comment goes as any comment on a bound board: typed into the chat, queued while it works, tried every minute
+  while the machine is away, given up after a day. While it waits the caller's bell says so once
+  (`wait:<comment id>`, «Ждёт машину · «<title>»»);
+- the agent answers in the thread through the boards command or the app's tools, as the person; its answer rings the
+  bell of the person the board is bound to (`agent:<slug>:<message id>`, «Агент ответил на доске «<title>»»), with the
+  link that opens the thread.
+
+The documents service sends its comments to the same endpoint in the same shape with `"kind": "doc"`
+(`ARTIFACTS_HUB_EVENTS_URL`, the same secret): the hub keeps a document's threads and binding under the key
+`doc/<slug>`, tells the agent to answer with the documents' tools (`doc_reply`, `quick_apply`, `doc_edit`), and links the
+bell to `/apps/harnessly.docs?o=<slug>&th=<thread>`. A document of the hub's own (`/docs/<slug>`) called with
+`@harnessly` is bound the same way, to its machine or the caller's.
+
 ## What it does not do yet
 
 - Editing a block in place (`/source/block`) answers 501 `not_supported`; save the whole source instead.
 - A comment written on a board in the hub's own page is not sent to the boards service; the boards service is where boards are commented.
 - Documents are shared by the whole installation, not separated by space.
-- A public link to a board is not supported.
 - Several replicas of the bundled services: they keep files on one volume. Use S3 storage for artifacts and run it
   yourself (`docs.artifacts.url`).
 

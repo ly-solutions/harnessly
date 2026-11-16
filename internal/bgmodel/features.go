@@ -30,6 +30,8 @@ const (
 	FeatureSearchAnswer = "search-answer"
 	// FeatureUIAgent: the agent of the window, which answers a request in words and takes the person where they asked.
 	FeatureUIAgent = "ui-agent"
+	// FeatureWidget: the short line a smart widget of the chat's right column asks for.
+	FeatureWidget = "widget"
 )
 
 // Feature is one background feature as Settings lists it.
@@ -63,6 +65,9 @@ func Features() []Feature {
 		{ID: FeatureUIAgent, Live: true,
 			Title:       locale.Pick("Window assistant", "Помощник окна"),
 			Description: locale.Pick("The field of Settings: opens what you name and offers to change a setting, at once and without a chat. A quick, cheap model is enough.", "Поле в Настройках: открывает названное и предлагает поменять настройку — сразу и без чата. Хватает быстрой дешёвой модели.")},
+		{ID: FeatureWidget, Live: true,
+			Title:       locale.Pick("Smart widgets", "Умные виджеты"),
+			Description: locale.Pick("A widget under the chat's right column that asks a model now and then and shows its short answer. Without a pick it runs on the machine's Claude Haiku.", "Виджет под правой колонкой чата, который время от времени спрашивает модель и показывает её короткий вывод. Без выбора — Claude Haiku машины по подписке.")},
 	}
 }
 
@@ -192,12 +197,41 @@ type Outcome struct {
 	Message string `json:"message,omitempty"`
 }
 
+// The agents of the machine a feature may also run on: a model of Claude Code or Codex through its CLI and
+// the machine's own sign-in (a plan), with no key of a provider.
+const (
+	AgentClaude = "claude"
+	AgentCodex  = "codex"
+)
+
+// IsAgent says whether a provider's name is an agent of the machine.
+func IsAgent(provider string) bool { return provider == AgentClaude || provider == AgentCodex }
+
+// onAgent says whether a choice runs on an agent of the machine: an agent's name that no connected provider has (a
+// connected provider's id is the person's own word, and wins).
+func (r *Runner) onAgent(c Choice) bool {
+	if !IsAgent(c.Provider) {
+		return false
+	}
+	if r.Providers == nil {
+		return true
+	}
+	_, err := r.Providers.Get(c.Provider)
+	return err != nil
+}
+
+// AgentCall asks a model of an agent of the machine: the call's system and prompt to the agent's CLI, its text handed
+// to onDelta as it comes when onDelta is not nil. It answers the whole text.
+type AgentCall func(ctx context.Context, agent, model string, call Call, onDelta func(string)) (string, error)
+
 // Runner runs the features on the providers picked for them.
 type Runner struct {
 	Store     *Store
 	Providers Providers
 	Client    *Client
-	Now       func() time.Time
+	// Agent asks the machine's agents; nil: a feature may be given a provider's model only.
+	Agent AgentCall
+	Now   func() time.Time
 	// Log is told of a call that failed: the feature falls back to what it did before, and this is its record.
 	Log func(feature string, c Choice, err error)
 
@@ -236,6 +270,13 @@ func (r *Runner) resolve(feature string) (Choice, bool) {
 	}
 	if c, ok := r.Store.Get(feature); ok {
 		return c, true
+	}
+	// A smart widget runs on the machine's own Claude by its subscription when nothing is picked for it.
+	if feature == FeatureWidget {
+		if r.Agent == nil {
+			return Choice{}, false
+		}
+		return Choice{Provider: AgentClaude, Model: WidgetDefaultModel}, true
 	}
 	if feature != FeatureSearchAnswer && feature != FeatureUIAgent {
 		return Choice{}, false
@@ -371,10 +412,40 @@ func (r *Runner) Run(ctx context.Context, feature string, call Call) (text strin
 	if !ok {
 		return "", false, nil
 	}
-	text, err = r.run(ctx, choice, call)
+	if r.onAgent(choice) {
+		text, err = r.runAgent(ctx, choice, call, nil)
+	} else {
+		text, err = r.run(ctx, choice, call)
+	}
 	r.record(feature, choice, err)
 	return text, true, err
 }
+
+// runAgent asks the agent of the choice; an agent the runner cannot ask is a provider that is gone.
+func (r *Runner) runAgent(ctx context.Context, choice Choice, call Call, onDelta func(string)) (string, error) {
+	if r.Agent == nil {
+		return "", &Error{Reason: ReasonNoProvider}
+	}
+	if call.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, agentTimeout(call.Timeout))
+		defer cancel()
+	}
+	text, err := r.Agent(ctx, choice.Provider, choice.Model, call, onDelta)
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return "", &Error{Reason: ReasonTimeout}
+	case err != nil:
+		return "", err
+	case strings.TrimSpace(text) == "":
+		return "", &Error{Reason: ReasonEmpty}
+	}
+	return text, nil
+}
+
+// agentTimeout is a call's time on an agent's CLI: it starts a program and signs in before it answers, so a few
+// seconds more than a provider's request.
+func agentTimeout(d time.Duration) time.Duration { return d + 15*time.Second }
 
 // RunStream is Run with the text handed to onDelta as it comes.
 func (r *Runner) RunStream(ctx context.Context, feature string, call Call, onDelta func(string)) (text string, used bool, err error) {
@@ -382,7 +453,11 @@ func (r *Runner) RunStream(ctx context.Context, feature string, call Call, onDel
 	if !ok {
 		return "", false, nil
 	}
-	text, err = r.requestOf(choice, call, func(req Request) (string, error) { return r.Client.Stream(ctx, req, onDelta) })
+	if r.onAgent(choice) {
+		text, err = r.runAgent(ctx, choice, call, onDelta)
+	} else {
+		text, err = r.requestOf(choice, call, func(req Request) (string, error) { return r.Client.Stream(ctx, req, onDelta) })
+	}
 	r.record(feature, choice, err)
 	return text, true, err
 }
@@ -416,8 +491,16 @@ func (r *Runner) Pick(feature string, c *Choice) (before *Choice, err error) {
 		if c.Model == "" || len(c.Model) > extproviders.MaxModelID || strings.ContainsAny(c.Model, " \t\r\n") {
 			return nil, ErrBadModel
 		}
-		if _, err := r.Providers.Get(c.Provider); err != nil {
+		switch {
+		case !r.onAgent(*c):
+			if _, err := r.Providers.Get(c.Provider); err != nil {
+				return nil, ErrUnknownProvider
+			}
+		case r.Agent == nil:
 			return nil, ErrUnknownProvider
+		default:
+			// An agent's model runs at its own effort.
+			c.Effort = ""
 		}
 		if c.Effort != "" && !slices.Contains(extproviders.ModelEfforts, c.Effort) {
 			return nil, ErrBadEffort

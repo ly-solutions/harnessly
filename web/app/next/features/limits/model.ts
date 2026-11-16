@@ -109,6 +109,15 @@ export interface ProviderLimits {
   error: string | null;
   /** The vendor refused the key at that reading. */
   rejected: boolean;
+  /** A model's own limit beside the plan's windows («Fable», a week), HRN-1538; absent from older machines. */
+  extra?: ExtraWindow[];
+}
+
+/** One model's own window: its id, the name it goes by, the window. */
+export interface ExtraWindow {
+  id: string;
+  title: string;
+  window: LimitWindow;
 }
 
 /** How Claude Code is paid on the machine, as its own files say. */
@@ -201,8 +210,20 @@ const readProvider = (v: unknown): ProviderLimits | null => {
     plan: text(p.plan),
     error: text(p.error),
     rejected: p.rejected === true,
+    extra: readExtra(p.extra),
   };
 };
+
+const readExtra = (v: unknown): ExtraWindow[] =>
+  Array.isArray(v)
+    ? v.flatMap((item) => {
+        const e = rec(item);
+        const id = text(e?.id);
+        const title = text(e?.title);
+        const window = readWindow(e);
+        return id && title && window ? [{ id, title, window }] : [];
+      })
+    : [];
 
 const readBalance = (v: unknown): Balance | null => {
   const b = rec(v);
@@ -326,6 +347,16 @@ export const windowsOf = (
   return all.flatMap(({ kind, window }) =>
     window && (nowSec === undefined || window.resetsAt > nowSec) ? [{ kind, window }] : [],
   );
+};
+
+/** The outline of the model pill: how much of the five-hour window is spent, whole per cent, and its level;
+ *  null when the chat's agent reports no five-hour window (or it has passed). */
+export const ringOf = (view: LimitsView | null, nowSec: number): { used: number; level: Level } | null => {
+  if (view?.state !== 'ready') return null;
+  const five = windowsOf(view.limits, nowSec).find((w) => w.kind === WINDOW.fiveHour);
+  if (!five) return null;
+  const left = leftOf(five.window);
+  return { used: 100 - left, level: levelOf(left) };
 };
 
 /** What is left of a window, whole per cent. */

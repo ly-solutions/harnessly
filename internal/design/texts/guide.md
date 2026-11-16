@@ -1,4 +1,4 @@
-<!-- {{tag}}-library-guide v14 -->
+<!-- {{tag}}-library-guide v15 -->
 # Sinopia Design projects: how to edit them
 
 This folder is the shared library of the whole team's designs (on {{host}} it is `{{shared}}`): the agents of several
@@ -48,6 +48,8 @@ Agents of several people edit this folder, often at once. To avoid overwriting e
   (`window.{{kit}}`, README in `project/_ds/*/`).
 - The neighbouring projects of this folder are working examples: the same boards, the same kit. Look at the nearest one
   before drawing from scratch.
+- Only its owner deletes a whole project, with `{{cli}} design delete <id>`: the project goes to the library's trash and is
+  gone for everyone who had access. Never move or remove a project's folder by hand: the other people of the machine keep it.
 
 ## Links between pages
 
@@ -153,5 +155,7 @@ in text:
   panel, and the person can click them.
 - Edits are applied to an open board on the fly, without a reload: the board's template and logic, styles, the pages'
   scripts.
-- When done, write briefly which board you changed and what, and how the check ended. The person sees the result in the
-  pane themselves.
+- When done, show the person the very board you edited or made, in the state that matters:
+  `{{cli}} design panel <id> show --board "<board>"` (with `--set …`, `--view phone` when the result is there). Not
+  `open design <id>` without a board: it opens the project's first page, not yours.
+- When done, write briefly which board you changed and what, and how the check ended.

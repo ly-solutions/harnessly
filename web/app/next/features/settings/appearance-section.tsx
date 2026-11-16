@@ -6,9 +6,13 @@ import type { MouseEvent } from 'react';
 import { Group, SegRow } from '@/next/features/settings/rows';
 import { THEMES, TEXT_SIZES, type ThemeChoice } from '@/next/features/settings/general-section';
 import { t } from '@/next/i18n';
-import { NOTICE_COLORS, type PersonSettings, type TNoticeColor } from '@/next/stores/me';
+import type { PersonSettings } from '@/next/stores/me';
 import Icon from '@/next/ui/icon';
+import LookPanel from '@/next/features/looks/look-panel';
+import type { TLookScope } from '@/next/features/looks/types';
 import { PALETTES, type IChangeOrigin, type TPalette } from '@/platform/theme';
+
+const ALL: TLookScope = { k: 'all' };
 
 const THEME_ICON = { light: 'sun', dark: 'moon', system: 'monitor' } as const satisfies Record<
   ThemeChoice,
@@ -47,13 +51,9 @@ export interface IAppearanceSectionProps {
   textSize: PersonSettings['textSize'];
   /** The text size waits for the server. */
   textBusy: boolean;
-  noticeColor: TNoticeColor;
-  /** The notices' colour waits for the server. */
-  noticeBusy: boolean;
   onTheme: (theme: ThemeChoice, from: IChangeOrigin) => void;
   onPalette: (palette: TPalette, from: IChangeOrigin) => void;
   onTextSize: (size: PersonSettings['textSize']) => void;
-  onNoticeColor: (color: TNoticeColor) => void;
 }
 
 const AppearanceSection = ({
@@ -62,12 +62,9 @@ const AppearanceSection = ({
   palette,
   textSize,
   textBusy,
-  noticeColor,
-  noticeBusy,
   onTheme,
   onPalette,
   onTextSize,
-  onNoticeColor,
 }: IAppearanceSectionProps) => (
   <>
     <Group title={t('next.settings.look.mode')} card="hx-looks" foot={t('next.settings.look.mode.foot')}>
@@ -125,6 +122,7 @@ const AppearanceSection = ({
         ))}
       </div>
     </Group>
+    <LookPanel scope={ALL} />
     <Group title={t('next.settings.look.text')}>
       <SegRow
         label={t('next.settings.general.textSize')}
@@ -133,19 +131,6 @@ const AppearanceSection = ({
         choices={TEXT_SIZES.map((value) => ({ value, label: t(`next.settings.general.textSize.${value}`) }))}
         busy={textBusy}
         onPick={onTextSize}
-      />
-    </Group>
-    <Group title={t('next.settings.look.notices')}>
-      <SegRow
-        label={t('next.settings.look.noticeColor')}
-        hint={t('next.settings.look.noticeColor.hint')}
-        value={noticeColor}
-        choices={NOTICE_COLORS.map((value) => ({
-          value,
-          label: t(`next.settings.look.noticeColor.${value}`),
-        }))}
-        busy={noticeBusy}
-        onPick={onNoticeColor}
       />
     </Group>
   </>

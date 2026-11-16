@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/ly-solutions/harnessly/internal/chatrole"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,6 +80,25 @@ func appsLiveHookCommand() string {
 func statusHookCommand() string {
 	if bin := appCLIBin(); bin != "" {
 		return agents.ShellQuote(bin) + " hook status"
+	}
+	return ""
+}
+
+// voiceGuardCommand is the voice mode's PreToolUse hook of every Claude Code chat (`harnessly hook voice-guard`), the
+// same CLI as the status hook's; "" adds none.
+// It fails closed for a chat with a role (internal/chatrole): a hook that cannot run refuses that chat's calls.
+func voiceGuardCommand(dataDir string) string {
+	if bin := appCLIBin(); bin != "" {
+		return chatrole.GuardCommand(agents.ShellQuote(bin)+" hook voice-guard", filepath.Join(dataDir, chatrole.Dir))
+	}
+	return ""
+}
+
+// roleGuardCommand is the role hook of every Codex chat (`harnessly hook role-guard`, internal/chatrole); "" adds none.
+// A Claude Code chat has it inside its voice guard.
+func roleGuardCommand(dataDir string) string {
+	if bin := appCLIBin(); bin != "" {
+		return chatrole.GuardCommand(agents.ShellQuote(bin)+" hook role-guard", filepath.Join(dataDir, chatrole.Dir))
 	}
 	return ""
 }

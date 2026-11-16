@@ -247,6 +247,8 @@ func (c *cli) run(args []string) error {
 		return c.secret(rest)
 	case "settings", "setting":
 		return c.settings(rest)
+	case "theme", "themes", "look":
+		return c.theme(rest)
 	case "supervise":
 		return c.supervise(rest)
 	case "install":
@@ -255,10 +257,16 @@ func (c *cli) run(args []string) error {
 		return c.site(rest)
 	case "app", "apps":
 		return c.app(rest)
+	case "eval", "evals":
+		return c.eval(rest)
 	case "chat", "chats":
 		return c.chat(rest)
 	case "connections", "connection":
 		return c.connections(rest)
+	case "connectors":
+		return c.connectorsList(rest)
+	case "connector":
+		return c.connector(rest)
 	case "issues":
 		return c.issues(rest)
 	case "issue":

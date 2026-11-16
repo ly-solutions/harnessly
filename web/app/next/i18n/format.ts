@@ -73,3 +73,53 @@ export const moment = (at: number, now: number): { text: string; dated: boolean 
   const date = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(at);
   return { text: `${date}, ${clock(at)}`, dated: true };
 };
+
+/** How far back a time is, for a list grouped by it: today, yesterday, the six days before, this month, earlier. The
+ *  week is the sidebar's (the seven days up to today), so a weekday names one day only. */
+export const WHEN = {
+  today: 'today',
+  yesterday: 'yesterday',
+  week: 'week',
+  month: 'month',
+  older: 'older',
+} as const;
+export type TWhen = (typeof WHEN)[keyof typeof WHEN];
+
+export const whenOf = (at: number, now: number): TWhen => {
+  const today = startOfDay(now);
+  if (at >= today) return WHEN.today;
+  if (at >= today - DAY) return WHEN.yesterday;
+  if (at >= today - 6 * DAY) return WHEN.week;
+  const first = new Date(now);
+  first.setDate(1);
+  first.setHours(0, 0, 0, 0);
+  if (at >= first.getTime()) return WHEN.month;
+  return WHEN.older;
+};
+
+/** A list row's «when», one form everywhere in the search: «сейчас», «12 мин», «3 ч» today, «вчера», «ср» within the
+ *  week, «5 нояб.» this year, «12 окт. 2025» before it. */
+export const formatWhen = (at: number, now: number): string => {
+  const when = whenOf(at, now);
+  if (when === WHEN.today || when === WHEN.yesterday) return formatAgo(at, now);
+  if (when === WHEN.week) return new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(at);
+  const date = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(at);
+  const year = new Date(at).getFullYear();
+  return year === new Date(now).getFullYear() ? date : `${date} ${year}`;
+};
+
+const KB = 1024;
+const MB = 1024 * KB;
+
+/** «4 КБ», «1,2 МБ»: a size of text for a person, to a whole KB (at least 1) or a tenth of a MB. */
+export const size = (bytes: number): string => {
+  if (bytes >= MB) {
+    const n = new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(bytes / MB);
+    return t('next.size.mb', { n });
+  }
+  return t('next.size.kb', { n: Math.max(1, Math.round(bytes / KB)) });
+};
+
+/** Under an output cut by its size: «первые 4 КБ из 120 КБ», not «Показано 4096 из 122880». */
+export const cutBySize = (shown: number, total: number): string =>
+  t('next.tool.firstBytes', { shown: size(shown), total: size(total) });

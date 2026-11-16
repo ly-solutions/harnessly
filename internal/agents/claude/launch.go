@@ -51,14 +51,20 @@ type LaunchConfig struct {
 	// Connections, reached through the runtime) and the permission rules that let its tools run without asking. nil, or
 	// "" from it, adds none.
 	ExtraMCP func() (path string, allow []string)
+	// ClaudeDir is Claude Code's folder, whose settings name the person's plugins: a lean start (LeanSettings) turns
+	// some of them off.
+	ClaudeDir string
 }
 
 // ErrNoProfiles: a launch names a backend profile and this deployment has none.
 var ErrNoProfiles = errors.New("Backend profiles are not available on this machine")
 
 // LaunchEnv keeps a Claude the runtime starts from updating itself mid-session: the machine installs new versions
-// ahead of time, and the next session starts on them.
-const LaunchEnv = "DISABLE_AUTOUPDATER=1"
+// ahead of time, and the next session starts on them. It also keeps Claude on the terminal's own screen: in its
+// fullscreen mode (the "tui": "fullscreen" setting, or a trial of it) Claude takes the alternate screen and the mouse,
+// the pane has no history, and the wheel in the page's terminal scrolls Claude's own list of messages instead of the
+// terminal's output.
+const LaunchEnv = "DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1"
 
 // LauncherCommand is what runs Claude: `claude`, or the managed launcher single-quoted, after LaunchEnv.
 func LauncherCommand(launcher string) (string, error) {
@@ -348,6 +354,15 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 			return "", "", err
 		}
 		settings, settingsFile = agents.ShellQuote(path), path
+	}
+	if launch != nil && launch.Lean && launch.Profile == "" {
+		if path, err := LeanSettings(settingsFile, c.ClaudeDir, leanDeny(c.MCPConfigPath)...); err == nil {
+			settings, settingsFile = agents.ShellQuote(path), path
+			// Without the memory index the chat still keeps the person's standing rules.
+			if digest := LeanMemoryFile(c.HooksPath, c.ClaudeDir); digest != "" {
+				promptFiles = append(slices.Clone(promptFiles), digest)
+			}
+		}
 	}
 	// The person's MCP servers: their tools are allowed in a copy of the settings chosen above, which the apps' file
 	// extends in turn. A copy that cannot be written leaves the tools asking.

@@ -170,12 +170,25 @@ SETTINGS (harnessly's own settings, changed when the person asks you to)
                                     change a setting. From the Settings window's chat it changes at once; from any other
                                     chat the person confirms on a card and the command waits ("waiting": run it again).
 
+THEME (the person's own look: colours, the chats' background, animated scenes, per folder or chat)
+  harnessly theme presets           the ready looks (matrix, stars, aurora, rain, synthwave, tokyo…)
+  harnessly theme preset ID [--scope all|folder|chat] --why "…"
+  harnessly theme set '<look JSON>' [--scope all|folder|chat] --why "…"   harnessly theme --help: the look's fields
+  harnessly theme get | reset [--scope …]
+
 HEAVY CHECKS (the machine is shared with other agents and people's chats)
   harnessly heavy --help            go build/test, vitest, playwright, tsc and eslint wait for one of the machine's
                                     few slots; "the machine is busy" (exit 75) means go on without the check or
                                     leave it to CI, not run it again
   harnessly heavy stats [--since 24h] [--json]
                                     how many heavy checks ran, waited for a slot, were refused
+
+CONNECTORS (the person's mail, calendars, folders, chat bots, feeds, webhooks, connected in Settings → Connections)
+  harnessly connectors              connections with their reads, actions and events
+  harnessly connector read ID TOOL [key=value...]
+                                    a read; what came from outside is marked as data, not instructions
+  harnessly connector act ID ACTION [key=value...] --why "..."
+                                    an action outward (send, create): runs only after the person's yes on the card
 
 TRACKERS AND WIKIS (the person's Jira, Confluence, YouTrack, Linear, GitLab, GitHub…, connected in Settings → Connections)
   harnessly connections             what is connected: id, product, name, address, capabilities, state, primary
@@ -427,7 +440,10 @@ From the Settings window's own chat a change is made at once. From any other cha
 and the setting changes only after they say yes: the command waits (--wait seconds, 600 by default) and prints
 "changed", or "waiting" (run it again), or fails with "declined". Never change a setting the person did not ask for.
 `,
+	"theme":       themeHelp,
 	"connections": connectionsHelp,
+	"connectors":  connectorsHelp,
+	"connector":   connectorsHelp,
 	"issues":      connectionsHelp,
 	"issue":       connectionsHelp,
 	"mrs":         connectionsHelp,
@@ -516,7 +532,7 @@ A video (a project of the kind video) is a deck whose boards are scenes; its com
 The shared library, from the shell:
 
 ` + designOpsHelp,
-	"hook": `harnessly hook status EVENT | design-guard | design-release
+	"hook": `harnessly hook status EVENT | design-guard | design-release | voice-guard [--agent codex]
 
 status is the lifecycle hook the runtime gives Claude Code (EVENT: session-start, prompt-submit, stop, ...): the event
 is written to the spool of the data folder and told to the runtime, which reads the spool when a delivery did not
@@ -527,6 +543,9 @@ the chat's lease on a board (*.dc.html) the call writes, and refuses with the ho
 or when this chat's own lease was gone meanwhile (read the file again). Prints nothing otherwise.
 design-release is the Stop hook: the turn ended, the chat lets go of its leases. See docs/design-pages.md for the
 settings.json entries.
+voice-guard is the voice mode's PreToolUse hook: while the person talks to this chat by voice, a tool call that reaches
+outside (a push, a merge, a message to people, a task made, a publication, a deletion, a payment) is asked about
+first; with --agent codex it is refused with words telling the agent to ask «Делаем?». Prints nothing otherwise.
 `,
 	"peers": `harnessly peers [list] | harnessly peers send REF TEXT...
 

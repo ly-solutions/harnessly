@@ -5,7 +5,7 @@ import { Menu } from '@base-ui/react/menu';
 import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { openOutside } from '@/next/features/chat/pane-sites';
 import Icon from '@/next/ui/icon';
-import MenuPanel, { useMenuActions } from '@/next/ui/menu-panel';
+import MenuPanel, { MenuRoot, useMenuActions } from '@/next/ui/menu-panel';
 import { toast } from '@/next/ui/toast';
 import { afterTouchClick } from '@/next/ui/use-drag';
 import { t } from '@/next/i18n';
@@ -26,6 +26,8 @@ export interface ILinkMenuActions {
   onPane: (() => void) | null;
   /** The person's browser can open it (not a server of the machine). */
   outside: boolean;
+  /** «Поделиться…» of a board or a document of the installation; absent: no such item. */
+  onShare?: (() => void) | null;
 }
 
 export const copyLink = (href: string): void => {
@@ -39,7 +41,7 @@ export const copyLink = (href: string): void => {
  * What a link needs for its menu: the handlers to spread on it and the menu to draw beside it. `held()` says the click
  * that follows is the one a held finger ends with, which opens nothing.
  */
-export const useLinkMenu = ({ href, onPane, outside }: ILinkMenuActions) => {
+export const useLinkMenu = ({ href, onPane, outside, onShare = null }: ILinkMenuActions) => {
   const [at, setAt] = useState<IPoint | null>(null);
   const [open, setOpen] = useState(false);
   const hold = useRef<{ timer: number; x: number; y: number } | null>(null);
@@ -101,7 +103,7 @@ export const useLinkMenu = ({ href, onPane, outside }: ILinkMenuActions) => {
   const held = (): boolean => heldClick.current;
 
   const menu = at && (
-    <Menu.Root open={open} onOpenChange={setOpen} actionsRef={actions}>
+    <MenuRoot open={open} onOpenChange={setOpen} actionsRef={actions}>
       <MenuPanel
         actions={actions}
         className="hx-cmenu"
@@ -122,12 +124,18 @@ export const useLinkMenu = ({ href, onPane, outside }: ILinkMenuActions) => {
             <span className="hx-cmenu__txt">{t('next.link.openOutside')}</span>
           </Menu.Item>
         )}
+        {onShare && (
+          <Menu.Item className="hx-cmenu__item" onClick={onShare}>
+            <Icon name="share" size="sm" />
+            <span className="hx-cmenu__txt">{t('next.link.share')}</span>
+          </Menu.Item>
+        )}
         <Menu.Item className="hx-cmenu__item" onClick={() => copyLink(href)}>
           <Icon name="copy" size="sm" />
           <span className="hx-cmenu__txt">{t('next.link.copy')}</span>
         </Menu.Item>
       </MenuPanel>
-    </Menu.Root>
+    </MenuRoot>
   );
 
   return { handlers, held, menu };

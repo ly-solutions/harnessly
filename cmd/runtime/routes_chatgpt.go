@@ -35,6 +35,7 @@ import (
 //	DELETE <platform>/chatgpt/chats/<id>
 //	POST   <platform>/chatgpt/chats/<id>/messages     {text, model, effort, files: [{name, mime, data}]} -> {message}
 //	GET    <platform>/chatgpt/chats/<id>/stream       text/event-stream: delta {text}, done {message}, idle
+//	POST   <platform>/chatgpt/chats/<id>/spoken            {lines: [{role, text}]} -> {messages}  (voice mode)
 //	POST   <platform>/chatgpt/chats/<id>/stop
 //	GET    <platform>/chatgpt/chats/<id>/files/<file>
 
@@ -96,7 +97,6 @@ func chatgptRoutes(d deps) []gate.Route {
 	}
 	var handlers []gate.Route
 	for _, base := range []string{platformAPI + "/chatgpt", "/agents" + platformAPI + "/chatgpt"} {
-		base := base
 		var h http.Handler
 		var once sync.Once
 		handlers = append(handlers, gate.Route{

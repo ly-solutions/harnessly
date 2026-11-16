@@ -129,6 +129,12 @@ type appViewEntry struct {
 	Objects []string `json:"objects,omitempty"`
 	// Pinned: the app's tab beside a document of its type made of a site.
 	Pinned bool `json:"pinned,omitempty"`
+	// Feed: the day feed the page draws the start page's stage from itself (docs/apps/day-feed.md).
+	Feed string `json:"feed,omitempty"`
+	// FeedPath: the feed through this runtime (routes_apps_feed.go), when the machine signs it in; the page reads it there.
+	FeedPath string `json:"feedPath,omitempty"`
+	// Widget: how a view of the chat's right column (the side target) is drawn and fed.
+	Widget *apps.ViewWidget `json:"widget,omitempty"`
 }
 
 // uiSlotsOn says whether the interface's slots are on (HARNESSLY_UI_SLOTS=on). Off, the page lists no slot view and no
@@ -189,7 +195,7 @@ func viewOfApp(a apps.Installed, withDir bool) appView {
 	if m := a.Manifest; m != nil {
 		v.Branding = m.Branding
 		for _, mv := range m.Views {
-			e := appViewEntry{ID: mv.ID, Title: mv.Title, Targets: mv.Targets, Height: mv.Height, Label: mv.Label, Icon: mv.Icon, Order: mv.Order, Objects: mv.Objects, Pinned: mv.Pinned}
+			e := appViewEntry{ID: mv.ID, Title: mv.Title, Targets: mv.Targets, Height: mv.Height, Label: mv.Label, Icon: mv.Icon, Order: mv.Order, Objects: mv.Objects, Pinned: mv.Pinned, Widget: mv.Widget}
 			if strings.HasPrefix(mv.Entry, "https://") {
 				// A view at an address of the app's own server is framed only when its host is listed in network.frames.
 				if u, ok := m.FrameURL(mv.Entry); ok {
@@ -197,6 +203,15 @@ func viewOfApp(a apps.Installed, withDir bool) appView {
 				}
 			} else if p, err := m.ViewPath(mv.ID); err == nil {
 				e.Path = p
+			}
+			if mv.Feed != "" {
+				if u, ok := m.FeedURL(mv.Feed); ok {
+					e.Feed = u
+					// The machine signs the feed in with the app's secret: the page reads it through the runtime.
+					if mv.FeedSecret != "" {
+						e.FeedPath = feedProxyPath(a.ID, mv.ID)
+					}
+				}
 			}
 			v.Views = append(v.Views, e)
 		}
@@ -859,6 +874,7 @@ func appRouteList(d deps, reg *apps.Registry, version string, chats appChats) []
 	routes = append(routes, notificationRoutes(d)...)
 	routes = append(routes, appSetupRoutes(d, reg, storage)...)
 	routes = append(routes, appMCPProxyRoute(d, reg))
+	routes = append(routes, appFeedRoute(d, reg))
 	routes = append(routes, sinopiaRoutes(d, reg, viewServer)...)
 	routes = append(routes, kindRoutes(d, reg)...)
 	routes = append(routes, appWidgetRoutes(d, reg, widgets, chats)...)
@@ -869,6 +885,7 @@ func appRouteList(d deps, reg *apps.Registry, version string, chats appChats) []
 	routes = append(routes, appConsentRoutes(d, reg)...)
 	routes = append(routes, appViewLogRoutes(d, reg)...)
 	routes = append(routes, appMentionRoutes(d, reg, chats)...)
+	routes = append(routes, appQuickEditRoutes(d, reg)...)
 	routes = append(routes, appHookRoutes(d, reg, chats)...)
 	routes = append(routes, appLiveRoutes(d, reg, chats)...)
 	routes = append(routes, []gate.Route{

@@ -548,9 +548,14 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(extProviderRoutes(d)...)
 	f.Add(codexLoginRoutes(d)...)
 	f.Add(chatgptRoutes(d)...)
+	f.Add(voiceLiveRoutes(d)...)
+	f.Add(voiceEditRoutes(d)...)
+	f.Add(spaceDirRoutes(d)...)
 	f.Add(backgroundRoutes(d)...)
 	f.Add(searchRoutes(d)...)
 	f.Add(uiAgentRoutes(d)...)
+	f.Add(sideWidgetRoutes(d)...)
+	f.Add(sideWidgetCLIRoutes(d)...)
 	f.Add(settingsCtlRoutes(d, ref.c)...)
 	setupRunners := envSetupRunners(d, os.Getenv("AGENT_HUB_OBSERVE_FILE"), cfg.Version)
 	// The organization's rule for apps comes with the hub's list (apps_consent_policy.go).
@@ -560,6 +565,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(envSetupRoutes(d, setupRunners)...)
 	f.Add(basepkgRoutes(d)...)
 	f.Add(connectionRoutes(d)...)
+	f.Add(connectorRoutes(d, ref.c)...)
 	f.Add(mcpRoutes(d)...)
 	f.Add(journalRoutes(d)...)
 	f.Add(uiEventRoutes(d, func() *telemetry.Queue { return ref.c.cfg.Telemetry })...)
@@ -654,6 +660,8 @@ func run(ctx context.Context, cfg gate.Config) error {
 	links := newHubLinks(hubLinkDirs(cfg.DataDir, os.Getenv("AGENT_HUB_OBSERVE_FILE")))
 	links.apply()
 	go links.watch(ctx, hubLinksEvery)
+	webHubOn := webFromHubOn()
+	webHubDir := useWebFromHub(cfg.DataDir) // before build: the page is set up there
 	f, err := build(cfg)
 	if err != nil {
 		_ = ln.Close()
@@ -669,6 +677,7 @@ func run(ctx context.Context, cfg gate.Config) error {
 		go alone.cleanUp(f.home, env("RUNTIME_UPLOADS_DIR", filepath.Join(cfg.DataDir, "uploads")))
 	}
 	f.startUpdateCheck(ctx)
+	startWebFromHub(ctx, cfg.DataDir, webHubDir, webHubOn)
 	f.startEnvSetup(ctx)
 	go watchAppsConsent(ctx, apps.Open(cfg.DataDir), appsPolicyEvery)
 	defer f.startStore(ctx, cfg)()

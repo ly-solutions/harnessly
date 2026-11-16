@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { t } from '@/next/i18n';
 import { useDelayed as useDelayedFlag } from '@/next/ui/skeleton';
 import Spinner from '@/next/ui/spinner';
+import LookBackdrop from '@/next/features/looks/backdrop';
 
 export interface IChatStageProps {
   /** The chat's feed and composer from the chat feature; null while the chat is not there yet. */
@@ -69,25 +70,25 @@ const ChatStage = ({
       data-arrive={fromHome ? 'home' : undefined}
       data-side={side ? 'true' : undefined}
     >
-      <Fragment key={chatKey ?? ''}>
-        {missing && (
-          <div className="hx-chatmiss" role="status">
-            <b>{t('next.chatStage.missing')}</b>
-            <span>{t('next.chatStage.missingNote')}</span>
-            <button type="button" className="hx-btn" data-size="sm" onClick={missing.onHome}>
-              {t('next.chatStage.toHome')}
-            </button>
-          </div>
-        )}
-        {!missing &&
-          (children ?? (
-            <div className="hx-feed">
-              <div className="hx-feed__inner">
-                <FeedLoading />
-              </div>
+      <LookBackdrop />
+      {missing && (
+        <div className="hx-chatmiss" role="status">
+          <b>{t('next.chatStage.missing')}</b>
+          <span>{t('next.chatStage.missingNote')}</span>
+          <button type="button" className="hx-btn" data-size="sm" onClick={missing.onHome}>
+            {t('next.chatStage.toHome')}
+          </button>
+        </div>
+      )}
+      {/* The chats kept hidden (bindings/shell.tsx) stay mounted under a missing chat's note: not keyed by the chat. */}
+      {children ??
+        (!missing && (
+          <div className="hx-feed" key={chatKey ?? ''}>
+            <div className="hx-feed__inner">
+              <FeedLoading />
             </div>
-          ))}
-      </Fragment>
+          </div>
+        ))}
       {side}
     </div>
   );

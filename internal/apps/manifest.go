@@ -51,9 +51,16 @@ const (
 	TargetHome         = "home"          // a block on the start page, under the field of a new chat
 )
 
+// TargetSide is a widget under the chat's right column on a computer: a small card the person adds, moves and
+// folds. Not a slot: the person puts it there, so it is never gated by HARNESSLY_UI_SLOTS.
+const TargetSide = "side"
+
 // SlotTargets are the targets above, in the order the docs name them.
 // HeightStage: a home view that fills the start page under the field, as the page of the day it brings.
 const HeightStage = "stage"
+
+// ChromeNone is a view of the app's own screen that draws its own bar: the host shows none of its own above it.
+const ChromeNone = "none"
 
 var SlotTargets = []string{TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding, TargetHome}
 
@@ -107,6 +114,19 @@ type Manifest struct {
 	Kind string `json:"kind,omitempty"`
 	// Data is the version of the app's own data in hl.storage and the steps that bring older data to it.
 	Data *DataSpec `json:"data,omitempty"`
+	// QuickEdit is how the app's objects take a quick edit by voice: the app's own tools that read an object as
+	// text, apply exact replacements to it and take the last edit back. The host plans the edit, the app applies it.
+	QuickEdit *QuickEdit `json:"quickEdit,omitempty"`
+}
+
+// QuickEdit names the app's tools of a quick edit, each as `<server>.<tool>` of its backend.
+type QuickEdit struct {
+	// Read answers {text, version} of an object: {object, selection?}.
+	Read string `json:"read"`
+	// Apply takes {object, version, edits: [{old, new}], confirmed?} and answers {changed, version, hint, ids?}.
+	Apply string `json:"apply"`
+	// Undo takes {object, version}: the apply that answered that version is put back; empty: no undo.
+	Undo string `json:"undo,omitempty"`
 }
 
 // Activation is how the app turns on and what it opens when it does.
@@ -196,6 +216,10 @@ type View struct {
 	// Height is "stage" for a view of the start page (home) that takes the whole stage under the field instead of a
 	// block there; nothing else is run.
 	Height string `json:"height,omitempty"`
+	// Chrome "none": the app's own screen (target app) has its own bar, and the host draws none above it. The
+	// host's actions — share, the right pane, its menu — reach the view through hl.host.actions / hl.host.run, and the
+	// view shows them in its own bar or menu.
+	Chrome string `json:"chrome,omitempty"`
 	// Label, Icon, Order and Objects are for the slots: the name on the settings entry, the step or the button (Title when
 	// empty), a name from the icon set, the place among its neighbours, and the kinds of object an object-action view is
 	// shown at (machine, chat; every kind when empty).
@@ -206,6 +230,79 @@ type View struct {
 	// Pinned: the view is the app's tab in the chat's right pane beside a document of its type made of a Sinopia site
 	// the first tab, never closed, shown only in the app's own documents.
 	Pinned bool `json:"pinned,omitempty"`
+	// Feed is the https address of a day feed (docs/apps/day-feed.md) for a view of the start page's stage: the host draws
+	// the page of the day itself from what the feed answers, in its own interface, and the entry stays for a host that
+	// cannot. Its host must be in network.connect.
+	Feed string `json:"feed,omitempty"`
+	// FeedSecret names a secret of the app the machine sends to the feed as a bearer token: the page then reads the feed
+	// through its own runtime (the feedPath of the list of apps), signed in already, and never shows the feed's own sign-in.
+	FeedSecret string `json:"feedSecret,omitempty"`
+	// Widget is how a view of the side target is drawn and fed.
+	Widget *ViewWidget `json:"widget,omitempty"`
+}
+
+// ViewWidget is a side widget's manifest: its height, how often the host hands it its data again, which of the host's
+// data it is given (nothing else of the page reaches it), and the request of a smart widget the host puts to a model.
+type ViewWidget struct {
+	// Size is the frame's height: "s" (96 px, the default), "m" (160) or "l" (240).
+	Size string `json:"size,omitempty"`
+	// Refresh is how often, in seconds, the host gives the view its data again while it is on screen (30 at least);
+	// 0 gives it once.
+	Refresh int `json:"refresh,omitempty"`
+	// Sources are the host's data the view is given in hl.context.data.sources: WidgetSources.
+	Sources []string `json:"sources,omitempty"`
+	// Smart makes the widget ask a model now and then; its short answer is in hl.context.data.smart.
+	Smart *WidgetSmart `json:"smart,omitempty"`
+}
+
+// WidgetSmart is a smart widget's request: what to ask the model over the widget's sources, and how often (minutes).
+type WidgetSmart struct {
+	Prompt string `json:"prompt"`
+	Every  int    `json:"every,omitempty"`
+}
+
+// The host's data a side widget may be given; the page reads each itself, the view gets only the ones it names.
+const (
+	WidgetSourceLimits    = "limits"
+	WidgetSourceMachine   = "machine"
+	WidgetSourceSubagents = "subagents"
+)
+
+// WidgetSources are the data a side widget may name, and WidgetSizes its heights.
+var (
+	WidgetSources = []string{WidgetSourceLimits, WidgetSourceMachine, WidgetSourceSubagents}
+	WidgetSizes   = []string{"s", "m", "l"}
+)
+
+// The bounds of a side widget.
+const (
+	WidgetRefreshMin     = 30
+	WidgetRefreshMax     = 24 * 60 * 60
+	WidgetSmartEveryMin  = 5
+	WidgetSmartEveryMax  = 24 * 60
+	WidgetSmartPromptMax = 2000
+)
+
+func (w *ViewWidget) check(path string, add func(field, format string, args ...any)) {
+	if w.Size != "" && !contains(WidgetSizes, w.Size) {
+		add(path+".size", "%q is not a size: %s", w.Size, strings.Join(WidgetSizes, ", "))
+	}
+	if w.Refresh != 0 && (w.Refresh < WidgetRefreshMin || w.Refresh > WidgetRefreshMax) {
+		add(path+".refresh", "is 0 (once) or %d to %d seconds", WidgetRefreshMin, WidgetRefreshMax)
+	}
+	for j, s := range w.Sources {
+		if !contains(WidgetSources, s) {
+			add(fmt.Sprintf("%s.sources[%d]", path, j), "%q is not a source: %s", s, strings.Join(WidgetSources, ", "))
+		}
+	}
+	if w.Smart != nil {
+		if n := utf8.RuneCountInString(strings.TrimSpace(w.Smart.Prompt)); n == 0 || n > WidgetSmartPromptMax {
+			add(path+".smart.prompt", "is required, up to %d characters", WidgetSmartPromptMax)
+		}
+		if w.Smart.Every != 0 && (w.Smart.Every < WidgetSmartEveryMin || w.Smart.Every > WidgetSmartEveryMax) {
+			add(path+".smart.every", "is %d to %d minutes", WidgetSmartEveryMin, WidgetSmartEveryMax)
+		}
+	}
 }
 
 // Branding is the product's name and accent as an app sets them, for the `branding` target. Declared values, no code: the
@@ -702,6 +799,27 @@ func (m *Manifest) Check() Problems {
 		} else if v.Height != "" {
 			notYet(path + ".height")
 		}
+		if v.Chrome != "" {
+			if v.Chrome != ChromeNone {
+				add(path+".chrome", "the one value is %q", ChromeNone)
+			} else if !contains(v.Targets, TargetApp) {
+				add(path+".chrome", "%q is for a view of the app's own screen (target app)", ChromeNone)
+			}
+		}
+		if v.Feed != "" {
+			if v.Height != HeightStage {
+				add(path+".feed", "a feed is for a view that takes the stage (\"height\": \"stage\")")
+			} else if _, ok := m.FeedURL(v.Feed); !ok {
+				add(path+".feed", "%q must be https:// with its host in network.connect", v.Feed)
+			}
+		}
+		if v.FeedSecret != "" {
+			if v.Feed == "" {
+				add(path+".feedSecret", "is for a view with a feed")
+			} else if !m.hasSecret(v.FeedSecret) {
+				add(path+".feedSecret", "%q is not in secrets", v.FeedSecret)
+			}
+		}
 		if len(v.Targets) == 0 {
 			add(path+".targets", "is required: where the view shows")
 		}
@@ -722,6 +840,12 @@ func (m *Manifest) Check() Problems {
 		}
 		if len(v.Objects) > 0 && !contains(v.Targets, TargetObjectAction) {
 			add(path+".objects", "is for views of the object-action target")
+		}
+		if v.Widget != nil {
+			if !contains(v.Targets, TargetSide) {
+				add(path+".widget", "is for views of the side target")
+			}
+			v.Widget.check(path+".widget", add)
 		}
 		if utf8.RuneCountInString(v.Label) > 40 {
 			add(path+".label", "is up to 40 characters")
@@ -752,6 +876,16 @@ func (m *Manifest) Check() Problems {
 		m.checkChatHost(c, add)
 		if (len(c.Commands) > 0 || len(c.Cards) > 0 || len(c.Starters) > 0 || len(c.Buttons) > 0 || len(c.Links) > 0 || c.Mentions != nil) && !targets[TargetChat] {
 			add("chat", "chat contributions need the chat target")
+		}
+	}
+	if q := m.QuickEdit; q != nil {
+		for _, t := range []struct {
+			field, tool string
+			need        bool
+		}{{"quickEdit.read", q.Read, true}, {"quickEdit.apply", q.Apply, true}, {"quickEdit.undo", q.Undo, false}} {
+			if (t.need || t.tool != "") && !mentionToolRe.MatchString(t.tool) {
+				add(t.field, "%q: a tool of the app's MCP server, <server>.<tool>", t.tool)
+			}
 		}
 	}
 	if len(m.Sinopia) > 0 && !hasSinopia(targets) {
@@ -843,7 +977,7 @@ func TargetCovers(listed, target string) bool {
 // after it (sinopia.slides, sinopia.acme.board) or its wildcard.
 func validTarget(t string) bool {
 	switch t {
-	case TargetChat, TargetPane, TargetApp:
+	case TargetChat, TargetPane, TargetApp, TargetSide:
 		return true
 	case TargetSettings, TargetOnboarding, TargetObjectAction, TargetHubSettings, TargetBranding, TargetHome:
 		return true
@@ -853,7 +987,7 @@ func validTarget(t string) bool {
 }
 
 func hasViewTarget(targets map[string]bool) bool {
-	return targets[TargetPane] || targets[TargetApp] || targets[TargetSettings] || targets[TargetOnboarding] ||
+	return targets[TargetPane] || targets[TargetApp] || targets[TargetSide] || targets[TargetSettings] || targets[TargetOnboarding] ||
 		targets[TargetObjectAction] || targets[TargetHubSettings] || targets[TargetHome]
 }
 
@@ -905,6 +1039,16 @@ func checkToolPattern(p string) string {
 func (m *Manifest) FrameURL(entry string) (string, bool) {
 	u, err := url.Parse(entry)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" || m.Network == nil || !hostListed(m.Network.Frames, entry) {
+		return "", false
+	}
+	return u.String(), true
+}
+
+// FeedURL is the address of a view's day feed when the page may read it: https, no credentials in it, and its host listed
+// in network.connect.
+func (m *Manifest) FeedURL(feed string) (string, bool) {
+	u, err := url.Parse(feed)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" || m.Network == nil || !hostListed(m.Network.Connect, "https://"+u.Hostname()) {
 		return "", false
 	}
 	return u.String(), true
