@@ -110,6 +110,9 @@ type Service struct {
 	searchOn      func(ctx context.Context, email, machineID string) bool
 	appKinds      AppKinder
 	appsCatalogOn func(ctx context.Context, email, machineID string) bool
+	// viewMu guards view: ServeHome's store goroutine outlives the handler, so a
+	// view swap (UseView) must not race with a listing already in flight.
+	viewMu        sync.RWMutex
 	view          Viewer
 	sheets        *sheetCache // the store's stylesheets with their fonts inside, by revision (sheetcache.go)
 	// cover is the count of the recorded projects the store has (coverage.go).
@@ -369,7 +372,7 @@ func (s *Service) Run(ctx context.Context) {
 
 // ---- the page's API ---------------------------------------------------------------------------------------------
 
-// apiPath: <prefix>/design/access[/...], <prefix>/design/store/<project>/... (team.go), <prefix>/docs/people or the one access API <prefix>/access/{design/...,me,
+// apiPath: <prefix>/design/access[/...], <prefix>/design/store/<project>/... (team.go), <prefix>/docs/people or the one access API <prefix>/access/{design/...,
 // directory} under a platform prefix /api/<name>.
 var apiPath = regexp.MustCompile(`^(/api/[A-Za-z0-9_-]+)(/design/access(?:/.*)?|/design/store/.+|/design/store-library(?:/changes)?|/design/store-(?:cover|records-check|work-machine)|/docs/people|/access/(?:design(?:/.*)?|kit(?:/.*)?|me|directory))$`)
 
