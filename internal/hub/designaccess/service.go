@@ -372,7 +372,7 @@ func (s *Service) Run(ctx context.Context) {
 
 // ---- the page's API ---------------------------------------------------------------------------------------------
 
-// apiPath: <prefix>/design/access[/...], <prefix>/design/store/<project>/... (team.go), <prefix>/docs/people or the one access API <prefix>/access/{design/...,
+// apiPath: <prefix>/design/access[/...], <prefix>/design/store/<project>/... (team.go), <prefix>/docs/people or the one access API <prefix>/access/{design/...,me,
 // directory} under a platform prefix /api/<name>.
 var apiPath = regexp.MustCompile(`^(/api/[A-Za-z0-9_-]+)(/design/access(?:/.*)?|/design/store/.+|/design/store-library(?:/changes)?|/design/store-(?:cover|records-check|work-machine)|/docs/people|/access/(?:design(?:/.*)?|kit(?:/.*)?|me|directory))$`)
 
