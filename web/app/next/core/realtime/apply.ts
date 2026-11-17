@@ -118,6 +118,20 @@ const goneFromFleet = (machine: MachineId): boolean => {
 function adoptStray(machine: MachineId, c: Conversation): void {
   const record = conversationsStore.get(c.id);
   const feed = feedStore.get(c.id);
+  // The central list may already name the new owner while IndexedDB still holds
+  // the old machine's drawing. Leaving that feed in place makes owns() refuse
+  // the new owner's snapshot forever. Only an orphaned cache of this same chat
+  // gives way; a live feed or a machine still in the fleet keeps its ownership.
+  if (record?.machineId === machine && feed && feed.machineId !== machine) {
+    if (
+      feed.source === 'cached' &&
+      goneFromFleet(feed.machineId) &&
+      record.createdAt === c.createdAt &&
+      record.cwd === c.cwd
+    )
+      dropConversationData(c.id);
+    return;
+  }
   const was = record?.machineId ?? feed?.machineId;
   if (!was || was === machine || !goneFromFleet(was)) return;
   if (feed && feed.machineId !== was) return;
