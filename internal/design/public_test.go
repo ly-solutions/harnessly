@@ -282,9 +282,13 @@ func TestPublicHTMLReadStaysBoundedAfterOpen(t *testing.T) {
 }
 
 func TestPublicHTMLResponseStaysWithinFileLimit(t *testing.T) {
+	// The rule does not depend on the size: a smaller limit tests it without 32 MB of HTML.
+	old := PublicFileLimit
+	PublicFileLimit = 256 << 10
+	t.Cleanup(func() { PublicFileLimit = old })
 	a, root := publicAPI(t, "")
 	tok := publicToken(t, "pair-secret", "acme", "p1", nil)
-	body := []byte("<html>" + strings.Repeat("x", PublicFileLimit-len("<html>")))
+	body := []byte("<html>" + strings.Repeat("x", int(PublicFileLimit)-len("<html>")))
 	if err := os.WriteFile(filepath.Join(root, "p1", "project", "large.html"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -340,6 +344,9 @@ func TestPublicBoardsGetTheGuestScriptRelativeToThemselves(t *testing.T) {
 		t.Fatalf("head of a board: %q", body)
 	}
 	for _, f := range vendorFiles {
+		if f.URL == react19URL {
+			continue // loaded by tag on a page that declares React 19, not through the map
+		}
 		if !strings.Contains(body, `"`+f.URL+`":"__vendor/`+f.Name+`"`) {
 			t.Fatalf("no public mapping for %s in %q", f.URL, body)
 		}

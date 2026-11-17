@@ -1,12 +1,16 @@
 // «Что показывать в ленте» (Settings → General): which things a turn made get a card under its answer. This browser's,
 // as the theme and the pane's own switch are. The plain files are off unless the person turns them on (what
 // the agent made matters, not that it wrote a file). `mrDone` is the block of the chat's merge requests under a
-// finished task; it is off until the person turns it on (Settings → Plugins → Code review).
+// finished task; it is off until the person turns it on (Settings → Plugins → Code review). The commits' cards are
+// off too: a commit is the agent's own bookkeeping, shown only when the person turns it on in Settings.
 import { notePrefWrite } from '@/next/core/pref-write';
 import { useSyncExternalStore } from 'react';
 import { OUTPUT_KINDS } from '@/next/protocol/v2';
 
-export const FEED_KINDS = [...OUTPUT_KINDS, 'file', 'mrDone'] as const;
+// `made`, `preview` and `bigShots` are how the cards look, not which: the block «Сделано за ход» at the answer's end
+// (off: the cards as before, and a link alone in its paragraph a card in place), the previews of documents and
+// designs, the screenshots large in a grid. All on by default.
+export const FEED_KINDS = [...OUTPUT_KINDS, 'file', 'mrDone', 'made', 'preview', 'bigShots'] as const;
 export type FeedKind = (typeof FEED_KINDS)[number];
 export type FeedKinds = Readonly<Record<FeedKind, boolean>>;
 
@@ -20,9 +24,12 @@ export const DEFAULT_FEED_KINDS: FeedKinds = {
   stand: true,
   delivery: true,
   task: true,
-  commit: true,
+  commit: false,
   file: false,
   mrDone: false,
+  made: true,
+  preview: true,
+  bigShots: true,
 } as const satisfies Record<FeedKind, boolean>;
 
 const listeners = new Set<() => void>();

@@ -1,6 +1,6 @@
 ---
 name: harnessly
-description: Work inside a harnessly workspace — show a document, board, file, dev server or merge request to the person in the right pane of the conversation, make a widget under the chat's right column («сделай виджет, который показывает…»), change how harnessly looks — a theme, colours, a background of the chats, an animated one («сделай тему как ночной Токио», «поставь на эту папку матрицу»), list the workspace's tabs, and start, brief and read another agent in a new tab (Claude Code or Codex) with the `harnessly` command. Use when you run in a harnessly tab (the `harnessly` command exists and `TMUX` is set) and the person should see something you made, asks to "open", "show me" or "put it on the side", or when a task is worth handing to a parallel agent ("ask another agent to review", "run this in a separate tab", "check what the other tab did").
+description: Work inside a harnessly workspace — show a document, board, file, dev server or merge request to the person in the right pane of the conversation, draw a mockup or a working prototype as a Sinopia Design board («сделай макет», «прототип», «чтобы кнопки работали»), make a widget under the chat's right column («сделай виджет, который показывает…»), change how harnessly looks — a theme, colours, a background of the chats, an animated one («сделай тему как ночной Токио», «поставь на эту папку матрицу»), list the workspace's tabs, and start, brief and read another agent in a new tab (Claude Code or Codex) with the `harnessly` command. Use when you run in a harnessly tab (the `harnessly` command exists and `TMUX` is set) and the person should see something you made, asks to "open", "show me" or "put it on the side", or when a task is worth handing to a parallel agent ("ask another agent to review", "run this in a separate tab", "check what the other tab did").
 ---
 
 # harnessly
@@ -44,6 +44,11 @@ harnessly open https://gitlab.example.com/g/p/-/merge_requests/12 # a merge requ
 - `harnessly panel show` brings the pane out if the person hid it. `harnessly status` tells you what it shows and
   what you already asked for today; read it before opening the same thing again.
 
+A turn that made many things (several documents, a batch of tasks, merge requests, screenshots) opens one, the one to
+look at first, or none: the chat already shows what the turn made as cards under your answer. Name the rest as links;
+never open tasks or merge requests one by one. `harnessly open` shows a thing to the person and reads
+nothing for you: read a task with `harnessly issue <KEY>`, a merge request with `glab` or the GitLab API. The pane itself opens at most three quiet tabs in ten minutes.
+
 In your reply, still name the link or path in words: the pane is a convenience, the reply is the record.
 
 ## Widgets under the right column
@@ -85,6 +90,13 @@ harnessly theme preset stars --scope chat --why "звёзды в этом чат
 harnessly theme set '{"v":1,"mode":"dark","hues":[{"h":320,"s":80}],"intensity":70,"bg":{"kind":"scene","scene":"rain"},"grain":10,"dim":20,"blur":0,"parts":{}}' --why "…"
 harnessly theme reset --scope chat --why "…"              # the chat inherits again
 ```
+
+A live effect over the chat («живая тема»: snow that settles on the field and the messages and is swept by the
+mouse, a night lamp that lights up while the agent works, a laser that burns in a new answer) is the look's `fx`:
+`"fx":{"preset":"snowplay|nightlamp|laser","power":0-100}` (`harnessly theme fx-presets`). When none fits, write the
+effect's code: a script on the page's sandbox SDK `hx` (docs/looks.md, «Живые эффекты»), sent with
+`harnessly theme set '<look>' --fx-file effect.js` (or `fx_code` of `theme_set`); it runs in a sandboxed frame with no
+network and sees only the pointer, the blocks' boxes and the agent's state.
 
 A chat wears its own look, else its folder's, else the one for all. The page shows «Применено · Отменить»; the answer
 is `applied`, or `waiting` when no page of the person is open (it applies when they open harnessly within 10 minutes). `harnessly theme` alone
@@ -138,9 +150,39 @@ The chats you delegate (the `delegate_task` tool of the `harnessly` MCP server) 
 
 ## Boards and documents
 
-Make a diagram with the `boards` skill and publish a write-up with the `artifacts` skill; both print links. Then
+Make a diagram with the `boards` skill and publish a write-up with `harnessly docs publish FILE.md [--slug S]` (through the hub, so it shows in the person's Documents app; `artifacts publish` is the fallback only when it says there is no hub); both print links. Then
 `harnessly open` them. Every document you publish records this conversation, so the pane can list the
 documents of the conversation.
+
+## Mockups and prototypes
+
+A mockup, a prototype or a screen the person asks for («сделай макет», «прототип», «чтобы кнопки работали», steps,
+states) is a board of Sinopia Design, from any chat and folder. Boards run their logic, so buttons, steps and states
+work, and the pane shows them:
+
+```bash
+harnessly design new "Аукцион" --page "Мастер ставки"   # prints the board file and the format's rules
+# write the screen into the board: markup in <x-dc>, logic in a DCLogic class, steps/states as data-props
+harnessly design panel <project> show --board "<file>"
+```
+
+A screen by a screenshot or a mockup on a UI kit installed on the machine is a board too: find the kit with the
+`kit_list`, `kit_index`, `kit_search`, `kit_component`, `kit_tokens` tools, start with
+`harnessly design new "<title>" --kit <id>`, use the kit's real components (`<x-import component-from-global-scope=…>`,
+as `kit_component` gives them), and make the scenes (a sheet, a transition, a toast) `data-props` switches and `DCLogic`
+handlers.
+
+A NEW design made from scratch (before `harnessly design new`): if the person did not name a UI kit and the conversation does
+not make clear which one to use, first ask in the chat which installed kit to take (`kit_list`), offering «без кита» as the
+last option (`notice_ask`, or AskUserQuestion where that agent has it, else one short question). Wait for the answer, then
+`harnessly design new "<title>" --kit <id>` (no `--kit` for «без кита»). Do not ask when the kit is named or clear, for an
+existing project (edits, a new page of it), or when no kit is installed. The Sinopia panel has no button for it: the chat is
+the only place a kit is chosen.
+
+Do not write a separate HTML file, build a separate app or start `python3 -m http.server` or another localhost server to
+show a mockup. Code is for when the person asks for an app or the product's code; even then offer the board as the
+prototype first and ask. If you still work outside Sinopia Design, the first line of the answer says why and asks
+«Сделать то же доской Sinopia?». An ```html block in the chat runs no scripts: keep it for a short static sketch.
 
 ## Checks on a shared machine
 

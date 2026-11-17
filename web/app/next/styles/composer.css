@@ -227,7 +227,9 @@ html[data-theme='dark'] .hx-dock,
 }
 .hx-dock .hx-composer__input::placeholder {
   color: var(--hx-fg-3);
-  transition: color var(--hx-dur-sm) ease-out;
+  transition:
+    color var(--hx-dur-sm) ease-out,
+    opacity 180ms var(--hx-ease-out);
 }
 .hx-composer[data-lifting='true'] .hx-composer__input::placeholder {
   color: transparent;
@@ -1196,8 +1198,18 @@ html[data-theme='dark'] .hx-dock,
   .hx-dock .hx-composer__bar .hx-round {
     flex: none;
   }
-  .hx-composer__bar .hx-ctx {
+  .hx-composer__bar .hx-ctx:not([data-wide]) {
     display: none;
+  }
+  /* The chip that stays: its card spans the field (a class more than the wide rules below, which come later). */
+  .hx-composer__bar .hx-ctx[data-wide] {
+    position: static;
+  }
+  .hx-composer__bar .hx-ctx[data-wide] .hx-ctx__pop {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    transform-origin: 50% 100%;
   }
   /* The model keeps its whole name; the limit gives way instead: only the window with the least left («нед 24%»), no icon,
      and it may shrink to nothing before the pill does. It is never hidden for being healthy: a person who sees no chip
@@ -1512,6 +1524,14 @@ html[data-theme='dark'] .hx-dock,
   display: flex;
   flex-direction: column;
 }
+/* «К сегодняшнему дню» over the app's rehearsal of a past day: the frame follows it closely. */
+.hx-home-stage__back {
+  display: flex;
+  padding: 0 var(--hx-space-5);
+}
+.hx-home-stage > .hx-home-stage__back + .hx-uislot {
+  margin-top: var(--hx-space-2);
+}
 /* A view with no page to scroll (its own frame, the day while it loads) stands under the dock. */
 .hx-home-stage > :not(:has([data-home-scroll])) {
   margin-top: calc(var(--hx-home-under, calc(var(--hx-home-top) + var(--hx-dock-rest))) + var(--hx-space-3));
@@ -1602,6 +1622,16 @@ html[data-theme='dark'] .hx-dock,
   cursor: default;
   outline: none;
   transition: background 220ms var(--hx-ease-out);
+}
+/* The field's meter of the chat's limits (features/limits/limits-mini.tsx; the rest of it in limits.css): thin bars in the context ring's chip, the
+   five hours over the week; on hover the card of every window (HRN-1552). A bar takes the level's colour as it runs
+   low. On a narrow field it gives way with the ring: the pill's popover keeps the windows. */
+.hx-ctx__chip.hx-limmini {
+  align-content: center;
+  place-items: stretch;
+  gap: 4px;
+  padding: 0 6px;
+  box-sizing: border-box;
 }
 .hx-ctx__chip:hover,
 .hx-ctx__chip:focus-visible,
@@ -1828,6 +1858,9 @@ html[data-theme='dark'] .hx-dock,
   font-size: 12px;
   color: var(--hx-fg-3);
 }
+.hx-ctx__foot[data-tone='low'] {
+  color: var(--hx-warning, var(--hx-fg-2));
+}
 .hx-ctx__foot[data-state='live'] .hx-icon {
   color: var(--hx-accent);
   animation: hx-spin 900ms linear infinite;
@@ -1846,6 +1879,75 @@ html[data-theme='dark'] .hx-dock,
 }
 .hx-ctx__row[data-j='1'] {
   --j: 1;
+}
+
+/* The rows' cascade goes on for the limits' windows. */
+.hx-ctx__row[data-j='2'] {
+  --j: 2;
+}
+.hx-ctx__row[data-j='3'] {
+  --j: 3;
+}
+.hx-ctx__row[data-j='4'] {
+  --j: 4;
+}
+
+/* The limits' card (features/limits/limits-mini.tsx): a window a block — its name and what is left, a thin
+   bar, its reset in grey. A window running low takes the level's colour. */
+.hx-ctx__wins {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.hx-ctx__win .hx-ctx__row {
+  height: 20px;
+}
+.hx-ctx__win .hx-ctx__used {
+  margin-top: 0;
+}
+.hx-ctx__bar[data-size='thin'] {
+  height: 4px;
+  margin: 4px 0;
+  border-radius: 2px;
+}
+.hx-ctx__bar[data-size='thin'] > i {
+  min-width: 0;
+  border-radius: 2px;
+}
+/* A bar of several parts that must add up to its width (the spend's): the gaps come out of the parts. */
+.hx-ctx__bar[data-fit] > i {
+  flex: 0 1 auto;
+}
+.hx-ctx__win[data-level='low'] [data-k='msg'] {
+  background: var(--hx-warning);
+}
+.hx-ctx__win[data-level='out'] [data-k='msg'] {
+  background: var(--hx-danger);
+}
+.hx-ctx__win[data-level='low'] .hx-ctx__val {
+  color: var(--hx-warning);
+}
+.hx-ctx__win[data-level='out'] .hx-ctx__val {
+  color: var(--hx-danger);
+}
+.hx-ctx__rows + .hx-ctx__foot,
+.hx-ctx__wins + .hx-ctx__foot {
+  margin-top: 12px;
+}
+.hx-ctx__wins + .hx-ctx__rows {
+  margin-top: 8px;
+}
+/* A chip that stays on a narrow field (the spend's) stands at the field's start: its card opens to the
+   right, and on a narrow field spans it (the container query above). */
+.hx-ctx[data-wide] {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.hx-ctx[data-wide] .hx-ctx__pop {
+  right: auto;
+  left: -4px;
+  transform-origin: bottom left;
 }
 
 /* An uploaded picture fills its square in the field too. */
@@ -2949,6 +3051,50 @@ span.hx-takes__act {
   .hx-fold[data-open='true'] .hx-fold__full {
     transition: none;
   }
+}
+
+/* A control of the bar put away (composer.tsx Tuck, the «Разговор» of a new chat): it folds by width and fades out,
+   ease-out, and unfolds the same way back; its column goes from its own width to none. */
+.hx-tuck {
+  display: inline-grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  opacity: 1;
+  transition:
+    grid-template-columns var(--hx-dur-md) var(--hx-ease-out),
+    opacity var(--hx-dur-sm) var(--hx-ease-out) 80ms,
+    transform var(--hx-dur-md) var(--hx-ease-out);
+}
+.hx-tuck__in {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.hx-tuck[data-tucked] {
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transform: scale(0.94);
+  transition:
+    grid-template-columns var(--hx-dur-md) var(--hx-ease-out),
+    opacity 160ms var(--hx-ease-out),
+    transform var(--hx-dur-md) var(--hx-ease-out);
+}
+.hx-tuck[data-tucked] > .hx-tuck__in {
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-tuck,
+  .hx-tuck[data-tucked] {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* The field's hint changes (composer.tsx useHintSwap): the old words fade out, the new ones fade in (the way in is
+   the placeholder's own transition above). */
+.hx-dock .hx-composer__input[data-hint='out']::placeholder {
+  opacity: 0;
+  transition-duration: 140ms;
 }
 
 /* The pill held over a change of chat (composer.tsx): a box of no layout of its own, only there to take no click. */

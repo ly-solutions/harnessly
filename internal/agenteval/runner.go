@@ -1,7 +1,9 @@
 package agenteval
 
 import (
+	"archive/tar"
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,15 +19,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/designkit"
 	"github.com/ly-solutions/harnessly/internal/pricing"
 )
 
 // Model is one column of the matrix: an agent CLI and the model it runs.
 type Model struct {
 	// Key names the column in the report ("haiku", "codex:gpt-5.6-sol").
-	Key   string `json:"key"`
-	Agent string `json:"agent"`
-	Model string `json:"model"`
+	Key    string `json:"key"`
+	Agent  string `json:"agent"`
+	Model  string `json:"model"`
+	Effort string `json:"effort,omitempty"`
 }
 
 // ParseModel reads "haiku", "opus", "claude:<id>" or "codex:<model>".
@@ -54,7 +58,11 @@ type Cell struct {
 
 // Key is what makes two runs the same run: the cache's key.
 func (c Cell) Key(setup string) string {
-	h := sha256.Sum256([]byte(strings.Join([]string{c.Scenario.ID, c.Scenario.Fingerprint(), c.Variant.ID, c.Variant.Text, c.Model.Key,
+	modelKey := c.Model.Key
+	if c.Model.Effort != "" {
+		modelKey += "@effort=" + c.Model.Effort
+	}
+	h := sha256.Sum256([]byte(strings.Join([]string{c.Scenario.ID, c.Scenario.Fingerprint(), c.Variant.ID, c.Variant.Text, modelKey,
 		setup, fmt.Sprint(c.Rep)}, "\x00")))
 	return hex.EncodeToString(h[:])[:16]
 }
@@ -74,6 +82,7 @@ type Result struct {
 	Variant   string    `json:"variant"`
 	Prompt    string    `json:"prompt"`
 	Model     string    `json:"model"`
+	Effort    string    `json:"effort,omitempty"`
 	Rep       int       `json:"rep"`
 	Setup     string    `json:"setup"`
 	State     string    `json:"state"`
@@ -88,6 +97,7 @@ type Result struct {
 	// InterruptAt is when the scenario's interrupt was sent (Unix seconds).
 	InterruptAt int64   `json:"interruptAt,omitempty"`
 	USD         float64 `json:"usd"`
+	CostUnknown bool    `json:"costUnknown,omitempty"`
 	Transcript  string  `json:"transcript,omitempty"`
 	StartedAt   string  `json:"startedAt"`
 	Reused      bool    `json:"reused,omitempty"`
@@ -172,6 +182,10 @@ func Run(ctx context.Context, o Options) ([]Result, error) {
 		defer mu.Unlock()
 		results = append(results, r)
 		spent += r.USD
+		if o.MaxUSD > 0 && r.CostUnknown && !stop {
+			stop = true
+			logf("budget: model cost is unknown, no new runs")
+		}
 		if o.MaxUSD > 0 && spent >= o.MaxUSD && !stop {
 			stop = true
 			logf("budget: $%.2f spent, no new runs", spent)
@@ -200,6 +214,15 @@ func Run(ctx context.Context, o Options) ([]Result, error) {
 				key := c.Key(o.Setup)
 				if prev, ok := o.Reuse[key]; ok && prev.State != Infra {
 					prev.Reused = true
+					// Legacy results may have silently priced OpenAI usage as zero.
+					// Reprice the copy, never overwrite the original evidence.
+					if prev.Facts != nil {
+						var known bool
+						prev.USD, known = pricedCost(*prev.Facts)
+						prev.CostUnknown = !known
+					} else if prev.USD == 0 {
+						prev.CostUnknown = true
+					}
 					record(prev)
 					continue
 				}
@@ -218,7 +241,11 @@ func Run(ctx context.Context, o Options) ([]Result, error) {
 					}
 					logf("infra %s/%s/%s: %s — again", c.Scenario.ID, c.Model.Key, c.Variant.ID, r.Error)
 				}
-				logf("%-4s %s · %s · %s #%d · %ds $%.3f %s", r.State, c.Scenario.ID, c.Model.Key, c.Variant.ID, c.Rep, r.WallS, r.USD, firstFail(r))
+				price := fmt.Sprintf("$%.3f", r.USD)
+				if r.CostUnknown {
+					price = "cost unknown"
+				}
+				logf("%-4s %s · %s · %s #%d · %ds %s %s", r.State, c.Scenario.ID, c.Model.Key, c.Variant.ID, c.Rep, r.WallS, price, firstFail(r))
 				record(r)
 			}
 		}(w)
@@ -237,7 +264,19 @@ func Run(ctx context.Context, o Options) ([]Result, error) {
 		}
 		return a.Rep < b.Rep
 	})
-	return results, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return results, err
+	}
+	infraCount := 0
+	for _, r := range results {
+		if r.State == Infra {
+			infraCount++
+		}
+	}
+	if infraCount > 0 {
+		return results, fmt.Errorf("%w: %d run(s) failed; see the recorded results", ErrInfra, infraCount)
+	}
+	return results, nil
 }
 
 func firstFail(r Result) string {
@@ -255,7 +294,7 @@ func firstFail(r Result) string {
 func runOne(ctx context.Context, o Options, c Cell, key, worker string, port int) Result {
 	t0 := time.Now()
 	r := Result{Key: key, Scenario: c.Scenario.ID, Set: c.Scenario.Set, Variant: c.Variant.ID, Prompt: c.Variant.Text, Model: c.Model.Key,
-		Rep: c.Rep, Setup: o.Setup, StartedAt: t0.UTC().Format(time.RFC3339)}
+		Rep: c.Rep, Effort: c.Model.Effort, Setup: o.Setup, StartedAt: t0.UTC().Format(time.RFC3339)}
 	finish := func(state string, err error) Result {
 		r.State, r.WallS = state, int(time.Since(t0).Seconds())
 		if err != nil {
@@ -277,7 +316,7 @@ func runOne(ctx context.Context, o Options, c Cell, key, worker string, port int
 	if sfx := strings.TrimSpace(o.Stand.PromptSuffix); sfx != "" {
 		prompt += "\n\n" + sfx
 	}
-	tab, err := stand.Chat(c.Model.Agent, c.Model.Model, prompt)
+	tab, err := stand.ChatWithEffort(c.Model.Agent, c.Model.Model, c.Model.Effort, prompt)
 	if err != nil {
 		return finish(Infra, err)
 	}
@@ -325,7 +364,9 @@ func runOne(ctx context.Context, o Options, c Cell, key, worker string, port int
 		facts.Checks = append(facts.Checks, CheckResult{Command: chk, Exit: code, Output: out})
 	}
 	r.Facts = &facts
-	r.USD = cost(facts)
+	var costKnown bool
+	r.USD, costKnown = pricedCost(facts)
+	r.CostUnknown = !costKnown
 	if len(facts.Calls) == 0 && len(facts.Said) == 0 {
 		why := "the agent did nothing (turn " + r.TurnState + ")"
 		if len(facts.APIErrors) > 0 {
@@ -345,21 +386,34 @@ func runOne(ctx context.Context, o Options, c Cell, key, worker string, port int
 	return finish(Fail, nil)
 }
 
-// cost prices each model's tokens at its own rate: a delegated chat may run on another model than the person's.
+// cost prices each model's tokens at its own rate.
 func cost(f Facts) float64 {
-	if len(f.ByModel) == 0 {
-		if f.Model == "" || !pricing.Anthropic(f.Model) {
-			return 0
-		}
-		return pricing.ClaudeCostByFullID(f.Model, float64(f.TokensIn), float64(f.TokensOut), float64(f.CacheWrite), 0, float64(f.CacheRead))
-	}
-	total := 0.0
-	for m, u := range f.ByModel {
-		if pricing.Anthropic(m) {
-			total += pricing.ClaudeCostByFullID(m, float64(u.In), float64(u.Out), float64(u.CacheWrite), 0, float64(u.CacheRead))
-		}
-	}
+	total, _ := pricedCost(f)
 	return total
+}
+
+// pricedCost keeps unknown prices distinct from free calls, including mixed-model runs.
+func pricedCost(f Facts) (float64, bool) {
+	price := func(model string, u Usage) (float64, bool) {
+		if u.In == 0 && u.Out == 0 && u.CacheRead == 0 && u.CacheWrite == 0 {
+			return 0, true
+		}
+		if pricing.Anthropic(model) {
+			return pricing.ClaudeCost(model, float64(u.In), float64(u.Out), float64(u.CacheWrite), 0, float64(u.CacheRead))
+		}
+		// Facts normalizes input to the uncached part for both CLIs.
+		return pricing.OpenAICost(model, float64(u.In+u.CacheRead), float64(u.CacheRead), float64(u.Out))
+	}
+	if len(f.ByModel) == 0 {
+		return price(f.Model, Usage{In: f.TokensIn, Out: f.TokensOut, CacheRead: f.CacheRead, CacheWrite: f.CacheWrite})
+	}
+	total, known := 0.0, true
+	for model, usage := range f.ByModel {
+		usd, ok := price(model, usage)
+		total += usd
+		known = known && ok
+	}
+	return total, known
 }
 
 // prepare puts the scenario's setup into the stand.
@@ -389,11 +443,56 @@ func prepare(s *Stand, sc *Scenario) error {
 			return infra("design fixture %s: %v", d, err)
 		}
 	}
+	for _, d := range sc.Setup.Kits {
+		if err := installKit(filepath.Join(sc.Dir(), filepath.FromSlash(d)), designkit.DefaultDir(s.Data)); err != nil {
+			return infra("kit fixture %s: %v", d, err)
+		}
+	}
 	if len(sc.Setup.Design) > 0 {
 		// The library is read by the runtime's store; give it a moment to see the new projects.
 		time.Sleep(2 * time.Second)
 	}
 	return nil
+}
+
+// installKit installs a kit folder as `design kit install` does a tarball: packed, then designkit.Install under the id and
+// version its design-system.json names.
+func installKit(src, dir string) error {
+	raw, err := os.ReadFile(filepath.Join(src, "design-system.json"))
+	if err != nil {
+		return err
+	}
+	var ds struct {
+		Kit struct{ ID, Version string } `json:"kit"`
+	}
+	if err := json.Unmarshal(raw, &ds); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	err = filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: filepath.ToSlash(rel), Mode: 0o644, Size: int64(len(b)), Typeflag: tar.TypeReg}); err != nil {
+			return err
+		}
+		_, err = tw.Write(b)
+		return err
+	})
+	if err == nil {
+		err = tw.Close()
+	}
+	if err != nil {
+		return err
+	}
+	_, err = designkit.Install(dir, ds.Kit.ID, ds.Kit.Version, &buf, designkit.Options{})
+	return err
 }
 
 func copyTree(src, dst string) error {

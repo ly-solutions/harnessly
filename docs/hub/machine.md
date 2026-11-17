@@ -202,6 +202,12 @@ restarts no service. An item is installed only when 2 GiB stay free after it (`w
 (Chromium, LibreOffice, the speech model) wait while the load is above twice the cores (`deferred`). A failure of one
 item never stops the others.
 
+**Chromium on Ubuntu.** Ubuntu's `chromium` package is only a shim that installs the snap, and the runtime cannot
+start a snap (snapd refuses a process outside a login session). So a snap or a script that runs one never counts as
+Chromium, and on Ubuntu amd64 the service adds Google's repository the way `google-chrome-stable` keeps it itself
+(`/usr/share/keyrings/google-chrome.gpg`, `/etc/apt/sources.list.d/google-chrome.sources`) and installs
+`google-chrome-stable`. Google builds no Chrome for arm64, so there the item stays `missing` and says why.
+
 **No network.** An item whose install failed on the network is `no_access`, with the address when the package
 manager names one. The card offers «Указать прокси» (an `http`, `https` or `socks5` address; a login and password go
 in the safe, never in the address) and «Пропустить». The service goes direct first and uses the proxy only after
@@ -510,7 +516,7 @@ machine answers `ownerId` in `GET /api/machines/{id}`.
 ## Upgrade, move and remove
 
 - **Updates by themselves**: the runtime compares its programs (`harnessly-runtime`, `harnessly-agent`, the `harnessly`
-  command) with the hub's `/dl/manifest.json` two minutes after a start and then every hour. Where it may write the
+  command) with the hub's `/dl/manifest.json` two minutes after a start and then every hour (`RUNTIME_UPDATE_INTERVAL`, `1h`; not under `30s`). Where it may write the
   folder they are in (the `full` profile, `~/.local/bin`) it downloads what differs, checks it against the manifest's
   SHA-256, puts it in place with a rename and restarts; tmux and the agents in it keep working. Settings → General →
   Updates shows the state and has «Update now». `RUNTIME_AUTO_UPDATE=0` in `runtime.env` leaves it to the button.

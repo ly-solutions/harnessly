@@ -127,7 +127,9 @@ func workspacePromptText(agentName string, integ integrations.Config) string {
 		"harnessly --help                  # everything, with examples\n" +
 		"```\n\n")
 	b.WriteString("Show the person what they should look at: after you publish a document or draw a board, or when a dev server is running, " +
-		"`harnessly open` it. To hand a task to another agent, make a nested chat: the MCP tool `delegate_task` or `harnessly tab create --prompt` " +
+		"`harnessly open` it. A turn that made many things (several documents, a batch of tasks, merge requests, screenshots) opens one, " +
+		"the one to look at first, or none: the chat already shows what the turn made as cards under your answer, so name the rest as links " +
+		"and never open tasks or merge requests one by one. `harnessly open` shows a thing to the person; it reads nothing for you (read a task with `harnessly issue <KEY>`, a merge request with `glab` or the GitLab API). To hand a task to another agent, make a nested chat: the MCP tool `delegate_task` or `harnessly tab create --prompt` " +
 		"(both give the person a chat under yours, the workspace's hooks, and a way to read the answer or be woken by it with `notify`). " +
 		"A chat you start only to check something: create it with `--test` (`delegate_task` with `test: true`), so it stays out of the person's chat list; " +
 		"`harnessly chat test current` marks the chat you are in.\n" +
@@ -157,6 +159,9 @@ func workspacePromptText(agentName string, integ integrations.Config) string {
 		"make it and hand it over with the `deliver_file` tool (or `harnessly deliver <path>`); never answer with the path in text. " +
 		"Any type goes (html, zip, pdf, png, md, csv, docx…), a folder goes as one zip. The chat gets a card that opens the file on the right, " +
 		"and the person's browser downloads it at once. " +
+		"An html file opens in the right pane as a page the moment it is handed over. " +
+		"The card exists only after the command or the tool call actually ran: never announce a card in advance, and never fake its markup in your " +
+		"message (no tags, no placeholders) — if you wrote about a card without running the command, the person sees only your words. " +
 		"Deliver only files the person asked to receive. Files you merely write or change while working make no card, so do not deliver them, " +
 		"and do not deliver the same file twice unless you changed it.\n\n")
 	b.WriteString(sideWidgetsPromptText)
@@ -178,14 +183,28 @@ func workspacePromptText(agentName string, integ integrations.Config) string {
 		b.WriteString("## Documents and boards\n\n")
 		if integ.ArtifactsURL != "" {
 			b.WriteString("- Documents: the `artifacts` command (catalog at " + integ.ArtifactsURL + "). Search before you write " +
-				"(`artifacts find …`), publish with `artifacts publish --file report.md --title \"…\"`, update the same slug for a new version. " +
-				"Give the person the link it prints.\n")
+				"(`artifacts find …`). Publish a document for the person with `harnessly docs publish report.md --title \"…\"` " +
+				"(`--slug <slug>` for a new version of the same document): it goes through the hub, so it appears in the person's " +
+				"Documents app. `artifacts publish` writes past the hub and the document is not listed there; use it only when " +
+				"`harnessly docs publish` says there is no hub. Give the person the link it prints.\n")
 		}
 		if integ.BoardsURL != "" {
 			b.WriteString("- Boards: the `boards` command (server at " + integ.BoardsURL + "). Read a board from its link with `boards read <link>`, " +
 				"draw a diagram with `boards create \"<title>\" graph.json`, edit with `boards edit <link> -`.\n")
 		}
-		b.WriteString("- Their tokens are already in your environment (`ARTIFACTS_URL`, `ARTIFACTS_TOKEN`, `BOARDS_URL`, `BOARDS_TOKEN`); never print them.\n\n")
+		b.WriteString("- Service addresses and configured credentials are supplied through `ARTIFACTS_URL`, `ARTIFACTS_TOKEN`, `BOARDS_URL`, `BOARDS_TOKEN`. " +
+			"An address does not mean a token is configured. Never print credential values.\n")
+		if integ.BoardsURL != "" {
+			b.WriteString("- Board authentication: prefer the boards app's MCP tools when available; its platform identity is not a CLI API token. " +
+				"For the `boards` CLI, if a token is missing or a request returns 401, run `harnessly secret list` (names only). " +
+				"Use the matching safe entry, or request one with `harnessly secret ask boards-token --origin <boards-origin> --why \"access the board you requested\" --wait 0`. " +
+				"This opens a private input card immediately; continue waiting yourself in the background with `--wait 1800`, without asking for another chat message. " +
+				"When ready, retry through `harnessly secret run --env BOARDS_TOKEN=boards-token -- boards read <link>`. " +
+				"Use the actual safe name and exact server origin. An expired saved token needs `--replace`; a declined request must not be repeated. " +
+				"Never ask for a token in the chat or read a credential file. A 403 for an authenticated user means insufficient board rights: " +
+				"ask for access, do not rotate tokens or make the board public. `board_signin` signs the app's browser in; it does not grant board rights or configure CLI credentials.\n")
+		}
+		b.WriteString("\n")
 	}
 	b.WriteString("## Skills\n\n")
 	b.WriteString("Skills for the above are installed for you: `harnessly`")
@@ -217,6 +236,29 @@ func trackerPromptText() string {
 // designPromptText is how to hand over and show Sinopia Design projects: the design library is not in the agent's
 // folder, so the library's own guide is not loaded.
 const designPromptText = "## Sinopia Design\n\n" +
+	"A mockup, a prototype or a screen the person asks for (\"сделай макет\", \"прототип\", \"набросай экран\", " +
+	"\"сделай, чтобы кнопки работали\", steps, states) is a board of Sinopia Design, from any chat and any folder. " +
+	"Boards run their logic: buttons, steps and states work there and the person sees the board in the pane. " +
+	"Start one with `harnessly design new \"<title>\" --page \"<screen>\"` (or add a page to a project of `harnessly design list`: " +
+	"`harnessly design page create <project> --title …`); it prints the board's file and the rules of the format: read them, " +
+	"write the screen into that file (markup in `<x-dc>`, logic in a `DCLogic` class of `<script type=\"text/x-dc\" data-dc-script>`, " +
+	"steps and states as `data-props` switches), then `harnessly design panel <project> show --board <file>`. " +
+	"A screen or a page by a screenshot or a mockup on a UI kit installed on the machine is a board too: find the kit with " +
+	"`kit_list`, `kit_index`, `kit_search`, `kit_component` and `kit_tokens`, start with `harnessly design new \"<title>\" --kit <id>`, " +
+	"build it of the kit's real components (`<x-import component-from-global-scope=…>`, as `kit_component` gives them). " +
+	"A project on a kit is drawn only from it (the output of `design new` / `design page create` says which kit and how to check: " +
+	"`design check <project> --strict`, then `--board FILE` and look at the screenshot). A NEW design made from scratch " +
+	"(before `harnessly design new`): if the person did not name a UI kit and the conversation does not make clear which one to use, " +
+	"first ask in the chat which installed kit to take (`kit_list`), offering «без кита» as the last option: with `notice_ask` " +
+	"(or AskUserQuestion where that agent has it), else one short question; wait for the answer, then " +
+	"`harnessly design new \"<title>\" --kit <id>` (no `--kit` for «без кита»). Do not ask when the kit is named or clear from the " +
+	"conversation, for an existing project (edits, a new page of it), or when no kit is installed. The panel of Sinopia has no " +
+	"button for a kit: the chat is the only place it is chosen. If `design new` came before the answer: `harnessly design kit use <project> <kit>|none`. " +
+	"Make its scenes (a sheet, a transition, a toast) `data-props` switches and handlers of the `DCLogic` class. " +
+	"Do not write a separate HTML file, build a separate app or start `python3 -m http.server`, a dev server or another localhost " +
+	"server to show a mockup. Only when the person asks for an app or the product's code is it code; even then offer the board " +
+	"as the prototype first and ask. If you still work outside Sinopia Design, the first line of your answer says why and asks " +
+	"\"Сделать то же доской Sinopia?\". An ```html block in the chat is only for a short static sketch: it runs no scripts.\n\n" +
 	"Design projects (boards, pages, decks) live in the design library, not in your folder; `harnessly design list` names them. " +
 	"When the person asks for a page as HTML or a file (\"дай HTML страницы\", \"скинь макет файлом\"), run " +
 	"`harnessly design export <project> \"<page>\"`: it builds one self-contained HTML (styles, fonts, pictures inside) and hands it over " +

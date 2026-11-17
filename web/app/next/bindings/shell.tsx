@@ -77,7 +77,7 @@ import { APP_ROW, appSearchGroup } from '@/next/features/search/app-rows';
 import { useInstalledApps } from '@/next/features/app-views/api';
 import { openAppTab } from '@/next/features/app-views/open';
 import { isSpaceApp } from '@/next/features/app-views/service-health';
-import { clearPlain, designPlaceOf } from '@/next/features/designly/chat-place';
+import { designPlaceOf } from '@/next/features/designly/chat-place';
 import { setDraftText } from '@/next/stores/drafts';
 import { useSmartSearch } from '@/next/bindings/use-smart-search';
 import {
@@ -114,6 +114,12 @@ import { useShellTabs, wantsNewTab } from '@/next/bindings/tabs';
 import { useShellKeys } from '@/next/bindings/shell-keys';
 import { keepScreensOnPhone, TabScopeContext, useTabs, useTopTabs } from '@/next/stores/tabs';
 import { deviceKeptScreensMax, keptScreens } from '@/next/features/shell/kept-screens';
+import {
+  CHAT_RECORD_WAIT_MS,
+  screenChatOf,
+  screenMachine,
+  screenWaits,
+} from '@/next/features/shell/screen-machine';
 import { keptBudget } from '@/next/features/shell/kept-budget';
 import { usePhone } from '@/next/ui/use-media';
 import Sidebar from '@/next/features/sidebar/sidebar';
@@ -188,6 +194,7 @@ import { useFeed } from '@/next/stores/conversation';
 import {
   newChatMachineStore,
   newChatProjectStore,
+  resetHome,
   useNewChatMachine,
   useNewChatProject,
 } from '@/next/stores/new-chat';
@@ -200,6 +207,7 @@ import { countRender } from '@/next/core/perf-journal';
 /** ⌥ Space away from a chat: the voice's field over the screen, loaded when asked. */
 const VoiceFloat = lazy(() => import('@/next/features/voice-live/voice-float'));
 const VoiceBar = lazy(() => import('@/next/features/voice-live/voice-bar'));
+const VoiceFull = lazy(() => import('@/next/features/voice-live/voice-full'));
 const WakeWord = lazy(() => import('@/next/features/voice-live/wake-word'));
 
 const CHAT_LEAVE_MS = 180;
@@ -403,6 +411,21 @@ const KeptPage = ({
 const KeptScreen = memo(
   ({ tabId, active, machine, path, terminal, onTermSlot, toolPane, shell }: IKeptScreenProps) => {
     const tabRoute = parseRoute(path);
+    // The screen is drawn where its chat is, not on the machine active in the shell: a chat is one entity. While nothing
+    // says where the chat is (its record and feed are still coming) the screen waits, it does not fall back to the
+    // active machine, whose list has not got the chat (a new chat would be offered for an existing one).
+    const chatId = screenChatOf(tabRoute);
+    const chatRecord = useConversation(chatId && isConvId(chatId) ? chatId : null);
+    const chatFeed = useFeed(chatId && isConvId(chatId) ? chatId : null);
+    const chatOn = chatRecord?.machineId ?? chatFeed?.machineId ?? null;
+    const waits = screenWaits(tabRoute, chatOn);
+    const [patient, setPatient] = useState(true);
+    useEffect(() => {
+      if (!waits) return;
+      const timer = setTimeout(() => setPatient(false), CHAT_RECORD_WAIT_MS);
+      return () => clearTimeout(timer);
+    }, [waits]);
+    const screenOn = screenMachine(tabRoute, chatOn, machine) as MachineId;
     const scope = useMemo(() => ({ tabId, active }), [tabId, active]);
     // The pane's openers, the same object for the screen's life: each one calls the shell's current one.
     const open = useMemo<NonNullable<IKeptScreensProps['open']>>(
@@ -414,20 +437,25 @@ const KeptScreen = memo(
       [shell],
     );
     if (keptScreenOf(tabRoute) === null) return null;
+    const loading = waits && patient;
     return (
       <div className="hx-kept-screen" data-on={active} inert={!active}>
         <Activity mode={active ? 'visible' : 'hidden'}>
           <TabScopeContext.Provider value={scope}>
             <ChatTerminalContext.Provider value={terminal}>
               <ChatTerminalSlotContext.Provider value={onTermSlot}>
-                <KeptPage
-                  route={tabRoute}
-                  active={active}
-                  machine={machine}
-                  toolPane={toolPane}
-                  open={open}
-                  shell={shell}
-                />
+                {loading ? (
+                  <SiteWait />
+                ) : (
+                  <KeptPage
+                    route={tabRoute}
+                    active={active}
+                    machine={screenOn}
+                    toolPane={toolPane}
+                    open={open}
+                    shell={shell}
+                  />
+                )}
               </ChatTerminalSlotContext.Provider>
             </ChatTerminalContext.Provider>
           </TabScopeContext.Provider>
@@ -772,7 +800,6 @@ const Shell = ({ owner }: IShellProps) => {
   const route = useMemo(() => designPlaceOf(asked), [asked]);
   useWarmPages();
   useEffect(() => {
-    clearPlain(asked.kind === ROUTE.chat ? asked.id : null);
     if (route !== asked) goTo(route, { replace: true });
   }, [asked, route]);
   const me = useMe();
@@ -1400,6 +1427,7 @@ const Shell = ({ owner }: IShellProps) => {
       onNewChat={() => {
         newChatProjectStore.set(null);
         newChatMachineStore.set(null);
+        resetHome();
         // From Designly the field flies back down to the start page's.
         if (!tabs.enabled && route.kind === ROUTE.designly && !wantsNewTab())
           flyComposer(FLY_FIELD.designly, FLY_FIELD.home, () => goTo(HOME));
@@ -1593,6 +1621,7 @@ const Shell = ({ owner }: IShellProps) => {
                 else {
                   newChatProjectStore.set(null);
                   newChatMachineStore.set(null);
+                  resetHome();
                   openScreen(HOME);
                 }
               } else if (row.id.startsWith(APP_ROW.command)) {
@@ -1658,6 +1687,13 @@ const Shell = ({ owner }: IShellProps) => {
       <TourOverlay />
       <VoiceLayer />
       <Suspense fallback={null}>
+        <VoiceFull
+          titleOf={(id) => {
+            const gpt = gptIdOf(id);
+            if (gpt !== null) return gptChats?.find((c) => c.id === gpt)?.title ?? null;
+            return model.conversations?.find((c) => c.id === id)?.title ?? null;
+          }}
+        />
         <VoiceBar
           titleOf={(id) => {
             const gpt = gptIdOf(id);
@@ -1750,7 +1786,10 @@ const Shell = ({ owner }: IShellProps) => {
             machine={headerMachine}
             drawerOpen={drawerOpen}
             onOpenDrawer={() => setDrawerOpen(true)}
-            onNewChat={() => navigate(HOME)}
+            onNewChat={() => {
+              resetHome();
+              navigate(HOME);
+            }}
             pane={pane.header ?? homePane.header}
             terminal={term.header}
             background={bg.header}

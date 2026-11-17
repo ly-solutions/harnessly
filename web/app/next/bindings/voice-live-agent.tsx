@@ -38,6 +38,12 @@ import { useFileSelectionChip } from '@/next/stores/file-selection';
 import { useChatPane } from '@/next/stores/pane-state';
 import { recentLines, screenText } from '@/next/bindings/voice-screen';
 import { callStyle, DELIVERY } from '@/next/features/voice-live/style';
+import { isNoiseText } from '@/next/features/voice-live/noise';
+import { useVoiceHands } from '@/next/bindings/voice-hands';
+
+/** Words about the page, the chats, the model or the talk itself, not about the open board: the router takes them. */
+const COMMAND_RE =
+  /(открой|откро|закрой|покажи|переключ|тем[уаеы]\b|сайдбар|боков|панел|настройк|чат|модел|опус|сонет|хайку|уров[ен]|глубж|быстрее|разреш|вариант|вспомн|помнишь|прочитай|читай|продолж|новый|новую|создай|заверш|стоп|хватит|open|theme|sidebar|settings|chat|model|switch|read)/i;
 
 /** «Верни», «отмени», «откати»: the last quick edit put back. */
 const UNDO_RE = /^(верни|отмени|откати|undo|revert)/i;
@@ -98,6 +104,7 @@ const VoiceLiveAgent = ({ machine, conv, extra = null }: IVoiceLiveAgentProps) =
       }
     : null;
   const voiceEdit = extra?.voiceEdit ?? paneEdit;
+  const hands = useVoiceHands({ machine, conv, overBoard: Boolean(voiceEdit), controls });
   const started = useRef(false);
   // A task that waits for «да» (confirm.ts): the next words decide.
   const held = useRef<IVoiceTask | null>(null);
@@ -205,9 +212,9 @@ const VoiceLiveAgent = ({ machine, conv, extra = null }: IVoiceLiveAgentProps) =
 
   /** A spoken task, let go: a quick edit of the open board, or a message to the chat's agent. */
   const run = (task: IVoiceTask, say: IVoiceLiveControls['say'], note: IVoiceLiveControls['note']) => {
-    const toAgent = () => {
+    const toAgent = (routedText?: string) => {
       setTasks((was) => [...was, task.id]);
-      const words = spokenTask(task);
+      const words = routedText?.trim() || spokenTask(task);
       // Nothing heard: no message with only the board's context around an empty line (15.11, three such).
       if (!words.trim()) return void say(t('next.chatgpt.voice.notHeard'), task.id);
       const text = extra ? extra.wrap(words) : words;
@@ -215,7 +222,21 @@ const VoiceLiveAgent = ({ machine, conv, extra = null }: IVoiceLiveAgentProps) =
       extra?.onSent();
     };
     const edit = voiceEdit;
-    if (!edit) return toAgent();
+    // Through the router: what it cannot place goes on as `fallback` says (the agent, or «занято»).
+    const viaRouter = (fallback: () => void) =>
+      void hands.route(task, say, toAgent).then((done) => {
+        if (!done) fallback();
+      });
+    // Over an open board or file a command about the page, the chats or the talk is not an edit (00:18 17.11: «открой
+    // …» over a design went to the quick edit and came back «занято»): it goes through the router too.
+    if (edit && COMMAND_RE.test(task.said?.trim() || task.text)) return viaRouter(toAgent);
+    if (!edit) {
+      // Everything but a quick edit goes through the router first; when it is not there, to the agent as before.
+      void hands.route(task, say, toAgent).then((done) => {
+        if (!done) toAgent();
+      });
+      return;
+    }
     // An app's object (a board, a document; HRN-1469): the app plans and applies the change, a removal asks «да».
     const app = edit.app;
     if (app) {
@@ -255,7 +276,7 @@ const VoiceLiveAgent = ({ machine, conv, extra = null }: IVoiceLiveAgentProps) =
             return;
           }
           if (code === 'edit_taken' || code === 'edit_conflict')
-            return void say(t('next.chatgpt.voice.taken'), task.id);
+            return viaRouter(() => void say(t('next.chatgpt.voice.taken'), task.id));
           toAgent();
         },
       );
@@ -304,7 +325,8 @@ const VoiceLiveAgent = ({ machine, conv, extra = null }: IVoiceLiveAgentProps) =
       (refused: unknown) => {
         unmark(false);
         if (refusalCode(refused) === 'edit_taken') {
-          void say(t('next.chatgpt.voice.taken'), task.id);
+          // The agent holds the board: the words go through the router (the agent's chat, or what else they ask).
+          viaRouter(() => void say(t('next.chatgpt.voice.taken'), task.id));
           return;
         }
         toAgent();
@@ -369,6 +391,11 @@ const VoiceLiveAgent = ({ machine, conv, extra = null }: IVoiceLiveAgentProps) =
       controlsRef={controls}
       onTask={(piece, { say, note }) => {
         if (!piece.text.trim() && !piece.said?.trim()) return;
+        // A noise the recognizer made words of (noise.ts) is not a task: nothing goes to a chat.
+        if (isNoiseText(piece.said?.trim() || piece.text)) {
+          void say('That was background noise, not the person: ignore it and say nothing.', piece.id, false);
+          return;
+        }
         // A phrase cut by a pause comes as two tasks (15.11: «и нарисуем краткую» + «нормальную интеграцию…»): the
         // pieces said within MERGE_MS are one task. A «да» or «нет» to a held task is not waited for.
         if (!held.current && !heldPermission.current && !heldRemoval.current) {
@@ -388,9 +415,12 @@ const VoiceLiveAgent = ({ machine, conv, extra = null }: IVoiceLiveAgentProps) =
         decide(piece, say, note);
       }}
       onBegin={() => {
+        hands.onBegin();
         if (voiceEdit) void warmQuickEdit(machine).catch(() => undefined);
       }}
+      onLine={hands.onLine}
       onEnd={() => {
+        hands.onEnd();
         window.clearTimeout(pending.current?.timer);
         pending.current = null;
         setTasks([]);

@@ -52,6 +52,14 @@ func (a *Agent) handler(w http.ResponseWriter, r *http.Request) {
 		a.envProposeRoute(w, r)
 		return
 	}
+	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/env/own" {
+		a.envOwnRoute(w, r)
+		return
+	}
+	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/history/read" {
+		a.centralHistoryRoute(w, r)
+		return
+	}
 	if a.localToken != "" && r.Method == http.MethodPost && r.URL.RequestURI() == "/notify/call" {
 		a.notifyRoute(w, r)
 		return

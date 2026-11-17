@@ -44,6 +44,8 @@ export interface IProjectKit {
   draftProject?: string;
   /** The project is itself the draft of this kit. */
   kitDraftOf?: string;
+  /** The kits installed on the machine; sent while the project has none. */
+  installed?: string[];
 }
 
 export interface IKitDraft {
@@ -125,6 +127,7 @@ export const fetchProjectKit = (m: MachineId, artifact: string, signal?: AbortSi
   runtimeJson<IProjectKit>(m, projectPath(`/kit?${q({ artifact })}`), { signal, cache: 'no-store' });
 
 export const KIT_ACTION = { edit: 'edit', use: 'use', stay: 'stay' } as const;
+
 export type TKitAction = (typeof KIT_ACTION)[keyof typeof KIT_ACTION];
 
 export const changeProjectKit = (m: MachineId, artifact: string, action: TKitAction, version?: string) =>

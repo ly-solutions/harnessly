@@ -6,7 +6,8 @@ import { useContext, useState, type ReactElement, type ReactNode } from 'react';
 import renderTree, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import HtmlBlock from '@/next/features/chat/html-block';
-import LinkCard, { cardKindOf } from '@/next/features/chat/link-card';
+import { AnswerText } from '@/next/features/chat/mockup-to-design';
+import { cardKindOf, LoneLink } from '@/next/features/chat/link-card';
 import { AppLinkParagraph } from '@/next/features/app-views/link-card';
 import MermaidBlock from '@/next/features/chat/mermaid-block';
 import { changeLinkLabel, chatIdOfHref, docOfCode, splitRefs } from '@/next/features/chat/refs';
@@ -164,7 +165,11 @@ const components = {
     const kind = href ? cardKindOf(href) : null;
     if (kind) {
       const text = link?.children.map((c) => ('value' in c ? c.value : '')).join('') ?? '';
-      return <LinkCard kind={kind} href={href} text={text} />;
+      return (
+        <LoneLink kind={kind} href={href} text={text}>
+          {children}
+        </LoneLink>
+      );
     }
     // Any other https link alone in its paragraph may be one an app on in the chat shows a card for.
     if (href.startsWith('https://')) return <AppLinkParagraph href={href}>{children}</AppLinkParagraph>;
@@ -269,7 +274,11 @@ const Markdown = ({ md, paths = false, guide }: IMarkdownProps) => {
         })}
       </div>
     );
-  return <div className="hx-md">{render(md, paths)}</div>;
+  const tree = render(md, paths);
+  // An ```html card names its mockup by the answer's first line when the page has no heading.
+  return (
+    <div className="hx-md">{md.includes('```html') ? <AnswerText value={md}>{tree}</AnswerText> : tree}</div>
+  );
 };
 
 export default Markdown;

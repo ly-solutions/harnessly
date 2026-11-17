@@ -202,6 +202,17 @@ func (a *API) ProjectKitRoute(r *http.Request) Answer {
 		_, err = a.L.UseKitVersion(id, version, false)
 	case "stay":
 		_, err = a.L.UseKitVersion(id, version, true)
+	case "attach":
+		kit, _ := strField(body, "kit")
+		_, err = a.L.UseProjectKit(id, kit)
+	case "connect":
+		// Installing a package runs npm on this machine: only the project's owner may ask for it.
+		if no := a.gate(r, id, RoleOwner); no != nil {
+			return *no
+		}
+		source, _ := strField(body, "source")
+		registry, _ := strField(body, "registry")
+		_, err = a.L.ConnectKitPackage(id, source, registry)
 	default:
 		return JSON(r, http.StatusBadRequest, errorBody(locale.Pick("action is edit, use or stay", "action: edit, use или stay")), noStore())
 	}

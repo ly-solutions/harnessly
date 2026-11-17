@@ -226,8 +226,18 @@ func (s *Stand) writeHome(cfg StandConfig) error {
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
+// standShell is the shell a stand's panes start with: bash where the machine has it, else sh.
+func standShell() string {
+	if exists("/bin/bash") {
+		return "/bin/bash"
+	}
+	return "/bin/sh"
+}
+
 func (s *Stand) start(cfg StandConfig) error {
-	env := []string{"HOME=" + s.Home, "USER=" + os.Getenv("USER"), "LANG=C.UTF-8", "TERM=xterm-256color",
+	// SHELL: tmux starts a pane with it, else with the account's login shell, which on a machine of service accounts is
+	// /usr/sbin/nologin: every pane would exit at once and the stand would have no chat.
+	env := []string{"HOME=" + s.Home, "USER=" + os.Getenv("USER"), "LANG=C.UTF-8", "TERM=xterm-256color", "SHELL=" + standShell(),
 		"PATH=" + filepath.Join(s.Home, ".local", "bin") + ":/usr/local/bin:/usr/bin:/bin",
 		"HARNESSLY_DATA_DIR=" + s.Data, "AGENT_DATA_DIR=" + s.Data,
 		"RUNTIME_GATE_LISTEN=127.0.0.1:" + strconv.Itoa(s.Port), "RUNTIME_GATE_UPSTREAM=",
@@ -357,6 +367,11 @@ func (s *Stand) api(method, path string, body, out any) error {
 
 // Chat starts a chat of agent (claude, codex) on model with the person's words, the platform's way.
 func (s *Stand) Chat(agent, model, prompt string) (string, error) {
+	return s.ChatWithEffort(agent, model, "", prompt)
+}
+
+// ChatWithEffort starts a chat without silently using the model's default effort.
+func (s *Stand) ChatWithEffort(agent, model, effort, prompt string) (string, error) {
 	panel := "claude-code"
 	if agent == "codex" {
 		panel = "codex-cli"
@@ -364,6 +379,9 @@ func (s *Stand) Chat(agent, model, prompt string) (string, error) {
 	body := map[string]any{"workspaceId": s.Workspace, "panelType": panel, "prompt": prompt}
 	if model != "" {
 		body["model"] = model
+	}
+	if effort != "" {
+		body["effort"] = effort
 	}
 	var tab struct {
 		TabID    string `json:"tabId"`

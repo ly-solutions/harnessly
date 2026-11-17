@@ -2,6 +2,7 @@ package delegation
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/ly-solutions/harnessly/internal/convo"
@@ -105,6 +106,11 @@ func transcript(c wire.Conversation, snap wire.ConvSnapshot, limit int) string {
 		fmt.Fprintf(&b, "\nnext: %s (pass it as since to read only what comes after)\n", snap.Entries[len(snap.Entries)-1].ID)
 	}
 	return b.String()
+}
+
+// Transcript is the compact, safe-to-pass-to-an-agent rendering of a stored conversation page.
+func Transcript(c wire.Conversation, snap wire.ConvSnapshot, limit int) string {
+	return transcript(c, snap, limit)
 }
 
 func entryLine(e wire.Entry) string {
@@ -325,4 +331,21 @@ func queuedWhy(r wire.QueueReason) string {
 		return "it waits behind the messages ahead of it."
 	}
 	return "the agent works, and the message goes in when it can take it (at the end of its turn at the latest)."
+}
+
+// ConversationRef is the chat id in a reference to it: the id itself (tab-…) or the link to the chat a person drops into
+// another chat (https://<hub>/agents/c/<id>), so an agent reads that chat without the person's page session.
+func ConversationRef(ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if u, err := url.Parse(ref); err == nil && u.Scheme != "" && u.Host != "" {
+		p := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(p) != 3 || p[0] != "agents" || p[1] != "c" {
+			return "", fmt.Errorf("not a hub conversation URL")
+		}
+		ref = p[2]
+	}
+	if !strings.HasPrefix(ref, "tab-") || len(ref) > 200 || strings.ContainsAny(ref, "/?# ") {
+		return "", fmt.Errorf("not a conversation id or hub conversation URL")
+	}
+	return ref, nil
 }
