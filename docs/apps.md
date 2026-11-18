@@ -52,7 +52,7 @@ install points at your folder and is never deleted by `remove`.
 | `kind` | no | `ui`, `runtime` or `tool`: what the package is (see Extensions). Worked out from the contents when absent; when written it must agree with them |
 | `data` | no | `{version, migrations}`: the version of the app's own data and a JSON Patch file for each earlier version (`"1": "migrations/1-to-2.json"`) |
 | `agent` | no | `instructions` and `tools` (`allow`, `deny`, `confirm`) act. `mcp` is what a Sinopia `tool` must name. `skills` is checked against the files (all of `skills/` loads anyway). `context` items with `mode: on-activation` are called on `SessionStart` and `UserPromptSubmit` and reach the agent when the answer changes (`on-demand` is checked, not used); `validators` (`id`, `on` PostToolUse|Stop, `match`, `run`, `maxRetries`) run a package script after a tool call or at Stop and block with its remark on exit code 2, up to `maxRetries`; `exclusive` is checked, not used yet; `flow` is refused: not supported yet |
-| `views` | no | `{id, title, entry, targets}` (`height` is refused: a card sizes itself with `hl.resize`): `entry` is a file of the package or an `https://` address listed in `network.frames` |
+| `views` | no | `{id, title, entry, targets}` (`height` is refused: a card sizes itself with `hl.resize`): `entry` is a file of the package or an `https://` address listed in `network.frames`; a remote entry may declare `{object}`, filled from `app:<id>/<view>/<object>` |
 | `icon`, `when`, `storage`, `backend` | no | Refused with «not supported yet»: the host reads them and does nothing. A server is `.mcp.json`; a view keeps its data with `hl.storage` |
 | `chat` | no | `commands` (`/name`, a file `commands/name.md`), `cards` (views with the chat target) |
 
@@ -139,7 +139,7 @@ One dependency-free file the runtime serves to every view at `/__hl/app-sdk.js` 
 | `hl.chat.send(text)` | `chat.prompt` | A message to the agent of this chat; the chat always shows the app's real name before it, on one line |
 | `hl.chat.read({last})` | `chat.read` | The latest messages of the chat |
 | `hl.chat.card(view, data)` | `chat.card` | A card of the app in the feed |
-| `hl.pane.open(target)` | `pane.open` | Opens `app:<id>[/<view>]`, or `chat:<id>` of a conversation the page holds — this machine's or another machine's of the person (also needs `agents.read`); where the app is the main thing also `object:<slug>` and `share:<slug>` (the share dialog of a board or a document); anything else is `invalid_params` |
+| `hl.pane.open(target)` | `pane.open` | Opens `app:<id>[/<view>[/<object>]]`, or `chat:<id>` of a conversation the page holds — this machine's or another machine's of the person (also needs `agents.read`); where the app is the main thing also `object:<slug>` and `share:<slug>` (the share dialog of a board or a document); anything else is `invalid_params` |
 | `hl.agents.list()` | `agents.read` | Conversations of the person on this machine: `{id, title, status: working\|waiting\|free, provider, machine}`, no text; the page answers from the list it already holds, and tells the `agents` event when it changes |
 | `hl.tools.call('server.tool', args)` | none | A tool of the app's own remote MCP server (`.mcp.json`), called by the machine: `https://` on a public address, or an internal host the deployment lists (`RUNTIME_APPS_INTERNAL_HOSTS`, `RUNTIME_APPS_CA_FILE`), 30 s, 4 MB. A `command` server is `policy_blocked`, a header with `${` is not sent. Answers the raw MCP result, `isError` included |
 | `hl.storage.<scope>.get/getVersioned/set/delete/keys` | `storage` | Scopes `install`, `user`, `chat`, `space`, `doc`; writing `space` needs `storage.space.write`. Every key has a version (a counter that goes up with each write or delete; 0 for a key never written or kept before versions). `getVersioned` answers `{value, version}`; `set(key, value, {ifVersion})` writes only if the key is at that version, else rejects with `conflict` (`error.version` is the current one) and writes nothing; a write past the area's limit is `quota_exceeded` |
@@ -233,6 +233,9 @@ The frame is shown at once, as a site: the page does not wait for the machine's 
 waits for it instead), and the view counts as up when its page has loaded, with or without a handshake. So a remote view
 should read its own data from its own server and move between its own screens by itself (the History API keeps the
 bridge), and use the bridge for what only the host has: the theme, the chat, a tool call that signs the person in.
+An entry may declare `{object}`. Opening `app:<id>/<view>/<object>` replaces it with the validated object (letters, digits,
+`.`/`_`/`-`, at most 128 characters); a missing or unsafe object refuses the frame. This keeps a dynamic remote page on its
+own origin; nesting it inside a package view would instead inherit that view's opaque-origin sandbox.
 A navigation inside the frame ends the bridge, as for a package view: sign the person in before the view's page, or in
 a popup. A site that exists already (an admin panel) takes the loader line instead and tells the agent its forms and
 actions with `state`, `action` and `screen`: see [An existing site](build-apps/11-existing-site.md).
