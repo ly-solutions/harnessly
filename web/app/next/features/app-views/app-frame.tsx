@@ -123,12 +123,13 @@ const elevationAction = (method: string): string => {
   if (method === 'harnessly/secrets.put') return t('next.appview.elevate.secretsPut');
   return t('next.appview.elevate.other');
 };
-export const APP_FRAME_SANDBOX = 'allow-scripts allow-forms allow-popups';
+export const APP_FRAME_SANDBOX = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox';
 /**
  * A view the app's own server hosts runs on that server's origin (its own sign-in and storage work), which is never the
  * page's: frameSrc refuses the page's origin, so allow-same-origin gives it nothing of the host.
  */
-export const REMOTE_FRAME_SANDBOX = `${APP_FRAME_SANDBOX} allow-same-origin`;
+export const REMOTE_FRAME_SANDBOX = `${APP_FRAME_SANDBOX} allow-same-origin allow-downloads`;
+export const REMOTE_FRAME_ALLOW = 'clipboard-read; clipboard-write; fullscreen';
 
 /** The remote view's address with the nonce in its fragment (never sent to its server; the shim takes it out). */
 export const withNonce = (src: string, nonce: string): string => {
@@ -185,6 +186,12 @@ export const remoteViewUrl = (entry: string | undefined, data: unknown): string 
       : null;
   if (typeof object !== 'string' || !APP_OBJECT_RE.test(object)) return undefined;
   return template.replaceAll('{object}', encodeURIComponent(object));
+};
+
+/** A failed host session never reloads a remote document; only a package view mounts anew. */
+export const recoverViewSession = (remote: boolean, renew: () => void, reload: () => void): void => {
+  if (remote) renew();
+  else reload();
 };
 
 export interface IAppFrameProps {
@@ -296,6 +303,7 @@ const AppFrame = ({
   // bridge's calls need) is asked for beside it. A bridge call waits for it; the page never does.
   const heldSession = useRef<{ key: string; made: Promise<string> } | null>(null);
   const [lateSession, setLateSession] = useState<{ key: string; session: string } | null>(null);
+  const [sessionRetry, setSessionRetry] = useState(0);
   // The chat the site's session was asked for; undefined until the first one.
   const sessionChat = useRef<string | null | undefined>(undefined);
   // This frame among the views of the chat that offer page tools.
@@ -510,7 +518,7 @@ const AppFrame = ({
     return () => {
       live = false;
     };
-  }, [view.url, view.id, waits, chat, machine, app.id, target, doc, key]);
+  }, [view.url, view.id, waits, chat, machine, app.id, target, doc, key, sessionRetry]);
 
   // The slot went to a page used less recently: ask again, and get another.
   useEffect(
@@ -553,10 +561,19 @@ const AppFrame = ({
   useEffect(() => {
     if (renewed === null) return;
     const timer = window.setInterval(() => {
-      renewViewSession(machine, renewed).catch(() => setReload((n) => n + 1));
+      renewViewSession(machine, renewed).catch(() =>
+        recoverViewSession(
+          remote,
+          () => {
+            sessionChat.current = undefined;
+            setSessionRetry((n) => n + 1);
+          },
+          () => setReload((n) => n + 1),
+        ),
+      );
     }, RENEW_MS);
     return () => window.clearInterval(timer);
-  }, [machine, renewed]);
+  }, [machine, renewed, remote]);
 
   // What the page sees of the frame itself: when its first document loaded, and a refusal of the page's own
   // policy. When the machine never saw the view's request, these are what the card can tell.
@@ -1219,7 +1236,7 @@ const AppFrame = ({
         title={view.title ?? app.name}
         sandbox={remote ? REMOTE_FRAME_SANDBOX : APP_FRAME_SANDBOX}
         referrerPolicy="no-referrer"
-        allow=""
+        allow={remote ? REMOTE_FRAME_ALLOW : ''}
         src={shown?.src ?? undefined}
         data-fit={fit || undefined}
         height={fit ? height : undefined}

@@ -61,6 +61,42 @@ describe('remoteViewUrl: an object fills only a declared remote-view placeholder
   });
 });
 
+describe('remote session recovery and editor permissions', () => {
+  it('renews only the bridge session of a remote view, never its document', () => {
+    let renewed = 0,
+      reloaded = 0;
+    appFrame.recoverViewSession(
+      true,
+      () => {
+        renewed += 1;
+      },
+      () => {
+        reloaded += 1;
+      },
+    );
+    expect(renewed).toBe(1);
+    expect(reloaded).toBe(0);
+    appFrame.recoverViewSession(
+      false,
+      () => {
+        renewed += 1;
+      },
+      () => {
+        reloaded += 1;
+      },
+    );
+    expect(reloaded).toBe(1);
+  });
+
+  it('lets official editors download, use the clipboard and open a normal tab', () => {
+    expect(appFrame.REMOTE_FRAME_SANDBOX).toContain('allow-downloads');
+    expect(appFrame.REMOTE_FRAME_SANDBOX).toContain('allow-same-origin');
+    expect(appFrame.REMOTE_FRAME_SANDBOX).toContain('allow-popups-to-escape-sandbox');
+    expect(appFrame.APP_FRAME_SANDBOX).toContain('allow-popups-to-escape-sandbox');
+    expect(appFrame.REMOTE_FRAME_ALLOW).toBe('clipboard-read; clipboard-write; fullscreen');
+  });
+});
+
 describe('shookAlready: a bridge made anew for a document that shook hands is dead', () => {
   const frame = { id: 'f' };
   const src = 'https://views.example.test/b/app#hl-nonce=n1';
