@@ -561,8 +561,8 @@ is online; `GET /api/spaces/{spaceId}/apps` lists the space's apps and their pag
   the owner who installs an app answers for it.
 - `harnessly app install --team <id> [--channel stable]` installs the catalog's app for the whole team. Owners only.
   Members have the app without installing: the registry merges the team's installs in; a member's own install of the
-  same app wins. On `/apps` the catalog is under the list: «Установить для команды» for an owner, «Выключить у меня» for
-  a member (the app stays installed for the team; a member cannot remove it). The change waits for the machine.
+  same app wins. On `/apps` the catalog is under the list: «Установить для команды» for an owner, «Выключить у меня» for a
+  member (the app stays installed for the team; a member cannot remove it). The change waits for the machine.
 - The team's install follows its catalog entry like a channel does: a patch or a minor reaches the machines at once, a
   major or new rights wait for the owner to install again. `harnessly app rollback --team --channel C` points the entry
   back.
