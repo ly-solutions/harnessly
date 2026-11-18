@@ -92,6 +92,7 @@ import { openAppTerminal } from '@/next/features/app-views/app-terminal';
 import { openAddressTab, openAppTab } from '@/next/features/app-views/open';
 import { agentRows, chatTarget, openConversation, watchAgents } from '@/next/features/app-views/agents';
 import { objectTarget, shareTarget } from '@/next/features/app-views/target';
+import { APP_OBJECT_RE } from '@/next/routes/app-object';
 import { reaches, subscribeStorageChanges } from '@/next/features/app-views/storage-events';
 import { viewTheme } from '@/next/features/app-views/theme';
 import { sendMessage } from '@/next/commands/messages';
@@ -171,6 +172,19 @@ export const frameSrc = (url: string, page: string): string | null => {
   } catch {
     return null;
   }
+};
+
+/** A remote view may declare `{object}` in its entry; only a validated app object fills it. */
+export const remoteViewUrl = (entry: string | undefined, data: unknown): string | undefined => {
+  if (entry === undefined) return undefined;
+  const template = entry.replace(/%7Bobject%7D/gi, '{object}');
+  if (!template.includes('{object}')) return entry;
+  const object =
+    typeof data === 'object' && data !== null && 'object' in data
+      ? (data as { object?: unknown }).object
+      : null;
+  if (typeof object !== 'string' || !APP_OBJECT_RE.test(object)) return undefined;
+  return template.replaceAll('{object}', encodeURIComponent(object));
 };
 
 export interface IAppFrameProps {
@@ -328,6 +342,7 @@ const AppFrame = ({
   // What the frame was last opened for, and on which slot: a view shown again after waiting out of sight (a kept screen
   // under Activity) runs the effect below again, and must not open a new session and load the view anew
   // while the one it shows is still its own.
+  const remoteUrl = remoteViewUrl(view.url, data);
   const openedFor = useRef<{ sign: string; slot: number | null } | null>(null);
   const openedNow = useRef(opened);
   useEffect(() => {
@@ -338,7 +353,7 @@ const AppFrame = ({
     let live = true;
     // A view on the app's own server does not start anew for another chat: its frame holds no session, the page asks
     // the session for the new chat beside it (below). A view the machine serves has its session in its address.
-    const sign = [key, view.url, view.path, lease, target, view.url ? '' : chat, doc, waits].join('|');
+    const sign = [key, remoteUrl, view.path, lease, target, view.url ? '' : chat, doc, waits].join('|');
     const was = openedFor.current;
     if (
       openedNow.current?.key === key &&
@@ -379,7 +394,7 @@ const AppFrame = ({
     }
     // A view the app's own server hosts needs no slot: the frame goes there directly, with a session the page holds.
     if (view.url) {
-      const direct = frameSrc(view.url, window.location.origin);
+      const direct = frameSrc(remoteUrl ?? '', window.location.origin);
       if (direct === null) {
         failText(t('next.appview.badAddressWhy'));
         return;
@@ -454,6 +469,7 @@ const AppFrame = ({
     app.reason,
     machine,
     view.url,
+    remoteUrl,
     view.path,
     view.id,
     viewPort,
@@ -558,7 +574,7 @@ const AppFrame = ({
       // A site is up when its page loaded: it shows its own states, and owes the host no handshake to be seen. A built-in
       // service's view (Доски, Документы) always shakes hands through its bridge shim: a load is not enough for it, since
       // a frame the site refused (frame-ancestors, a gateway's error page) loads too, white, and the card never came
-      // 
+      //
       if (remote && !isSpaceApp(app.id)) send({ k: 'handshake' });
       journal(
         {
