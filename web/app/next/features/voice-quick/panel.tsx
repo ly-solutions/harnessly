@@ -53,7 +53,12 @@ const QuickPanel = ({ quick, label, children }: IQuickPanelProps) => {
       open={quick.open}
       onOpenChange={(next, details) => {
         // A press on the button itself is its own gesture (a second right click closes): the button toggles.
-        if (!next && details.event.target instanceof Node && quick.anchor?.contains(details.event.target)) {
+        if (
+          !next &&
+          details.reason === 'outside-press' &&
+          details.event.target instanceof Node &&
+          quick.anchor?.contains(details.event.target)
+        ) {
           details.cancel();
           return;
         }
