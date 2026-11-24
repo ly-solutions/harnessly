@@ -18,6 +18,7 @@ func TestSingleHostnamePrototypeSnapshotWithOwnerOffline(t *testing.T) {
 	space, _ := owner.NewSpace("Studio")
 	a, _ := designMachine(t, s, owner, space)
 	created(a, "shop", owner.Email)
+	s.Eventually("runtime enforces ownership", func() bool { role, ok := snapshotFor(a, owner.Email, "shop"); return ok && role == "owner" })
 	base := "/m/" + a.MachineID + "/api/platform/access/design/shop/links"
 	input := map[string]any{"forWhom": "Preview", "rights": "view", "ttl": "1d", "version": "pinned", "pages": []string{"Main.dc.html", "Secret.dc.html"}}
 	if other := outsider.Do("POST", base, input); other.Code == 201 {

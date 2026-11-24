@@ -46,7 +46,7 @@ func newDesignRuntime(t *testing.T, probe func(string) design.ShareFSReport) *de
 			t.Fatal(err)
 		}
 	}
-	l := design.New(design.Config{ShareProbe: probe, LibraryDir: root, ReleasesDir: t.TempDir(), Texts: design.Texts{Tag: "harnessly-design", CLI: "harnessly"}})
+	l := design.New(design.Config{ShareProbe: probe, LibraryDir: root, DataDir: t.TempDir(), ReleasesDir: t.TempDir(), Texts: design.Texts{Tag: "harnessly-design", CLI: "harnessly", HistoryEmail: "snapshots@example.test"}})
 	t.Cleanup(l.StopWatching)
 	a := &design.API{
 		L: l, PlatformAPI: "/api/platform", MachineAgent: func(*http.Request) bool { return true },
