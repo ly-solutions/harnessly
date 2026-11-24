@@ -583,7 +583,9 @@ func gitIdentity(path string) gitPerson {
 	read := func(key string) string {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "git", "config", "--global", "--get", key)
+		// Read the system and both global files (including XDG includes), outside any checkout.
+		cmd := exec.CommandContext(ctx, "git", "config", "--get", key)
+		cmd.Dir = "/"
 		cmd.Env = append(os.Environ(), "PATH="+path)
 		out, err := cmd.Output()
 		if err != nil {

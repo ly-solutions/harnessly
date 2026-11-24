@@ -423,3 +423,34 @@ func TestGitIdentityRepairPreservesEachCustomField(t *testing.T) {
 		}
 	}
 }
+
+func TestGitIdentityReadsXDGDefaultsAndPersonalOverrides(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git missing")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "")
+	if err := os.Unsetenv("GIT_CONFIG_GLOBAL"); err != nil {
+		t.Fatal(err)
+	}
+	xdg := filepath.Join(home, ".config")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	dir := filepath.Join(xdg, "git")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		filepath.Join(dir, "config"):      "[include]\n path = defaults\n",
+		filepath.Join(dir, "defaults"):    "[user]\n name = Listed name\n email = user@example.org\n",
+		filepath.Join(home, ".gitconfig"): "[user]\n name = Chosen name\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := gitIdentity(os.Getenv("PATH")); got.Name != "Chosen name" || got.Email != "user@example.org" {
+		t.Fatalf("read %+v", got)
+	}
+}
