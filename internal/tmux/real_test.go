@@ -90,9 +90,16 @@ func niceOf(t *testing.T, pid string) int {
 func TestRealCreateSessionStartsTheCleanLoginShell(t *testing.T) {
 	r := newRealRig(t)
 	dir := t.TempDir()
+	personal := filepath.Join(dir, ".local", "bin")
+	if err := os.MkdirAll(personal, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(personal, "personal-pane-tool"), []byte("#!/bin/sh\necho ready\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	report := filepath.Join(dir, "env.txt")
 	shell := filepath.Join(dir, "login-shell")
-	script := "#!/bin/sh\nprintf '%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n' \"$PATH\" \"${RUNTIME_SECRET-unset}\" \"$TMUX\" \"$TMUX_PANE\" \"$1\" \"$(pwd)\" > " + report + ".tmp\nmv " + report + ".tmp " + report + "\nexec cat\n"
+	script := "#!/bin/sh\nprintf '%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n' \"$PATH\" \"${RUNTIME_SECRET-unset}\" \"$TMUX\" \"$TMUX_PANE\" \"$1\" \"$(pwd)\" > " + report + ".tmp\npersonal-pane-tool >> " + report + ".tmp\nmv " + report + ".tmp " + report + "\nexec cat\n"
 	if err := os.WriteFile(shell, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +116,7 @@ func TestRealCreateSessionStartsTheCleanLoginShell(t *testing.T) {
 	waitFor(t, 5*time.Second, "the shell's report", func() bool { _, err := os.Stat(report); return err == nil })
 	b, _ := os.ReadFile(report)
 	got := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
-	if got[0] != "/opt/app/bin/pane:"+loginShellBasePath || got[1] != "unset" || !strings.Contains(got[2], r.main) || got[4] != "-l" || got[5] != work {
+	if len(got) != 7 || got[6] != "ready" || got[0] != "/opt/app/bin/pane:"+loginShellBasePath+":"+personal || got[1] != "unset" || !strings.Contains(got[2], r.main) || got[4] != "-l" || got[5] != work {
 		t.Fatalf("pane shell saw %q", got)
 	}
 	if id := tm.PaneID(name); id == "" || got[3] != id {
