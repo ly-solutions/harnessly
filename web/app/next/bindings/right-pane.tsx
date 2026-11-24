@@ -90,10 +90,10 @@ import type {
 import { toast } from '@/next/ui/toast';
 import { usePresence } from '@/next/ui/presence';
 import { plural, t } from '@/next/i18n';
-import { parseConnTarget } from '@/lib/conn-target';
 import {
   ChatTaskTab,
   isLegacyTab,
+  legacyTaskTitle,
   useLegacyPane,
   type ILegacyPane,
   type TLegacyHandoff,
@@ -228,7 +228,7 @@ const tabInfo = (
     return {
       id: tab.id,
       icon: 'file-text',
-      name: parseConnTarget(tab.target)?.key ?? tab.target,
+      name: legacyTaskTitle(tab.target),
       sub: tab.target,
     };
   if (tab.kind === 'app')
@@ -1119,16 +1119,7 @@ const PaneBody = (props: IPaneBodyProps) => {
       strip={props.strip}
     >
       {legacyTab && legacy.render(legacyTab.id)}
-      {tab?.kind === 'task' && (
-        <ChatTaskTab
-          key={tab.id}
-          target={tab.target}
-          onOpen={(key) => {
-            const linked = parseConnTarget(tab.target);
-            props.onOpenTask(linked ? `conn:${linked.conn}:issue:${key}` : key);
-          }}
-        />
-      )}
+      {tab?.kind === 'task' && <ChatTaskTab key={tab.id} target={tab.target} onOpen={props.onOpenTask} />}
       {onPinned && <PinnedAppTab machine={conv.machineId} conversation={conv.id} pinned={pinned} />}
       {launcher && (
         <ToolsLauncher
