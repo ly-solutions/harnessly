@@ -145,28 +145,37 @@ func editBrief(r Request) string {
 
 // prepareSource puts the picture Codex is to see into the run folder: the source itself, or a copy with the marks on it.
 func prepareSource(r Request, work string) (string, error) {
+	path, _, err := stageSource(r, work)
+	return path, err
+}
+
+// stageSource also returns the bytes written so callers can inspect them without reopening the staged path.
+func stageSource(r Request, work string) (string, []byte, error) {
 	in, st, err := openChecked(r.Source, r.SourceOK)
 	if err != nil {
-		return "", errors.New("the picture could not be read")
+		return "", nil, errors.New("the picture could not be read")
 	}
 	defer in.Close()
 	if st.Size() > maxSource {
-		return "", errors.New("the picture is too big")
+		return "", nil, errors.New("the picture is too big")
 	}
 	raw, err := io.ReadAll(io.LimitReader(in, maxSource))
 	if err != nil {
-		return "", errors.New("the picture could not be read")
+		return "", nil, errors.New("the picture could not be read")
 	}
-	if len(r.Overlay) == 0 {
-		dst := filepath.Join(work, "source"+strings.ToLower(filepath.Ext(r.Source)))
-		return dst, os.WriteFile(dst, raw, 0o600)
+	ext := strings.ToLower(filepath.Ext(r.Source))
+	if len(r.Overlay) > 0 {
+		raw, err = withMarks(raw, r.Overlay)
+		if err != nil {
+			return "", nil, err
+		}
+		ext = ".png"
 	}
-	marked, err := withMarks(raw, r.Overlay)
-	if err != nil {
-		return "", err
+	dst := filepath.Join(work, "source"+ext)
+	if err := os.WriteFile(dst, raw, 0o600); err != nil {
+		return "", nil, err
 	}
-	dst := filepath.Join(work, "source.png")
-	return dst, os.WriteFile(dst, marked, 0o600)
+	return dst, raw, nil
 }
 
 // openChecked opens a picture and only then checks it, by where the opened file really is: nothing swapped in along the

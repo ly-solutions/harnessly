@@ -1,6 +1,7 @@
 package imagegen
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -112,7 +113,7 @@ func (s *Service) runMedia(ctx context.Context, j *job, r Request, work, out str
 	}
 	d := MediaDraw{Model: r.Model, Prompt: mediaPrompt(r), Ratio: shapeRatio(r.Shape)}
 	if r.Source != "" {
-		ref, err := prepareSource(r, work)
+		ref, raw, err := stageSource(r, work)
 		if err != nil {
 			return err
 		}
@@ -121,11 +122,8 @@ func (s *Service) runMedia(ctx context.Context, j *job, r Request, work, out str
 		if r.Mode == ModeSize {
 			f := formats[r.Format]
 			d.Ratio = nearestRatio(f[0], f[1])
-		} else if f, err := os.Open(ref); err == nil {
-			if cfg, _, err := image.DecodeConfig(f); err == nil {
-				d.Ratio = nearestRatio(cfg.Width, cfg.Height)
-			}
-			f.Close()
+		} else if cfg, _, err := image.DecodeConfig(bytes.NewReader(raw)); err == nil {
+			d.Ratio = nearestRatio(cfg.Width, cfg.Height)
 		}
 	}
 	var (
