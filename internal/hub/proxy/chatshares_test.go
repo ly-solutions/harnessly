@@ -61,6 +61,12 @@ func TestChatShareOpensFromTheHubWithTheMachineOff(t *testing.T) {
 	if r.Code != 201 || !strings.Contains(string(r.Body), shareLink) {
 		t.Fatalf("publish: %s", r)
 	}
+	if strings.Contains(string(r.Body), "guestLinksAvailable") {
+		t.Fatal("guest publication was offered by default")
+	}
+	if r := owner.Do("POST", "/agents/api/acme/shares/"+shareLink+"/guest"+q, map[string]any{}); r.Code != 404 {
+		t.Fatalf("guest publication with feature off: %s", r)
+	}
 	want := s.URL + "/agents/api/acme/chat-shares/"
 	for _, b := range rt.bases {
 		if b != "" && b != want {
