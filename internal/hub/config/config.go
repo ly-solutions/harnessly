@@ -451,7 +451,7 @@ type SitesS3 struct{ Endpoint, Region, Bucket, Prefix, AccessKey, SecretKey stri
 // DesignAccessConfig is how the hub records design projects and treats the ones it has no row for.
 type DesignAccessConfig struct {
 	// TeamLevel is the team level of a project the hub records (made, claimed, registered): none, view, comment or edit
-	// (HUB_DESIGN_DEFAULT_TEAM_LEVEL, edit by default). none makes every new project personal until its owner shares it.
+	// (HUB_DESIGN_DEFAULT_TEAM_LEVEL, none by default). none makes every new project personal until its owner shares it.
 	TeamLevel string
 	// ClosedUnrecorded: a project the hub has no row for is closed to everyone but its machine's person, and its files
 	// reach no other machine (HUB_DESIGN_UNRECORDED=closed; open by default).
@@ -1525,7 +1525,7 @@ func (c *Config) loadDesignAccess(get func(string) string, bad func(string, ...a
 	d := &c.DesignAccess
 	switch l := strings.ToLower(strings.TrimSpace(get("HUB_DESIGN_DEFAULT_TEAM_LEVEL"))); l {
 	case "":
-		d.TeamLevel = "edit"
+		d.TeamLevel = "none"
 	case "none", "view", "comment", "edit":
 		d.TeamLevel = l
 	default:

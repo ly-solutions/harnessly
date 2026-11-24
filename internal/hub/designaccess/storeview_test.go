@@ -198,10 +198,83 @@ func TestSharedInviteFromTeammatesMachine(t *testing.T) {
 	if grant := mustView(t, r, r.mate)["board"]; !grant.See || grant.Edit {
 		t.Fatalf("grant = %+v", grant)
 	}
+	if err := r.svc.write(ctx, r.mate, func(tx *txn) error {
+		_, role, until, err := tx.acceptInvite(token, r.mateU.Email)
+		if err != nil {
+			return err
+		}
+		if role != roleView || until == nil || until.After(tx.now.Add(time.Hour)) {
+			t.Fatalf("repeat: %s %v", role, until)
+		}
+		var uses int
+		if err := tx.q.QueryRow(ctx, "SELECT uses FROM design_invites WHERE id=?", id).Scan(&uses); err != nil {
+			return err
+		}
+		if uses != 1 {
+			t.Fatalf("repeat consumed %d uses", uses)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.svc.write(ctx, r.mate, func(tx *txn) error { return tx.revokeInvite("board", r.ownerU.Email, id) }); err != nil {
 		t.Fatal(err)
 	}
+	if got := mustView(t, r, r.mate)["board"]; got.See {
+		t.Fatalf("revoked membership survives: %+v", got)
+	}
 	if err := r.svc.write(ctx, r.stranger, func(tx *txn) error { _, _, _, err := tx.acceptInvite(token, r.strangeU.Email); return err }); err == nil {
 		t.Fatal("revoked invite accepted")
+	}
+}
+
+func TestInvitedRoleFallsBackToIndependentGrant(t *testing.T) {
+	ctx := context.Background()
+	r := newSpaceRig(t, true)
+	if _, err := r.svc.registerCreated(ctx, r.owner, "board", r.ownerU.Email); err != nil {
+		t.Fatal(err)
+	}
+	err := r.svc.write(ctx, r.owner, func(tx *txn) error {
+		owner, recipient := r.ownerU.Email, r.mateU.Email
+		if err := tx.setTeam("board", owner, levelNone); err != nil {
+			return err
+		}
+		if err := tx.grant("board", owner, recipient, roleView, ttl{none: true}, false); err != nil {
+			return err
+		}
+		id, token, _, err := tx.createInvite("board", owner, inviteInput{Role: roleEdit, TTL: ttl{step: time.Hour}, RoleTTL: ttl{none: true}})
+		if err != nil {
+			return err
+		}
+		if _, _, _, err = tx.acceptInvite(token, recipient); err != nil {
+			return err
+		}
+		p, err := tx.lockProject("board")
+		if err != nil {
+			return err
+		}
+		check := func(wantRole, wantSource string) {
+			t.Helper()
+			f, err := tx.fold(p, recipient)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.Role != wantRole || f.Source != wantSource {
+				t.Fatalf("access %+v, want %s via %s", f, wantRole, wantSource)
+			}
+		}
+		check(roleEdit, "link")
+		now := tx.now
+		tx.now = tx.now.Add(2 * time.Hour)
+		check(roleView, "person")
+		tx.now = now
+		if err = tx.revokeInvite("board", owner, id); err != nil {
+			return err
+		}
+		check(roleView, "person")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
