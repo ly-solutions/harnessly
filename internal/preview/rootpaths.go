@@ -162,6 +162,9 @@ func RewriteHTMLDocumentPaths(doc []byte, prefix, docPath string) []byte {
 	rel := pathRewriter{prefix: prefix}
 	if docPath != "" {
 		rel.docPath = documentURL(docPath)
+		if rel.docPath != nil && !htmlBase.Match(doc) && bytes.Contains(bytes.ToLower(doc), []byte("module")) {
+			doc = addSlotImportMap(doc, prefix)
+		}
 	}
 	// Scripts first, and their text set aside, so an attribute-like string inside a script is never touched.
 	var scripts [][]byte

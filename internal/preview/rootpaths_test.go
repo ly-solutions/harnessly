@@ -256,3 +256,15 @@ func TestInlineModuleURLForms(t *testing.T) {
 		}
 	}
 }
+
+func TestSlotImportMapKeepsAuthoredMapsAndScopesComputedImports(t *testing.T) {
+	const module = `<script nonce="abc" type=module>import(window.chunk)</script>`
+	got := string(addSlotImportMap([]byte(module), testPrefix))
+	if !strings.HasPrefix(got, `<script type="importmap" nonce="abc">`) || !strings.Contains(got, `"/":"`+testPrefix+`/"`) || !strings.Contains(got, `"`+testPrefix+`/":"`+testPrefix+`/"`) {
+		t.Fatal(got)
+	}
+	const authored = `<script type=importmap>{"imports":{"pkg":"/app.js"}}</script>` + module
+	if got := string(addSlotImportMap([]byte(authored), testPrefix)); got != authored {
+		t.Fatal(got)
+	}
+}

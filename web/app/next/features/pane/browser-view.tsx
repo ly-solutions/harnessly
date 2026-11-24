@@ -173,6 +173,42 @@ export interface IBrowserAgentView {
 
 const translate = (key: string) => t(key);
 
+function ForwardedFrame({
+  src,
+  address,
+  theme,
+  picking,
+  error,
+  onFrame,
+  onFrameLoad,
+}: Pick<IBrowserViewProps, 'address' | 'theme' | 'picking' | 'error' | 'onFrame' | 'onFrameLoad'> & {
+  src: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <>
+      <iframe
+        ref={onFrame}
+        onLoad={() => {
+          setLoaded(true);
+          onFrameLoad();
+        }}
+        className="hx-tbrowser__frame"
+        data-theme={theme}
+        data-picking={picking === true || undefined}
+        src={src}
+        title={address}
+        allow="clipboard-write"
+      />
+      {!loaded && error === null && (
+        <div className="hx-tbrowser__progress" role="status" data-busy="true">
+          <Spinner /> {t('next.pane.loadingPage')}
+        </div>
+      )}
+    </>
+  );
+}
+
 const BrowserView = (props: IBrowserViewProps) => {
   const { address, canBack, canForward, src, error, ports, portsError, onRetryPorts, reloadKey, pins } =
     props;
@@ -206,7 +242,6 @@ const BrowserView = (props: IBrowserViewProps) => {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
-  const [loadedFrame, setLoadedFrame] = useState<HTMLIFrameElement | null>(null);
   const frame = useRef<HTMLIFrameElement | null>(null);
   // The live browser's picture: the agent's cursor is placed over it as over the frame.
   const liveBox = useRef<HTMLDivElement | null>(null);
@@ -548,34 +583,19 @@ const BrowserView = (props: IBrowserViewProps) => {
         )}
         {address !== '' && props.live === null && src !== null && (
           <div ref={stage} className="hx-tbrowser__stage" data-device={props.screen.device}>
-            <iframe
+            <ForwardedFrame
               key={JSON.stringify([src, reloadKey])}
-              ref={(el) => {
+              src={src}
+              address={address}
+              theme={props.theme}
+              picking={props.picking}
+              error={error}
+              onFrame={(el) => {
                 frame.current = el;
                 props.onFrame(el);
               }}
-              onLoad={(event) => {
-                if (event.currentTarget !== frame.current) return;
-                setLoadedFrame(event.currentTarget);
-                props.onFrameLoad();
-              }}
-              className="hx-tbrowser__frame"
-              data-theme={props.theme}
-              data-reload={reloadKey}
-              data-picking={props.picking === true || undefined}
-              src={src}
-              title={address}
-              allow="clipboard-write"
+              onFrameLoad={props.onFrameLoad}
             />
-            {error === null &&
-              (loadedFrame === null ||
-                loadedFrame !== frame.current ||
-                loadedFrame.getAttribute('src') !== src ||
-                loadedFrame.dataset.reload !== String(reloadKey)) && (
-                <div className="hx-tbrowser__progress" role="status" data-busy="true">
-                  <Spinner /> {t('next.pane.loadingPage')}
-                </div>
-              )}
             <AnnotationLayer
               list={props.annotations.list}
               editing={props.annotations.editing}

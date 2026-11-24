@@ -65,7 +65,8 @@ func TestPreviewByPathInBrowser(t *testing.T) {
 		case p == "/modules/nested/frame.html":
 			file(w, "text/html", `<!doctype html><base target="_parent"><pre id="out"></pre><script type="module">
               import {label} from '../../demo/modules/entry.js?build=2';
-              const lazy = await import('../../demo/modules/value.js');
+              const chunk = '../../demo/modules/value.js';
+              const lazy = await import(chunk);
               document.querySelector('#out').textContent = JSON.stringify({label, lazy: lazy.label});
             </script>`)
 		case p == "/demo/style.css":
