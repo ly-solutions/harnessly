@@ -167,13 +167,10 @@ func RewriteHTMLDocumentPaths(doc []byte, prefix, docPath string) []byte {
 	var scripts [][]byte
 	doc = htmlScript.ReplaceAllFunc(doc, func(m []byte) []byte {
 		g := htmlScript.FindSubmatch(m)
-		var code bytes.Buffer
-		mr := newModuleRewriter(&code, prefix)
-		_, _ = mr.Write(g[2])
-		_ = mr.Close()
-		scripts = append(scripts, code.Bytes())
+		scripts = append(scripts, g[2])
 		return append(append(append([]byte{}, g[1]...), "\x00hl-script\x00"...), g[3]...)
 	})
+	rewriteRelativeImports := rel.docPath != nil && !htmlBase.Match(doc)
 	if rel.docPath != nil {
 		doc = rel.relative(doc)
 	}
@@ -190,8 +187,15 @@ func RewriteHTMLDocumentPaths(doc []byte, prefix, docPath string) []byte {
 		return append(append([]byte{}, g[1]...), prefixRoot(string(g[2]), prefix)...)
 	})
 	doc = rewriteCSS(doc, prefix)
-	for _, code := range scripts {
-		doc = bytes.Replace(doc, []byte("\x00hl-script\x00"), code, 1)
+	for _, script := range scripts {
+		var code bytes.Buffer
+		mr := newModuleRewriter(&code, prefix)
+		if rewriteRelativeImports {
+			mr.document = &rel
+		}
+		_, _ = mr.Write(script)
+		_ = mr.Close()
+		doc = bytes.Replace(doc, []byte("\x00hl-script\x00"), code.Bytes(), 1)
 	}
 	return doc
 }

@@ -19,6 +19,7 @@ import type { IAnnotation } from '@/next/features/pane/annotations';
 import { createAnchorStore, type IAnchorStore } from '@/next/features/designly/note-anchor';
 import { openOutside } from '@/next/features/chat/pane-sites';
 import Icon from '@/next/ui/icon';
+import Spinner from '@/next/ui/spinner';
 import Omnibox from '@/next/features/pane/omnibox';
 import { parseAddress, type IAddress } from '@/next/features/pane/address';
 import { isPinned, pinLabel, type IPin } from '@/next/features/pane/pins';
@@ -205,6 +206,7 @@ const BrowserView = (props: IBrowserViewProps) => {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
+  const [loadedFrame, setLoadedFrame] = useState<HTMLIFrameElement | null>(null);
   const frame = useRef<HTMLIFrameElement | null>(null);
   // The live browser's picture: the agent's cursor is placed over it as over the frame.
   const liveBox = useRef<HTMLDivElement | null>(null);
@@ -521,7 +523,9 @@ const BrowserView = (props: IBrowserViewProps) => {
           <LoadFailed title={t('next.load.page')} reason={error} onRetry={props.onReload} />
         )}
         {address !== '' && error === null && src === null && props.live === null && (
-          <div className="hx-tbrowser__page" />
+          <div className="hx-tbrowser__note" role="status" data-busy="true">
+            <Spinner /> {t('next.pane.connectingPort')}
+          </div>
         )}
         {address !== '' && props.live !== null && (
           <div ref={stage} className="hx-tbrowser__stage" data-device={props.screen.device}>
@@ -545,19 +549,33 @@ const BrowserView = (props: IBrowserViewProps) => {
         {address !== '' && props.live === null && src !== null && (
           <div ref={stage} className="hx-tbrowser__stage" data-device={props.screen.device}>
             <iframe
-              key={reloadKey}
+              key={JSON.stringify([src, reloadKey])}
               ref={(el) => {
                 frame.current = el;
                 props.onFrame(el);
               }}
-              onLoad={props.onFrameLoad}
+              onLoad={(event) => {
+                if (event.currentTarget !== frame.current) return;
+                setLoadedFrame(event.currentTarget);
+                props.onFrameLoad();
+              }}
               className="hx-tbrowser__frame"
               data-theme={props.theme}
+              data-reload={reloadKey}
               data-picking={props.picking === true || undefined}
               src={src}
               title={address}
               allow="clipboard-write"
             />
+            {error === null &&
+              (loadedFrame === null ||
+                loadedFrame !== frame.current ||
+                loadedFrame.getAttribute('src') !== src ||
+                loadedFrame.dataset.reload !== String(reloadKey)) && (
+                <div className="hx-tbrowser__progress" role="status" data-busy="true">
+                  <Spinner /> {t('next.pane.loadingPage')}
+                </div>
+              )}
             <AnnotationLayer
               list={props.annotations.list}
               editing={props.annotations.editing}
