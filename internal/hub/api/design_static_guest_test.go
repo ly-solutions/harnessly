@@ -1,10 +1,15 @@
 package api_test
 
 import (
+	"context"
 	"github.com/ly-solutions/harnessly/internal/hub/hubtest"
+	"image/png"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Run with RUNTIME_DESIGN_CHROME set to exercise the complete owner runtime and Hub with Chrome.
@@ -16,7 +21,12 @@ func TestSingleHostnamePrototypeSnapshotWithOwnerOffline(t *testing.T) {
 	owner := s.SignIn("owner@example.com")
 	outsider := s.SignIn("outsider@example.com")
 	space, _ := owner.NewSpace("Studio")
-	a, _ := designMachine(t, s, owner, space)
+	a, runtime := designMachine(t, s, owner, space)
+	for page, color := range map[string]string{"Main.dc.html": "#dc1020", "Secret.dc.html": "#1828dc"} {
+		if err := os.WriteFile(filepath.Join(runtime.root, "shop", "project", page), []byte("<html><body style='background:"+color+"'>Demo</body></html>"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	created(a, "shop", owner.Email)
 	s.Eventually("runtime enforces ownership", func() bool { role, ok := snapshotFor(a, owner.Email, "shop"); return ok && role == "owner" })
 	base := "/m/" + a.MachineID + "/api/platform/access/design/shop/links"
@@ -45,6 +55,9 @@ func TestSingleHostnamePrototypeSnapshotWithOwnerOffline(t *testing.T) {
 			t.Fatalf("offline page %s: HTTP %d", page, v.Code)
 		}
 	}
+	if first, second := guestPageColor(t, link.URL), guestPageColor(t, link.URL+"?page=1"); first == second {
+		t.Fatal("both pages rendered the same color")
+	}
 	if head := guest.Do("HEAD", path, nil); head.Code != 200 || len(head.Body) > 0 {
 		t.Fatal("HEAD")
 	}
@@ -57,4 +70,35 @@ func TestSingleHostnamePrototypeSnapshotWithOwnerOffline(t *testing.T) {
 	if v := guest.Do("GET", path, nil); v.Code != 404 {
 		t.Fatalf("revoked link: HTTP %d", v.Code)
 	}
+}
+
+func guestPageColor(t *testing.T, url string) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	file := filepath.Join(t.TempDir(), "guest.png")
+	args := []string{"--headless=new", "--incognito", "--disable-gpu", "--disable-extensions", "--disable-background-networking", "--no-first-run", "--window-size=800,600", "--user-data-dir=" + t.TempDir(), "--screenshot=" + file}
+	args = append(args, strings.Fields(os.Getenv("RUNTIME_DESIGN_CHROME_ARGS"))...)
+	cmd := exec.CommandContext(ctx, os.Getenv("RUNTIME_DESIGN_CHROME"), append(args, url)...)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("fresh Chrome screenshot failed: %v", err)
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	pic, err := png.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	red, _, blue, _ := pic.At(pic.Bounds().Dx()/2, pic.Bounds().Dy()/2).RGBA()
+	if red > 40000 && blue < 16000 {
+		return true
+	}
+	if blue > 40000 && red < 16000 {
+		return false
+	}
+	t.Fatalf("no published page visible in signed-out Chrome (red=%d blue=%d)", red, blue)
+	return false
 }
