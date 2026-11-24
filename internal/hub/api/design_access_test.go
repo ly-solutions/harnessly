@@ -323,16 +323,27 @@ func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
 }
 
 func TestDesignInviteHubNavigation(t *testing.T) {
-	s := hubtest.New(t, hubtest.Env("HUB_FEATURES_FORCE", "runtime.fleet"), hubtest.WithOptions(func(o *api.Options) { o.Workspace = fstest.MapFS{"index.html": {Data: []byte("workspace")}} }))
+	s := hubtest.New(t, hubtest.Env("HUB_ORGS", "on"), hubtest.Env("HUB_ACCESS_ENFORCE", "on"), hubtest.Env("HUB_FEATURES_FORCE", "runtime.fleet"), hubtest.WithOptions(func(o *api.Options) { o.Workspace = fstest.MapFS{"index.html": {Data: []byte("workspace")}} }))
 	owner := s.SignIn("owner@example.com")
 	member := s.SignIn("member@example.com")
 	outsider := s.SignIn("outsider@example.com")
 	space, _ := owner.NewSpace("Studio")
 	owner.Join(space, member)
 	a, _ := designMachine(t, s, owner, space)
+	designMachine(t, s, owner, space) // An independent runtime the recipient may open.
+	if r := owner.Do("PATCH", "/api/machines/"+a.MachineID, map[string]any{"access": []map[string]string{{"kind": "user", "id": owner.ID}}}); r.Code != 200 {
+		t.Fatal(r)
+	}
+	if r := member.Do("GET", "/api/machines/"+a.MachineID+"/open", nil); r.Code != 403 {
+		t.Fatalf("initial machine access: %d", r.Code)
+	}
 	created(a, "shop", "owner@example.com")
 	s.Eventually("project recorded", func() bool { role, ok := snapshotFor(a, "owner@example.com", "shop"); return ok && role == "owner" })
-	r := owner.Do("POST", "/m/"+a.MachineID+"/api/platform/design/access/shop/invites", map[string]any{"role": "view", "ttl": "1h", "roleTtl": nil})
+	base := "/m/" + a.MachineID + "/api/platform/design/access/shop"
+	if r := owner.Do("PUT", base+"/team", map[string]any{"level": "none"}); r.Code != 200 {
+		t.Fatal(r)
+	}
+	r := owner.Do("POST", base+"/invites", map[string]any{"role": "view", "ttl": "1h", "roleTtl": nil})
 	if r.Code != 200 {
 		t.Fatal(r)
 	}
@@ -354,5 +365,14 @@ func TestDesignInviteHubNavigation(t *testing.T) {
 	}
 	if r := member.Do("POST", "/agents/api/platform/design/access/invites/"+link.Token+"/accept", map[string]any{}); r.Code != 200 {
 		t.Fatal(r)
+	}
+	access := member.Do("GET", "/agents/api/platform/design/access/shop", nil)
+	var grant struct{ Role string }
+	access.JSON(&grant)
+	if access.Code != 200 || grant.Role != "view" {
+		t.Fatalf("project access: %s", access)
+	}
+	if r := member.Do("GET", "/api/machines/"+a.MachineID+"/open", nil); r.Code != 403 {
+		t.Fatalf("invitation changed machine access: %d", r.Code)
 	}
 }
