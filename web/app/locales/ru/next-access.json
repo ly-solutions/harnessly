@@ -228,6 +228,7 @@
   "next.access.links.what.video": "видео",
   "next.access.links.what.doc": "документ",
   "next.access.links.what.board": "доску",
+  "next.access.links.staticSnapshot": "Снимок страниц доступен только для просмотра. Изменения макета в эту ссылку не попадут.",
   "next.access.links.rightsLabel": "Доступ",
   "next.access.links.rightsValue.view": "Смотреть",
   "next.access.links.rightsValue.comment": "Комментировать",

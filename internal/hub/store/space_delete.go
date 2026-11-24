@@ -58,6 +58,7 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"board_bindings", bySpace},
 
 	// Designs are projects of the space's machines.
+	{"design_static_pages", `link_id IN (SELECT id FROM design_share_links WHERE ` + byMachine + `)`},
 	{"design_share_views", `link_id IN (SELECT id FROM design_share_links WHERE ` + byMachine + `)`},
 	{"design_guest_comments", `link_id IN (SELECT id FROM design_share_links WHERE ` + byMachine + `)`},
 	{"design_share_links", byMachine},

@@ -591,7 +591,7 @@ const Loaded = ({
   ask = false,
   links,
   publish,
-  linkContext = DOC_LINKS,
+  linkContext: sourceContext = DOC_LINKS,
   extra,
   footExtra,
   action,
@@ -608,6 +608,10 @@ const Loaded = ({
   const email = me.k === 'ready' ? me.me.email : null;
   const manages = view.canManage;
   const linkForm = useId();
+  const linkContext = useMemo(
+    () => (view.staticGuestSnapshots ? { ...sourceContext, staticSnapshot: true } : sourceContext),
+    [view.staticGuestSnapshots, sourceContext],
+  );
   const screen = useLinksScreen({ target, view, ctx: linkContext, action, onNext });
   // The gateway of stage «г» answers the links in the view; an older one keeps them on their older routes.
   const ownLinks = view.links !== undefined;

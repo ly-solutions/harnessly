@@ -364,10 +364,12 @@ type Config struct {
 	// (docs/hub/memory-sync.md); off: POST /agent/memory/* answer 404.
 	Memory bool
 	// DesignShareURL (HUB_DESIGN_SHARE_URL) is the origin of the guest links to designs (docs/hub/design-access.md); it
-	// must be an origin of its own, not the hub's and not a machine's. Empty: links to designs are off.
+	// must be an origin of its own, not the hub's and not a machine's. Empty: interactive guest links are off.
 	DesignShareURL string
 	// ChatGuestLinks allows snapshot authors to publish read-only links on the Hub or its separate guest origin.
 	ChatGuestLinks bool
+	// DesignSnapshotLinks enables read-only raster snapshots on the Hub without a separate guest origin.
+	DesignSnapshotLinks bool
 	// DesignShareAliases (HUB_DESIGN_SHARE_ALIASES, comma-separated origins) are former addresses of the guest links: a
 	// request for /s/<token> on one is sent on to HUB_DESIGN_SHARE_URL (307), so links already in circulation keep
 	// opening. Nothing else is served there. Empty: none.
@@ -1098,6 +1100,13 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 	case "off", "false", "0", "no":
 	default:
 		bad("HUB_DESIGN_SHARE_DOCS must be on or off")
+	}
+	switch strings.ToLower(def("HUB_DESIGN_SNAPSHOT_LINKS", "off")) {
+	case "on":
+		c.DesignSnapshotLinks = true
+	case "off":
+	default:
+		bad("HUB_DESIGN_SNAPSHOT_LINKS must be on or off")
 	}
 	switch strings.ToLower(def("HUB_CHAT_GUEST_LINKS", "off")) {
 	case "on", "true", "1", "yes":

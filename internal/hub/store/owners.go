@@ -125,7 +125,7 @@ var DataKinds = []DataKind{
 		Keep: "no term; a timer lives until it fires or its stop event comes", OwnerDeletes: "deleting a rule deletes its runs and timers"},
 	{Name: "designs", Owner: OwnerHub,
 		Tables: []string{"design_projects", "design_members", "design_team_grants", "design_invites", "design_invite_acceptances", "design_requests",
-			"design_share_links", "design_share_views", "design_guest_comments", "design_access_log"},
+			"design_share_links", "design_static_pages", "design_share_views", "design_guest_comments", "design_access_log"},
 		Keep:         "no term",
 		OwnerDeletes: "the project's row (title, kind, preview, kit, team, working-copy machine) is the hub's; a machine that is off does not take it from the library, only deleting the project or taking the access away in the hub does"},
 	{Name: "access to documents and resources", Owner: OwnerHub,

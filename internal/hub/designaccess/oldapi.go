@@ -421,7 +421,12 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 	return nil, 0, fail("not_found", "Маршрут не найден")
 }
 
-func (s *Service) shareURLOf(token string) string { return s.shareURL + "/s/" + token }
+func (s *Service) shareURLOf(token string) string {
+	if isStaticToken(token) {
+		return s.hubURL + StaticPrefix + token
+	}
+	return s.shareURL + "/s/" + token
+}
 
 func (s *Service) sharesRoute(r *http.Request, m store.Machine, email, project string, parts []string) (any, int, error) {
 	ctx := r.Context()
