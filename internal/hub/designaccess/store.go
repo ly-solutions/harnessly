@@ -177,15 +177,29 @@ func scanMember(row interface{ Scan(...any) error }) (member, error) {
 	return m, nil
 }
 
+// Match both an explicit Hub team and the implicit team for members of a space.
+func inviteAudience(emailExpr string) string {
+	return `(i.team_id='' OR EXISTS (
+    SELECT 1 FROM users u WHERE u.email=` + emailExpr + ` AND (
+      EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=i.team_id AND tm.user_id=u.id) OR
+      EXISTS (SELECT 1 FROM memberships sm WHERE 'space:' || sm.space_id=i.team_id AND sm.user_id=u.id))))`
+}
+
+func (t *txn) eligibleForInvite(id, email string) (bool, error) {
+	var count int
+	err := t.q.QueryRow(t.ctx, "SELECT COUNT(*) FROM design_invites i WHERE i.id=? AND "+inviteAudience("?"), id, email).Scan(&count)
+	return count != 0, err
+}
+
 // activeMembers selects one effective personal role per recipient while retaining independent grants.
 func (t *txn) activeMembers(id, email string) ([]member, error) {
 	key := t.key(id)
 	query := `SELECT person_email,role,granted_by,granted_at,expires_at,via_invite FROM (
-        SELECT ` + memberCols + ` FROM design_members WHERE machine_id=? AND project_id=? AND (expires_at IS NULL OR expires_at>?)
+        SELECT ` + memberCols + ` FROM design_members WHERE machine_id=? AND project_id=? AND via_invite IS NULL AND (expires_at IS NULL OR expires_at>?)
         UNION ALL
         SELECT a.person_email,i.role,i.created_by,a.granted_at,a.expires_at,i.id
         FROM design_invite_acceptances a JOIN design_invites i ON i.id=a.invite_id
-        WHERE i.machine_id=? AND i.project_id=? AND i.revoked_at IS NULL AND i.expires_at>? AND a.expires_at>?
+        WHERE i.machine_id=? AND i.project_id=? AND i.revoked_at IS NULL AND i.expires_at>? AND a.expires_at>? AND ` + inviteAudience("a.person_email") + `
     ) grants`
 	now := ms(t.now)
 	args := []any{key, id, now, key, id, now, now}
@@ -889,14 +903,14 @@ func (t *txn) revokeTeam(id, actor, team string) error {
 // ---- invites (old API) --------------------------------------------------------------------------------------------
 
 type inviteRow struct {
-	ID, Title, Role string
-	RoleTTL         *int64
-	Expires         time.Time
-	MaxUses         *int64
-	Uses            int64
-	Revoked         *time.Time
-	CreatedBy       string
-	CreatedAt       time.Time
+	ID, Title, Role, Team string
+	RoleTTL               *int64
+	Expires               time.Time
+	MaxUses               *int64
+	Uses                  int64
+	Revoked               *time.Time
+	CreatedBy             string
+	CreatedAt             time.Time
 }
 
 func stepOf(msv *int64) any {
@@ -916,17 +930,17 @@ func (r inviteRow) json() map[string]any {
 	if r.MaxUses != nil {
 		maxUses = *r.MaxUses
 	}
-	return map[string]any{"id": r.ID, "title": r.Title, "role": r.Role, "roleTtl": stepOf(r.RoleTTL), "expiresAt": isoOf(r.Expires),
+	return map[string]any{"id": r.ID, "title": r.Title, "teamId": r.Team, "role": r.Role, "roleTtl": stepOf(r.RoleTTL), "expiresAt": isoOf(r.Expires),
 		"maxUses": maxUses, "uses": r.Uses, "revokedAt": iso(r.Revoked), "createdBy": r.CreatedBy, "createdAt": isoOf(r.CreatedAt)}
 }
 
-const inviteCols = `id, title, role, role_ttl_ms, expires_at, max_uses, uses, revoked_at, created_by, created_at`
+const inviteCols = `id, title, team_id, role, role_ttl_ms, expires_at, max_uses, uses, revoked_at, created_by, created_at`
 
 func scanInvite(row interface{ Scan(...any) error }) (inviteRow, error) {
 	var r inviteRow
 	var roleTTL, maxUses, revoked sql.NullInt64
 	var exp, created int64
-	if err := row.Scan(&r.ID, &r.Title, &r.Role, &roleTTL, &exp, &maxUses, &r.Uses, &revoked, &r.CreatedBy, &created); err != nil {
+	if err := row.Scan(&r.ID, &r.Title, &r.Team, &r.Role, &roleTTL, &exp, &maxUses, &r.Uses, &revoked, &r.CreatedBy, &created); err != nil {
 		return inviteRow{}, err
 	}
 	if roleTTL.Valid {
@@ -957,6 +971,7 @@ func (t *txn) liveInvites(id string) ([]inviteRow, error) {
 }
 
 type inviteInput struct {
+	Team    string
 	Role    string
 	RoleTTL ttl // none or a step
 	TTL     ttl
@@ -992,10 +1007,18 @@ func (t *txn) createInvite(id, actor string, in inviteInput) (string, string, ti
 	if _, err := t.lockProject(id); err != nil {
 		return "", "", time.Time{}, err
 	}
+	if in.Team != "" {
+		if !teamIDRe.MatchString(in.Team) {
+			return "", "", time.Time{}, fail("bad_request", "Некорректная команда")
+		}
+		if _, ok := t.w.team(in.Team); !ok {
+			return "", "", time.Time{}, fail("not_found", "Команда не найдена")
+		}
+	}
 	token := randomToken(32)
 	inviteID := newUUID()
-	if _, err := t.q.Exec(t.ctx, `INSERT INTO design_invites (id, machine_id, project_id, token_hash, title, role, role_ttl_ms, expires_at, max_uses, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, inviteID, t.key(id), id, store.HashToken(token), clip(in.Title, maxTitle), in.Role, roleTTL, ms(*expires), maxUses, normEmail(actor), ms(t.now)); err != nil {
+	if _, err := t.q.Exec(t.ctx, `INSERT INTO design_invites (id, machine_id, project_id, token_hash, title, role, role_ttl_ms, expires_at, max_uses, created_by, created_at, team_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, inviteID, t.key(id), id, store.HashToken(token), clip(in.Title, maxTitle), in.Role, roleTTL, ms(*expires), maxUses, normEmail(actor), ms(t.now), in.Team); err != nil {
 		return "", "", time.Time{}, err
 	}
 	return inviteID, token, *expires, t.writeLog(id, actor, "invite", inviteID, map[string]any{"role": in.Role, "until": iso(expires), "maxUses": maxUses})
@@ -1033,7 +1056,7 @@ func (t *txn) acceptInvite(token, email string) (string, string, *time.Time, err
 	{
 		var roleTTL, maxUses, revoked sql.NullInt64
 		var exp, created int64
-		err := row.Scan(&projectID, &issuerMachine, &inv.ID, &inv.Title, &inv.Role, &roleTTL, &exp, &maxUses, &inv.Uses, &revoked, &inv.CreatedBy, &created)
+		err := row.Scan(&projectID, &issuerMachine, &inv.ID, &inv.Title, &inv.Team, &inv.Role, &roleTTL, &exp, &maxUses, &inv.Uses, &revoked, &inv.CreatedBy, &created)
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", "", nil, fail("not_found", "Ссылка не найдена")
 		}
@@ -1068,6 +1091,15 @@ func (t *txn) acceptInvite(token, email string) (string, string, *time.Time, err
 	gone := fail("gone", "Ссылка устарела, отозвана или использована")
 	if inv.Revoked != nil || !inv.Expires.After(t.now) {
 		return "", "", nil, gone
+	}
+	if inv.Team != "" {
+		eligible, err := t.eligibleForInvite(inv.ID, who)
+		if err != nil {
+			return "", "", nil, err
+		}
+		if !eligible {
+			return "", "", nil, fail("forbidden", "Ссылка доступна участникам команды")
+		}
 	}
 	maker, err := t.fold(p, inv.CreatedBy)
 	if err != nil {

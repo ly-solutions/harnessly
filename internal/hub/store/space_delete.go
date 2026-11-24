@@ -61,6 +61,7 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"design_guest_comments", `link_id IN (SELECT id FROM design_share_links WHERE ` + byMachine + `)`},
 	{"design_share_links", byMachine},
 	{"design_access_log", byMachine},
+	{"design_invite_acceptances", `invite_id IN (SELECT id FROM design_invites WHERE ` + byMachine + `)`},
 	{"design_invites", byMachine},
 	{"design_members", byMachine},
 	{"design_requests", byMachine},

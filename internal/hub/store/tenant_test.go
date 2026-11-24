@@ -32,7 +32,7 @@ var noSpace = map[string]string{
 	"usage_calls": "machine", "usage_session_sums": "machine", "eff_pulse": "machine", "eff_regression_alerts": "machine", "eff_source_facts": "machine", "eff_source_state": "machine",
 	"env_proposals": "machine", "tbot_joins": "machine", "automation_rules": "machine", "automation_runs": "machine", "automation_timers": "machine", "eval_schedules": "machine", "eval_batches": "machine", "eval_runs": "machine", "eval_checks": "machine", "usage_quarantine": "machine",
 	// A design, which is a project of a machine.
-	"design_access_log": "design", "design_guest_comments": "design", "design_invites": "design", "design_members": "design",
+	"design_access_log": "design", "design_guest_comments": "design", "design_invites": "design", "design_invite_acceptances": "design", "design_members": "design",
 	"design_projects": "design", "design_requests": "design", "design_share_links": "design", "design_share_views": "design",
 	"design_team_grants": "design",
 	// A provider account and what is read from it.

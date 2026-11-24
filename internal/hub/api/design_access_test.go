@@ -140,7 +140,7 @@ func snapshotFor(a *hubtest.Agent, person, project string) (string, bool) {
 // project on the share host and only that project, a stranger is refused, the link is revoked, and everything holds
 // across a restart of the hub.
 func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
-	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_SHARE_URL", "http://"+shareHost))
+	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_SHARE_URL", "http://"+shareHost), hubtest.Env("HUB_DESIGN_DEFAULT_TEAM_LEVEL", "edit"))
 	owner := s.SignIn("owner@example.com")
 	member := s.SignIn("member@example.com")
 	stranger := s.SignIn("stranger@example.com")

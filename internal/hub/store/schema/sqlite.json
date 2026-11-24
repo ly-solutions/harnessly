@@ -1569,6 +1569,42 @@
         }
       ]
     },
+    "design_invite_acceptances": {
+      "columns": [
+        {
+          "name": "invite_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "person_email",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "granted_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "invite_id",
+        "person_email"
+      ],
+      "indexes": [
+        {
+          "name": "design_invite_recipient",
+          "columns": [
+            "person_email"
+          ]
+        }
+      ]
+    },
     "design_invites": {
       "columns": [
         {
@@ -1631,6 +1667,11 @@
         {
           "name": "created_at",
           "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "team_id",
+          "type": "TEXT",
           "notNull": true
         }
       ],

@@ -121,7 +121,7 @@ var DataKinds = []DataKind{
 	{Name: "automations", Owner: OwnerHub, Tables: []string{"automation_rules", "automation_runs", "automation_timers"},
 		Keep: "no term; a timer lives until it fires or its stop event comes", OwnerDeletes: "deleting a rule deletes its runs and timers"},
 	{Name: "designs", Owner: OwnerHub,
-		Tables: []string{"design_projects", "design_members", "design_team_grants", "design_invites", "design_requests",
+		Tables: []string{"design_projects", "design_members", "design_team_grants", "design_invites", "design_invite_acceptances", "design_requests",
 			"design_share_links", "design_share_views", "design_guest_comments", "design_access_log"},
 		Keep:         "no term",
 		OwnerDeletes: "the project's row (title, kind, preview, kit, team, working-copy machine) is the hub's; a machine that is off does not take it from the library, only deleting the project or taking the access away in the hub does"},

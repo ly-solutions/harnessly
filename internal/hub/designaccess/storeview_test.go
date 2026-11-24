@@ -278,3 +278,45 @@ func TestInvitedRoleFallsBackToIndependentGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTeamInvitationChecksMembershipAfterFirstOpen(t *testing.T) {
+	ctx := context.Background()
+	r := newSpaceRig(t, true)
+	st := r.db.S()
+	team := store.Team{SpaceID: r.owner.SpaceID, Slug: "readers", Name: "Readers"}
+	if err := st.CreateTeam(ctx, &team); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddTeamMember(ctx, team.ID, r.mateU.ID, false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.svc.registerCreated(ctx, r.owner, "board", r.ownerU.Email); err != nil {
+		t.Fatal(err)
+	}
+	err := r.svc.write(ctx, r.owner, func(tx *txn) error {
+		if err := tx.setTeam("board", r.ownerU.Email, levelNone); err != nil {
+			return err
+		}
+		_, token, _, err := tx.createInvite("board", r.ownerU.Email, inviteInput{Role: roleView, TTL: ttl{step: time.Hour}, RoleTTL: ttl{none: true}, Team: team.ID})
+		if err != nil {
+			return err
+		}
+		if _, _, _, err := tx.acceptInvite(token, r.strangeU.Email); err == nil {
+			t.Fatal("outsider accepted team invitation")
+		}
+		_, _, _, err = tx.acceptInvite(token, r.mateU.Email)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mustView(t, r, r.mate)["board"].See {
+		t.Fatal("eligible recipient cannot read")
+	}
+	if err := st.RemoveTeamMember(ctx, team.ID, r.mateU.ID); err != nil {
+		t.Fatal(err)
+	}
+	if mustView(t, r, r.mate)["board"].See {
+		t.Fatal("recipient still has team link after leaving team")
+	}
+}

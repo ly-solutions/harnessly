@@ -191,8 +191,9 @@ func TestMigrationsAreAdditive(t *testing.T) {
 		// Fills the columns the migration adds.
 		"0051_access_by_person.sql": regexp.MustCompile(`(?is)^UPDATE resource_access_(people|requests) SET user_id = `),
 		// Fills the table the migration creates: the sums of the sessions' calls.
-		"0079_usage_session_sums.sql": regexp.MustCompile(`(?is)^INSERT INTO usage_session_sums `),
-		"0050_provider_servers.sql":   regexp.MustCompile(`(?is)^(INSERT INTO (machine_resource_conflicts|provider_servers) |UPDATE machine_resources SET external_id = '' WHERE machine_id IN \(SELECT machine_id FROM machine_resource_conflicts\))`),
+		"0083_design_invite_acceptances.sql": regexp.MustCompile(`(?is)^INSERT INTO design_invite_acceptances `),
+		"0079_usage_session_sums.sql":        regexp.MustCompile(`(?is)^INSERT INTO usage_session_sums `),
+		"0050_provider_servers.sql":          regexp.MustCompile(`(?is)^(INSERT INTO (machine_resource_conflicts|provider_servers) |UPDATE machine_resources SET external_id = '' WHERE machine_id IN \(SELECT machine_id FROM machine_resource_conflicts\))`),
 	}
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {
