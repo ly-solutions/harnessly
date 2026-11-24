@@ -168,7 +168,7 @@ func TestTransportCAClientCertAndProxy(t *testing.T) {
 	// An exception goes direct, under the direct rule (here: denied).
 	p.NoProxy = []string{"crm.example.corp"}
 	c = &http.Client{Transport: p.Transport("crm.example.corp", deny), Timeout: 5 * time.Second}
-	if _, err := c.Get(srv.URL); err == nil || len(connects) != 1 {
+	if _, err := c.Get(srv.URL); err == nil || len(connects) != 0 {
 		t.Fatalf("an exception goes direct: %v %v", err, connects)
 	}
 }
