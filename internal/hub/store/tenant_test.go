@@ -38,6 +38,7 @@ var noSpace = map[string]string{
 	"design_access_log": "design", "design_guest_comments": "design", "design_invites": "design", "design_invite_acceptances": "design", "design_members": "design",
 	"design_projects": "design", "design_requests": "design", "design_share_links": "design", "design_share_views": "design",
 	"design_team_grants": "design",
+	"design_static_pages": "design share link → machine → space",
 	// A provider account and what is read from it.
 	"accounts": "account", "account_balances": "account", "account_grants": "account", "account_window_cycles": "account",
 	"account_windows": "account",
