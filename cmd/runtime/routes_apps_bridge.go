@@ -146,8 +146,11 @@ func appBridgeRoutes(d deps, reg *apps.Registry, storage *apps.Storage, views *a
 			}
 			ctx := r.Context()
 			if d.Claims != nil && b.Name == managedDocumentRead {
-				subject, _ := d.Claims(r)["sub"].(string)
-				ctx = context.WithValue(ctx, documentSubjectKey{}, subject)
+				claims := d.Claims(r)
+				if verified, _ := claims["verifiedOwner"].(bool); verified {
+					subject, _ := claims["sub"].(string)
+					ctx = context.WithValue(ctx, documentSubjectKey{}, subject)
+				}
 			}
 			status, out := handle(ctx, b)
 			journalBridgeCall(r.Context(), views, b, status, out)

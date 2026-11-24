@@ -104,7 +104,7 @@ func TestManagedDocumentViewSessionAndToolRoute(t *testing.T) {
 	defer docprovider.Pin(p)()
 	t.Setenv("RUNTIME_OWNER_EMAIL", "owner@example.org")
 	t.Setenv("RUNTIME_DOCUMENT_READER_PACKAGES", pkg.ID+"="+pkg.Sum)
-	page := map[string]string{"X-Test-Session": "yes", "X-Test-Subject": "owner@example.org"}
+	page := map[string]string{"X-Test-Session": "yes", "X-Test-Subject": "owner@example.org", "X-Test-Verified-Owner": "true"}
 	code, body := call("POST", platformAPI+"/apps/session", `{"app":"acme.reader","view":"main","target":"pane"}`, page)
 	var view struct{ Session string }
 	if code != 200 || json.Unmarshal([]byte(body), &view) != nil || view.Session == "" {
@@ -115,6 +115,11 @@ func TestManagedDocumentViewSessionAndToolRoute(t *testing.T) {
 	if code != 200 || !strings.Contains(body, `"content":"sample"`) {
 		t.Fatalf("read: %d %s", code, body)
 	}
+	delete(page, "X-Test-Verified-Owner")
+	if code, _ := call("POST", platformAPI+"/apps/tool", read, page); code != 403 {
+		t.Fatalf("unverified owner email: %d", code)
+	}
+	page["X-Test-Verified-Owner"] = "true"
 	page["X-Test-Subject"] = "viewer@example.org"
 	if code, _ := call("POST", platformAPI+"/apps/tool", read, page); code != 403 {
 		t.Fatalf("other viewer: %d", code)

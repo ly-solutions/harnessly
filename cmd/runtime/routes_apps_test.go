@@ -38,7 +38,9 @@ func appRig(t *testing.T) (func(method, path, body string, h map[string]string) 
 	}
 	d := deps{DataDir: dir, Home: t.TempDir(), CLI: &gate.CLIToken{DataDir: dir, Headers: []string{"x-cli-token"}},
 		SessionOK: func(r *http.Request) bool { return r.Header.Get("X-Test-Session") == "yes" },
-		Claims:    func(r *http.Request) map[string]any { return map[string]any{"sub": r.Header.Get("X-Test-Subject")} }}
+		Claims: func(r *http.Request) map[string]any {
+			return map[string]any{"sub": r.Header.Get("X-Test-Subject"), "verifiedOwner": r.Header.Get("X-Test-Verified-Owner") == "true"}
+		}}
 	reg := apps.Open(dir)
 	decRigDir, decRigRoot, rigDeps = dir, reg.Root, d
 	conv := &wire.Conversation{ID: "tab-1"}
