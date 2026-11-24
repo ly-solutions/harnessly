@@ -163,15 +163,26 @@ func stageSource(r Request, work string) (string, []byte, error) {
 	if err != nil {
 		return "", nil, errors.New("the picture could not be read")
 	}
-	ext := strings.ToLower(filepath.Ext(r.Source))
+	name := "source.png"
 	if len(r.Overlay) > 0 {
 		raw, err = withMarks(raw, r.Overlay)
 		if err != nil {
 			return "", nil, err
 		}
-		ext = ".png"
+	} else {
+		switch strings.ToLower(filepath.Ext(r.Source)) {
+		case ".png":
+		case ".jpg":
+			name = "source.jpg"
+		case ".jpeg":
+			name = "source.jpeg"
+		case ".webp":
+			name = "source.webp"
+		default:
+			return "", nil, errors.New("the picture has an unsupported extension")
+		}
 	}
-	dst := filepath.Join(work, "source"+ext)
+	dst := filepath.Join(work, name)
 	if err := os.WriteFile(dst, raw, 0o600); err != nil {
 		return "", nil, err
 	}

@@ -367,7 +367,10 @@ func (t *Tunnel) Write(p []byte) (int, error) {
 			timer = time.NewTimer(d)
 			expired = timer.C
 		}
-		n := min(len(p), tunnelWriteChunk)
+		n := len(p)
+		if n > tunnelWriteChunk {
+			n = tunnelWriteChunk
+		}
 		frame := make([]byte, 1+tunnelID+n)
 		frame[0] = frameData
 		copy(frame[1:], t.id[:])
