@@ -11,10 +11,13 @@ import (
 // A module loader can compute a specifier at run time. The browser's import map can
 // route its final same-host URL, including template expressions, without evaluating
 // or modifying the loader. Preserve an application's authored map and CSP nonce.
-func addSlotImportMap(doc []byte, prefix string) []byte {
+func addSlotImportMap(doc []byte, p pathRewriter) []byte {
 	z := html.NewTokenizer(bytes.NewReader(doc))
 	firstModule, offset := -1, 0
 	var nonce string
+	var authored bytes.Buffer
+	lastMapEnd := 0
+	hasMap := false
 	for {
 		token := z.Next()
 		if token == html.ErrorToken {
@@ -41,16 +44,34 @@ func addSlotImportMap(doc []byte, prefix string) []byte {
 			}
 		}
 		if kind == "importmap" {
-			return doc
+			hasMap = true
+			if z.Next() != html.TextToken {
+				offset += len(z.Raw())
+				continue
+			}
+			raw := z.Raw()
+			next := rewriteAppImportMap(raw, p)
+			authored.Write(doc[lastMapEnd:offset])
+			authored.Write(next)
+			offset += len(raw)
+			lastMapEnd = offset
+			continue
 		}
 		if kind == "module" && firstModule < 0 {
 			firstModule, nonce = start, scriptNonce
 		}
 	}
+	if hasMap {
+		if lastMapEnd == 0 {
+			return doc
+		}
+		authored.Write(doc[lastMapEnd:])
+		return authored.Bytes()
+	}
 	if firstModule < 0 {
 		return doc
 	}
-	root := prefix + "/"
+	root := p.prefix + "/"
 	config, _ := json.Marshal(map[string]map[string]string{"imports": {"/": root, root: root}})
 	var out bytes.Buffer
 	out.Grow(len(doc) + len(config) + 64)
@@ -64,4 +85,61 @@ func addSlotImportMap(doc []byte, prefix string) []byte {
 	out.WriteString("</script>")
 	out.Write(doc[firstModule:])
 	return out.Bytes()
+}
+
+// Import-map addresses are resolved once against the original document. Bare
+// names, external providers, and null (blocked) entries keep their meanings.
+func rewriteAppImportMap(raw []byte, p pathRewriter) []byte {
+	var config map[string]json.RawMessage
+	if json.Unmarshal(raw, &config) != nil || config == nil {
+		return raw
+	}
+	rewriteTable := func(table map[string]json.RawMessage) map[string]json.RawMessage {
+		out := make(map[string]json.RawMessage, len(table))
+		for name, value := range table {
+			var target string
+			if json.Unmarshal(value, &target) == nil && modulePath(target) {
+				value, _ = json.Marshal(p.fix(target))
+			}
+			out[name] = value
+			if modulePath(name) {
+				if _, exists := table[p.fix(name)]; !exists {
+					out[p.fix(name)] = value
+				}
+			}
+		}
+		return out
+	}
+	var imports map[string]json.RawMessage
+	if json.Unmarshal(config["imports"], &imports) == nil && imports != nil {
+		config["imports"], _ = json.Marshal(rewriteTable(imports))
+	}
+	var scopes map[string]map[string]json.RawMessage
+	if json.Unmarshal(config["scopes"], &scopes) == nil && scopes != nil {
+		rewritten := make(map[string]map[string]json.RawMessage, len(scopes))
+		for name, table := range scopes {
+			values := rewriteTable(table)
+			rewritten[name] = values
+			if _, exists := scopes[p.fix(name)]; !exists {
+				rewritten[p.fix(name)] = values
+			}
+		}
+		config["scopes"], _ = json.Marshal(rewritten)
+	}
+	var integrity map[string]json.RawMessage
+	if json.Unmarshal(config["integrity"], &integrity) == nil && integrity != nil {
+		scoped := make(map[string]json.RawMessage, len(integrity))
+		for key, value := range integrity {
+			scoped[p.fix(key)] = value
+		}
+		config["integrity"], _ = json.Marshal(scoped)
+	}
+	out, err := json.Marshal(config)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+func modulePath(s string) bool {
+	return strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../")
 }

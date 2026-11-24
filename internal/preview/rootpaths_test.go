@@ -259,12 +259,25 @@ func TestInlineModuleURLForms(t *testing.T) {
 
 func TestSlotImportMapKeepsAuthoredMapsAndScopesComputedImports(t *testing.T) {
 	const module = `<script nonce="abc" type=module>import(window.chunk)</script>`
-	got := string(addSlotImportMap([]byte(module), testPrefix))
+	p := pathRewriter{prefix: testPrefix, docPath: documentURL("/docs/index.html")}
+	got := string(addSlotImportMap([]byte(module), p))
 	if !strings.HasPrefix(got, `<script type="importmap" nonce="abc">`) || !strings.Contains(got, `"/":"`+testPrefix+`/"`) || !strings.Contains(got, `"`+testPrefix+`/":"`+testPrefix+`/"`) {
 		t.Fatal(got)
 	}
 	const authored = `<script type=importmap>{"imports":{"pkg":"/app.js"}}</script>` + module
-	if got := string(addSlotImportMap([]byte(authored), testPrefix)); got != authored {
+	if got := string(addSlotImportMap([]byte(authored), p)); !strings.Contains(got, `"pkg":"`+testPrefix+`/app.js"`) || strings.Count(got, "type=importmap") != 1 {
 		t.Fatal(got)
+	}
+}
+
+func TestAuthoredModuleMapUsesUpstreamDocument(t *testing.T) {
+	const raw = `{"imports":{"pkg/":"./lib/","off":null,"remote":"https://assets.example/lib.js"},"scopes":{"./feature/":{"pkg/":"../override/"}},"integrity":{"./lib/a.js":"sha384-example"}}`
+	p := pathRewriter{prefix: testPrefix, docPath: documentURL("/deep/index.html")}
+	doc := `<script type="importmap">` + raw + `</script><script type=importmap>{"imports":{"second":"./two.js"}}</script>`
+	got := string(addSlotImportMap([]byte(doc), p))
+	for _, want := range []string{`"pkg/":"` + testPrefix + `/deep/lib/"`, `"off":null`, `"remote":"https://assets.example/lib.js"`, `"` + testPrefix + `/deep/feature/":{"pkg/":"` + testPrefix + `/override/"}`, `"` + testPrefix + `/deep/lib/a.js":"sha384-example"`, `"second":"` + testPrefix + `/deep/two.js"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
 	}
 }

@@ -62,6 +62,10 @@ func TestPreviewByPathInBrowser(t *testing.T) {
 			file(w, "text/javascript", `export {label} from './value.js'`)
 		case p == "/demo/modules/value.js":
 			file(w, "text/javascript", `export const label = 'rendered'`)
+		case p == "/modules/maps/index.html":
+			file(w, "text/html", `<!doctype html><script type="importmap">{"imports":{"ui":"../../demo/modules/entry.js"}}</script>
+              <pre id="out"></pre><script type="module">const name="ui";const {label}=await import(name);
+              document.querySelector('#out').textContent=JSON.stringify({label});</script>`)
 		case p == "/modules/nested/frame.html":
 			file(w, "text/html", `<!doctype html><base target="_parent"><pre id="out"></pre><script type="module">
               import {label} from '../../demo/modules/entry.js?build=2';
@@ -185,6 +189,13 @@ func TestPreviewByPathInBrowser(t *testing.T) {
 	readResult(t, runChrome(t, chrome, moduleURL), &modules)
 	if modules.Label != "rendered" || modules.Lazy != "rendered" {
 		t.Fatalf("forwarded module graph failed to render: %+v", modules)
+	}
+
+	mapURL, _ := open("/modules/maps/index.html")
+	var mapped struct{ Label string }
+	readResult(t, runChrome(t, chrome, mapURL), &mapped)
+	if mapped.Label != "rendered" {
+		t.Fatalf("authored import map failed to render: %+v", mapped)
 	}
 
 	// A page with a <base href> of its own resolves against it, under the prefix.
