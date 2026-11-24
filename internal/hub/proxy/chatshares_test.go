@@ -189,9 +189,9 @@ func testGuestChat(t *testing.T, onHub bool) {
 	if r := guest("GET", path); r.Code != 200 || !strings.Contains(string(r.Body), "the redacted chat") || r.Header.Get("Cache-Control") != "private, no-store" || !strings.HasPrefix(r.Header.Get("Content-Security-Policy"), "sandbox") {
 		t.Fatal(r)
 	}
-	for _, route := range []struct{ method, path string }{{"POST", path}, {"GET", path + "/files"}, {"GET", "/api/me"}, {"GET", "/d/" + strings.TrimPrefix(path, pathPrefix)}} {
+	for _, route := range []struct{ method, path string }{{"POST", path}, {"GET", path + "/files"}, {"GET", "/api/me/tokens?token=" + strings.TrimPrefix(path, pathPrefix)}, {"GET", pathPrefix + shareDraft}} {
 		if r := guest(route.method, route.path); r.Code == 200 {
-			t.Fatal(r)
+			t.Fatalf("%s %s unexpectedly succeeded", route.method, route.path)
 		}
 	}
 	if r := mate.Do("DELETE", manage, nil); r.Code != 404 {
