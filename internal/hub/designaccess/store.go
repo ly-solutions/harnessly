@@ -179,7 +179,7 @@ func scanMember(row interface{ Scan(...any) error }) (member, error) {
 
 // Match both an explicit Hub team and the implicit team for members of a space.
 func inviteAudience(emailExpr string) string {
-	return `(i.team_id='' OR EXISTS (
+	return `(i.team_id IS NULL OR i.team_id='' OR EXISTS (
     SELECT 1 FROM users u WHERE u.email=` + emailExpr + ` AND (
       EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=i.team_id AND tm.user_id=u.id) OR
       EXISTS (SELECT 1 FROM memberships sm WHERE 'space:' || sm.space_id=i.team_id AND sm.user_id=u.id))))`
@@ -934,7 +934,7 @@ func (r inviteRow) json() map[string]any {
 		"maxUses": maxUses, "uses": r.Uses, "revokedAt": iso(r.Revoked), "createdBy": r.CreatedBy, "createdAt": isoOf(r.CreatedAt)}
 }
 
-const inviteCols = `id, title, team_id, role, role_ttl_ms, expires_at, max_uses, uses, revoked_at, created_by, created_at`
+const inviteCols = `id, title, COALESCE(team_id,''), role, role_ttl_ms, expires_at, max_uses, uses, revoked_at, created_by, created_at`
 
 func scanInvite(row interface{ Scan(...any) error }) (inviteRow, error) {
 	var r inviteRow

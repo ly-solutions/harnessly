@@ -1,4 +1,4 @@
-ALTER TABLE design_invites ADD COLUMN team_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE design_invites ADD COLUMN team_id TEXT;
 
 -- Keep link membership distinct from a direct grant to the same recipient.
 CREATE TABLE design_invite_acceptances (

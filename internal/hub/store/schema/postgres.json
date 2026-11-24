@@ -1671,8 +1671,7 @@
         },
         {
           "name": "team_id",
-          "type": "text",
-          "notNull": true
+          "type": "text"
         }
       ],
       "primaryKey": [
