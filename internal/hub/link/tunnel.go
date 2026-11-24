@@ -349,6 +349,9 @@ func (t *Tunnel) sendWindow(n int64) {
 }
 
 func (t *Tunnel) Write(p []byte) (int, error) {
+	var header [1 + tunnelID]byte
+	header[0] = frameData
+	copy(header[1:], t.id[:])
 	written := 0
 	for len(p) > 0 {
 		t.mu.Lock()
@@ -367,14 +370,9 @@ func (t *Tunnel) Write(p []byte) (int, error) {
 			timer = time.NewTimer(d)
 			expired = timer.C
 		}
-		n := len(p)
-		if n > tunnelWriteChunk {
-			n = tunnelWriteChunk
-		}
-		frame := make([]byte, 1+tunnelID+n)
-		frame[0] = frameData
-		copy(frame[1:], t.id[:])
-		copy(frame[1+tunnelID:], p[:n])
+		n := min(len(p), tunnelWriteChunk)
+		// The header slice is full, so append gives the queued frame its own storage.
+		frame := append(header[:], p[:n]...)
 		err := t.l.sendBinary(frame, t.done, expired)
 		if timer != nil {
 			timer.Stop()
