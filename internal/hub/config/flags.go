@@ -122,6 +122,7 @@ var Flags = []Flag{
 	{Name: "HUB_DESIGN_REGISTER", Owner: "design"},
 	{Name: "HUB_DESIGN_SHARE_ALIASES", Owner: "design"},
 	{Name: "HUB_DESIGN_SHARE_DOCS", Owner: "design"},
+	{Name: "HUB_CHAT_GUEST_LINKS", Owner: "design"},
 	{Name: "HUB_DESIGN_SHARE_URL", Owner: "design"},
 	{Name: "HUB_DESIGN_UNRECORDED", Owner: "design"},
 	{Name: "HUB_ARTIFACTS_ACCESS_TOKEN", Owner: "docs"},
