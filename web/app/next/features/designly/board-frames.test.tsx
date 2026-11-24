@@ -31,7 +31,12 @@ it('keeps 32 live pages and evicts the least recently visited page', () => {
   const frameRef = createRef<HTMLIFrameElement>();
   const ready = vi.fn();
   const board = (index: number) => (
-    <BoardFrames src={`/page-${index}`} {...{ frameRef, ready }} capacity={PROTOTYPE_FRAME_CAPACITY} title="Board" />
+    <BoardFrames
+      src={`/page-${index}`}
+      {...{ frameRef, ready }}
+      capacity={PROTOTYPE_FRAME_CAPACITY}
+      title="Board"
+    />
   );
   const { rerender, container } = render(board(0));
   const first = frameRef.current;
