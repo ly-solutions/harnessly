@@ -104,7 +104,14 @@ func TestRealCreateSessionStartsTheCleanLoginShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	work := filepath.Join(dir, "work")
-	_ = os.Mkdir(work, 0o755)
+	if err := os.Mkdir(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The login shell reports its physical working directory (e.g. /private/var on macOS).
+	work, err := filepath.EvalSymlinks(work)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tm := NewConfig(Config{
 		Names: r.names(), ConfigFile: "/dev/null", PaneBinDir: "/opt/app/bin/pane", Nice: 3,
 		Env: []string{"HOME=" + dir, "SHELL=" + shell, "PATH=/private/bin", "RUNTIME_SECRET=x"},
