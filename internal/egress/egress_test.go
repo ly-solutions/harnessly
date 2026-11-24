@@ -125,19 +125,26 @@ func TestTransportCAClientCertAndProxy(t *testing.T) {
 	}
 
 	// Through the proxy: a CONNECT to the server; the proxy is on a loopback address, which the direct rule would refuse.
-	var connects []string
+	connects := make(chan string, 2)
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		connects = append(connects, r.Host)
+		connects <- r.Host
 		dst, err := net.Dial("tcp", r.Host)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		w.WriteHeader(200)
-		cl, _, _ := w.(http.Hijacker).Hijack()
-		go func() { _, _ = io.Copy(dst, cl); dst.Close() }()
+		cl, buf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			dst.Close()
+			return
+		}
+		defer cl.Close()
+		defer dst.Close()
+		if _, err := buf.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil || buf.Flush() != nil {
+			return
+		}
+		go func() { _, _ = io.Copy(dst, buf.Reader); dst.Close() }()
 		_, _ = io.Copy(cl, dst)
-		cl.Close()
 	}))
 	defer proxy.Close()
 	pu, _ := url.Parse(proxy.URL)
@@ -155,7 +162,7 @@ func TestTransportCAClientCertAndProxy(t *testing.T) {
 		t.Fatalf("through the proxy: %v", err)
 	}
 	res.Body.Close()
-	if len(connects) != 1 || connects[0] != u.Host {
+	if len(connects) != 1 || <-connects != u.Host {
 		t.Fatalf("the proxy was not used: %v", connects)
 	}
 	// An exception goes direct, under the direct rule (here: denied).
