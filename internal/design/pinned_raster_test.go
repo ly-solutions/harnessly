@@ -25,11 +25,14 @@ func TestPublisherCapturesThePinnedPageAndItsAssets(t *testing.T) {
 		t.Fatalf("pin failed %d", w.Code)
 	}
 	writeFile(t, css, `html,body{background:blue}`)
-	limited := scopeToken(t, map[string]any{"rev": pin.Rev, "pages": []string{"Two.dc.html"}, "pin": true})
+	limited := scopeToken(t, map[string]any{"rev": pin.Rev, "pages": []string{"Two.dc.html"}, "capture": true})
 	if w := publicGet(a, "GET", path, limited); w.Code != 404 {
 		t.Fatal("page outside published subset")
 	}
-	owner := scopeToken(t, map[string]any{"rev": pin.Rev, "pages": []string{"One.dc.html"}, "pin": true})
+	owner := scopeToken(t, map[string]any{"rev": pin.Rev, "pages": []string{"One.dc.html"}, "capture": true})
+	if raw := publicGet(a, "GET", "p1/One.dc.html", owner); raw.Code != 404 {
+		t.Fatal("capture grant may read raw markup")
+	}
 	w = publicGet(a, "GET", path, owner)
 	if w.Code != 200 {
 		t.Fatalf("capture status %d %s", w.Code, w.Body.String())

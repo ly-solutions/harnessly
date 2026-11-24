@@ -17,6 +17,11 @@ func rasterPageKey(path string) string { return fmt.Sprintf("%x", sha256.Sum256(
 // pinnedRaster is called once by the publisher on the author's machine. The
 // short-lived server renders the extracted revision, including its own assets.
 func (a *API) pinnedRaster(w http.ResponseWriter, r *http.Request, lib *Library, project string, board Board) {
+	bin := a.L.findChrome()
+	if bin == "" {
+		publicText(w, 503, "Unavailable")
+		return
+	}
 	dir, err := os.MkdirTemp("", "harnessly-snapshot-")
 	if err != nil {
 		publicText(w, 503, "Unavailable")
@@ -36,7 +41,7 @@ func (a *API) pinnedRaster(w http.ResponseWriter, r *http.Request, lib *Library,
 	slots := a.L.thumbs()
 	slots.takeSlot(dir, true)
 	defer slots.freeSlot()
-	if r.Context().Err() != nil || !a.L.drawThumbAt(project, board, target, "http://127.0.0.1:"+strconv.Itoa(port), true) {
+	if r.Context().Err() != nil || !a.L.drawThumbAt(project, board, target, "http://127.0.0.1:"+strconv.Itoa(port), bin, true) {
 		publicText(w, 503, "Unavailable")
 		return
 	}
@@ -51,6 +56,7 @@ func (a *API) pinnedRaster(w http.ResponseWriter, r *http.Request, lib *Library,
 		publicText(w, 413, "Page too large")
 		return
 	}
+	w.Header().Set("X-Design-Static-Page", rasterPageKey(board.Path))
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = io.Copy(w, f)

@@ -114,7 +114,7 @@ func (s *Service) dropTokens() {
 }
 
 func (s *Service) guestToken(ctx context.Context, machine string, req hubproto.DesignPublicTokenRequest) (hubproto.DesignPublicToken, error) {
-	key := fmt.Sprintf("%s\x00%s\x00%s\x00%v\x00%q", machine, req.Project, req.Rev, req.Pin, req.Pages)
+	key := fmt.Sprintf("%s\x00%s\x00%s\x00%v\x00%t\x00%q", machine, req.Project, req.Rev, req.Pin, req.Capture, req.Pages)
 	now := s.now()
 	s.mu.Lock()
 	c, ok := s.tokens[key]

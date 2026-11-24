@@ -45,14 +45,14 @@ func cleanStaticPage(raw []byte) (string, error) {
 }
 
 func (s *Service) captureStatic(ctx context.Context, machine, project string, in shareInput) ([]staticPage, error) {
-	req := hubproto.DesignPublicTokenRequest{Project: project, Rev: in.Rev, Pin: true, Pages: in.Pages}
+	req := hubproto.DesignPublicTokenRequest{Project: project, Rev: in.Rev, Capture: true, Pages: in.Pages}
 	unavailable := fail("unavailable", "The owner machine could not capture the complete revision")
 	get := func(segments []string, limit int64) ([]byte, error) {
 		res, err := s.machineFetch(ctx, machine, req, segments, nil)
 		if err != nil {
 			return nil, unavailable
 		}
-		if res.StatusCode != http.StatusOK {
+		if res.StatusCode != http.StatusOK || len(segments) == 2 && (res.Header.Get("X-Design-Static-Page") != segments[1] || res.Header.Get("Content-Type") != "image/jpeg") {
 			res.Body.Close()
 			return nil, unavailable
 		}

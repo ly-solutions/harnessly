@@ -213,18 +213,18 @@ func (l *Library) thumbBrowser(s *thumbState, bin string) (*browser, error) {
 }
 
 func (l *Library) drawThumb(id string, b Board, file string) bool {
-	base, err := libraryBase(l)
-	if err != nil {
-		return false
-	}
-	return l.drawThumbAt(id, b, file, base, false)
-}
-
-func (l *Library) drawThumbAt(id string, b Board, file, base string, requireClean bool) bool {
 	bin := l.findChrome()
 	if bin == "" {
 		return false
 	}
+	base, err := libraryBase(l)
+	if err != nil {
+		return false
+	}
+	return l.drawThumbAt(id, b, file, base, bin, false)
+}
+
+func (l *Library) drawThumbAt(id string, b Board, file, base, bin string, requireClean bool) bool {
 	s := l.thumbs()
 	br, err := l.thumbBrowser(s, bin)
 	if err != nil {
