@@ -16,7 +16,10 @@ var noSpace = map[string]string{
 	// A person, in whatever space they are.
 	"users": "person", "identities": "person", "passkeys": "person", "sessions": "person", "api_tokens": "person: the apps a person connected (client API)", "notice_items": "person: their notices (HRN-1421)", "notice_settings": "person: their notification switches", "person_settings": "person",
 	"env_person_group": "person", "env_person_off": "person", "role_grants": "person",
-	"entry_tickets": "person",
+	"entry_tickets":     "person",
+	"bus_subscriptions": "person: their subscriptions to the journal; owner '' is the hub's own",
+	"bus_triggers":      "person: their catalog of triggers (HRN-1727)",
+	"bus_seq":           "installation: the one counter of the journal",
 	// An organization, or a child of a row that names its space.
 	"orgs": "organization", "org_changes": "organization", "org_features": "organization", "org_signals": "organization",
 	"team_members": "team", "invite_team": "invite", "invite_uses": "invite", "limit_rules": "scope",
@@ -32,7 +35,7 @@ var noSpace = map[string]string{
 	"usage_calls": "machine", "usage_session_sums": "machine", "eff_pulse": "machine", "eff_regression_alerts": "machine", "eff_source_facts": "machine", "eff_source_state": "machine",
 	"env_proposals": "machine", "tbot_joins": "machine", "automation_rules": "machine", "automation_runs": "machine", "automation_timers": "machine", "eval_schedules": "machine", "eval_batches": "machine", "eval_runs": "machine", "eval_checks": "machine", "usage_quarantine": "machine",
 	// A design, which is a project of a machine.
-	"design_access_log": "design", "design_guest_comments": "design", "design_invites": "design", "design_members": "design",
+	"design_access_log": "design", "design_guest_comments": "design", "design_invites": "design", "design_invite_acceptances": "design", "design_members": "design",
 	"design_projects": "design", "design_requests": "design", "design_share_links": "design", "design_share_views": "design",
 	"design_team_grants": "design",
 	// A provider account and what is read from it.

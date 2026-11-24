@@ -144,6 +144,8 @@ var Flags = []Flag{
 	{Name: "HUB_ENV_APPS", Owner: "environment"},
 	{Name: "HUB_ENV_FEATURES", Owner: "environment", Temporary: true, RemoveAfter: "2027-03-01"},
 	{Name: "HUB_ENV_RECOMMENDED", Owner: "environment"},
+	{Name: "HUB_EVENT_BUS", Owner: "eventbus", Temporary: true, RemoveAfter: "2027-06-01"},
+	{Name: "HUB_EVENT_BUS_RETENTION", Owner: "eventbus"},
 	{Name: "HUB_HISTORY", Owner: "history", Temporary: true, RemoveAfter: "2027-03-01"},
 	{Name: "HUB_HISTORY_DELETED_DAYS", Owner: "history"},
 	{Name: "HUB_LIMITS_ENFORCE", Owner: "limits", Temporary: true, RemoveAfter: "2027-03-01"},

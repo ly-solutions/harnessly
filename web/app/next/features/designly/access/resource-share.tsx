@@ -107,11 +107,12 @@ export interface ILegacyLinks {
   pages?: readonly IScopePage[];
 }
 
-const LegacyLinks = ({ links }: { links: ILegacyLinks }) => {
+const LegacyLinks = ({ links, membersOnly }: { links: ILegacyLinks; membersOnly: boolean }) => {
   const action = useAction();
   return (
     <>
       <AccessLinks
+        membersOnly={membersOnly}
         project={links.project}
         access={links.access}
         action={action}
@@ -385,6 +386,7 @@ interface IMainProps extends IResourceSection {
   phone: boolean;
   ownLinks: boolean;
   legacy: boolean;
+  memberInvites: boolean;
   linkContext: ILinkContext;
   links: Pick<ILinksScreen, 'start' | 'fresh'>;
   field: RefObject<HTMLInputElement | null>;
@@ -405,6 +407,7 @@ const Main = memo(
     phone,
     ownLinks,
     legacy,
+    memberInvites,
     linkContext,
     links,
     field,
@@ -427,16 +430,22 @@ const Main = memo(
             onOpen={() => onView(VIEW.link)}
           />
         )}
-        {!ownLinks && legacy && (
+        {legacy && (!ownLinks || memberInvites) && (
           <section className="hx-acc-sec" data-section="links">
-            <h3 className="hx-acc-sec__title">{t('next.access.guestLinks')}</h3>
+            <h3 className="hx-acc-sec__title">
+              {t(ownLinks ? 'next.access.memberInvites' : 'next.access.guestLinks')}
+            </h3>
             <button type="button" className="hx-acc-row hx-acc-golinks" onClick={() => onView(VIEW.links)}>
               <span className="hx-acc-av" aria-hidden="true">
                 <Icon name="link" size="sm" />
               </span>
               <span className="hx-acc-row__who">
-                <span className="hx-acc-row__nm">{t('next.access.guestLinksOpen')}</span>
-                <span className="hx-acc-row__sub">{t('next.access.guestLinksLead')}</span>
+                <span className="hx-acc-row__nm">
+                  {t(ownLinks ? 'next.access.memberInvites' : 'next.access.guestLinksOpen')}
+                </span>
+                <span className="hx-acc-row__sub">
+                  {t(ownLinks ? 'next.access.linksLead' : 'next.access.guestLinksLead')}
+                </span>
               </span>
               <Icon name="chevron-right" size="sm" />
             </button>
@@ -610,7 +619,11 @@ const Loaded = ({
   const covered = useCovered(sub !== null);
   const stateOf = (v: TView): TSubState => (v === shown.value ? shown.state : IDLE);
   const headOf = (v: TView): string =>
-    v === VIEW.link && screen.editing ? t('next.access.links.editTitle') : t(VIEW_TITLE[v]);
+    v === VIEW.links && ownLinks
+      ? t('next.access.memberInvites')
+      : v === VIEW.link && screen.editing
+        ? t('next.access.links.editTitle')
+        : t(VIEW_TITLE[v]);
 
   return (
     <>
@@ -627,6 +640,7 @@ const Loaded = ({
                 phone={phone}
                 ownLinks={ownLinks}
                 legacy={links !== undefined}
+                memberInvites={links?.access.teamInvites === true && links.access.canManage}
                 linkContext={linkContext}
                 links={listScreen}
                 field={field}
@@ -656,7 +670,7 @@ const Loaded = ({
                   </div>
                   {v === VIEW.log && <AccessLog project={target.id} kind={target.kind} names={names} />}
                   {v === VIEW.transfer && <Transfer props={props} onDone={() => go(null)} />}
-                  {v === VIEW.links && links && <LegacyLinks links={links} />}
+                  {v === VIEW.links && links && <LegacyLinks links={links} membersOnly={ownLinks} />}
                   {v === VIEW.link && (
                     <LinkScreen
                       id={linkForm}

@@ -50,6 +50,7 @@ import { useSubagents } from '@/next/bindings/subagents';
 import { setPaneOpen } from '@/next/bindings/pane-open';
 import { usePaneOpenBeside } from '@/next/bindings/pane-beside';
 import LazyFileEditor from '@/next/features/pane/editor/lazy';
+import { useFileLook } from '@/next/features/pane/use-file-changes';
 import {
   findFiles,
   findText,
@@ -317,6 +318,9 @@ const machineFolderOf = (path: string, file: boolean): string | null => {
 };
 
 /** A failure asking again may cure: the link's (no answer, the network) or the machine's own; never a refusal. */
+/** The biggest text, in characters, that the pane reads again every few seconds to follow the disk. */
+const FOLLOW_MAX = 1_000_000;
+
 const retryable = (failure: Error) =>
   !(failure instanceof WordedError) ||
   failure.code === 'network' ||
@@ -424,6 +428,27 @@ export const FilesTab = ({
     return () => abort.abort();
   }, [conv.machineId, conv.id, tab.id, tab.path, tab.file, epoch, draftOf, listingAgain, delivered]);
   const now = shown?.key === key ? shown : null;
+  // a text file open here follows the disk. The agent writes it, and the pane shows the new text at once, not
+  // after the tab is opened again. Looked at every few seconds while the page is in view; a file too big to read that
+  // often is left as it was opened.
+  const [disk, setDisk] = useState<{ key: string; file: FileContent } | null>(null);
+  const diskSeen = useRef({ key: '', revision: '' });
+  const following = Boolean(tab.file && now?.file && now.file.content.length <= FOLLOW_MAX);
+  useFileLook(() => {
+    const open = now?.file;
+    if (!open) return;
+    if (diskSeen.current.key !== key) diskSeen.current = { key, revision: open.revision };
+    void readFile(conv.machineId, conv.id, tab.path).then(
+      (file) => {
+        if (diskSeen.current.key !== key || file.revision === diskSeen.current.revision) return;
+        diskSeen.current = { key, revision: file.revision };
+        setDisk({ key, file });
+      },
+      // Out of reach for now: the text on screen stays until the machine answers again.
+      () => undefined,
+    );
+  }, following);
+  const diskNow = disk?.key === key ? disk.file : null;
   // «Перейти к файлу» searches the chat's folder; on the machine, the folder on screen (a file's own folder).
   const searchIn = machineFolderOf(tab.path, tab.file);
   const find = useCallback(
@@ -520,6 +545,7 @@ export const FilesTab = ({
         compare={shownCompare}
         onCloseCompare={() => onChange({ ...tab, against: undefined })}
         at={tab.at ?? null}
+        disk={diskNow}
         onAsk={
           isChatPlace(conv)
             ? (quote, note) => {
@@ -1735,8 +1761,13 @@ export const useRightPane = (
     });
   // A chip or a link of the feed opens where the agent's open command would put it (the runtime's rules). A ref that
   // fits several places opens the best; a merge request chip asks the person first (its own list, before this).
-  const openRef = (ref: string) => {
+  const openRef = (ref: string, kind?: 'task') => {
     if (!conv) return;
+    // A task chip already carries the tracker key. The Task pane loads it with the recipient's connection.
+    if (kind === 'task') {
+      openTarget({ tab: 'task', target: ref });
+      return;
+    }
     // A board opens in the boards app's view of the pane, on the board; a document of the hub in the
     // documents app's.
     const board = placeOf(ref);
@@ -1762,11 +1793,6 @@ export const useRightPane = (
         return;
       }
       if (!('ok' in res)) {
-        const nothing = res.r === 'refused' && res.code === 'not-found';
-        if (nothing) {
-          toast(t('next.pane.nothingToOpen'), { tone: 'error' });
-          return;
-        }
         toast(t('next.load.openRef'), {
           tone: 'error',
           description: pageText(res),
