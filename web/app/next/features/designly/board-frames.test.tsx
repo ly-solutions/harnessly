@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { createRef } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
-import BoardFrames from './board-frames';
+import BoardFrames, { PROTOTYPE_FRAME_CAPACITY } from './board-frames';
 afterEach(cleanup);
 it('warms after load, preserves the active document on return, and drops a previous revision', () => {
   const frameRef = createRef<HTMLIFrameElement>(),
@@ -25,4 +25,22 @@ it('warms after load, preserves the active document on return, and drops a previ
   rerender(board('/a', null, 2));
   expect(frameRef.current).not.toBe(a);
   expect(container.querySelectorAll('iframe')).toHaveLength(1);
+});
+
+it('keeps 32 live pages and evicts the least recently visited page', () => {
+  const frameRef = createRef<HTMLIFrameElement>();
+  const ready = vi.fn();
+  const board = (index: number) => (
+    <BoardFrames src={`/page-${index}`} {...{ frameRef, ready }} capacity={PROTOTYPE_FRAME_CAPACITY} title="Board" />
+  );
+  const { rerender, container } = render(board(0));
+  const first = frameRef.current;
+  for (let index = 1; index < 32; index++) rerender(board(index));
+  rerender(board(0));
+  expect(frameRef.current).toBe(first);
+  rerender(board(32));
+  expect(container.querySelectorAll('iframe')).toHaveLength(32);
+  expect(container.querySelector('[src="/page-1"]')).toBeNull();
+  rerender(board(0));
+  expect(frameRef.current).toBe(first);
 });

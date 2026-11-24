@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
+export const PROTOTYPE_FRAME_CAPACITY = 32;
+
 interface Props {
   src: string;
   title: string;

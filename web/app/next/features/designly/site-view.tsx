@@ -1,7 +1,7 @@
 // An open design as the design draws it (.hx-site): a browser with the design's pages in tabs, its bar — history,
 // the address with the pages, the device and size, more — and the page itself in the chosen viewport, in a case when
 // the device has one. The page is the board on the machine's library server, opened in a preview slot of its own.
-import BoardFrames from './board-frames';
+import BoardFrames, { PROTOTYPE_FRAME_CAPACITY } from './board-frames';
 import { useLiveHint, useLiveMark } from '@/next/features/voice-live/live-mark';
 import { tourSignal } from '@/next/stores/tour';
 import { ChatTerminalSlotContext } from '@/next/features/terminal/chat-terminal';
@@ -2164,7 +2164,7 @@ const SiteView = ({
                                   <BoardFrames
                                     key={frameScope ?? frameKey}
                                     nextFrame={nextFrame}
-                                    capacity={frameScope ? 3 : 1}
+                                    capacity={frameScope ? PROTOTYPE_FRAME_CAPACITY : 1}
                                     frameRef={frameRef}
                                     src={src}
                                     title={page?.name ?? title}
