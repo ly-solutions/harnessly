@@ -2013,6 +2013,44 @@
         }
       ]
     },
+    "design_static_pages": {
+      "columns": [
+        {
+          "name": "link_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "rev",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "position",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "board",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "jpeg",
+          "type": "TEXT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "link_id",
+        "position"
+      ]
+    },
     "design_team_grants": {
       "columns": [
         {

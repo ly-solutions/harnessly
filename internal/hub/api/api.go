@@ -432,7 +432,7 @@ func New(o Options) (*Hub, error) {
 		}
 	}
 	h.Design = designaccess.New(designaccess.Deps{
-		DB: db, Reg: h.Registry, Log: log, Now: o.Now, HubURL: cfg.PublicURL, ShareURL: cfg.DesignShareURL,
+		DB: db, Reg: h.Registry, Log: log, Now: o.Now, HubURL: cfg.PublicURL, ShareURL: cfg.DesignShareURL, StaticGuests: cfg.DesignSnapshotLinks,
 		ShareAliases: cfg.DesignShareAliases, PlatformAPI: cfg.DesignPlatformAPI, Transport: func(id string) http.RoundTripper { return px.Transport(id) },
 		LinkKey: linkKey, Notice: notice,
 		Bell: func(ctx context.Context, machineID, to, key, title, text, link string) {
@@ -762,6 +762,8 @@ func New(o Options) (*Hub, error) {
 		case cfg.MachineIDFromHost(r.Host) != "":
 			// A machine's own origin runs the machine and nothing of the hub: no API, no page, no sign-in.
 			h.Proxy.ServeHTTP(w, r)
+		case cfg.DesignSnapshotLinks && strings.EqualFold(r.Host, cfg.Host) && strings.HasPrefix(r.URL.Path, designaccess.StaticPrefix):
+			h.Design.StaticGuest(w, r)
 		case strings.HasPrefix(r.URL.Path, "/api/"):
 			csrf.ServeHTTP(w, r)
 		default:

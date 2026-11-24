@@ -490,6 +490,19 @@ func (a *API) servePublic(w http.ResponseWriter, r *http.Request, project string
 		}
 	}
 	switch segments[0] {
+	case "__raster":
+		if !scope.pin || scope.rev == "" || len(segments) != 2 || head {
+			publicText(w, 404, "Not found")
+			return
+		}
+		for _, board := range art.Boards {
+			if scope.allows(board) && rasterPageKey(board.Path) == segments[1] {
+				a.pinnedRaster(w, r, lib, project, board)
+				return
+			}
+		}
+		publicText(w, 404, "Not found")
+		return
 	case PublicAppDir:
 		a.publicApp(w, r, segments[1:], head)
 		return

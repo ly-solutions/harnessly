@@ -213,12 +213,16 @@ func (l *Library) thumbBrowser(s *thumbState, bin string) (*browser, error) {
 }
 
 func (l *Library) drawThumb(id string, b Board, file string) bool {
-	bin := l.findChrome()
-	if bin == "" {
-		return false
-	}
 	base, err := libraryBase(l)
 	if err != nil {
+		return false
+	}
+	return l.drawThumbAt(id, b, file, base, false)
+}
+
+func (l *Library) drawThumbAt(id string, b Board, file, base string, requireClean bool) bool {
+	bin := l.findChrome()
+	if bin == "" {
 		return false
 	}
 	s := l.thumbs()
@@ -251,7 +255,7 @@ func (l *Library) drawThumb(id string, b Board, file string) bool {
 	select {
 	case res := <-done:
 		// A page with errors still has a picture worth showing; only a drawing that produced no file is a failure.
-		return res.Saved && os.Rename(temp, file) == nil
+		return res.Saved && (!requireClean || res.Status == statusOK) && os.Rename(temp, file) == nil
 	case <-time.After(thumbRenderWait):
 		go func() {
 			<-done

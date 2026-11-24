@@ -226,6 +226,7 @@
   "next.access.links.what.video": "the video",
   "next.access.links.what.doc": "the document",
   "next.access.links.what.board": "the board",
+  "next.access.links.staticSnapshot": "Guests can view the captured pages. Later edits to the design do not change this snapshot.",
   "next.access.links.rightsLabel": "Access",
   "next.access.links.rightsValue.view": "View",
   "next.access.links.rightsValue.comment": "Comment",
