@@ -205,6 +205,7 @@ const LegacyStyles = ({ need, children }: { need: boolean; children: ReactNode }
   return children;
 };
 
+const TaskTab = lazy(() => import('@/components/agents/pane/task-tab'));
 const VaultTab = lazy(() => import('@/components/agents/vault/vault-tab'));
 
 const LegacyWait = () => (
@@ -221,6 +222,18 @@ export const LegacyVault = () => (
       <div className="hx-legacy tw-rpane-panel tw-rpane-panel-vault" data-kind="vault">
         <Suspense fallback={<LegacyWait />}>
           <VaultTab />
+        </Suspense>
+      </div>
+    </LegacyStyles>
+  </Guarded>
+);
+
+export const ChatTaskTab = ({ target, onOpen }: { target: string; onOpen: (key: string) => void }) => (
+  <Guarded title={t('next.load.tool')} fallback={<LegacyWait />} onRetry={() => window.location.reload()}>
+    <LegacyStyles need>
+      <div className="hx-legacy tw-rpane-panel tw-rpane-panel-task" data-kind="task">
+        <Suspense fallback={<LegacyWait />}>
+          <TaskTab taskKey={target} onOpenTask={onOpen} />
         </Suspense>
       </div>
     </LegacyStyles>
