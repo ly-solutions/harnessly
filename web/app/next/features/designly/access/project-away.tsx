@@ -43,11 +43,9 @@ const ProjectAway = ({ why, ownerName, onBack, project }: IProjectAwayProps) => 
   const [boards, setBoards] = useState<{ title: string; path: string }[]>([]);
   const [selected, setSelected] = useState(0);
   useEffect(() => {
-    setBoards([]);
-    setSelected(0);
     if (why !== AWAY.absentStoreOff && why !== AWAY.silentStoreOff) return;
     const abort = new AbortController();
-    void fetch(gatewayPath('/design/store/' + encodeURIComponent(project) + '/index.json'), {
+    void fetch(gatewayPath(`/design/store/${encodeURIComponent(project)}/index.json`), {
       signal: abort.signal,
       cache: 'no-store',
     })
