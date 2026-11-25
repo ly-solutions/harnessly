@@ -142,13 +142,19 @@ func TestFailedPermissionRestartKeepsPreviouslyRunningMode(t *testing.T) {
 	r.rt.d.Models = fastModels
 	r.open()
 	r.settle(wire.StateReady)
+	if err := r.rt.call(context.Background(), r.id, func(c *conv, _ time.Time) {
+		c.rec.Model = &wire.Model{ID: "opus", Permission: wire.PermissionAsk}
+		c.touch()
+	}); err != nil {
+		t.Fatal(err)
+	}
 	r.launcher.resumeErr = ErrResumeBlocked
 	mode := wire.PermissionBypass
 	result := r.do(wire.ModelCmd{OpID: "failed-mode", ID: r.id, Model: "opus", Permission: &mode})
 	if result.R != wire.ResultRefused || len(r.launcher.resumed) != 1 {
 		t.Fatalf("restart: %+v; resumes: %v", result, r.launcher.resumed)
 	}
-	if got := r.modelOf(); got != nil && got.Permission == mode {
+	if got := r.modelOf(); got == nil || got.Permission != wire.PermissionAsk {
 		t.Fatal("refused mode was applied")
 	}
 }
