@@ -4,7 +4,7 @@
 // timer, as before; a slow timer stays behind the poll for what the store has not been told yet.
 import { startQuietPoll } from '@/next/bindings/quiet-poll';
 import { hubJson } from '@/next/core/net/runtime-json';
-import type { MachineId } from '@/next/protocol/v2';
+import { CAPS_QUERY, type MachineId } from '@/next/protocol/v2';
 
 /** The slow read behind the long poll: what reaches the machine but not the store still shows, later. */
 export const LIBRARY_SAFETY_MS = 30_000;
@@ -15,7 +15,10 @@ export const waitLibraryChange = async (
   since: number,
   signal: AbortSignal,
 ): Promise<number> => {
-  const answer = await hubJson<{ rev?: unknown }>(`/design/store-library/changes?since=${since}`, { signal });
+  const answer = await hubJson<{ rev?: unknown }>(
+    `/design/store-library/changes?since=${since}&${CAPS_QUERY}`,
+    { signal },
+  );
   if (typeof answer.rev !== 'number') throw new Error('no revision');
   return answer.rev;
 };

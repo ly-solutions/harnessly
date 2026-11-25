@@ -47,21 +47,24 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 	section, file, _ := strings.Cut(sub, "/")
 	// A board's address with its key (filekey.go): the files under it are read as those of f/.
 	keyed := false
+	card := r.URL.Query().Get("card")
 	if section == "k" {
 		key, after, _ := strings.Cut(file, "/")
 		inner, rest, _ := strings.Cut(after, "/")
-		if inner != "f" || !s.files.check(key, u.ID, project, s.now()) {
+		held, ok := s.files.checkCard(key, u.ID, project, s.now())
+		if inner != "f" || !ok {
 			return fail("not_found", "Файл не найден")
 		}
-		section, file, keyed = "f", rest, true
+		// The holder rides in the key, so the files of a board come from the copy the board was opened from.
+		section, file, keyed, card = "f", rest, true, held
 	}
 	ctx := r.Context()
 	if s.view == nil {
-		if section != "f" && section != "index.json" {
+		if section != "f" && section != "index.json" && section != "snapshot" {
 			return fail("store_off", "Хранилище дизайнов не подключено")
 		}
 		var err error
-		m, err = s.scopedHolder(ctx, m, u, project, "")
+		m, err = s.scopedHolder(ctx, m, u, project, "", card)
 		if err != nil {
 			return err
 		}
@@ -92,6 +95,9 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 		if !read {
 			return fail("bad_request", "Метод не поддерживается")
 		}
+		if s.view == nil && section == "snapshot" {
+			return s.readSnapshot(w, r, m, project, file)
+		}
 		if s.view == nil {
 			var segs []string
 			if section == "f" {
@@ -107,7 +113,7 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 				}
 				if !keyed && s.files != nil && storeNavigation(r) {
 					w.Header().Set("Cache-Control", "no-store")
-					w.Header().Set("Location", keyedLocation(segs, s.files.mint(u.ID, project, s.now()), r.URL.RawQuery))
+					w.Header().Set("Location", keyedLocation(segs, s.files.mintCard(u.ID, project, card, s.now()), withoutCard(r.URL.Query(), r.URL.RawQuery)))
 					w.WriteHeader(http.StatusFound)
 					return nil
 				}

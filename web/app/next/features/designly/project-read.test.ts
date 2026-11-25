@@ -75,6 +75,15 @@ describe('readProject (HRN-1308)', () => {
     expect(shown.map((s) => s.k)).toEqual([PROJECT_READ.open]);
   });
 
+  it('an ACL card alone leaves the project to the live reader', async () => {
+    const { shown } = run(
+      () => after(100, library()),
+      () => after(100, { ...copy('p1'), metadataOnly: true }),
+    );
+    await vi.advanceTimersByTimeAsync(300);
+    expect(shown).toEqual([{ k: PROJECT_READ.away, why: AWAY.absentStoreOff, machineError: null }]);
+  });
+
   it('a machine without the project sends the read to the store at once', async () => {
     const { shown } = run(
       () => after(100, library('other')),
@@ -175,6 +184,39 @@ describe('readProject (HRN-1308)', () => {
     const { shown } = run(denied, () => after(10, copy('p1')));
     await vi.advanceTimersByTimeAsync(100);
     expect(shown).toEqual([{ k: PROJECT_READ.open, from: PROJECT_FROM.store, design: design('p1') }]);
+  });
+});
+
+describe('readProject with a card (GitHub #179)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  it("does not open the machine's own project of the same slug for a shared copy", async () => {
+    const shown: unknown[] = [];
+    void readProject(
+      'p1',
+      {
+        machine: async () => library('p1'),
+        store: async () => ({ ...copy(), designs: [{ id: 'p1', cardKey: 'aaaa' } as unknown as IDesign] }),
+      },
+      (state) => shown.push(state),
+      WAITS,
+      'aaaa',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toEqual([expect.objectContaining({ k: 'open', from: 'store' })]);
+  });
+
+  it('is away when the hub lists no copy under that card', async () => {
+    const shown: unknown[] = [];
+    void readProject(
+      'p1',
+      { machine: async () => library('p1'), store: async () => ({ ...copy(), designs: [design('p1')] }) },
+      (state) => shown.push(state),
+      WAITS,
+      'aaaa',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown).toEqual([expect.objectContaining({ k: 'away' })]);
   });
 });
 

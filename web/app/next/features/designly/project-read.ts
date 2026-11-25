@@ -91,6 +91,8 @@ export const readProject = (
   read: { machine: () => Promise<IDesignLibrary>; store: () => Promise<IStoreLibrary> },
   show: (state: TProjectRead) => void,
   waits: IProjectReadWaits,
+  /** The copy of a shared project another machine holds (a card key): the machine's own project of the same slug is not it. */
+  card?: string,
 ): Promise<void> =>
   new Promise((resolve) => {
     let machine: TSide = SIDE.pending;
@@ -119,7 +121,12 @@ export const readProject = (
       storeAsked = true;
       read.store().then(
         (copy) => {
-          const design = copy.designs.find((d) => d.id === id);
+          if (copy.metadataOnly) {
+            store = SIDE.off;
+            settle();
+            return;
+          }
+          const design = copy.designs.find((d) => d.id === id && d.cardKey === card);
           store = design ? SIDE.has : SIDE.absent;
           // The machine's project, once shown, is never replaced by the copy.
           if (design && machine !== SIDE.has) put({ k: PROJECT_READ.open, from: PROJECT_FROM.store, design });
@@ -139,7 +146,7 @@ export const readProject = (
     read.machine().then(
       (library) => {
         clearTimeout(patience);
-        if (library.designs.some((d) => d.id === id)) {
+        if (card === undefined && library.designs.some((d) => d.id === id)) {
           clearTimeout(storeTimer);
           machine = SIDE.has;
           put({ k: PROJECT_READ.open, from: PROJECT_FROM.machine, library });

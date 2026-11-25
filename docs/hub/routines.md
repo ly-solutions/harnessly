@@ -57,6 +57,10 @@ connectors, and names in its report; `file` and `doc` it writes and attaches as 
 
 ## The run
 
+The run starts on the machine the person works on: `routine.machine` is set when the routine is made from a machine and
+moves to the machine a run by hand is asked from; the oldest connected machine of the owner is only the fallback when
+that one is off (a run elsewhere makes a chat the person does not see).
+
 Each run starts in a new chat marked `from: {app: "routines", label: "Регулярные", title: <rule name>}`: in
 the person's sidebar the chats of the routines' and the triggers' runs stand in one folder, «Регулярные», named after
 their rule. Moving a chat to a project or the recent chats takes it out of the folder. A runtime older than the mark

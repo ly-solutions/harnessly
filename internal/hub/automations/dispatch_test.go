@@ -232,3 +232,31 @@ func TestStartNamesTheTokenVariableFromTheConfig(t *testing.T) {
 		t.Fatalf("prompt does not name the variable: %s", prompt)
 	}
 }
+
+// A routine starts on the machine the person works on while it is connected, and on the oldest connected machine of the
+// owner only when that one is off: a run elsewhere makes a chat the person does not see.
+func TestRoutineRunPrefersItsOwnMachine(t *testing.T) {
+	s, links, _ := dispatcher(t)
+	ctx := context.Background()
+	if _, err := s.db.Exec(ctx, `INSERT OR IGNORE INTO users (id, email, created_at) VALUES ('u1', 'u1@example.com', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	for i, id := range []string{"m-old", "m-mine"} {
+		if _, err := s.db.Exec(ctx, `INSERT INTO machines (id, name, hostname, os, arch, unix_user, profile, via, key_pub, enc_pub, agent_version, created_at, info, created_by)
+			VALUES (?, ?, 'h', '', '', '', '', '', ?, ?, '', ?, '', 'u1')`, id, id, "k"+id, "e"+id, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rule := Rule{OwnerID: "u1", Routine: &Routine{Machine: "m-mine"}}
+	links.online["m-old"], links.online["m-mine"] = true, true
+	if got, err := s.machineFor(ctx, rule); err != nil || got != "m-mine" {
+		t.Fatalf("both on: %q %v", got, err)
+	}
+	links.online["m-mine"] = false
+	if got, err := s.machineFor(ctx, rule); err != nil || got != "m-old" {
+		t.Fatalf("own machine off: %q %v", got, err)
+	}
+	if got, err := s.machineFor(ctx, Rule{OwnerID: "u1"}); err != nil || got != "m-old" {
+		t.Fatalf("no preference: %q %v", got, err)
+	}
+}

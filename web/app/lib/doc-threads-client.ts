@@ -4,6 +4,7 @@ import type {
   IDocDetailResponse,
   IDocDiffResponse,
   IDocListResponse,
+  IDocNative,
   IDocPeopleResponse,
   IDocSource,
   IDocThread,
@@ -101,6 +102,36 @@ export const docContentSrc = (slug: string, version: string | null = null): stri
   prefixAppPath(
     `${BASE}/${encodeURIComponent(slug)}/content${version ? `?v=${encodeURIComponent(version)}` : ''}`,
   );
+
+/** The object read by the runtime itself: Markdown or blocks of a document, one page (`cursor`) of a board. */
+export const fetchDocNative = async (
+  slug: string,
+  opts: { version?: string | null; cursor?: string | null } = {},
+): Promise<IDocNative> => {
+  const q = new URLSearchParams();
+  if (opts.version) q.set('v', opts.version);
+  if (opts.cursor) q.set('cursor', opts.cursor);
+  const tail = q.size ? `?${q.toString()}` : '';
+  return asJson(await appFetch(`${BASE}/${encodeURIComponent(slug)}/native${tail}`));
+};
+
+/** An image of a board, read by the runtime with the person's own provider connection. */
+export const docAssetSrc = (slug: string, asset: string): string =>
+  prefixAppPath(`${BASE}/${encodeURIComponent(slug)}/native/asset?id=${encodeURIComponent(asset)}`);
+
+/**
+ * Whether the runtime can give the provider's embed address at all. The frame itself cannot be asked whether it loaded,
+ * so the content route is asked without following its redirect: a redirect (an opaque answer) is an address, anything
+ * else is the runtime refusing.
+ */
+export const probeDocEmbed = async (slug: string): Promise<boolean> => {
+  try {
+    const response = await appFetch(`${BASE}/${encodeURIComponent(slug)}/content`, { redirect: 'manual' });
+    return response.type === 'opaqueredirect' || response.ok;
+  } catch {
+    return false;
+  }
+};
 
 export const fetchDocVersions = async (slug: string): Promise<IDocVersionsResponse> =>
   asJson(await appFetch(`${BASE}/${encodeURIComponent(slug)}/versions`));

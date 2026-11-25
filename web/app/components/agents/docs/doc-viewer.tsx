@@ -28,6 +28,7 @@ import {
   fetchDocSource,
   fetchDocVersions,
   markDocRead,
+  probeDocEmbed,
   replyToDocThread,
   setDocThreadStatus,
 } from '@/lib/doc-threads-client';
@@ -35,6 +36,7 @@ import { DOC_THREAD_STATUS } from '@/types/doc-threads';
 import { MessageText, Pill } from '@/components/agents/docs/mention-field';
 import { plainMentions } from '@/lib/doc-mentions';
 import { DocShare } from '@/components/agents/docs/doc-share';
+import NativeView from '@/components/agents/docs/native-view';
 
 /** `?share=1`: the page was opened by «Поделиться» of the board or the document on its own site. */
 const SHARE_ON_OPEN =
@@ -317,6 +319,20 @@ const DocViewer = ({
   }, [title, onTitle]);
 
   const isBoard = detail?.doc.kind === 'board';
+  // A provider that can hand the object over natively is drawn without a frame when its viewer cannot be embedded:
+  // it said so, or the runtime has no embed address for it. Everything else keeps its frame.
+  const [embedProbe, setEmbedProbe] = useState<'unknown' | 'ok' | 'failed'>('unknown');
+  const canNative = Boolean(detail?.doc.native && detail.doc.providerEmbed);
+  useEffect(() => {
+    if (!canNative || detail?.doc.noEmbed) return;
+    let live = true;
+    void probeDocEmbed(slug).then((ok) => live && setEmbedProbe(ok ? 'ok' : 'failed'));
+    return () => {
+      live = false;
+    };
+  }, [canNative, detail?.doc.noEmbed, slug]);
+  const showNative = canNative && (Boolean(detail?.doc.noEmbed) || embedProbe === 'failed');
+  const waitingForProbe = canNative && !detail?.doc.noEmbed && embedProbe === 'unknown';
   const hasVersions = detail?.doc.kind === 'artifact';
 
   // `?v=<version id>` keeps the version in the address; without it the current one is shown.
@@ -752,7 +768,9 @@ const DocViewer = ({
 
         <div className="td-body">
           <main className="td-canvas">
-            {notConfigured ? null : isBoard && detail ? (
+            {notConfigured || waitingForProbe ? null : showNative && detail ? (
+              <NativeView slug={slug} title={detail.doc.title} version={contentVersion} isBoard={isBoard} />
+            ) : isBoard && detail ? (
               <iframe
                 className="td-board"
                 src={detail.doc.providerEmbed ? docContentSrc(slug, null) : detail.doc.url}

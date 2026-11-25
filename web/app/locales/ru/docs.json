@@ -113,5 +113,10 @@
   "docs.docViewer.notConfiguredHint": "Документы подключает администратор хаба: см. docs/hub/docs.md в репозитории harnessly.",
   "docs.docViewer.versionMissing": "Версия {sha} не найдена в истории документа, показана актуальная.",
   "docs.mentionField.people": "Люди",
-  "docs.mentionField.send": "Отправить"
+  "docs.mentionField.send": "Отправить",
+  "docs.nativeView.board": "Доска",
+  "docs.nativeView.failed": "Не удалось прочитать этот объект",
+  "docs.nativeView.loading": "Загрузка…",
+  "docs.nativeView.more": "Показать ещё объекты",
+  "docs.nativeView.unsupported": "Сервис не умеет показать этот объект здесь. Откройте его в самом сервисе."
 }

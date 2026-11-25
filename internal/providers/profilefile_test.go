@@ -33,6 +33,34 @@ const corpFile = `{"profiles":[
   "key_ref":"corp-llm-key","disable_mcp":true,"models":[{"id":"corp-large","window":200000,"price":{"input":3,"output":15,"cached_input":0.3}}]}
 ]}`
 
+func TestExcludeBuiltinMCPIsScopedAndValidated(t *testing.T) {
+	resetExtra(t)
+	good := `{"profiles":[{"id":"nomedia","label":"No media","vendor":"glm","api":"anthropic","base_url":"https://llm.example.com/anthropic","key_ref":"k","exclude_builtin_mcp":["media"],"models":[{"id":"m","window":1000}]}]}`
+	path := filepath.Join(t.TempDir(), "profiles.json")
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := LoadProfileFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := (Launcher{}).ClaudeMCPExcluded("nomedia"); len(got) != 1 || got[0] != "media" {
+		t.Fatalf("excluded = %v", got)
+	}
+	if got := (Launcher{}).ClaudeMCPExcluded("glm-byok"); got != nil {
+		t.Fatalf("ordinary profile excludes %v", got)
+	}
+	if (Launcher{}).ClaudeMCPDisabled("nomedia") {
+		t.Fatal("excluding media must not disable MCP")
+	}
+	bad := strings.Replace(good, `["media"]`, `["audio"]`, 1)
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := LoadProfileFile(path); err == nil {
+		t.Fatal("an unknown group must be refused")
+	}
+}
+
 func TestNoFileChangesNothing(t *testing.T) {
 	resetExtra(t)
 	if got, want := len(Presets()), len(presets); got != want {

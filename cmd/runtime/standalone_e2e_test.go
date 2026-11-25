@@ -38,7 +38,8 @@ for a in "$@"; do
   if [ "$a" = "--print" ]; then cat >/dev/null; echo "$*" >> "$HOME/claude-print.log"; echo "Готово."; exit 0; fi
 done
 echo "$*" >> "$HOME/claude-calls.log"
-env | grep -E '^(BOARDS|ARTIFACTS|RUNTIME|HARNESSLY)_' | sort >> "$HOME/claude-env.log"
+env | grep -E '^(BOARDS|ARTIFACTS|RUNTIME|HARNESSLY)_' | grep -vE '^HARNESSLY_(SESSION|TMUX_BIN)=' | sort >> "$HOME/claude-env.log"
+env | grep -E '^HARNESSLY_(SESSION|TMUX_BIN)=' | sort >> "$HOME/claude-pane.log"
 settings=""; sid=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -424,6 +425,12 @@ func TestStandaloneMachineEndToEnd(t *testing.T) {
 		"ARTIFACTS_URL=" + services.URL, "BOARDS_TOKEN=agent-token", "BOARDS_URL=" + services.URL, "HARNESSLY_DATA_DIR=" + data}, "\n") + "\n"
 	if got := read(filepath.Join(home, "claude-env.log")); got != wantEnv {
 		t.Fatalf("the agent's environment:\n%s\nwant\n%s", got, wantEnv)
+	}
+	// The pane names its own tmux session and the runtime's tmux binary, so the hooks ask that tmux and not the first
+	// one on PATH.
+	if pane := read(filepath.Join(home, "claude-pane.log")); !regexp.MustCompile(`(?m)^HARNESSLY_SESSION=\S+-`+regexp.QuoteMeta(tab)+`\n`).MatchString(pane) ||
+		!regexp.MustCompile(`(?m)^HARNESSLY_TMUX_BIN=/\S*tmux\n`).MatchString(pane) {
+		t.Fatalf("the pane's tmux: %q", pane)
 	}
 	if code, body := call("GET", "/api/integrations", "", true); code != 200 ||
 		body != `{"boards":{"url":"`+services.URL+`"},"artifacts":{"url":"`+services.URL+`"}}`+"\n" {

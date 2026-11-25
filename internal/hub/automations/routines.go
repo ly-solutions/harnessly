@@ -91,6 +91,9 @@ type Routine struct {
 	BudgetUSD float64 `json:"budgetUsd,omitempty"`
 	// ChatID is the chat the routine was made in, for «Открыть чат задачи».
 	ChatID string `json:"chatId,omitempty"`
+	// Machine is the machine the routine was made on or last run by hand from: its runs start there while it is
+	// connected (the chat stays on the machine the person works on), else on the first connected machine of the owner.
+	Machine string `json:"machine,omitempty"`
 	// Owner and runAs are reserved for team routines: who it belongs to, whose accounts its runs use. Today both are
 	// the rule's owner.
 	Team string `json:"team,omitempty"`
