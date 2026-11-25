@@ -314,6 +314,7 @@ export const CLIENT_CAPS = [
   'machineinfo',
   'antigravity',
   'runsin',
+  'designkey',
 ] as const;
 /** CLIENT_CAPS as a query: `caps=…`. */
 export const CAPS_QUERY = `caps=${CLIENT_CAPS.join(',')}`;
@@ -877,6 +878,9 @@ export interface DesignArtifact {
   role?: DesignRole;
   accessSource?: DesignAccessSource;
   accessUntil?: string;
+  /** The copy of a shared project another machine holds (several may share a slug); the page keys the card by it and
+   *  opens the project with it. Absent for the machine's own and from an older hub (cap designkey). */
+  cardKey?: string;
   /** The app's document type the project is (made of Sinopia's site): its label; absent for Sinopia's own projects. */
   appKind?: DesignAppKind;
 }
@@ -2737,6 +2741,7 @@ const designArtifact: Decoder<DesignArtifact> = object(
     role: designRole,
     accessSource: oneOf(DESIGN_ACCESS_SOURCES),
     accessUntil: str,
+    cardKey: str,
     appKind: designAppKind,
   },
 );

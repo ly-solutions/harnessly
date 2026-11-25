@@ -42,10 +42,10 @@
   max-width: 92%;
   font-size: var(--hx-text-sm);
   line-height: 20px;
-  white-space: pre-wrap;
   animation: hx-in-up 220ms var(--hx-ease-out) backwards;
 }
 .hx-sidechat__msg[data-who='me'] {
+  white-space: pre-wrap;
   align-self: flex-end;
   padding: 7px 12px;
   border-radius: 14px 14px 4px 14px;

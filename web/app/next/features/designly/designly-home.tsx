@@ -92,7 +92,10 @@ const KINDS = [
   DESIGN_KIND.ds,
 ] as const;
 
-export interface IDesignCard extends Pick<DesignArtifact, 'role' | 'accessSource' | 'accessUntil'> {
+export interface IDesignCard extends Pick<
+  DesignArtifact,
+  'role' | 'accessSource' | 'accessUntil' | 'cardKey'
+> {
   id: string;
   title: string;
   boards: number;
@@ -171,7 +174,7 @@ export interface IDesignlyHomeProps {
   organizer?: ILibraryOrganizer;
   /** Copies back the demo projects the library no longer has; resolves once the list has them. */
   onRestoreDemo?: () => Promise<void>;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, card?: string) => void;
   onRetry: () => void;
   /** Where a project is started; null is the library alone (the right pane's: its chat is the field). */
   compose: IDesignlyCompose | null;
@@ -564,7 +567,7 @@ interface IDesignCardProps {
   movable: boolean;
   selecting: boolean;
   selected: boolean;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, card?: string) => void;
   onPin: (card: IDesignCard) => void;
   onDelete: (card: IDesignCard) => void;
   onMove: (card: IDesignCard) => void;
@@ -693,12 +696,12 @@ const DesignCard = memo(
         // The card's «…» menu sits in a portal, yet React bubbles its clicks here: a menu item must not open or toggle the card.
         if (!event.currentTarget.contains(event.target as Node)) return;
         if (selecting || event.shiftKey || event.metaKey || event.ctrlKey) onSelect(card);
-        else onOpen(card.id);
+        else onOpen(card.id, card.cardKey);
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' && event.target === event.currentTarget) {
           if (selecting) onSelect(card);
-          else onOpen(card.id);
+          else onOpen(card.id, card.cardKey);
         }
       }}
     >
@@ -1151,7 +1154,7 @@ const DesignlyHome = ({
               >
                 {shown.map((card, i) => (
                   <DesignCard
-                    key={card.id}
+                    key={card.cardKey ? `${card.id}~${card.cardKey}` : card.id}
                     card={card}
                     index={i}
                     now={now}

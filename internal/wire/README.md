@@ -848,3 +848,8 @@ event (`prompt_state`, `message_upsert`); the page never decides that a message 
     started in last: the chat's own (`model.permission`), else the machine's default of that start (Codex's
     config.toml, Claude Code's settings). A default changed on the machine later leaves it as it is until the agent's
     next start. Only a page that names the cap (`?caps=runsin`) gets it.
+78. **The card key of a shared Sinopia project (GitHub #179).** With the design Store off, each machine keeps its own copy of
+    a project, and the hub's `store-library` answer (and the home's part of it) may list two cards of one slug. A card
+    of a copy held by another machine carries `cardKey`, an opaque digest of the holder and the project; the page keys
+    the card by it and opens it with `?card=<cardKey>` on the project's hub routes. Only a page that names the cap
+    (`?caps=designkey` on the call) gets the key and every copy: any other page gets one card per slug, without it.

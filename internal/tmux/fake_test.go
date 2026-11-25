@@ -522,7 +522,7 @@ func TestCreateSessionCommandLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := f.calls[0]
-	want := append([]string{"-u", "-L", "main", "-f", "/app/tmux.conf", "new-session", "-d", "-s", "nw-x", "-x", "120", "-y", "40"}, tm.ShellLaunchCommand())
+	want := append([]string{"-u", "-L", "main", "-f", "/app/tmux.conf", "new-session", "-d", "-s", "nw-x", "-x", "120", "-y", "40"}, tm.shellLaunchCommand([]string{"HARNESSLY_SESSION=nw-x"}))
 	if c.program != "tmux" || c.dir != "/work" || !reflect.DeepEqual(c.args, want) || !strings.HasPrefix(want[len(want)-1], "nice -n 10 env -i ") {
 		t.Fatalf("%s in %s: %q", c.program, c.dir, c.args)
 	}
@@ -775,7 +775,7 @@ func TestCreateSessionPaneEnv(t *testing.T) {
 	}
 	args := f.calls[0].args
 	command := args[len(args)-1]
-	if !strings.Contains(command, ` ARTIFACTS_SESSION='tab-c' BOARDS_TOKEN='it'\''s $secret' '`) || strings.Contains(command, "BAD") {
+	if !strings.Contains(command, ` ARTIFACTS_SESSION='tab-c' BOARDS_TOKEN='it'\''s $secret' HARNESSLY_SESSION='`+session+`' '`) || strings.Contains(command, "BAD") {
 		t.Fatalf("%s", command)
 	}
 	out, err := exec.Command("/bin/sh", "-c", command).Output()

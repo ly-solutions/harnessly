@@ -46,3 +46,13 @@
 ### Start a Claude profile without MCP
 
 Set `"disable_mcp": true` on an `anthropic` file profile to start and resume its chats with Claude Code's strict MCP configuration and no explicit servers. The Hub catalog remains available to other profiles. Shell execution continues to use the existing permissions, hooks and sandbox. This option does not authorize additional commands or provider operations.
+
+### Leave built-in MCP tools out of a launch
+
+Some providers reject a whole request when its tool list names tools they do not support, such as the built-in media tools. Set `"exclude_builtin_mcp"` on an `anthropic` file profile to choose what is advertised at launch, for new and resumed chats alike:
+
+- `"media"`: the image, video and audio tools of the built-in server are denied, so the model is not offered them. The other built-in tools stay.
+- `"runtime"`: the built-in runtime server is not given to the chat.
+- `"apps"`: the apps' MCP servers are not given to the chat.
+
+Servers the person or the provider configured stay, so an explicitly allowed external integration keeps working; unlike `disable_mcp`, no strict MCP mode is used. A profile without the field behaves as before, and the field only ever removes tools: it cannot add servers or widen permissions. `disable_mcp` takes precedence. The agent's launch journal entry lists the excluded groups and the number of tools hidden, never addresses, tokens or request contents.

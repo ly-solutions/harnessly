@@ -75,8 +75,9 @@ func (s *Service) AnchorMachines(ctx context.Context, spaceIDs []string, rest st
 }
 
 // scopedHolder resolves only the named project's access record, within the space of the
-// admitted machine. With local storage the same slug may legitimately exist twice.
-func (s *Service) scopedHolder(ctx context.Context, anchor store.Machine, user store.User, project, invite string) (store.Machine, error) {
+// admitted machine. With local storage the same slug may legitimately exist twice: a card key (cardkey.go) names the
+// copy to read, and without one a slug held twice is not found.
+func (s *Service) scopedHolder(ctx context.Context, anchor store.Machine, user store.User, project, invite, card string) (store.Machine, error) {
 	if s.shared || anchor.SpaceID == "" {
 		return anchor, nil
 	}
@@ -89,6 +90,8 @@ func (s *Service) scopedHolder(ctx context.Context, anchor store.Machine, user s
 		}
 		err = db.Q().QueryRow(ctx, `SELECT i.machine_id FROM design_invites i JOIN machines m ON m.id=i.machine_id
     WHERE i.token_hash=? AND m.space_id=? AND m.revoked_at IS NULL AND m.disabled_at IS NULL`, store.HashToken(invite), anchor.SpaceID).Scan(&id)
+	} else if card != "" {
+		id, err = s.holderByCard(ctx, anchor, project, card)
 	} else {
 		var count int
 		err = db.Q().QueryRow(ctx, `SELECT COUNT(*), COALESCE(MAX(m.id),'') FROM design_projects p JOIN machines m ON m.id=p.machine_id

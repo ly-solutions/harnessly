@@ -73,6 +73,8 @@ export type TRoute =
   | {
       kind: typeof ROUTE.site;
       id: string;
+      /** The copy of a shared project another machine holds (the card key of the library); `?card=`. */
+      card?: string;
       page?: string;
       chat?: string;
       machine?: string;
@@ -278,9 +280,11 @@ export const parseRoute = (path: string): TRoute => {
     const machine = queryParam(path, 'm');
     const focus = ACCESS_FOCUS.find((x) => x === queryParam(path, 'access'));
     const page = queryParam(path, 'page');
+    const card = queryParam(path, 'card');
     return {
       kind: ROUTE.site,
       id: site[1],
+      ...(card ? { card } : {}),
       ...(page ? { page } : {}),
       ...(chat ? { chat } : {}),
       ...(machine ? { machine } : {}),
@@ -315,6 +319,7 @@ export const routePath = (route: TRoute): string => {
       if (route.access) query.set('access', route.access);
       if (route.edit) query.set('edit', '1');
       if (route.page) query.set('page', route.page);
+      if (route.card) query.set('card', route.card);
       return query.size > 0 ? `/designly/${route.id}?${query}` : `/designly/${route.id}`;
     }
     case ROUTE.kit: {
@@ -415,7 +420,9 @@ export const placeKeyOf = (path: string): string => {
       return `chat:${route.id}`;
     case ROUTE.site:
       if (route.chat && route.edit) return `chat:${route.chat}`;
-      return route.chat ? `design:${route.id}+chat:${route.chat}` : `design:${route.id}`;
+      return route.chat
+        ? `design:${route.id}${route.card ? `~${route.card}` : ''}+chat:${route.chat}`
+        : `design:${route.id}${route.card ? `~${route.card}` : ''}`;
     case ROUTE.appDoc:
       return `appdoc:${route.id}`;
     case ROUTE.invite:

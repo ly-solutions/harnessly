@@ -535,6 +535,59 @@
   overflow: hidden;
 }
 /* The document fills the whole area under the bar and scrolls by itself; pins ride on an overlay of the same size. */
+/* The native read: the object drawn by the page itself when the provider's viewer cannot be framed. */
+.td-native {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: #fff;
+  color: #1a1a1a;
+}
+.td-native-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+.td-native-reason {
+  opacity: 0.7;
+  font-size: 0.9em;
+}
+.td-native-scene {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+}
+.td-native-sticky {
+  fill: #fff3a8;
+  stroke: #c9b84a;
+}
+.td-native-shape {
+  fill: #eef2ff;
+  stroke: #6b7bd6;
+}
+.td-native-text {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 6px;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.3;
+  color: #1a1a1a;
+  overflow-wrap: anywhere;
+}
+.td-native-more {
+  position: sticky;
+  bottom: 12px;
+  left: 12px;
+  margin: 12px;
+  padding: 6px 12px;
+}
+
 .td-frame,
 .td-board {
   position: absolute;

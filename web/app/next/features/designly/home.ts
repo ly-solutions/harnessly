@@ -5,7 +5,7 @@
 // is not (the switch hub-design-home is off and the hub answers 404, an older runtime, a part that failed, a poll).
 import { deviceId } from '@/next/core/device';
 import { platformPath, runtimePath } from '@/next/core/net/machine';
-import { DEVICE_HEADER, type MachineId } from '@/next/protocol/v2';
+import { CAPS_QUERY, DEVICE_HEADER, type MachineId } from '@/next/protocol/v2';
 
 /**
  * The machine's parts, and the hub's copy of the library from its store (storeLibrary): the hub answers with
@@ -42,7 +42,7 @@ const ask = async (m: MachineId): Promise<IHomeAnswer | null> => {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(runtimePath(platformPath('/design/home'), m), {
+    const res = await fetch(runtimePath(platformPath(`/design/home?${CAPS_QUERY}`), m), {
       credentials: 'same-origin',
       // The parts' own routes are asked with the person's device, as the page asks them.
       headers: { [DEVICE_HEADER]: deviceId() },

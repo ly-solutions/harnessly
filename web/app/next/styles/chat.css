@@ -1449,6 +1449,53 @@
 .hx-rich__big {
   width: 100%;
 }
+.hx-richview__body[data-kind='diagram'] {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+}
+.hx-zoom {
+  position: absolute;
+  inset: 0;
+}
+.hx-zoom__stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--hx-space-5);
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.hx-zoom__stage[data-dragging='true'] {
+  cursor: grabbing;
+}
+.hx-zoom__canvas {
+  width: 100%;
+  transform-origin: 0 0;
+}
+.hx-zoom__bar {
+  position: absolute;
+  right: var(--hx-space-4);
+  bottom: var(--hx-space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--hx-space-1);
+  padding: 4px;
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-md);
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay);
+}
+.hx-zoom__pct {
+  min-width: 44px;
+  text-align: center;
+  font-size: var(--hx-text-xs);
+  color: var(--hx-fg-2);
+  font-variant-numeric: tabular-nums;
+}
 .hx-rich__big svg {
   width: 100%;
   max-width: none !important;

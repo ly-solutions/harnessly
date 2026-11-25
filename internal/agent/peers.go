@@ -176,6 +176,18 @@ func (h *hub) signedCall(ctx context.Context, sign func(ed25519.PrivateKey, stri
 		}
 		return nil
 	case http.StatusNotFound:
+		// A hub that does not carry the route answers a bare 404; a 404 with an error of its own (a routine or a
+		// machine not found) is the hub's real answer and must not be taken for «not served».
+		var said struct {
+			Error   string `json:"error"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(data, &said) == nil && said.Error != "" {
+			if said.Message != "" {
+				return fmt.Errorf("%s (HTTP 404)", said.Message)
+			}
+			return fmt.Errorf("%s (HTTP 404)", said.Error)
+		}
 		return errPeersNotServed
 	case http.StatusUnauthorized, http.StatusForbidden:
 		var denied struct {

@@ -125,4 +125,67 @@ describe('readLibrary', () => {
     ).rejects.toThrow('504');
     expect(shown).toHaveLength(0);
   });
+
+  // GitHub #179: a slug held twice is two cards, each named by its holder; neither takes the other's actions.
+  it('keeps a shared copy of a local slug as a card of its own, keyed by its holder', async () => {
+    const mine = { ...design('site'), role: 'owner', accessSource: 'owner' } as const;
+    const theirs = { ...design('site'), cardKey: 'aaaa', accessSource: 'person', role: 'view' } as const;
+    const other = { ...design('site'), cardKey: 'bbbb', accessSource: 'team', role: 'view' } as const;
+    const shown: ILibraryView[] = [];
+    await readLibrary(
+      m(),
+      {
+        machine: async () => ({
+          ...machineLib,
+          designs: [{ ...mine, boards: [{ path: 'a.html' }] } as IDesign],
+        }),
+        store: async () => ({ ...storeLib, designs: [theirs as IDesign, other as IDesign] }),
+      },
+      (v) => shown.push(v),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const cards = shown[shown.length - 1].designs;
+    expect(cards.map((d) => [d.id, d.cardKey ?? null])).toEqual([
+      ['site', null],
+      ['site', 'aaaa'],
+      ['site', 'bbbb'],
+    ]);
+    // The local card keeps its own grant and boards: the shared copies did not touch it.
+    expect(cards[0].accessSource).toBe('owner');
+    expect(cards[0].boards).toHaveLength(1);
+    expect(cards[1].role).toBe('view');
+  });
+
+  it('drops a shared copy the hub no longer lists (revoked or expired) and never trusts one without the hub', async () => {
+    const theirs = { ...design('site'), cardKey: 'aaaa', accessSource: 'person', role: 'view' } as IDesign;
+    const kept: ILibraryView[] = [];
+    await readLibrary(
+      m(),
+      { machine: async () => machineLib, store: async () => ({ ...storeLib, designs: [theirs] }) },
+      (v) => kept.push(v),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(kept[kept.length - 1].designs.some((d) => d.cardKey === 'aaaa')).toBe(true);
+    const gone: ILibraryView[] = [];
+    await readLibrary(
+      m(),
+      { machine: async () => machineLib, store: async () => ({ ...storeLib, designs: [] }) },
+      (v) => gone.push(v),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gone[gone.length - 1].designs.some((d) => d.cardKey)).toBe(false);
+    const failed: ILibraryView[] = [];
+    await readLibrary(
+      m(),
+      {
+        machine: async () => ({ ...machineLib, designs: [theirs] }),
+        store: async () => {
+          throw new Error('502');
+        },
+      },
+      (v) => failed.push(v),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(failed[failed.length - 1].designs.some((d) => d.cardKey)).toBe(false);
+  });
 });

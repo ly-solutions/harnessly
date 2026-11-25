@@ -169,7 +169,7 @@ if [ "$EVENT" = "notification" ]; then
 fi
 
 (
-  SESSION="${HARNESSLY_SESSION:-$(tmux display-message -p '#{session_name}' 2>/dev/null)}"
+  SESSION="${HARNESSLY_SESSION:-$("${HARNESSLY_TMUX_BIN:-tmux}" display-message -p '#{session_name}' 2>/dev/null)}"
   PAYLOAD="{\"event\":\"${EVENT}\",\"session\":\"${SESSION}\""
   if [ -n "$NOTIFICATION_TYPE" ]; then
     PAYLOAD="${PAYLOAD},\"notificationType\":\"${NOTIFICATION_TYPE}\""
@@ -192,7 +192,7 @@ exit 0
 // Claude's own dialog in the terminal.
 func (c Config) PermissionHookScript() []byte {
 	return []byte(`#!/bin/sh
-` + c.preamble() + `SESSION="${HARNESSLY_SESSION:-$(tmux display-message -p '#{session_name}' 2>/dev/null)}"
+` + c.preamble() + `SESSION="${HARNESSLY_SESSION:-$("${HARNESSLY_TMUX_BIN:-tmux}" display-message -p '#{session_name}' 2>/dev/null)}"
 curl -sf --max-time 86400 -X POST \
   -H 'Content-Type: application/json' \
 ` + c.headerLines() + ` \
@@ -216,7 +216,7 @@ func (c Config) StatuslineScript() []byte {
 func (c Config) CodexHookScript() []byte {
 	return []byte(`#!/usr/bin/env bash
 set -u
-` + c.preamble() + `SESSION="${HARNESSLY_SESSION:-$(tmux display-message -p '#{session_name}' 2>/dev/null)}"
+` + c.preamble() + `SESSION="${HARNESSLY_SESSION:-$("${HARNESSLY_TMUX_BIN:-tmux}" display-message -p '#{session_name}' 2>/dev/null)}"
 
 curl -sS -X POST -o /dev/null \
 ` + c.headerLines() + ` \
@@ -243,7 +243,7 @@ LIMITS="` + file + `"
 [ -f "$LIMITS" ] || exit 0
 grep -Eq '"mode" *: *"(warn|stop)"' "$LIMITS" 2>/dev/null || exit 0
 ` + c.preamble() + `cat >/dev/null
-SESSION="${HARNESSLY_SESSION:-$(tmux display-message -p '#{session_name}' 2>/dev/null)}"
+SESSION="${HARNESSLY_SESSION:-$("${HARNESSLY_TMUX_BIN:-tmux}" display-message -p '#{session_name}' 2>/dev/null)}"
 curl -sf --max-time 2 -X POST \
 ` + c.headerLines() + ` \
   "http://localhost:${PORT}/api/budget/hook?provider=${PROVIDER}&event=${EVENT}&session=${SESSION}" 2>/dev/null

@@ -27,6 +27,9 @@ import (
 //	                     POST /v1/threads/status {slug, threadId, status} -> Thread
 //	                     POST /v1/threads/read {person, slug} -> {}
 //	capability resolve   POST /v1/resolve {url} -> {kind: "document"|"board", id, embed?} (404: not this service's address)
+//	capability native    POST /v1/native {slug, version, accept} -> Native (markdown | structured | unsupported)
+//	                     POST /v1/native/board {slug, cursor, limit} -> Native (board: scene page, or unsupported)
+//	capability native-assets  POST /v1/native/asset {slug, asset} -> {contentType, data (base64)}
 //	capability boards         POST /v1/boards {} -> {boards: [Board]}
 //	capability boards-search  POST /v1/boards/search {query, limit} -> {boards: [Board]}
 //
@@ -70,7 +73,8 @@ func (p *ExtProvider) Name() string { return p.desc.Name }
 func (p *ExtProvider) Capabilities() Capabilities {
 	return Capabilities{Provider: p.desc.Name, Publish: p.desc.Has("publish"), Access: p.desc.Has("access"),
 		Comments: p.desc.Has("comments"), Boards: p.desc.Has("boards"),
-		BoardsSearch: p.desc.Has("boards-search") || p.desc.Has("boards"), ProviderEmbed: true, MaxAnswerBytes: p.cl.MaxAnswer()}
+		BoardsSearch: p.desc.Has("boards-search") || p.desc.Has("boards"), ProviderEmbed: true, Native: p.desc.Has("native"),
+		NativeAssets: p.desc.Has("native-assets"), MaxAnswerBytes: p.cl.MaxAnswer()}
 }
 
 var errNoAlias = &integrations.UpstreamError{Status: http.StatusNotFound, Text: "not found"}
@@ -148,7 +152,7 @@ func (p *ExtProvider) List(ctx context.Context, limit int) ([]Summary, error) {
 	docs := make([]Summary, 0, len(out.Docs))
 	for _, d := range out.Docs {
 		if Alias(d.Slug) != "" {
-			docs = append(docs, local(d))
+			docs = append(docs, p.mark(local(d)))
 		}
 	}
 	return docs, nil
@@ -166,7 +170,13 @@ func (p *ExtProvider) Get(ctx context.Context, slug string) (Summary, error) {
 	if s.Slug == "" {
 		s.Slug = x
 	}
-	return local(s), nil
+	return p.mark(local(s)), nil
+}
+
+// mark tells the page the adapter can hand the object over natively.
+func (p *ExtProvider) mark(s Summary) Summary {
+	s.Native = p.desc.Has("native")
+	return s
 }
 
 func (p *ExtProvider) Read(ctx context.Context, slug, version string) (Content, error) {
@@ -424,4 +434,53 @@ func LoadAdapters(ctx context.Context, path string) ([]*ExtProvider, []error) {
 		errs = append(errs, fmt.Errorf("docs adapter %s: %w", sp.Name, err))
 	}
 	return out, errs
+}
+
+// NativeRead asks the adapter for a native representation. An adapter without the `native` capability, or one that
+// answers 501, gives an explicit unsupported answer; an unknown representation is unsupported too (Sanitize).
+func (p *ExtProvider) NativeRead(ctx context.Context, slug, version string, board bool, cursor string, limit int) (Native, error) {
+	if !p.desc.Has("native") {
+		return Unsupported("the documents adapter does not offer a native view"), nil
+	}
+	x, err := id(slug)
+	if err != nil {
+		return Native{}, err
+	}
+	var out Native
+	if board {
+		err = p.call(ctx, "native", "/v1/native/board", map[string]any{"slug": x, "cursor": cursor, "limit": limit}, false, &out)
+		if err == nil && out.Representation == "" && out.Scene != nil {
+			out.Representation = ReprBoard
+		}
+		out.Assets = out.Assets && p.desc.Has("native-assets")
+	} else {
+		in := map[string]any{"slug": x, "version": version, "accept": []string{ReprMarkdown, ReprStructured}}
+		err = p.call(ctx, "native", "/v1/native", in, false, &out)
+		if out.Representation == ReprBoard { // not asked for a document
+			out = Unsupported("")
+		}
+	}
+	if errors.Is(err, ErrUnsupported) {
+		return Unsupported("the documents adapter does not offer this representation"), nil
+	}
+	if err != nil {
+		return Native{}, err
+	}
+	return Sanitize(out), nil
+}
+
+// NativeAsset reads an image of a board; only the image types of AssetTypeOK pass.
+func (p *ExtProvider) NativeAsset(ctx context.Context, slug, asset string) (Asset, error) {
+	x, err := id(slug)
+	if err != nil {
+		return Asset{}, err
+	}
+	var a Asset
+	if err := p.call(ctx, "native-assets", "/v1/native/asset", map[string]any{"slug": x, "asset": asset}, false, &a); err != nil {
+		return Asset{}, err
+	}
+	if !AssetTypeOK(a.ContentType) || len(a.Data) == 0 || len(a.Data) > MaxAsset {
+		return Asset{}, ErrUnsupported
+	}
+	return a, nil
 }

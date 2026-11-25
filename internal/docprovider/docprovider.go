@@ -46,6 +46,10 @@ type Capabilities struct {
 	BoardsSearch bool `json:"boardsSearch"`
 	// ProviderEmbed: documents and boards are framed through Embed, never through their viewer address.
 	ProviderEmbed bool `json:"providerEmbed"`
+	// Native: documents and boards can be read as text and scene objects without a frame (NativeReader).
+	// NativeAssets: the images of a board can be read too.
+	Native       bool `json:"native,omitempty"`
+	NativeAssets bool `json:"nativeAssets,omitempty"`
 	// MaxAnswerBytes is the biggest answer taken from the provider, 0 when there is no such limit.
 	MaxAnswerBytes int64 `json:"maxAnswerBytes,omitempty"`
 }

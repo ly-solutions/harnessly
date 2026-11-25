@@ -34,6 +34,10 @@ type DocSummary struct {
 	// ProviderEmbed: the document, a board too, is framed through the runtime's content route (the provider's Embed),
 	// not through URL, which is the provider's viewer for people.
 	ProviderEmbed bool `json:"providerEmbed,omitempty"`
+	// Native: the provider can hand the object over as text or board geometry (docprovider.NativeReader), so the pane
+	// can show it without a frame. NoEmbed: the adapter said its service cannot be framed.
+	Native  bool `json:"native,omitempty"`
+	NoEmbed bool `json:"noEmbed,omitempty"`
 }
 
 // DocAuthor is who wrote a comment or owns a document.

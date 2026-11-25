@@ -267,6 +267,21 @@ describe('the share dialog', () => {
     );
   });
 
+  it('keeps the address unavailable until the project has a recorded owner', async () => {
+    const onCopyLink = vi.fn();
+    inRoot(
+      <ShareDialog
+        {...shareProps(
+          { ...manager, owner: null, ownerName: '', canManage: false, role: 'edit' },
+          { onCopyLink },
+        )}
+      />,
+    );
+    const button = await screen.findByRole('button', { name: t('next.access.copyLink') });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onCopyLink).not.toHaveBeenCalled();
+  });
   it('copy link copies the design address and makes no invite, even for only invited people', async () => {
     const fetchMock = gateway();
     vi.stubGlobal('fetch', fetchMock);

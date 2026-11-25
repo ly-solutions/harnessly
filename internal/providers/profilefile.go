@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/agents"
+	"github.com/ly-solutions/harnessly/internal/agents/claude"
 	"github.com/ly-solutions/harnessly/internal/hub/ext"
 	"github.com/ly-solutions/harnessly/internal/pricing"
 	"github.com/ly-solutions/harnessly/internal/wire"
@@ -51,12 +52,15 @@ type FileProfile struct {
 	// KeyRef is the name of the secret in the safe that holds the key; empty while the person types the key in Settings.
 	KeyRef string `json:"key_ref,omitempty"`
 	// KeyEnv is the variable Codex reads the key from (api openai-responses only).
-	DisableMCP bool              `json:"disable_mcp,omitempty"`
-	KeyEnv     string            `json:"key_env,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	Small      string            `json:"small,omitempty"`
-	Test       string            `json:"test,omitempty"`
-	Models     []FileModel       `json:"models"`
+	DisableMCP bool `json:"disable_mcp,omitempty"`
+	// ExcludeBuiltinMCP lists built-in MCP groups to leave out of the launch: media, runtime or apps. Servers the person
+	// or the provider configured stay.
+	ExcludeBuiltinMCP []string          `json:"exclude_builtin_mcp,omitempty"`
+	KeyEnv            string            `json:"key_env,omitempty"`
+	Env               map[string]string `json:"env,omitempty"`
+	Small             string            `json:"small,omitempty"`
+	Test              string            `json:"test,omitempty"`
+	Models            []FileModel       `json:"models"`
 }
 
 // FileModel is one model of a FileProfile: its limits and, optionally, its price.
@@ -285,7 +289,15 @@ func (fp FileProfile) preset() (Preset, []priceRow, error) {
 	if fp.DisableMCP && fp.API != "anthropic" {
 		return Preset{}, nil, errors.New("disable_mcp: requires the anthropic API")
 	}
-	p := Preset{DisableMCP: fp.DisableMCP, ID: fp.ID, Label: fp.Label, Vendor: vendor, Hint: fp.Hint, KeyRef: fp.KeyRef, KeyEnv: fp.KeyEnv}
+	if len(fp.ExcludeBuiltinMCP) > 0 && fp.API != "anthropic" {
+		return Preset{}, nil, errors.New("exclude_builtin_mcp: requires the anthropic API")
+	}
+	for _, g := range fp.ExcludeBuiltinMCP {
+		if !slices.Contains(claude.ExcludeGroups, g) {
+			return Preset{}, nil, errors.New("exclude_builtin_mcp: one of " + strings.Join(claude.ExcludeGroups, ", "))
+		}
+	}
+	p := Preset{DisableMCP: fp.DisableMCP, ExcludeMCP: slices.Clone(fp.ExcludeBuiltinMCP), ID: fp.ID, Label: fp.Label, Vendor: vendor, Hint: fp.Hint, KeyRef: fp.KeyRef, KeyEnv: fp.KeyEnv}
 	switch fp.API {
 	case "anthropic":
 		p.Via = wire.ProviderClaude
