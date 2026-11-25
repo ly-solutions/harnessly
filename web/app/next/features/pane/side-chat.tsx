@@ -7,6 +7,7 @@ import { useEffect, useRef, type RefObject } from 'react';
 import Composer, { type IComposerProps } from '@/next/features/composer/composer';
 import DockBar from '@/next/features/composer/dock-bar';
 import type { DockNotice } from '@/next/features/composer/types';
+import Md from '@/next/features/chat/md';
 import { t } from '@/next/i18n';
 import '@/next/styles/side-chat.css';
 
@@ -156,7 +157,7 @@ export const SideChatBody = ({
                 <i />
               </span>
             )}
-            {m.text}
+            {m.who === 'agent' ? m.text !== '' && <Md md={m.text} /> : m.text}
             {m.cut !== null && (
               <span className="hx-sidechat__cut">
                 {m.cut} ·{' '}

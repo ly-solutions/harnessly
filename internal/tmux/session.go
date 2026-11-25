@@ -72,6 +72,11 @@ func (t *Tmux) shellEnv() [][2]string {
 		}
 	}
 	set("PATH", path)
+	// The hooks and the CLI ask tmux for their pane's session. A tmux older or newer than the server's, first on the
+	// pane's PATH, fails that question ("server exited unexpectedly"), so they ask with the runtime's own binary.
+	if b := tmuxBinary(); filepath.IsAbs(b) {
+		set("HARNESSLY_TMUX_BIN", b)
+	}
 	out := make([][2]string, len(keys))
 	for i, k := range keys {
 		out[i] = [2]string{k, vals[k]}
@@ -146,7 +151,7 @@ func (t *Tmux) CreateSession(name string, cols, rows int, cwd string) error {
 	if t.cfg.ConfigFile != "" {
 		args = append(args, "-f", t.cfg.ConfigFile)
 	}
-	args = append(args, "new-session", "-d", "-s", name, "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows), t.shellLaunchCommand(t.paneEnv(name)))
+	args = append(args, "new-session", "-d", "-s", name, "-x", strconv.Itoa(cols), "-y", strconv.Itoa(rows), t.shellLaunchCommand(append(t.paneEnv(name), "HARNESSLY_SESSION="+name)))
 	program := "tmux"
 	// The server this may start, and every pane on it, is what the OOM killer should take before the runtime.
 	program, args = oomguard.Unprotected(program, args...)

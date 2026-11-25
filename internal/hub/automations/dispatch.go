@@ -102,14 +102,30 @@ func (s *Service) machineFor(ctx context.Context, rule Rule) (string, error) {
 		return "", err
 	}
 	defer rows.Close()
+	// The machine the person works on comes first: a run elsewhere starts a chat they do not see (and where their
+	// Claude account may not be), so the oldest machine is only the fallback.
+	prefer := ""
+	if rule.Routine != nil {
+		prefer = rule.Routine.Machine
+	}
+	first := ""
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			return "", err
 		}
-		if s.links.Get(id) != nil {
+		if s.links.Get(id) == nil {
+			continue
+		}
+		if id == prefer {
 			return id, nil
 		}
+		if first == "" {
+			first = id
+		}
+	}
+	if first != "" {
+		return first, rows.Err()
 	}
 	if err := rows.Err(); err != nil {
 		return "", err

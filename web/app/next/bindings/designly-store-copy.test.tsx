@@ -86,6 +86,6 @@ describe('the library while the machine does not answer', () => {
     expect(screen.getByRole('status').textContent).toBe(t('next.designly.storeCopy'));
     expect(screen.queryByText(t('next.designly.failed'))).toBeNull();
     fireEvent.click(screen.getByText('Лендинг из хранилища'));
-    expect(onOpen).toHaveBeenCalledWith('site-1');
+    expect(onOpen).toHaveBeenCalledWith('site-1', undefined);
   });
 });

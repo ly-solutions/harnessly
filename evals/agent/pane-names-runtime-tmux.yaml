@@ -1,0 +1,19 @@
+id: pane-names-runtime-tmux
+title: Панель агента знает свою сессию и tmux рантайма — хуки спрашивают его, а не первый tmux на PATH
+tags: [hooks, tmux]
+timeout_s: 180
+covers:
+  - 'internal/hooksetup/**'
+  - 'internal/hlcli/hlcli.go'
+  - 'internal/chatrole/chatrole.go'
+prompt: |
+  выведи одной командой значения переменных окружения HARNESSLY_SESSION и HARNESSLY_TMUX_BIN, каждую на своей строке,
+  и перепиши их в ответе как есть
+expect:
+  - name: ran the command
+    called: Bash
+    args: {command: '(?s).*HARNESSLY_SESSION.*'}
+  - name: the pane names its tmux by an absolute path
+    text: '/\S*tmux\S*'
+  - name: the session is not empty
+    text_not: '(?i)(пуст|не задан|not set|empty)'

@@ -7,6 +7,7 @@ import { readCheck, readPageLog } from '@/next/features/designly/server-data';
 import { wordedPage } from '@/next/core/net/worded';
 import { homeHas, viaHome } from '@/next/features/designly/home';
 import {
+  CAPS_QUERY,
   parseDesignlyRefusal,
   parsePage,
   type DesignArtifact,
@@ -58,6 +59,7 @@ export const MACHINE_WAIT_MS = 1500;
 
 /** The hub's copy of the library from its store: what the person may see, and their shelves. */
 export interface IStoreLibrary {
+  metadataOnly?: boolean;
   designs: IDesign[];
   layout: ILibraryLayout;
 }
@@ -74,7 +76,7 @@ export const storeIsOff = (failure: unknown): boolean => {
 
 /** The hub answers it under any machine of the space, on or off; a runtime with no hub answers 404 (no copy). */
 export const fetchStoreLibrary = async (m: MachineId, signal?: AbortSignal): Promise<IStoreLibrary> => {
-  type TRaw = { artifacts?: unknown; layout?: Partial<ILibraryLayout> };
+  type TRaw = { metadataOnly?: boolean; artifacts?: unknown; layout?: Partial<ILibraryLayout> };
   // The hub's home gives the copy when the machine was slow; else its own route.
   const raw = await viaHome(
     m,
@@ -83,13 +85,14 @@ export const fetchStoreLibrary = async (m: MachineId, signal?: AbortSignal): Pro
       if (typeof v !== 'object' || v === null) throw new Error('no copy');
       return v as TRaw;
     },
-    () => hubJson<TRaw>('/design/store-library', { signal }),
+    () => hubJson<TRaw>(`/design/store-library?${CAPS_QUERY}`, { signal }),
   );
   // The projects are the machine's v2 shape: checked by the same reader, with the port and folder the hub has not.
   const { artifacts } = parsePage.designlyLibrary({ port: 0, root: '-', artifacts: raw.artifacts ?? [] });
   const layout = raw.layout ?? {};
   return {
     designs: artifacts,
+    ...(raw.metadataOnly === true ? { metadataOnly: true } : {}),
     layout: { folders: layout.folders ?? [], placed: layout.placed ?? {}, systems: layout.systems ?? {} },
   };
 };
@@ -110,12 +113,13 @@ const lastViews = new Map<MachineId, ILibraryView>();
 export const lastLibraryView = (m: MachineId): ILibraryView | null => lastViews.get(m) ?? null;
 
 /** A live project keeps its local board paths and chat activity. The Hub owns the person's grants.
- * A shared Hub project can also be present before its files reach this machine. */
+ * A shared Hub project can also be present before its files reach this machine. A copy another machine holds carries
+ * a card key: it is a card of its own, never merged into a project of the same slug (a local one or another holder's). */
 function withHubAccess(machine: IDesign[], hub: IDesign[] | null): IDesign[] {
   // Without a Hub grant feed, keep machine-authorized legacy projects. A recorded shared Hub grant
   // must be confirmed here again before displaying its card.
   if (!hub) return machine.filter((project) => !project.accessSource || project.accessSource === 'owner');
-  const byId = new Map(hub.map((project) => [project.id, project]));
+  const byId = new Map(hub.filter((project) => !project.cardKey).map((project) => [project.id, project]));
   const result: IDesign[] = [];
   for (const local of machine) {
     const grant = byId.get(local.id);
@@ -139,6 +143,10 @@ function withHubAccess(machine: IDesign[], hub: IDesign[] | null): IDesign[] {
   }
   for (const project of byId.values()) {
     if (project.accessSource) result.push(project);
+  }
+  // Another holder's copy: shown only while the hub still lists its grant.
+  for (const project of hub) {
+    if (project.cardKey && project.accessSource) result.push(project);
   }
   return result;
 }
@@ -216,22 +224,49 @@ export const readLibrary = (
   });
 
 /** A board of a project read-only from the hub's store, for a machine that is off (designaccess design/store). */
-export const storeBoardHref = (id: string, board: string, query = '') =>
+export const storeBoardHref = (id: string, board: string, query = '', card?: string) =>
   gatewayPath(
-    `/design/store/${encodeURIComponent(id)}/f/${board.split('/').map(encodeURIComponent).join('/')}${query}`,
+    `/design/store/${encodeURIComponent(id)}/f/${board.split('/').map(encodeURIComponent).join('/')}${withCard(query, card)}`,
   );
+
+/** The query of a hub address of one holder's copy of a project: the card key goes with it (cardKey of the library). */
+export const withCard = (query: string, card?: string): string => {
+  if (!card) return query;
+  const params = new URLSearchParams(query.replace(/^\?/, ''));
+  params.set('card', card);
+  return `?${params}`;
+};
+
+/** The hub's index of a project's boards, of one holder's copy when the card is named. */
+export const storeIndexHref = (id: string, card?: string) =>
+  gatewayPath(`/design/store/${encodeURIComponent(id)}/index.json${withCard('', card)}`);
+
+/** A private snapshot the owner left for readers while their machine is offline (GitHub #180): when it was taken and
+ *  its boards, in order. The pictures come from `storeSnapshotImageHref`. */
+export interface IStoreSnapshot {
+  capturedAt: string;
+  expiresAt: string;
+  boards: { n: number; title: string }[];
+}
+
+export const storeSnapshotHref = (id: string, card?: string) =>
+  gatewayPath(`/design/store/${encodeURIComponent(id)}/snapshot${withCard('', card)}`);
+
+export const storeSnapshotImageHref = (id: string, n: number, card?: string) =>
+  gatewayPath(`/design/store/${encodeURIComponent(id)}/snapshot/img/${n}${withCard('', card)}`);
 
 /** The board at one revision of the store: a newer revision is another address, so the frame loads again. The hub
  *  finds the machine by the project, so the address names none. A video's scene asks
  *  for the scene's runtime (design/public.go GuestSceneParam). */
-export const storeBoardAtHref = (id: string, board: string, rev: number, scene: boolean) =>
-  storeBoardHref(id, board, `?rev=${rev}${scene ? '&scene=1' : ''}`);
+export const storeBoardAtHref = (id: string, board: string, rev: number, scene: boolean, card?: string) =>
+  storeBoardHref(id, board, `?rev=${rev}${scene ? '&scene=1' : ''}`, card);
 
 /**
  * The hub's stream «the project is at revision N» (designaccess team.go, `events`): the first event is the newest
  * revision; a project the store has nothing of answers 404.
  */
-export const storeEventsHref = (id: string) => gatewayPath(`/design/store/${encodeURIComponent(id)}/events`);
+export const storeEventsHref = (id: string, card?: string) =>
+  gatewayPath(`/design/store/${encodeURIComponent(id)}/events${withCard('', card)}`);
 
 /** A new project from the brief: the runtime copies the template and opens a conversation of an agent in it. */
 export const createDesign = (m: MachineId, body: DesignlyCreate) =>

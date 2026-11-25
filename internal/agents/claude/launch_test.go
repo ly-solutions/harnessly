@@ -500,3 +500,89 @@ func TestProfileWithoutMCP(t *testing.T) {
 		}
 	}
 }
+
+func TestProfileWithoutBuiltinMedia(t *testing.T) {
+	dir := t.TempDir()
+	hooks := filepath.Join(dir, "hooks.json")
+	profile := filepath.Join(dir, "profile.json")
+	mcp := filepath.Join(dir, "preview-mcp.json")
+	for _, f := range []string{hooks, profile} {
+		if err := os.WriteFile(f, []byte(`{"permissions":{"deny":["Bash(rm:*)"]}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(mcp, []byte(`{"mcpServers":{"harnessly":{"type":"http","url":"http://127.0.0.1:1/mcp","headers":{"X":"secret-token"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	extra := filepath.Join(dir, "extra.json")
+	c := testConfig(t)
+	c.HooksPath, c.MCPConfigPath = hooks, mcp
+	c.ExtraMCP = func() (string, []string) { return extra, []string{"mcp__corp__search"} }
+	c.Profiles = fixedProfile{path: profile, groups: []string{ExcludeMedia}}
+	l := launch("corp-large", "")
+	l.Profile = "x-corp"
+	start, err := c.LaunchCommand("ws", l, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resume, err := c.ResumeCommand("425055ec-bbc8-4e3c-87d0-36fa74c1cccb", "ws", l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{start, resume} {
+		// The built-in server and the person's own server are both given; strict mode is not asked for.
+		if strings.Contains(line, "--strict-mcp-config") || !strings.Contains(line, "--mcp-config "+mcp) || !strings.Contains(line, extra) {
+			t.Fatalf("servers: %s", line)
+		}
+		m := regexp.MustCompile(`--settings '?([^' ]+)`).FindStringSubmatch(line)
+		if m == nil {
+			t.Fatalf("no settings: %s", line)
+		}
+		raw, err := os.ReadFile(m[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			Permissions struct {
+				Allow []string `json:"allow"`
+				Deny  []string `json:"deny"`
+			} `json:"permissions"`
+		}
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range []string{"generate_images", "generate_video", "generate_audio"} {
+			if !slices.Contains(got.Permissions.Deny, "mcp__harnessly__"+tool) {
+				t.Fatalf("%s is not denied: %v", tool, got.Permissions.Deny)
+			}
+		}
+		if !slices.Contains(got.Permissions.Deny, "Bash(rm:*)") || !slices.Contains(got.Permissions.Allow, "mcp__corp__search") || slices.Contains(got.Permissions.Deny, "mcp__corp__search") {
+			t.Fatalf("settings: %s", raw)
+		}
+	}
+	// The runtime server itself can be left out while the person's server stays.
+	c.Profiles = fixedProfile{path: profile, groups: []string{ExcludeRuntime}}
+	line, err := c.LaunchCommand("ws", l, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(line, mcp) || !strings.Contains(line, extra) {
+		t.Fatalf("runtime exclusion: %s", line)
+	}
+	// An ordinary profile keeps the built-in server and denies nothing.
+	c.Profiles = fixedProfile{path: profile}
+	line, err = c.LaunchCommand("ws", l, nil)
+	if err != nil || !strings.Contains(line, "--mcp-config "+mcp) {
+		t.Fatalf("%q %v", line, err)
+	}
+}
+
+type fixedProfile struct {
+	path   string
+	groups []string
+}
+
+func (f fixedProfile) ClaudeSettings(string, string, string) (string, error) { return f.path, nil }
+func (fixedProfile) Codex(string) (agents.CodexProfile, error)               { return agents.CodexProfile{}, nil }
+func (fixedProfile) Model(string, string) (wire.AgentModel, bool)            { return wire.AgentModel{}, true }
+func (f fixedProfile) ClaudeMCPExcluded(string) []string                     { return f.groups }

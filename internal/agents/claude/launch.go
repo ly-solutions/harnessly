@@ -207,6 +207,15 @@ func (c LaunchConfig) permissionFlags(launch *agents.Launch) []string {
 // when its content changes) and gives its path: Claude Code reads one --settings, so rules that change between launches
 // go into a copy of the one the launch has.
 func AllowSettings(settingsPath string, rules []string) (string, error) {
+	return ruleSettings(settingsPath, "allow", rules)
+}
+
+// DenySettings is AllowSettings for permissions.deny: a denied tool is removed from the tool list the model sees.
+func DenySettings(settingsPath string, rules []string) (string, error) {
+	return ruleSettings(settingsPath, "deny", rules)
+}
+
+func ruleSettings(settingsPath, list string, rules []string) (string, error) {
 	raw, err := os.ReadFile(settingsPath)
 	if err != nil {
 		return "", err
@@ -219,20 +228,20 @@ func AllowSettings(settingsPath string, rules []string) (string, error) {
 	if perms == nil {
 		perms = map[string]any{}
 	}
-	have, _ := perms["allow"].([]any)
+	have, _ := perms[list].([]any)
 	for _, rule := range rules {
 		if !slices.Contains(have, any(rule)) {
 			have = append(have, rule)
 		}
 	}
-	perms["allow"] = have
+	perms[list] = have
 	settings["permissions"] = perms
 	body, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(body)
-	target := strings.TrimSuffix(settingsPath, ".json") + ".allow-" + hex.EncodeToString(sum[:8]) + ".json"
+	target := strings.TrimSuffix(settingsPath, ".json") + "." + list + "-" + hex.EncodeToString(sum[:8]) + ".json"
 	if have, err := os.ReadFile(target); err == nil && string(have) == string(body) {
 		return target, nil
 	}
@@ -315,6 +324,8 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 	// lineEnv are the profile's own words of the launch line's environment (the GPT chat's pane header).
 	lineEnv := ""
 	disableMCP := false
+	// excluded are the built-in MCP groups the profile does not advertise (ExcludableMCP).
+	var excluded []string
 	if launch != nil && launch.Profile != "" {
 		// The profile's settings file is the hooks file plus the vendor's address, models and key helper. Claude Code
 		// reads one --settings (the last one given), so it replaces the hooks file here, and the model goes in the file's
@@ -333,6 +344,9 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 		}
 		if policy, ok := c.Profiles.(interface{ ClaudeMCPDisabled(string) bool }); ok {
 			disableMCP = policy.ClaudeMCPDisabled(launch.Profile)
+		}
+		if policy, ok := c.Profiles.(interface{ ClaudeMCPExcluded(string) []string }); ok && !disableMCP {
+			excluded = policy.ClaudeMCPExcluded(launch.Profile)
 		}
 		path, err := c.Profiles.ClaudeSettings(launch.Profile, *launch.Model, c.HooksPath)
 		if err != nil {
@@ -368,6 +382,20 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 			}
 		}
 	}
+	// Excluded media tools are denied in a copy of the settings: the model is not offered them, while the rest of the
+	// built-in server and every other server stay. A copy that cannot be written leaves the tools offered.
+	var deniedTools []string
+	if slices.Contains(excluded, ExcludeMedia) {
+		deniedTools = MediaDeny(c.MCPConfigPath)
+		if len(deniedTools) > 0 {
+			if path, err := DenySettings(settingsFile, deniedTools); err == nil {
+				settings, settingsFile = agents.ShellQuote(path), path
+			} else {
+				deniedTools = nil
+			}
+		}
+	}
+	noRuntime, noApps := slices.Contains(excluded, ExcludeRuntime), slices.Contains(excluded, ExcludeApps)
 	// The person's MCP servers: their tools are allowed in a copy of the settings chosen above, which the apps' file
 	// extends in turn. A copy that cannot be written leaves the tools asking.
 	extraMCP, extraAllow := "", []string(nil)
@@ -407,7 +435,7 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 	parts := []string{"--settings " + settings}
 	if disableMCP {
 		parts = append(parts, "--strict-mcp-config")
-	} else {
+	} else if !noRuntime {
 		parts = append(parts, "--mcp-config "+mcp)
 	}
 	if c.PluginDir != nil {
@@ -423,9 +451,9 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 	for _, dir := range apps.PluginDirs {
 		parts = append(parts, "--plugin-dir "+agents.ShellQuote(dir))
 	}
-	if !disableMCP && apps.MCPConfig != "" {
+	if !disableMCP && !noApps && apps.MCPConfig != "" {
 		parts = append(parts, "--mcp-config "+agents.ShellQuote(apps.MCPConfig))
-	} else if host, ok := c.Apps.(agents.HostMCPLauncher); ok && !disableMCP && (launch == nil || len(launch.Apps) == 0) {
+	} else if host, ok := c.Apps.(agents.HostMCPLauncher); ok && !disableMCP && !noApps && (launch == nil || len(launch.Apps) == 0) {
 		// A chat without apps has their server too, quiet until one turns on (internal/apps live.go). One that cannot be
 		// written leaves the chat without it: apps then come with the agent's next start.
 		if path, err := host.HostMCP(); err == nil && path != "" {
@@ -464,16 +492,25 @@ func (c LaunchConfig) flagsAndWrap(workspaceID string, launch *agents.Launch, pr
 	}
 	parts = append(parts, flags...)
 	if disableMCP {
-		journalLaunch(launch)
+		journalLaunch(launch, nil)
 	} else {
-		journalLaunch(launch, c.MCPConfigPath, apps.RuntimeMCPConfig, apps.MCPConfig, extraMCP)
+		configs := []string{apps.RuntimeMCPConfig, apps.MCPConfig, extraMCP}
+		if noApps {
+			configs[1] = ""
+		}
+		if noRuntime {
+			configs[0] = ""
+		} else {
+			configs = append(configs, c.MCPConfigPath)
+		}
+		journalLaunch(launch, excludedNote(excluded, deniedTools), configs...)
 	}
 	return strings.Join(parts, " "), strings.TrimSpace(lineEnv + " " + apps.Env + " " + apps.Wrap), nil
 }
 
 // journalLaunch writes down an agent's launch with the MCP servers it is given, by their names: an agent
 // that misses a tool reads in the journal whether it got the server at all.
-func journalLaunch(launch *agents.Launch, configs ...string) {
+func journalLaunch(launch *agents.Launch, note []string, configs ...string) {
 	var names []string
 	for _, p := range configs {
 		p = strings.Trim(strings.TrimSpace(p), "'\"")
@@ -498,6 +535,9 @@ func journalLaunch(launch *agents.Launch, configs ...string) {
 	slices.Sort(names)
 	e := journal.Entry{Level: journal.Info, Source: journal.SourceAgent, Event: "agent.launch", Tool: "claude",
 		Text: "mcp: " + strings.Join(names, ", ")}
+	if len(note) > 0 {
+		e.Text += "; excluded by the profile: " + strings.Join(note, ", ")
+	}
 	if launch != nil {
 		e.Chat = launch.Conversation
 		if len(launch.Apps) > 0 {

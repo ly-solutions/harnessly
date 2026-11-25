@@ -343,6 +343,12 @@ func (s *Service) resourceRoute(r *http.Request, m store.Machine, email, project
 		}
 		return change(func(t *txn) error { return t.setEditorsCanShare(project, email, v) })
 
+	case section == "snapshot" && n == 1:
+		if role != roleOwner {
+			return nil, 0, fail("forbidden", deniedOwnerAny)
+		}
+		return s.snapshotRoute(r, m, email, project)
+
 	case method == http.MethodPost && section == "owner" && n == 1:
 		if role != roleOwner && !f.Steward && (!f.CanManage || p.Owner != "") {
 			return nil, 0, fail("forbidden", deniedOwnerAny)

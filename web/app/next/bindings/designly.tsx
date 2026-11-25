@@ -93,6 +93,7 @@ const cardOf = (
     role: design.role,
     accessSource: design.accessSource,
     accessUntil: design.accessUntil,
+    ...(design.cardKey ? { cardKey: design.cardKey } : {}),
     canDelete: design.role === undefined ? design.owner?.me === true : DELETERS.has(design.role),
     folder: layout.placed[design.id] ?? null,
     system: layout.systems[design.id] ?? null,
@@ -233,8 +234,8 @@ const useDesignLibrary = (machine: MachineId, withAppDocs = false) => {
   };
 
   // On the hub's copy a project opens read-only from the store: its first board, in a tab of its own.
-  const openCopy = (id: string): boolean => {
-    const project = designs?.find((d) => d.id === id);
+  const openCopy = (id: string, card?: string): boolean => {
+    const project = designs?.find((d) => d.id === id && d.cardKey === card);
     // A recorded Hub project opens in Sinopia, where the normal reader selects its live or stored copy.
     if (storeCopy === null || project?.accessSource) return false;
     const board = project?.boards[0];
@@ -265,7 +266,7 @@ const useDesignLibrary = (machine: MachineId, withAppDocs = false) => {
 
 interface IDesignlyLibraryProps {
   machine: MachineId;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, card?: string) => void;
 }
 
 /** The library alone, for the right pane: its chat is the field that starts a design, so there is none here. */
@@ -282,8 +283,8 @@ export const DesignlyLibrary = ({ machine, onOpen }: IDesignlyLibraryProps) => {
       onDelete={onDelete}
       organizer={organizer}
       onRestoreDemo={onRestoreDemo}
-      onOpen={(id) => {
-        if (!openCopy(id)) onOpen(id);
+      onOpen={(id, card) => {
+        if (!openCopy(id, card)) onOpen(id, card);
       }}
       onRetry={onRetry}
       notice={notice}
@@ -435,8 +436,13 @@ const DesignlyView = ({ machine, machines = null, initialKind }: IDesignlyViewPr
         onDelete={onDelete}
         organizer={organizer}
         onRestoreDemo={onRestoreDemo}
-        onOpen={(id) => {
-          if (!openCopy(id)) goTo(appDocIds.has(id) ? { kind: ROUTE.appDoc, id } : { kind: ROUTE.site, id });
+        onOpen={(id, card) => {
+          if (!openCopy(id, card))
+            goTo(
+              appDocIds.has(id)
+                ? { kind: ROUTE.appDoc, id }
+                : { kind: ROUTE.site, id, ...(card ? { card } : {}) },
+            );
         }}
         onRetry={onRetry}
         notice={notice}

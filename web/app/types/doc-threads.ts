@@ -71,6 +71,45 @@ export interface IDocSummary {
   externalId?: string;
   /** True when the runtime serves the frame through the documents adapter (`content`), not from `url`. */
   providerEmbed?: boolean;
+  /** The provider can hand the object over as text or board geometry (`/native`), so the pane needs no frame. */
+  native?: boolean;
+  /** The provider said its service cannot be framed: the native view is shown without trying the frame. */
+  noEmbed?: boolean;
+}
+
+/** A piece of a structured document: plain text only. */
+export interface IDocNativeBlock {
+  type: 'paragraph' | 'heading' | 'quote' | 'code' | 'list' | 'rule';
+  level?: number;
+  text?: string;
+  items?: string[];
+  lang?: string;
+}
+
+/** One thing on a board; a connector joins `from` and `to`. */
+export interface IDocSceneObject {
+  id: string;
+  type: 'shape' | 'text' | 'sticky' | 'image' | 'connector';
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  text?: string;
+  from?: string;
+  to?: string;
+  points?: { x: number; y: number }[];
+  asset?: string;
+}
+
+/** The runtime's native read of one document or one page of a board. */
+export interface IDocNative {
+  representation: 'markdown' | 'structured' | 'board' | 'unsupported';
+  version?: string;
+  markdown?: string;
+  blocks?: IDocNativeBlock[];
+  scene?: { objects: IDocSceneObject[]; next?: string };
+  assets?: boolean;
+  reason?: string;
 }
 
 /** A person offered by the @ list: the id is the email a mention carries. */

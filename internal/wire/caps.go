@@ -36,6 +36,9 @@ const (
 	// CapRunsIn: the page reads the permission mode a chat's agent runs in (Conversation.RunsIn), GitHub #124
 	// (README 77).
 	CapRunsIn Cap = "runsin"
+	// CapDesignKey: the page reads the card key of a shared Sinopia project (the cardKey of the hub's store-library
+	// answer), GitHub #179. Without it the hub lists one card per slug, as before.
+	CapDesignKey Cap = "designkey"
 )
 
 // Caps is what a page reads.
@@ -49,6 +52,7 @@ type Caps struct {
 	MachineInfo bool
 	Antigravity bool
 	RunsIn      bool
+	DesignKey   bool
 }
 
 // CapsOf reads the caps a page named in its request's address; an unknown one is ignored.
@@ -61,12 +65,12 @@ func CapsOf(r *http.Request) Caps {
 		Profiles: slices.Contains(names, string(CapProfiles)), MsgStatus: slices.Contains(names, string(CapMsgStatus)),
 		Links: slices.Contains(names, string(CapLinks)), AppsSync: slices.Contains(names, string(CapAppsSync)),
 		MachineInfo: slices.Contains(names, string(CapMachineInfo)), Antigravity: slices.Contains(names, string(CapAntigravity)),
-		RunsIn: slices.Contains(names, string(CapRunsIn))}
+		RunsIn: slices.Contains(names, string(CapRunsIn)), DesignKey: slices.Contains(names, string(CapDesignKey))}
 }
 
 // AllCaps reads every optional part.
 var AllCaps = Caps{Delegation: true, Workflows: true, Profiles: true, MsgStatus: true, Links: true, AppsSync: true, MachineInfo: true, Antigravity: true,
-	RunsIn: true}
+	RunsIn: true, DesignKey: true}
 
 // olderCaps is every Caps short of AllCaps that a page may have: the forms an event can go out in besides its own.
 // Each cap came with a build of the page that read the ones before it.
@@ -74,7 +78,8 @@ var olderCaps = []Caps{{}, {Delegation: true}, {Delegation: true, Workflows: tru
 	{Delegation: true, Workflows: true, Profiles: true, MsgStatus: true}, {Delegation: true, Workflows: true, Profiles: true, MsgStatus: true, Links: true},
 	{Delegation: true, Workflows: true, Profiles: true, MsgStatus: true, Links: true, AppsSync: true},
 	{Delegation: true, Workflows: true, Profiles: true, MsgStatus: true, Links: true, AppsSync: true, MachineInfo: true},
-	{Delegation: true, Workflows: true, Profiles: true, MsgStatus: true, Links: true, AppsSync: true, MachineInfo: true, Antigravity: true}}
+	{Delegation: true, Workflows: true, Profiles: true, MsgStatus: true, Links: true, AppsSync: true, MachineInfo: true, Antigravity: true},
+	{Delegation: true, Workflows: true, Profiles: true, MsgStatus: true, Links: true, AppsSync: true, MachineInfo: true, Antigravity: true, RunsIn: true}}
 
 // eventFor is e as a page with caps gets it, and whether it differs from e.
 func eventFor(e Event, caps Caps) (Event, bool) {

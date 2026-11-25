@@ -15,7 +15,7 @@ describe('useProjectAccess', () => {
     fetchAccess.mockResolvedValue(null);
     const { result } = renderHook(() => useProjectAccess('afisha'));
     await waitFor(() => expect(result.current.state).toEqual({ k: ACCESS.absent }));
-    expect(fetchAccess).toHaveBeenCalledWith('afisha', expect.any(AbortSignal));
+    expect(fetchAccess).toHaveBeenCalledWith('afisha', expect.any(AbortSignal), undefined);
   });
 
   it('is ready with the gateway answer', async () => {

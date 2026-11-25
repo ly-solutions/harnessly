@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/ly-solutions/harnessly/internal/docprovider"
@@ -71,6 +72,16 @@ func docsRoutes(d deps, c integrations.Config) []gate.Route {
 		default:
 			write(w, http.StatusBadGateway, map[string]string{"error": locale.Pick("The documents catalog is unreachable", "Каталог документов недоступен")})
 		}
+	}
+	// A native read answers an access denial about the object itself, not as a catalog failure.
+	failNative := func(w http.ResponseWriter, err error) {
+		var ue *integrations.UpstreamError
+		if errors.As(err, &ue) && ue.Status == http.StatusForbidden {
+			write(w, http.StatusForbidden, map[string]string{"code": "denied", "error": locale.Pick(
+				"You do not have access to this document or board", "У вас нет доступа к этому документу или доске")})
+			return
+		}
+		fail(w, err)
 	}
 	person := func(r *http.Request) integrations.DocAuthor {
 		u := personOf(d.Claims(r))
@@ -171,6 +182,47 @@ func docsRoutes(d deps, c integrations.Config) []gate.Route {
 				return
 			}
 			write(w, 200, diff)
+		case len(parts) == 2 && parts[1] == "native" && r.Method == http.MethodGet:
+			// The object read by the runtime with the person's own provider connection, for a pane that cannot frame it.
+			doc, err := provider.Get(r.Context(), parts[0])
+			if err != nil {
+				failNative(w, err)
+				return
+			}
+			reader, ok := provider.(docprovider.NativeReader)
+			if !ok {
+				write(w, 200, docprovider.Unsupported(""))
+				return
+			}
+			q := r.URL.Query()
+			limit, _ := strconv.Atoi(q.Get("limit"))
+			if limit <= 0 || limit > docprovider.MaxSceneObjects {
+				limit = 200
+			}
+			n, err := reader.NativeRead(r.Context(), parts[0], q.Get("v"), doc.Kind == "board", q.Get("cursor"), limit)
+			if err != nil {
+				failNative(w, err)
+				return
+			}
+			write(w, 200, n)
+		case len(parts) == 3 && parts[1] == "native" && parts[2] == "asset" && r.Method == http.MethodGet:
+			reader, ok := provider.(docprovider.NativeReader)
+			asset := r.URL.Query().Get("id")
+			if !ok || asset == "" || len(asset) > 256 {
+				write(w, http.StatusNotImplemented, map[string]string{"code": "unsupported", "error": locale.Pick("Not supported", "Не поддерживается")})
+				return
+			}
+			a, err := reader.NativeAsset(r.Context(), parts[0], asset)
+			if err != nil {
+				failNative(w, err)
+				return
+			}
+			w.Header().Set("Content-Type", a.ContentType)
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+			w.Header().Set("Cache-Control", "private, no-store")
+			w.WriteHeader(200)
+			_, _ = w.Write(a.Data)
 		case len(parts) == 2 && parts[1] == "content" && r.Method == http.MethodGet:
 			embed, err := provider.Embed(r.Context(), parts[0])
 			if err != nil {

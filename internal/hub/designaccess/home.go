@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/hub/store"
+	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
 // HRN-1418, stage 1 of «the hub is the source of truth». Sinopia's home in one answer (GET <platform>/design/home) is
@@ -70,7 +71,11 @@ func (s *Service) ServeHome(w http.ResponseWriter, r *http.Request, u store.User
 	}
 	stored := make(chan fromStore, 1)
 	go func() {
-		lib, err := s.storeLibraryOf(ctx, u, m)
+		lib, err := s.storeLibraryOf(ctx, u, m, wire.CapsOf(r).DesignKey)
+		if err == nil && lib.MetadataOnly && len(lib.Artifacts) == 0 {
+			// An empty grants index cannot replace the slow machine's home.
+			err = fail("store_off", "Хранилище дизайнов не подключено")
+		}
 		stored <- fromStore{lib, err}
 	}()
 	budget := time.NewTimer(homeBudget)

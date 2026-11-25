@@ -81,6 +81,9 @@ func (s *Service) MachineCall(ctx context.Context, owner, email, machine string,
 		if err := s.apply(ctx, &rule, b); err != nil {
 			return nil, err
 		}
+		if rule.Routine != nil && rule.Routine.Machine == "" {
+			rule.Routine.Machine = machine
+		}
 		rule, ok, err := s.addRule(ctx, rule)
 		if err != nil {
 			return nil, err
@@ -116,6 +119,13 @@ func (s *Service) MachineCall(ctx context.Context, owner, email, machine string,
 		rule, err := find()
 		if err != nil {
 			return nil, err
+		}
+		// A run by hand is wanted where the person is: the routine follows them to this machine.
+		if rule.Routine.Machine != machine && machine != "" {
+			rule.Routine.Machine = machine
+			if err := s.saveRule(ctx, rule); err != nil {
+				return nil, err
+			}
 		}
 		return s.queueManual(ctx, rule, email)
 	case "delete":
