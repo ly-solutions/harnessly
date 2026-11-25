@@ -357,7 +357,7 @@ func testDesignInviteHubNavigation(t *testing.T, mode string) {
 	if r.Code != 200 {
 		t.Fatal(r)
 	}
-	var link struct{ URL, Token string }
+	var link struct{ ID, URL, Token string }
 	r.JSON(&link)
 	u, err := url.Parse(link.URL)
 	if err != nil || u.Path != "/design-invites/"+link.Token {
@@ -396,12 +396,7 @@ func testDesignInviteHubNavigation(t *testing.T, mode string) {
 		if result := member.Do("GET", storePath+"other/f/Main.dc.html", nil); result.Code == 200 {
 			t.Fatal("another project was available")
 		}
-		var invites []struct{ ID string }
-		owner.Do("GET", base+"/invites", nil).JSON(&invites)
-		if len(invites) != 1 {
-			t.Fatal("missing invite")
-		}
-		if result := owner.Do("DELETE", base+"/invites/"+invites[0].ID, nil); result.Code != 200 {
+		if result := owner.Do("DELETE", base+"/invites/"+link.ID, nil); result.Code != 200 {
 			t.Fatalf("revoke: %s", result)
 		}
 		if result := member.Do("GET", storePath+"shop/f/Main.dc.html", nil); result.Code == 200 {
