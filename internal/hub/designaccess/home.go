@@ -71,6 +71,10 @@ func (s *Service) ServeHome(w http.ResponseWriter, r *http.Request, u store.User
 	stored := make(chan fromStore, 1)
 	go func() {
 		lib, err := s.storeLibraryOf(ctx, u, m)
+		if err == nil && lib.MetadataOnly && len(lib.Artifacts) == 0 {
+			// An empty grants index cannot replace the slow machine's home.
+			err = fail("store_off", "Хранилище дизайнов не подключено")
+		}
 		stored <- fromStore{lib, err}
 	}()
 	budget := time.NewTimer(homeBudget)

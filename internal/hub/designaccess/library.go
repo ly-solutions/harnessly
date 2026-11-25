@@ -99,8 +99,9 @@ type storeLayout struct {
 }
 
 type storeLibrary struct {
-	Artifacts []storeArtifact `json:"artifacts"`
-	Layout    storeLayout     `json:"layout"`
+	MetadataOnly bool            `json:"metadataOnly,omitempty"`
+	Artifacts    []storeArtifact `json:"artifacts"`
+	Layout       storeLayout     `json:"layout"`
 	// Missing is what the store cannot tell, the machine's alone.
 	Missing []string `json:"missing"`
 }
@@ -131,8 +132,11 @@ func (s *Service) libraryRoute(w http.ResponseWriter, r *http.Request, u store.U
 // storeLibraryOf is the person's library and shelves as the hub's store has them (the store-library answer).
 func (s *Service) storeLibraryOf(ctx context.Context, u store.User, m store.Machine) (storeLibrary, error) {
 	lister, ok := s.view.(Librarian)
-	if !ok || m.SpaceID == "" {
+	if m.SpaceID == "" {
 		return storeLibrary{}, fail("store_off", "Хранилище дизайнов не подключено")
+	}
+	if !ok {
+		return s.grantedLibrary(ctx, u, m)
 	}
 	t, err := s.read(ctx, m)
 	if err != nil {
@@ -269,6 +273,108 @@ func (s *Service) storeLibraryOf(ctx context.Context, u store.User, m store.Mach
 				}
 			}
 		}
+	}
+	return out, nil
+}
+
+// Without a file store, each machine's projects have independent identities. Only
+// explicit project grants and owned projects may be discovered from another machine.
+func (s *Service) grantedLibrary(ctx context.Context, u store.User, m store.Machine) (storeLibrary, error) {
+	out := storeLibrary{MetadataOnly: true, Artifacts: []storeArtifact{}, Missing: libraryMissing,
+		Layout: storeLayout{Folders: []storeFolder{}, Placed: map[string]string{}, Systems: map[string]any{}}}
+	email := normEmail(u.Email)
+	verified, err := s.db.S().UserIDByVerifiedEmail(ctx, email)
+	if err != nil {
+		return out, err
+	}
+	if u.DisabledAt != nil || verified == "" || verified != u.ID {
+		return out, nil
+	}
+	t, err := s.read(ctx, m)
+	if err != nil {
+		return out, err
+	}
+	// Shortlist rows by person, accepted invitation or team grant. The regular fold
+	// below verifies membership, current role, expiry, and revocation on each row.
+	// A slug shared by two live holders cannot be opened unambiguously via /agents/.
+	rows, err := t.q.Query(ctx, `SELECT p.project_id, p.machine_id FROM design_projects p JOIN machines m ON m.id=p.machine_id
+		WHERE m.space_id=? AND m.disabled_at IS NULL AND m.revoked_at IS NULL AND (
+			p.owner_email=? OR EXISTS (SELECT 1 FROM design_members g WHERE g.machine_id=p.machine_id AND g.project_id=p.project_id AND g.person_email=?)
+			OR EXISTS (SELECT 1 FROM design_invites i JOIN design_invite_acceptances a ON a.invite_id=i.id WHERE i.machine_id=p.machine_id AND i.project_id=p.project_id AND a.person_email=?)
+			OR EXISTS (SELECT 1 FROM design_team_grants g WHERE g.machine_id=p.machine_id AND g.project_id=p.project_id AND (
+				g.team_id IN (SELECT team_id FROM team_members WHERE user_id=?) OR
+				g.team_id IN (SELECT 'space:' || space_id FROM memberships WHERE user_id=?))))
+		AND NOT EXISTS (SELECT 1 FROM design_projects d JOIN machines h ON h.id=d.machine_id WHERE h.space_id=m.space_id AND h.revoked_at IS NULL AND h.disabled_at IS NULL AND d.project_id=p.project_id AND h.id<>m.id)
+		ORDER BY p.updated_at DESC, p.project_id`, m.SpaceID, email, email, email, u.ID, u.ID)
+	if err != nil {
+		return out, err
+	}
+	type candidate struct{ id, holder string }
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.holder); err != nil {
+			rows.Close()
+			return out, err
+		}
+		candidates = append(candidates, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	// Resolve grants against the original machine's independent rows. The holder is
+	// only a database key and is never returned or admitted as a runtime.
+	holders := map[string]*txn{}
+	for _, c := range candidates {
+		holder := holders[c.holder]
+		if holder == nil {
+			machine, err := t.st.MachineByID(ctx, c.holder)
+			if err != nil {
+				return out, err
+			}
+			if machine.SpaceID != m.SpaceID || machine.DisabledAt != nil || machine.RevokedAt != nil {
+				continue
+			}
+			row := *t
+			row.m, row.shared = machine, false
+			holder = &row
+			holders[c.holder] = holder
+		}
+		p, err := holder.getProject(c.id, false)
+		if err != nil {
+			return out, err
+		}
+		if p == nil {
+			continue
+		}
+		// A machine or space default is not an explicit grant to a shared card.
+		p.TeamLevel = levelNone
+		f, err := holder.fold(*p, email)
+		if err != nil {
+			return out, err
+		}
+		if f.Role == "" {
+			continue
+		}
+		meta, err := holder.metaOf(c.id)
+		if err != nil {
+			return out, err
+		}
+		title := meta.Title
+		if title == "" {
+			title = c.id
+		}
+		card := storeArtifact{ID: c.id, Title: title, Kind: libraryKind(meta.Kind), UpdatedAt: meta.UpdatedAt,
+			Boards: []LibraryBoard{}, Convs: []string{}, Role: f.Role, AccessSource: f.Source, AccessUntil: f.Until}
+		if p.Owner != "" {
+			name := p.OwnerName
+			if name == "" {
+				name, _, _ = strings.Cut(p.Owner, "@")
+			}
+			card.Owner = &storeOwner{Name: name, Me: p.Owner == email}
+		}
+		out.Artifacts = append(out.Artifacts, card)
 	}
 	return out, nil
 }

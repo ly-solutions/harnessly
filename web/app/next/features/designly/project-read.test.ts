@@ -75,6 +75,15 @@ describe('readProject (HRN-1308)', () => {
     expect(shown.map((s) => s.k)).toEqual([PROJECT_READ.open]);
   });
 
+  it('an ACL card alone leaves the project to the live reader', async () => {
+    const { shown } = run(
+      () => after(100, library()),
+      () => after(100, { ...copy('p1'), metadataOnly: true }),
+    );
+    await vi.advanceTimersByTimeAsync(300);
+    expect(shown).toEqual([{ k: PROJECT_READ.away, why: AWAY.absentStoreOff, machineError: null }]);
+  });
+
   it('a machine without the project sends the read to the store at once', async () => {
     const { shown } = run(
       () => after(100, library('other')),

@@ -58,6 +58,7 @@ export const MACHINE_WAIT_MS = 1500;
 
 /** The hub's copy of the library from its store: what the person may see, and their shelves. */
 export interface IStoreLibrary {
+  metadataOnly?: boolean;
   designs: IDesign[];
   layout: ILibraryLayout;
 }
@@ -74,7 +75,7 @@ export const storeIsOff = (failure: unknown): boolean => {
 
 /** The hub answers it under any machine of the space, on or off; a runtime with no hub answers 404 (no copy). */
 export const fetchStoreLibrary = async (m: MachineId, signal?: AbortSignal): Promise<IStoreLibrary> => {
-  type TRaw = { artifacts?: unknown; layout?: Partial<ILibraryLayout> };
+  type TRaw = { metadataOnly?: boolean; artifacts?: unknown; layout?: Partial<ILibraryLayout> };
   // The hub's home gives the copy when the machine was slow; else its own route.
   const raw = await viaHome(
     m,
@@ -90,6 +91,7 @@ export const fetchStoreLibrary = async (m: MachineId, signal?: AbortSignal): Pro
   const layout = raw.layout ?? {};
   return {
     designs: artifacts,
+    ...(raw.metadataOnly === true ? { metadataOnly: true } : {}),
     layout: { folders: layout.folders ?? [], placed: layout.placed ?? {}, systems: layout.systems ?? {} },
   };
 };

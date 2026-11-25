@@ -119,6 +119,11 @@ export const readProject = (
       storeAsked = true;
       read.store().then(
         (copy) => {
+          if (copy.metadataOnly) {
+            store = SIDE.off;
+            settle();
+            return;
+          }
           const design = copy.designs.find((d) => d.id === id);
           store = design ? SIDE.has : SIDE.absent;
           // The machine's project, once shown, is never replaced by the copy.

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
@@ -126,17 +127,92 @@ func TestLibraryFromTheStoreKeepsAccess(t *testing.T) {
 	}
 }
 
-func TestLibraryWithoutTheStoreIsNotFound(t *testing.T) {
-	r := newSpaceRig(t, true)
-	req := httptest.NewRequest(http.MethodGet, "/m/"+r.owner.ID+"/api/platform/design/store-library", nil)
-	w := httptest.NewRecorder()
-	if !r.svc.ServeMachine(w, req, r.ownerU, r.owner) || w.Code != http.StatusNotFound {
-		t.Fatalf("without a store: %d %s", w.Code, w.Body.String())
+func TestLibraryWithoutStoreListsOnlyEffectiveGrants(t *testing.T) {
+	ctx := context.Background()
+	r := newSpaceRig(t, false)
+	for _, u := range []store.User{r.ownerU, r.mateU, r.strangeU} {
+		if err := r.db.S().CreateIdentity(ctx, &store.Identity{UserID: u.ID, Provider: "test", Subject: u.ID, Email: u.Email, EmailVerified: true}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	// The page tells a store that is off from one with no copy by the code (GitHub #82).
-	var body struct{ Code string }
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Code != "store_off" {
-		t.Fatalf("without a store, the code: %q %v", body.Code, err)
+	team := store.Team{SpaceID: r.owner.SpaceID, Slug: "readers", Name: "Readers"}
+	if err := r.db.S().CreateTeam(ctx, &team); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.S().AddTeamMember(ctx, team.ID, r.mateU.ID, false, r.svc.now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"personal", "direct", "team", "invited", "ambiguous"} {
+		if _, err := r.svc.registerCreated(ctx, r.owner, id, r.ownerU.Email); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := r.svc.registerCreated(ctx, r.stranger, "ambiguous", r.strangeU.Email); err != nil {
+		t.Fatal(err)
+	}
+	var invite, token string
+	expires := r.svc.now().Add(time.Hour)
+	write := func(fn func(*txn) error) {
+		t.Helper()
+		if err := r.svc.write(ctx, r.owner, fn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(func(tx *txn) error {
+		for _, id := range []string{"direct", "ambiguous"} {
+			if _, err := tx.upsertMember(id, r.ownerU.Email, r.mateU.Email, roleEdit, &expires, ""); err != nil {
+				return err
+			}
+		}
+		if err := tx.grantTeam("team", r.ownerU.Email, team.ID, roleView, false, ttl{none: true}); err != nil {
+			return err
+		}
+		var err error
+		invite, token, _, err = tx.createInvite("invited", r.ownerU.Email, inviteInput{Role: roleComment, TTL: ttl{step: time.Hour}, RoleTTL: ttl{none: true}})
+		return err
+	})
+	cards := func(u store.User, m store.Machine) map[string]storeArtifact {
+		t.Helper()
+		out := askLibrary(t, r, u, m)
+		if !out.MetadataOnly {
+			t.Fatal("the library promised a stored copy")
+		}
+		res := map[string]storeArtifact{}
+		for _, c := range out.Artifacts {
+			res[c.ID] = c
+			if c.WorkMachine != "" || len(c.Boards) != 0 {
+				t.Fatalf("machine details: %+v", c)
+			}
+		}
+		return res
+	}
+	if got := cards(r.strangeU, r.stranger); len(got) != 0 {
+		t.Fatalf("stranger: %v", got)
+	}
+	unverified := r.mateU
+	unverified.ID = r.strangeU.ID
+	if got := cards(unverified, r.stranger); len(got) != 0 {
+		t.Fatalf("mismatched verified subject saw cards: %v", got)
+	}
+	got := cards(r.mateU, r.mate)
+	if len(got) != 2 || got["direct"].Role != roleEdit || got["direct"].AccessSource != "person" || got["direct"].AccessUntil == nil || !got["direct"].AccessUntil.Equal(expires) || got["team"].AccessSource != "team" {
+		t.Fatalf("before acceptance: %v", got)
+	}
+	write(func(tx *txn) error { _, _, _, err := tx.acceptInvite(token, r.mateU.Email); return err })
+	got = cards(r.mateU, r.mate)
+	if len(got) != 3 || got["invited"].AccessSource != "link" || got["invited"].Role != roleComment || got["invited"].AccessUntil == nil {
+		t.Fatalf("accepted: %v", got)
+	}
+	write(func(tx *txn) error { return tx.revokeInvite("invited", r.ownerU.Email, invite) })
+	if err := r.db.S().RemoveTeamMember(ctx, team.ID, r.mateU.ID); err != nil {
+		t.Fatal(err)
+	}
+	r.svc.now = func() time.Time { return expires }
+	if got := cards(r.mateU, r.mate); len(got) != 0 {
+		t.Fatalf("expired, revoked and removed team grants: %v", got)
+	}
+	if got := cards(r.ownerU, r.owner); len(got) != 4 || got["personal"].Role != roleOwner {
+		t.Fatalf("owner: %v", got)
 	}
 }
 
