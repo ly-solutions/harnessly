@@ -54,6 +54,8 @@
   "next.access.revokeAllDo": "Закрыть доступ",
   "next.access.transferDo": "Передать",
   "next.access.heir": "Новый владелец",
+  "next.access.pageNotFound": "Этой страницы в проекте нет. Выберите другую страницу.",
+  "next.access.claimBeforeCopy": "Чтобы поделиться ссылкой на проект, сначала подтвердите владельца.",
   "next.access.claim": "Стать владельцем",
   "next.access.yourRole": "Ваша роль: {role}",
   "next.access.noAccess": "Нет доступа",

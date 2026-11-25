@@ -54,6 +54,8 @@
   "next.access.revokeAllDo": "Remove access",
   "next.access.transferDo": "Transfer",
   "next.access.heir": "New owner",
+  "next.access.pageNotFound": "This page is missing from the project. Choose another page.",
+  "next.access.claimBeforeCopy": "Confirm the project owner before sharing its address.",
   "next.access.claim": "Become the owner",
   "next.access.yourRole": "Your role: {role}",
   "next.access.noAccess": "No access",

@@ -14,6 +14,8 @@ interface IProjectAwayProps {
   /** Why the project is on neither side. */
   why: TAway;
   project: string;
+  page: string | null;
+  onPage?: (page: string) => void;
   /** The owner's name from the gateway; empty when it is not known. */
   ownerName: string;
   onBack: () => void;
@@ -39,9 +41,9 @@ const LEAD = {
   [AWAY.machineDenied]: 'next.access.away.machineDenied.lead',
 } as const;
 
-const ProjectAway = ({ why, ownerName, onBack, project }: IProjectAwayProps) => {
+const ProjectAway = ({ why, ownerName, onBack, project, page, onPage }: IProjectAwayProps) => {
   const [boards, setBoards] = useState<{ title: string; path: string }[]>([]);
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => {
     if (why !== AWAY.absentStoreOff && why !== AWAY.silentStoreOff) return;
     const abort = new AbortController();
@@ -62,28 +64,33 @@ const ProjectAway = ({ why, ownerName, onBack, project }: IProjectAwayProps) => 
       .catch(() => {});
     return () => abort.abort();
   }, [why, project]);
-  const current = boards[selected];
-  if (current)
+  const selectedPage = page ?? selected;
+  const current = selectedPage ? boards.find((board) => board.path === selectedPage) : boards[0];
+  if (boards.length > 0)
     return (
       <section style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <nav>
-          {boards.map((board, i) => (
+          {boards.map((board) => (
             <button
               type="button"
               key={board.path}
-              onClick={() => setSelected(i)}
-              aria-pressed={selected === i}
+              onClick={() => (onPage ? onPage(board.path) : setSelected(board.path))}
+              aria-pressed={current?.path === board.path}
             >
               {board.title}
             </button>
           ))}
         </nav>
-        <iframe
-          style={{ flex: 1, border: 0 }}
-          title={current.title}
-          sandbox="allow-scripts"
-          src={storeBoardHref(project, current.path)}
-        />
+        {current ? (
+          <iframe
+            style={{ flex: 1, border: 0 }}
+            title={current.title}
+            sandbox="allow-scripts"
+            src={storeBoardHref(project, current.path)}
+          />
+        ) : (
+          <p role="status">{t('next.access.pageNotFound')}</p>
+        )}
       </section>
     );
   return (

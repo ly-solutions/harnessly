@@ -186,7 +186,7 @@ type accessState struct {
 	have    bool
 	claimed map[string]bool // projects the gateway was told this runtime owns (design.claim)
 	// projects the gateway was told again of after its snapshot had no row for them (design.created)
-	announced map[string]bool
+	announced map[string]time.Time
 	// when the gateway was last told that a project went to the trash
 	deletedAt map[string]time.Time
 }

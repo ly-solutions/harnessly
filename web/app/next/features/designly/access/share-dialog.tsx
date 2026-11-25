@@ -331,7 +331,15 @@ const ShareDialog = ({
       </div>
       <div className="hx-modal__foot hx-acc-foot">
         <div className="hx-acc-foot__left">
-          <button type="button" className="hx-btn" data-variant="ghost" data-size="sm" onClick={onCopyLink}>
+          <button
+            type="button"
+            className="hx-btn"
+            data-variant="ghost"
+            data-size="sm"
+            disabled={isUnowned(access)}
+            title={isUnowned(access) ? t('next.access.claimBeforeCopy') : undefined}
+            onClick={onCopyLink}
+          >
             <Icon name="link" size="sm" />
             <span>{t('next.access.copyLink')}</span>
           </button>
