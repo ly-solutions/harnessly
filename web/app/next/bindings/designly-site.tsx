@@ -2,6 +2,7 @@
 // history, and the page on screen shown in a preview slot. The slot is opened once per load; switching pages inside it
 // only moves the frame to the page's plain address, which skips the ticket round trip and its redirect. Anyone taking
 // the slot meanwhile (another preview, another window) or its cookie nearing its end opens it anew on the next switch.
+import { preloadDesign } from '@/next/features/designly/offline-download';
 import { ReplyMachine } from '@/next/features/composer/reply-field';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import SiteView, {
@@ -189,6 +190,7 @@ const seedTabs = (boards: readonly { path: string }[]): ISiteTab[] =>
   boards.slice(0, SEED_TABS).map((b) => newTab(b.path));
 
 const DesignlySiteInner = ({
+  gate,
   machine,
   id,
   chat = null,
@@ -204,7 +206,7 @@ const DesignlySiteInner = ({
   pane,
   page: askedPage = null,
   pageAt = 0,
-}: IBodyProps) => {
+}: IBodyProps & { gate: ReturnType<typeof useProjectAccess> }) => {
   // The library the home has just read starts the design: its page is asked for at once, the library is read anew behind.
   const [start] = useState(() => {
     const kept = keptLibrary(machine);
@@ -262,7 +264,6 @@ const DesignlySiteInner = ({
   // Why it is on neither side (the machine's word and the store's), for the card; null while it is being looked for.
   const [away, setAway] = useState<TAway | null>(null);
   // Who may do what with the project, from the gateway; where there is none (standalone) the design is as it was.
-  const gate = useProjectAccess(id);
   const [shareOpen, setShareOpen] = useState(false);
   // Opened from the viewing mode's «Запросить доступ»: the one dialog opens with the request form (stage «ж»).
   const [askOpen, setAskOpen] = useState(false);
@@ -572,6 +573,12 @@ const DesignlySiteInner = ({
   // Editing asks the store too: its last revision is the board on screen while the machine opens the slot for editing.
   const storeAt = useStoreHead(machine, id, true);
   const storeRev = viewing && storeAt.k === STORE_AT.at ? storeAt.rev : null;
+  const offlineTitle = project?.design.kind === 'scene3d' ? undefined : project?.design.title;
+  useEffect(() => {
+    if (!granted || storeRev === null || offlineTitle === undefined || snapshot !== null) return;
+    const timer = setTimeout(() => preloadDesign(machine, id, offlineTitle, storeRev), 5000);
+    return () => clearTimeout(timer);
+  }, [granted, storeRev, offlineTitle, snapshot, machine, id]);
   const needSlot = !viewing || storeAt.k === STORE_AT.none;
   // The store has nothing of a project that is open from its machine: the machine is asked to put it there at once,
   // so the next look reads the hub.
@@ -921,7 +928,15 @@ const DesignlySiteInner = ({
     );
   }
   if (missing && project === null && granted && exhausted && away !== null) {
-    return <ProjectAway why={away} ownerName={gated?.ownerName ?? ''} onBack={back} />;
+    return (
+      <ProjectAway
+        key={`${id}:${away}`}
+        project={id}
+        why={away}
+        ownerName={gated?.ownerName ?? ''}
+        onBack={back}
+      />
+    );
   }
 
   // «Опубликовать как сайт» lives in «Поделиться», where a manager edits a site design.
@@ -1072,6 +1087,15 @@ const DesignlySiteInner = ({
       tabs={tabs}
       tab={current?.id ?? ''}
       src={boardSrc}
+      frameScope={JSON.stringify([machine, id, storeRev, slotKey, reloadKey, viewing, snapshot?.at])}
+      nextFrame={
+        storeRev !== null && project && path !== null
+          ? storeSrc(
+              project.design.boards[project.design.boards.findIndex((b) => b.path === path) + 1]?.path ??
+                null,
+            )
+          : null
+      }
       heldSrc={heldSrc}
       plainSrc={boardPlainSrc}
       phoneUrl={isPublicAddress(shareUrl) ? shareUrl : null}
@@ -1126,7 +1150,13 @@ const DesignlySiteInner = ({
       images={!viewing && mayEdit && project ? { machine, artifact: id } : undefined}
       downloads={
         project
-          ? { machine, artifact: id, archives: mayEdit, transfer: () => packOut.start([id]) }
+          ? {
+              machine,
+              artifact: id,
+              title: project.design.title,
+              archives: mayEdit,
+              transfer: () => packOut.start([id]),
+            }
           : undefined
       }
       memoryKey={id}
@@ -1283,13 +1313,21 @@ const DesignlySiteInner = ({
 };
 
 /** The design with its machine's voice in the fields its cards and its picture editor answer with. */
-const DesignlySiteBody = (props: IBodyProps) => (
-  <ReplyMachine.Provider value={props.machine}>
-    <DesignlySiteInner {...props} />
-  </ReplyMachine.Provider>
-);
+const DesignlySiteBody = (props: IBodyProps) => {
+  const gate = useProjectAccess(props.id);
+  const ownerSource =
+    !props.chat && !props.pane && gate.state.k === ACCESS.ready && gate.state.access.role === ROLE.owner
+      ? gate.state.access.ownerWorkMachine
+      : undefined;
+  const machine = ownerSource || props.machine;
+  return (
+    <ReplyMachine.Provider value={machine}>
+      <DesignlySiteInner key={machine} {...props} machine={machine} gate={gate} />
+    </ReplyMachine.Provider>
+  );
+};
 
-const DesignlySite = (props: IDesignlySiteProps) => <DesignlySiteBody {...props} />;
+const DesignlySite = (props: IDesignlySiteProps) => <DesignlySiteBody key={props.id} {...props} />;
 
 export interface IDesignlyPaneSiteProps {
   machine: MachineId;
@@ -1311,6 +1349,7 @@ export const DesignlyPaneSite = ({
   pageAt = 0,
 }: IDesignlyPaneSiteProps) => (
   <DesignlySiteBody
+    key={id}
     machine={machine}
     id={id}
     page={page}

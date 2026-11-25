@@ -269,6 +269,11 @@ type Config struct {
 	// AutomationsTokenEnv (HUB_AUTOMATIONS_TOKEN_ENV, default HARNESS_AUTOMATION_RESULT_TOKEN) the one it finds its report
 	// token in. The runtime lets a started conversation set only variables that begin with its own prefix
 	// (RUNTIME_START_ENV_PREFIX, HARNESS_ by default), so a machine with another prefix needs the name set to match.
+	// EventBus (HUB_EVENT_BUS=on) switches on the journal of events and its subscriptions (docs/hub/event-bus.md):
+	// what reaches the automations is written to the journal first, and the subscriptions read it. EventBusRetention
+	// (HUB_EVENT_BUS_RETENTION, default 720h) is how long the journal keeps an event.
+	EventBus            bool
+	EventBusRetention   time.Duration
 	Automations         bool
 	AutomationsSecret   string
 	AutomationsPortEnv  string
@@ -284,6 +289,8 @@ type Config struct {
 	// start a conversation for a person on their own machine (internal/hub/proxy/launch.go); empty keeps the door
 	// shut. The rollout switch «prompt-launch» then decides, per person, whether it opens.
 	LaunchToken string
+	// InboxTriageToken is a separate service credential; it cannot start conversations.
+	InboxTriageToken string
 	// RolloutToken (HUB_ROLLOUT_TOKEN, 32 characters or more) opens POST /api/rollout, the pipeline's word that a rollout
 	// of the hub or of the runtimes starts or ends (internal/hub/rollout); empty keeps the route shut.
 	RolloutToken           string
@@ -359,8 +366,12 @@ type Config struct {
 	// (docs/hub/memory-sync.md); off: POST /agent/memory/* answer 404.
 	Memory bool
 	// DesignShareURL (HUB_DESIGN_SHARE_URL) is the origin of the guest links to designs (docs/hub/design-access.md); it
-	// must be an origin of its own, not the hub's and not a machine's. Empty: links to designs are off.
+	// must be an origin of its own, not the hub's and not a machine's. Empty: interactive guest links are off.
 	DesignShareURL string
+	// ChatGuestLinks allows snapshot authors to publish read-only links on the Hub or its separate guest origin.
+	ChatGuestLinks bool
+	// DesignSnapshotLinks enables read-only raster snapshots on the Hub without a separate guest origin.
+	DesignSnapshotLinks bool
 	// DesignShareAliases (HUB_DESIGN_SHARE_ALIASES, comma-separated origins) are former addresses of the guest links: a
 	// request for /s/<token> on one is sent on to HUB_DESIGN_SHARE_URL (307), so links already in circulation keep
 	// opening. Nothing else is served there. Empty: none.
@@ -449,7 +460,7 @@ type SitesS3 struct{ Endpoint, Region, Bucket, Prefix, AccessKey, SecretKey stri
 // DesignAccessConfig is how the hub records design projects and treats the ones it has no row for.
 type DesignAccessConfig struct {
 	// TeamLevel is the team level of a project the hub records (made, claimed, registered): none, view, comment or edit
-	// (HUB_DESIGN_DEFAULT_TEAM_LEVEL, edit by default). none makes every new project personal until its owner shares it.
+	// (HUB_DESIGN_DEFAULT_TEAM_LEVEL, none by default). none makes every new project personal until its owner shares it.
 	TeamLevel string
 	// ClosedUnrecorded: a project the hub has no row for is closed to everyone but its machine's person, and its files
 	// reach no other machine (HUB_DESIGN_UNRECORDED=closed; open by default).
@@ -909,6 +920,21 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 	default:
 		bad("HUB_DOCS must be on or off")
 	}
+	switch strings.ToLower(def("HUB_EVENT_BUS", "off")) {
+	case "on", "true", "1", "yes":
+		c.EventBus = true
+	case "off", "false", "0", "no":
+	default:
+		bad("HUB_EVENT_BUS must be on or off")
+	}
+	if v := get("HUB_EVENT_BUS_RETENTION"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < time.Hour {
+			bad("HUB_EVENT_BUS_RETENTION must be a duration of an hour or more (720h)")
+		} else {
+			c.EventBusRetention = d
+		}
+	}
 	switch strings.ToLower(def("HUB_AUTOMATIONS", "off")) {
 	case "on", "true", "1", "yes":
 		c.Automations = true
@@ -923,6 +949,10 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 	}
 	if c.LaunchToken = get("HUB_LAUNCH_TOKEN"); c.LaunchToken != "" && len(c.LaunchToken) < 32 {
 		bad("HUB_LAUNCH_TOKEN must be 32 characters or more")
+	}
+	if c.InboxTriageToken = get("HUB_INBOX_TRIAGE_TOKEN"); c.InboxTriageToken != "" &&
+		(len(c.InboxTriageToken) < 32 || c.InboxTriageToken == c.LaunchToken) {
+		bad("HUB_INBOX_TRIAGE_TOKEN must be at least 32 characters and distinct from HUB_LAUNCH_TOKEN")
 	}
 	c.AutomationsNotifyURL, c.AutomationsNotifyToken = strings.TrimRight(get("HUB_AUTOMATIONS_NOTIFY_URL"), "/"), get("HUB_AUTOMATIONS_NOTIFY_TOKEN")
 	if c.RoutinesModel = strings.TrimSpace(get("HUB_ROUTINES_MODEL")); c.RoutinesModel == "" {
@@ -1076,6 +1106,20 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 	case "off", "false", "0", "no":
 	default:
 		bad("HUB_DESIGN_SHARE_DOCS must be on or off")
+	}
+	switch strings.ToLower(def("HUB_DESIGN_SNAPSHOT_LINKS", "off")) {
+	case "on":
+		c.DesignSnapshotLinks = true
+	case "off":
+	default:
+		bad("HUB_DESIGN_SNAPSHOT_LINKS must be on or off")
+	}
+	switch strings.ToLower(def("HUB_CHAT_GUEST_LINKS", "off")) {
+	case "on", "true", "1", "yes":
+		c.ChatGuestLinks = true
+	case "off", "false", "0", "no":
+	default:
+		bad("HUB_CHAT_GUEST_LINKS must be on or off")
 	}
 	if c.DesignShareDocs && c.DesignShareURL == "" {
 		bad("HUB_DESIGN_SHARE_DOCS needs HUB_DESIGN_SHARE_URL")
@@ -1513,7 +1557,7 @@ func (c *Config) loadDesignAccess(get func(string) string, bad func(string, ...a
 	d := &c.DesignAccess
 	switch l := strings.ToLower(strings.TrimSpace(get("HUB_DESIGN_DEFAULT_TEAM_LEVEL"))); l {
 	case "":
-		d.TeamLevel = "edit"
+		d.TeamLevel = "none"
 	case "none", "view", "comment", "edit":
 		d.TeamLevel = l
 	default:

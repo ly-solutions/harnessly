@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/design"
+	"github.com/ly-solutions/harnessly/internal/hub/api"
 	"github.com/ly-solutions/harnessly/internal/hub/hubtest"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
@@ -25,7 +28,7 @@ type designRuntime struct {
 	root string
 }
 
-func newDesignRuntime(t *testing.T) *designRuntime {
+func newDesignRuntime(t *testing.T, probe func(string) design.ShareFSReport) *designRuntime {
 	t.Helper()
 	root := t.TempDir()
 	for _, f := range []struct{ path, body string }{
@@ -43,7 +46,7 @@ func newDesignRuntime(t *testing.T) *designRuntime {
 			t.Fatal(err)
 		}
 	}
-	l := design.New(design.Config{LibraryDir: root, ReleasesDir: t.TempDir(), Texts: design.Texts{Tag: "harnessly-design", CLI: "harnessly"}})
+	l := design.New(design.Config{ShareProbe: probe, LibraryDir: root, DataDir: t.TempDir(), ReleasesDir: t.TempDir(), Texts: design.Texts{Tag: "harnessly-design", CLI: "harnessly", HistoryEmail: "snapshots@example.test"}})
 	t.Cleanup(l.StopWatching)
 	a := &design.API{
 		L: l, PlatformAPI: "/api/platform", MachineAgent: func(*http.Request) bool { return true },
@@ -92,7 +95,12 @@ func (d *designRuntime) call(serve func(*http.Request) design.Answer, route stri
 // designMachine registers and connects a machine that serves design access, with the real design slice behind it.
 func designMachine(t *testing.T, s *hubtest.Stack, p *hubtest.Person, space string) (*hubtest.Agent, *designRuntime) {
 	t.Helper()
-	d := newDesignRuntime(t)
+	return designMachineWithProbe(t, s, p, space, nil)
+}
+
+func designMachineWithProbe(t *testing.T, s *hubtest.Stack, p *hubtest.Person, space string, probe func(string) design.ShareFSReport) (*hubtest.Agent, *designRuntime) {
+	t.Helper()
+	d := newDesignRuntime(t, probe)
 	var id string
 	a := s.NewAgent(d.handler(&id))
 	a.Hello.Features = append(append([]string{}, a.Hello.Features...), hubproto.FeatureDesignAccess)
@@ -132,7 +140,7 @@ func snapshotFor(a *hubtest.Agent, person, project string) (string, bool) {
 // project on the share host and only that project, a stranger is refused, the link is revoked, and everything holds
 // across a restart of the hub.
 func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
-	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_SHARE_URL", "http://"+shareHost))
+	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_SHARE_URL", "http://"+shareHost), hubtest.Env("HUB_DESIGN_DEFAULT_TEAM_LEVEL", "edit"))
 	owner := s.SignIn("owner@example.com")
 	member := s.SignIn("member@example.com")
 	stranger := s.SignIn("stranger@example.com")
@@ -316,5 +324,86 @@ func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
 	}
 	if strings.Contains(s.Logs.String(), "level=ERROR") {
 		t.Errorf("errors in the log:\n%s", s.Logs.String())
+	}
+}
+
+func TestDesignInviteHubNavigation(t *testing.T) {
+	for _, mode := range []string{"off", "on"} {
+		t.Run(mode, func(t *testing.T) { testDesignInviteHubNavigation(t, mode) })
+	}
+}
+func testDesignInviteHubNavigation(t *testing.T, mode string) {
+	s := hubtest.New(t, hubtest.Env("HUB_STORE", mode), hubtest.Env("HUB_ORGS", "on"), hubtest.Env("HUB_ACCESS_ENFORCE", "on"), hubtest.Env("HUB_FEATURES_FORCE", "runtime.fleet"), hubtest.WithOptions(func(o *api.Options) { o.Workspace = fstest.MapFS{"index.html": {Data: []byte("workspace")}} }))
+	owner := s.SignIn("owner@example.com")
+	member := s.SignIn("member@example.com")
+	outsider := s.SignIn("outsider@example.com")
+	space, _ := owner.NewSpace("Studio")
+	owner.Join(space, member)
+	a, _ := designMachine(t, s, owner, space)
+	designMachine(t, s, owner, space) // An independent runtime the recipient may open.
+	if r := owner.Do("PATCH", "/api/machines/"+a.MachineID, map[string]any{"access": []map[string]string{{"kind": "user", "id": owner.ID}}}); r.Code != 200 {
+		t.Fatal(r)
+	}
+	if r := member.Do("GET", "/api/machines/"+a.MachineID+"/open", nil); r.Code != 403 {
+		t.Fatalf("initial machine access: %d", r.Code)
+	}
+	created(a, "shop", "owner@example.com")
+	s.Eventually("project recorded", func() bool { role, ok := snapshotFor(a, "owner@example.com", "shop"); return ok && role == "owner" })
+	base := "/m/" + a.MachineID + "/api/platform/design/access/shop"
+	if r := owner.Do("PUT", base+"/team", map[string]any{"level": "none"}); r.Code != 200 {
+		t.Fatal(r)
+	}
+	r := owner.Do("POST", base+"/invites", map[string]any{"role": "view", "ttl": "1h", "roleTtl": nil})
+	if r.Code != 200 {
+		t.Fatal(r)
+	}
+	var link struct{ ID, URL, Token string }
+	r.JSON(&link)
+	u, err := url.Parse(link.URL)
+	if err != nil || u.Path != "/design-invites/"+link.Token {
+		t.Fatal("expected a Hub invitation")
+	}
+	if r := outsider.Do("GET", u.Path, nil); r.Code != 404 {
+		t.Fatalf("outsider got %d", r.Code)
+	}
+	page := "/designly/invite/" + link.Token
+	if r := member.Do("GET", "/m/"+a.MachineID+page, nil); r.Header.Get("Location") != u.Path {
+		t.Fatalf("old link returned %d", r.Code)
+	}
+	if r := member.Do("GET", u.Path, nil); r.Header.Get("Location") != "/agents"+page {
+		t.Fatalf("canonical link returned %d", r.Code)
+	}
+	if r := member.Do("POST", "/agents/api/platform/design/access/invites/"+link.Token+"/accept", map[string]any{}); r.Code != 200 {
+		t.Fatal(r)
+	}
+	access := member.Do("GET", "/agents/api/platform/design/access/shop", nil)
+	var grant struct{ Role string }
+	access.JSON(&grant)
+	if access.Code != 200 || grant.Role != "view" {
+		t.Fatalf("project access: %s", access)
+	}
+	if mode == "off" {
+		storePath := "/agents/api/platform/design/store/"
+		for path, marker := range map[string]string{"shop/index.json": "Main.dc.html", "shop/f/Main.dc.html": "shop main"} {
+			result := member.Do("GET", storePath+path, nil)
+			if result.Code != 200 || !strings.Contains(string(result.Body), marker) {
+				t.Fatalf("project read %s: %s", path, result)
+			}
+			if !strings.Contains(result.Header.Get("Content-Security-Policy"), "sandbox") {
+				t.Fatal("missing sandbox")
+			}
+		}
+		if result := member.Do("GET", storePath+"other/f/Main.dc.html", nil); result.Code == 200 {
+			t.Fatal("another project was available")
+		}
+		if result := owner.Do("DELETE", base+"/invites/"+link.ID, nil); result.Code != 200 {
+			t.Fatalf("revoke: %s", result)
+		}
+		if result := member.Do("GET", storePath+"shop/f/Main.dc.html", nil); result.Code == 200 {
+			t.Fatal("revoked recipient retained access")
+		}
+	}
+	if r := member.Do("GET", "/api/machines/"+a.MachineID+"/open", nil); r.Code != 403 {
+		t.Fatalf("invitation changed machine access: %d", r.Code)
 	}
 }

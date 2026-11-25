@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/ly-solutions/harnessly/internal/agent"
 	"github.com/ly-solutions/harnessly/internal/agentnet"
@@ -19,14 +20,17 @@ import (
 	"github.com/ly-solutions/harnessly/internal/agents/claude"
 	"github.com/ly-solutions/harnessly/internal/agents/codex"
 	"github.com/ly-solutions/harnessly/internal/catalog"
+	"github.com/ly-solutions/harnessly/internal/convo"
 	"github.com/ly-solutions/harnessly/internal/coreapi/layoutapi"
 	"github.com/ly-solutions/harnessly/internal/jsvalue"
 	"github.com/ly-solutions/harnessly/internal/launch"
+	"github.com/ly-solutions/harnessly/internal/limits"
 	"github.com/ly-solutions/harnessly/internal/locale"
 	"github.com/ly-solutions/harnessly/internal/mcpconn"
 	"github.com/ly-solutions/harnessly/internal/notifybots"
 	"github.com/ly-solutions/harnessly/internal/preflight"
 	"github.com/ly-solutions/harnessly/internal/providers"
+	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
 // coreAgents is what the core's routes need of the agent CLIs: whether they can run, the lines that start and resume
@@ -65,6 +69,9 @@ type coreAgents struct {
 	alwaysApps func() []string
 	// claudeAuth is how Claude Code signs in now (usagefeed.Identity's AuthMode: subscription, api_key or ""); nil: unknown.
 	claudeAuth func() string
+	// claudeLimitReset is when the machine's Claude plan comes back after a window ran out (unix seconds), 0 while it
+	// has room: rate-limits.json, as the chats' limit wait reads it. nil: never out.
+	claudeLimitReset func(now time.Time) float64
 	// envDir holds the env files a machine agent keeps (keys, secrets, proxy): the CLIs' launch lines source them first
 	// (agents.EnvSourcePrefix); "" or no files, nothing is added.
 	envDir string
@@ -177,7 +184,10 @@ func newCoreAgents(c coreAgentsConfig) *coreAgents {
 		checker:         preflight.Shared(c.Home),
 		envDir:          c.EnvDir,
 		claudeAuth:      claudeAuthOf(c.Home, c.EnvDir),
-		options:         options,
+		claudeLimitReset: func(now time.Time) float64 {
+			return limits.ExhaustedReset((&limits.Cache{File: filepath.Join(c.DataDir, "rate-limits.json")}).Read()["claude"], float64(now.Unix()))
+		},
+		options: options,
 		claude: claude.LaunchConfig{
 			HooksPath:     filepath.Join(c.DataDir, "hooks.json"),
 			MCPConfigPath: filepath.Join(c.DataDir, "preview-mcp.json"),
@@ -450,6 +460,32 @@ func effortsFor(provider string, o catalog.LaunchOptions, model *string) []strin
 	return nil
 }
 
+// ValidateProfileLaunch selects the requested backend account and its own model catalog.
+func (a *coreAgents) ValidateProfileLaunch(provider, profile string, model, effort any) (*agents.Launch, string) {
+	l, ok := agents.ReadProfileLaunchShape(profile, model, effort)
+	if !ok || a.profiles == nil {
+		return nil, "Invalid profile launch"
+	}
+	if l == nil {
+		l = &agents.Launch{}
+	}
+	m := wire.Model{}
+	if l.Model != nil {
+		m.ID = *l.Model
+	}
+	if l.Effort != nil {
+		v := wire.Effort(*l.Effort)
+		m.Effort = &v
+	}
+	selected, refusal := convo.ResolveProfileModel(providers.Launcher{Store: a.profiles}, wire.Provider(provider), profile, m, l.Model == nil)
+	if refusal != "" {
+		return nil, string(refusal)
+	}
+	l.Profile = profile
+	l.Model = &selected.ID
+	return l, ""
+}
+
 // ValidateLaunch is validateLaunchChoice: the shape first, then this machine's catalog.
 func (a *coreAgents) ValidateLaunch(provider string, model, effort any) (*agents.Launch, string) {
 	if model == nil && effort == nil {
@@ -493,6 +529,33 @@ func (a *coreAgents) ValidateLaunch(provider string, model, effort any) (*agents
 		return nil, locale.Pick("Model "+*who+` does not support reasoning effort "`+label+`"`, "Модель "+*who+" не поддерживает глубину «"+label+"»")
 	}
 	return l, ""
+}
+
+// SelectOpusFirst chooses once on the target machine. Only availability can select the reserve: Claude Code not
+// signed in, or the plan's 5-hour or weekly window at its limit (a signed-in machine out of Opus must not
+// start a chat that only waits for the reset). A launch error or a budget refusal after the choice must not start a
+// second chat or change the model.
+func (a *coreAgents) SelectOpusFirst() (*agents.Launch, string) {
+	cli := a.runtime().Claude
+	if !cli.Installed {
+		return nil, locale.Pick("Claude Code is required for both models", "Для обеих моделей нужен Claude Code")
+	}
+	if cli.LoggedIn && (a.claudeLimitReset == nil || a.claudeLimitReset(time.Now()) == 0) {
+		if l, refusal := a.ValidateLaunch(agents.Claude, "opus", nil); refusal == "" {
+			return l, ""
+		}
+	}
+	const profile = "gpt"
+	model := "gpt-6.2-sol"
+	profiles := providers.Launcher{Store: a.profiles}
+	via, ready, _, found := profiles.Lookup(profile)
+	if found && ready && via == wire.ProviderClaude {
+		if _, ok := profiles.Model(profile, model); ok {
+			return &agents.Launch{Profile: profile, Model: &model}, ""
+		}
+	}
+	return nil, locale.Pick("Neither Claude Opus nor GPT‑6.2 Sol is available on this machine",
+		"На этой машине недоступны и Claude Opus, и GPT‑6.2 Sol")
 }
 
 func (a *coreAgents) codexLine(workspaceID, resumeID string, launch *agents.Launch) (string, error) {

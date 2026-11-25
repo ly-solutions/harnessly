@@ -10,6 +10,7 @@ vi.mock('@/platform/config', () => ({
     readerUrl: null,
     standDomain: null,
     trackerHosts: [],
+    connectionHosts: ['wiki.example.org'],
     gitlabHosts: [],
     paneHosts: [],
     defaultPins: [],
@@ -79,6 +80,26 @@ describe('a bare address of a document or a board (HRN-1652)', () => {
   });
 });
 
+describe('a Markdown link to a local file (HRN-1745)', () => {
+  it.each(['reports/weekly.md', './reports/weekly.md', 'README.md', '/work/reports/weekly.md'])(
+    'opens %s in Files with the author’s label',
+    (path) => {
+      const onOpen = show(`See [Full report](${path}).`);
+      fireEvent.click(screen.getByRole('button', { name: 'Full report' }));
+      expect(onOpen).toHaveBeenCalledWith('file', path, null);
+    },
+  );
+
+  it('does not treat a website or a preview address as a file', () => {
+    const onOpen = show('See [External](https://a.example.org/reports/weekly.md) or [Preview](4400).');
+    expect(screen.getByRole('link', { name: 'External' }).getAttribute('href')).toBe(
+      'https://a.example.org/reports/weekly.md',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    expect(onOpen).toHaveBeenCalledWith('link', '4400', '4400');
+  });
+});
+
 describe('a path in the text (HRN-1652)', () => {
   it('says the file’s name and keeps the path for the hint', () => {
     const onOpen = show('Look at web/app/next/feed.tsx now');
@@ -87,4 +108,11 @@ describe('a path in the text (HRN-1652)', () => {
     fireEvent.click(chip);
     expect(onOpen).toHaveBeenCalledWith('file', 'web/app/next/feed.tsx', null);
   });
+});
+
+it('hands a connected Wiki address in inline code to the pane resolver', () => {
+  const url = 'https://wiki.example.org/wiki/spaces/ABC/pages/117';
+  const open = show('Read `' + url + '`.');
+  fireEvent.click(screen.getByRole('link', { name: url }));
+  expect(open).toHaveBeenCalledWith('link', url, url);
 });

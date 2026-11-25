@@ -423,6 +423,11 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 			}
 			return nil
 		},
+		GPTModelsChanged: func() {
+			if ref.c.agents != nil && ref.c.agents.gpt != nil {
+				ref.c.agents.gpt.RefreshModels()
+			}
+		},
 		MachineKit: &machineKitRef{},
 		FirstWorkspace: func() error {
 			c := ref.running()
@@ -566,6 +571,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(voiceEditRoutes(d)...)
 	f.Add(voiceRouteRoutes(d)...)
 	f.Add(spaceDirRoutes(d)...)
+	f.Add(inboxTriageRoutes(d, ref.c.agents.gpt)...)
 	f.Add(backgroundRoutes(d)...)
 	f.Add(searchRoutes(d)...)
 	f.Add(uiAgentRoutes(d)...)
@@ -701,7 +707,7 @@ func run(ctx context.Context, cfg gate.Config) error {
 	}
 	f.startUpdateCheck(ctx)
 	startWebFromHub(ctx, cfg.DataDir, webHubDir, webHubOn)
-	f.startEnvSetup(ctx)
+	defer f.startEnvSetup(ctx)()
 	go watchAppsConsent(ctx, apps.Open(cfg.DataDir), appsPolicyEvery)
 	defer f.startStore(ctx, cfg)()
 	go watchBasepkg(ctx, cfg.DataDir)

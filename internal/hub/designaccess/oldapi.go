@@ -60,7 +60,7 @@ func (t *txn) view(p project, email string) (map[string]any, folded, error) {
 	}
 	out := map[string]any{
 		"role": nullStr(f.Role), "owner": nullStr(p.Owner), "ownerName": p.OwnerName, "team": p.TeamLevel,
-		"canManage": f.CanManage, "editorsCanShare": p.EditorsCanShare, "request": nil,
+		"teamInvites": true, "canManage": f.CanManage, "editorsCanShare": p.EditorsCanShare, "request": nil,
 	}
 	own, err := t.requests(p.ID, normEmail(email), "open")
 	if err != nil {
@@ -141,7 +141,11 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 	if method == http.MethodPost && first == "invites" && third == "accept" && n == 3 {
 		var project, role string
 		var until any
-		err := s.write(ctx, m, func(t *txn) error {
+		holder, err := s.scopedHolder(ctx, m, u, "", section)
+		if err != nil {
+			return nil, 0, err
+		}
+		err = s.write(ctx, holder, func(t *txn) error {
 			p, ro, un, err := t.acceptInvite(section, email)
 			project, role, until = p, ro, iso(un)
 			return err
@@ -159,6 +163,13 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 		return nil, 0, fail("not_found", "Проект не найден")
 	}
 
+	if method == http.MethodGet && n == 1 {
+		holder, err := s.scopedHolder(ctx, m, u, project, "")
+		if err != nil {
+			return nil, 0, err
+		}
+		m = holder
+	}
 	t, err := s.read(ctx, m)
 	if err != nil {
 		return nil, 0, err
@@ -177,6 +188,19 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 		}
 		if f.Role == "" {
 			v["owner"] = nil
+		} else if f.Role == roleOwner && u.ID != "" && u.DisabledAt == nil {
+			// The work machine is a hint for the owner's editor. A project role
+			// by itself grants no access to its author's private runtime.
+			meta, err := t.metaOf(project)
+			if err != nil {
+				return nil, 0, err
+			}
+			machine, err := t.st.MachineByID(ctx, meta.WorkMachine)
+			if err == nil && machine.SpaceID == m.SpaceID && machine.CreatedBy == u.ID && machine.RevokedAt == nil && machine.DisabledAt == nil {
+				if verified, err := t.st.UserIDByVerifiedEmail(ctx, u.Email); err == nil && verified == u.ID {
+					v["ownerWorkMachine"] = machine.ID
+				}
+			}
 		}
 		return v, 200, nil
 	}
@@ -379,6 +403,11 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 			return nil, 0, err
 		}
 		in := inviteInput{Title: stringOr(b["title"])}
+		if team, ok := b["teamId"]; ok {
+			if in.Team, err = textField(team, "teamId"); err != nil {
+				return nil, 0, err
+			}
+		}
 		if in.Role, err = textField(b["role"], "role"); err != nil {
 			return nil, 0, err
 		}
@@ -405,7 +434,7 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 		}); err != nil {
 			return nil, 0, err
 		}
-		return map[string]any{"id": id, "token": token, "expiresAt": expires, "url": s.hubURL + "/m/" + m.ID + "/designly/invite/" + token}, 200, nil
+		return map[string]any{"id": id, "token": token, "expiresAt": expires, "url": s.hubURL + "/design-invites/" + token}, 200, nil
 
 	case method == http.MethodDelete && section == "invites" && n == 3:
 		if !uuidRe.MatchString(third) {
@@ -416,7 +445,12 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 	return nil, 0, fail("not_found", "Маршрут не найден")
 }
 
-func (s *Service) shareURLOf(token string) string { return s.shareURL + "/s/" + token }
+func (s *Service) shareURLOf(token string) string {
+	if isStaticToken(token) {
+		return s.hubURL + StaticPrefix + token
+	}
+	return s.shareURL + "/s/" + token
+}
 
 func (s *Service) sharesRoute(r *http.Request, m store.Machine, email, project string, parts []string) (any, int, error) {
 	ctx := r.Context()

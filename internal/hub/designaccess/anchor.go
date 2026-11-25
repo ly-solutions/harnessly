@@ -2,9 +2,15 @@ package designaccess
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"regexp"
 	"strings"
+
+	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
+
+var workspaceInvite = regexp.MustCompile(`^/api/[A-Za-z0-9_-]+/design/access/invites/([A-Za-z0-9_-]{43})/accept$`)
 
 // hubRoute is the path (after /agents) of what the hub answers itself: Sinopia's access, store and people routes. They
 // name a space and a project, not a machine.
@@ -33,9 +39,23 @@ func (s *Service) AnchorMachines(ctx context.Context, spaceIDs []string, rest st
 	for _, id := range spaceIDs {
 		args = append(args, id)
 	}
-	rows, err := s.db.S().Q().Query(ctx, `SELECT p.machine_id FROM design_projects p JOIN machines m ON m.id = p.machine_id
-		WHERE p.project_id = ? AND m.space_id IN (`+marks+`) AND m.revoked_at IS NULL
-		ORDER BY p.updated_at DESC, p.machine_id LIMIT 8`, args...)
+	query := `SELECT p.machine_id FROM design_projects p JOIN machines m ON m.id = p.machine_id
+  WHERE p.project_id = ? AND m.space_id IN (` + marks + `) AND m.revoked_at IS NULL
+  ORDER BY p.updated_at DESC, p.machine_id LIMIT 8`
+	if s.shared {
+		// The project owner may have a private machine. Offer other machines in the same
+		// space after the machine that holds the row; the proxy applies admission to each.
+		query = `SELECT candidate.id FROM design_projects p JOIN machines holder ON holder.id=p.machine_id
+            JOIN machines candidate ON candidate.space_id=holder.space_id
+            WHERE p.project_id=? AND holder.space_id IN (` + marks + `) AND holder.revoked_at IS NULL AND candidate.revoked_at IS NULL
+            GROUP BY candidate.id ORDER BY MAX(p.updated_at) DESC, MAX(CASE WHEN candidate.id=p.machine_id THEN 1 ELSE 0 END) DESC, candidate.id`
+	}
+	if match := workspaceInvite.FindStringSubmatch(rest); match != nil {
+		args[0] = store.HashToken(match[1])
+		query = `SELECT candidate.id FROM design_invites i JOIN machines owner ON owner.id=i.machine_id JOIN machines candidate ON candidate.space_id=owner.space_id
+      WHERE i.token_hash=? AND owner.space_id IN (` + marks + `) AND owner.revoked_at IS NULL AND candidate.revoked_at IS NULL ORDER BY candidate.id`
+	}
+	rows, err := s.db.S().Q().Query(ctx, query, args...)
 	if err != nil {
 		return nil
 	}
@@ -52,4 +72,45 @@ func (s *Service) AnchorMachines(ctx context.Context, spaceIDs []string, rest st
 		return nil
 	}
 	return ids
+}
+
+// scopedHolder resolves only the named project's access record, within the space of the
+// admitted machine. With local storage the same slug may legitimately exist twice.
+func (s *Service) scopedHolder(ctx context.Context, anchor store.Machine, user store.User, project, invite string) (store.Machine, error) {
+	if s.shared || anchor.SpaceID == "" {
+		return anchor, nil
+	}
+	db := s.db.S()
+	var id string
+	var err error
+	if invite != "" {
+		if !store.ValidDesignInviteToken(invite) {
+			return store.Machine{}, fail("not_found", "Ссылка не найдена")
+		}
+		err = db.Q().QueryRow(ctx, `SELECT i.machine_id FROM design_invites i JOIN machines m ON m.id=i.machine_id
+    WHERE i.token_hash=? AND m.space_id=? AND m.revoked_at IS NULL AND m.disabled_at IS NULL`, store.HashToken(invite), anchor.SpaceID).Scan(&id)
+	} else {
+		var count int
+		err = db.Q().QueryRow(ctx, `SELECT COUNT(*), COALESCE(MAX(m.id),'') FROM design_projects p JOIN machines m ON m.id=p.machine_id
+    WHERE m.space_id=? AND p.project_id=? AND m.revoked_at IS NULL AND m.disabled_at IS NULL`, anchor.SpaceID, project).Scan(&count, &id)
+		if err == nil && count == 0 {
+			return anchor, nil
+		}
+		if err == nil && count > 1 {
+			return store.Machine{}, fail("not_found", "Проект не найден")
+		}
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Machine{}, fail("not_found", "Проект не найден")
+	}
+	if err != nil {
+		return store.Machine{}, err
+	}
+	if id != anchor.ID || invite != "" {
+		verified, err := db.UserIDByVerifiedEmail(ctx, user.Email)
+		if err != nil || user.DisabledAt != nil || verified != user.ID {
+			return store.Machine{}, fail("forbidden", "Нужен подтверждённый аккаунт")
+		}
+	}
+	return db.MachineByID(ctx, id)
 }

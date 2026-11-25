@@ -27,6 +27,22 @@ const remarkRefs = () => (tree: Root) => {
     const next: RootContent[] = [];
     const children = node.children as RootContent[];
     for (const child of children) {
+      if (child.type === 'inlineCode') {
+        const parts = splitRefs(child.value);
+        const ref = parts[0];
+        if (parts.length === 1 && ref && 'ref' in ref && (ref.ref === 'task' || ref.ref === 'mr')) {
+          next.push({
+            type: 'text',
+            value: ref.label,
+            data: { hName: REF_TAG, hProperties: { dataKind: ref.ref, dataLabel: ref.label } },
+          } as Text);
+          continue;
+        }
+        if (/^https?:\/\/[^\s<>`]+$/i.test(child.value) && URL.canParse(child.value)) {
+          next.push({ type: 'link', url: child.value, children: [{ type: 'text', value: child.value }] });
+          continue;
+        }
+      }
       if (child.type === 'text') {
         for (const part of splitRefs((child as Text).value)) {
           if ('text' in part) next.push({ type: 'text', value: part.text });
@@ -161,6 +177,10 @@ const components = {
           text={text && text !== href ? text : change}
         />
       );
+    // Markdown destinations that name a file use the same project-scoped reader as file chips in plain text.
+    // A bare filename has no slash, so check it as a path relative to the chat's folder too.
+    if (href && (isReportPath(href) || isReportPath(`./${href}`)))
+      return <RefChip kind="file" label={href} text={text || fileNameOf(href)} hint={href} />;
     const slug = href && isBareAddress(text, href) ? cardSlugOf(href) : null;
     if (href && slug) return <NamedLink href={href} slug={slug} />;
     return <RefChip kind="link" label={href ?? ''} href={href ?? null} text={text || href || ''} />;

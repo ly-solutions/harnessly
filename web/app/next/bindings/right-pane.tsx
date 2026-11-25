@@ -1,6 +1,7 @@
 // The open chat's right pane over the machine: the header's button, the tabs and what each shows. A tab is the
 // launcher, the side chat (questions about this chat, the agent is not disturbed), an own terminal of the chat (a shell
 // the machine keeps until the tab closes it) or a browser tab with its own history. Only tools the machine really has are offered; the rest of the design's list waits for its API.
+import { copyWriter } from '@/next/offline/client';
 import { WordedError } from '@/next/core/net/worded';
 import { requestFilePlace } from '@/next/features/pane/file-place';
 import {
@@ -49,6 +50,7 @@ import { useSubagents } from '@/next/bindings/subagents';
 import { setPaneOpen } from '@/next/bindings/pane-open';
 import { usePaneOpenBeside } from '@/next/bindings/pane-beside';
 import LazyFileEditor from '@/next/features/pane/editor/lazy';
+import { useFileLook } from '@/next/features/pane/use-file-changes';
 import {
   findFiles,
   findText,
@@ -88,7 +90,14 @@ import type {
 import { toast } from '@/next/ui/toast';
 import { usePresence } from '@/next/ui/presence';
 import { plural, t } from '@/next/i18n';
-import { isLegacyTab, useLegacyPane, type ILegacyPane, type TLegacyHandoff } from '@/next/legacy/pane';
+import {
+  ChatTaskTab,
+  isLegacyTab,
+  legacyTaskTitle,
+  useLegacyPane,
+  type ILegacyPane,
+  type TLegacyHandoff,
+} from '@/next/legacy/pane';
 import {
   MACHINE,
   browserAt,
@@ -120,7 +129,7 @@ import {
   chatPanes,
   markUsed,
   paneKeyOf,
-  useChatPane,
+  useShownChatPane,
   type IChatPane,
 } from '@/next/stores/pane-state';
 import { conversationsStore, convsLoadedStore } from '@/next/stores/conversations';
@@ -215,6 +224,13 @@ const tabInfo = (
   chat: string,
   appName: (id: string) => string | null,
 ): IPaneTab & { sub: string } => {
+  if (tab.kind === 'task')
+    return {
+      id: tab.id,
+      icon: 'file-text',
+      name: legacyTaskTitle(tab.target),
+      sub: tab.target,
+    };
   if (tab.kind === 'app')
     return {
       id: tab.id,
@@ -316,6 +332,9 @@ const machineFolderOf = (path: string, file: boolean): string | null => {
 };
 
 /** A failure asking again may cure: the link's (no answer, the network) or the machine's own; never a refusal. */
+/** The biggest text, in characters, that the pane reads again every few seconds to follow the disk. */
+const FOLLOW_MAX = 1_000_000;
+
 const retryable = (failure: Error) =>
   !(failure instanceof WordedError) ||
   failure.code === 'network' ||
@@ -392,22 +411,29 @@ export const FilesTab = ({
       );
     };
     if (delivered) return undefined;
+    const write = copyWriter();
     if (tab.file)
-      readFile(conv.machineId, conv.id, tab.path, abort.signal).then(
-        (file) =>
-          done({
-            listing: null,
-            file,
-            initial: draftOf(tab.id, tab.path) ?? {
-              text: file.content,
-              base: file.content,
-              revision: file.revision,
-            },
-            error: null,
-            retry: false,
-          }),
-        fail,
-      );
+      readFile(conv.machineId, conv.id, tab.path, abort.signal).then((file) => {
+        if (!abort.signal.aborted && /\.(md|markdown|txt|html?)$/i.test(tab.path)) {
+          void write?.(
+            ['file', conv.machineId, conv.id, tab.path],
+            tab.path.split('/').pop() ?? tab.path,
+            /\.html?$/i.test(tab.path) ? 'html' : 'text',
+            new Blob([file.content]),
+          ).catch(() => undefined);
+        }
+        done({
+          listing: null,
+          file,
+          initial: draftOf(tab.id, tab.path) ?? {
+            text: file.content,
+            base: file.content,
+            revision: file.revision,
+          },
+          error: null,
+          retry: false,
+        });
+      }, fail);
     else
       listFolder(conv.machineId, conv.id, tab.path, abort.signal).then(
         (listing) => done({ listing, file: null, initial: null, error: null, retry: false }),
@@ -416,6 +442,27 @@ export const FilesTab = ({
     return () => abort.abort();
   }, [conv.machineId, conv.id, tab.id, tab.path, tab.file, epoch, draftOf, listingAgain, delivered]);
   const now = shown?.key === key ? shown : null;
+  // a text file open here follows the disk. The agent writes it, and the pane shows the new text at once, not
+  // after the tab is opened again. Looked at every few seconds while the page is in view; a file too big to read that
+  // often is left as it was opened.
+  const [disk, setDisk] = useState<{ key: string; file: FileContent } | null>(null);
+  const diskSeen = useRef({ key: '', revision: '' });
+  const following = Boolean(tab.file && now?.file && now.file.content.length <= FOLLOW_MAX);
+  useFileLook(() => {
+    const open = now?.file;
+    if (!open) return;
+    if (diskSeen.current.key !== key) diskSeen.current = { key, revision: open.revision };
+    void readFile(conv.machineId, conv.id, tab.path).then(
+      (file) => {
+        if (diskSeen.current.key !== key || file.revision === diskSeen.current.revision) return;
+        diskSeen.current = { key, revision: file.revision };
+        setDisk({ key, file });
+      },
+      // Out of reach for now: the text on screen stays until the machine answers again.
+      () => undefined,
+    );
+  }, following);
+  const diskNow = disk?.key === key ? disk.file : null;
   // «Перейти к файлу» searches the chat's folder; on the machine, the folder on screen (a file's own folder).
   const searchIn = machineFolderOf(tab.path, tab.file);
   const find = useCallback(
@@ -512,6 +559,7 @@ export const FilesTab = ({
         compare={shownCompare}
         onCloseCompare={() => onChange({ ...tab, against: undefined })}
         at={tab.at ?? null}
+        disk={diskNow}
         onAsk={
           isChatPlace(conv)
             ? (quote, note) => {
@@ -614,6 +662,7 @@ interface IPaneBodyProps {
   used: Readonly<Record<string, number>>;
   /** Tools were opened in this chat now. */
   onUsed: (ids: readonly string[]) => void;
+  onOpenTask: (target: string) => void;
   /** A thing the chat made is picked in the tools home. */
   onOpenMade: (item: Pick<MadeItem, 'kind' | 'ref'>) => void;
   /** The pane stands beside an open design: its Designly tab and tool are left out (the design is the screen). */
@@ -1070,6 +1119,7 @@ const PaneBody = (props: IPaneBodyProps) => {
       strip={props.strip}
     >
       {legacyTab && legacy.render(legacyTab.id)}
+      {tab?.kind === 'task' && <ChatTaskTab key={tab.id} target={tab.target} onOpen={props.onOpenTask} />}
       {onPinned && <PinnedAppTab machine={conv.machineId} conversation={conv.id} pinned={pinned} />}
       {launcher && (
         <ToolsLauncher
@@ -1236,7 +1286,7 @@ export const useRightPane = (
   const placeOf = (target: string) => objectPlaceOf(target, apps.list?.apps, window.location.origin);
   // The chat's pane is read as the chat is: the first frame of another chat already draws its own pane.
   const paneKey = paneKeyOf(convId, view);
-  const state = useChatPane(paneKey);
+  const state = useShownChatPane(paneKey);
   // Beside a design the pane opens at its side, never over it: the chat's own «wide» is for the chat's page (a pane
   // widened there must not cover the design opened from it). Widened here, it stays so only while the design is open.
   const [wideBeside, setWideBeside] = useState(false);
@@ -1687,6 +1737,23 @@ export const useRightPane = (
       show: (tab, target) => {
         // The runtime names a document by the reader's path and a board by its framed address: both are an app's.
         const object = tab === 'artifacts' ? placeOf(target) : null;
+        if (tab === 'task') {
+          const existing = state.tabs.find((item) => item.kind === 'task' && item.target === target);
+          if (existing) return existing.id;
+          // Account-scoped tracker reads also work for a saved conversation with no agent session.
+          if (!legacy.on) {
+            const id = 'task:' + target;
+            setState((s) =>
+              s.tabs.some((item) => item.id === id)
+                ? s
+                : {
+                    ...s,
+                    tabs: [...s.tabs, { id, kind: 'task', target }],
+                  },
+            );
+            return id;
+          }
+        }
         if (!object) return legacy.show(tab, target);
         const placed = placeAppObject(state, object.app, object.view, object.slug, {
           busy: false,
@@ -1727,8 +1794,13 @@ export const useRightPane = (
     });
   // A chip or a link of the feed opens where the agent's open command would put it (the runtime's rules). A ref that
   // fits several places opens the best; a merge request chip asks the person first (its own list, before this).
-  const openRef = (ref: string) => {
+  const openRef = (ref: string, kind?: 'task') => {
     if (!conv) return;
+    // A task chip already carries the tracker key. The Task pane loads it with the recipient's connection.
+    if (kind === 'task') {
+      openTarget({ tab: 'task', target: ref });
+      return;
+    }
     // A board opens in the boards app's view of the pane, on the board; a document of the hub in the
     // documents app's.
     const board = placeOf(ref);
@@ -1754,11 +1826,6 @@ export const useRightPane = (
         return;
       }
       if (!('ok' in res)) {
-        const nothing = res.r === 'refused' && res.code === 'not-found';
-        if (nothing) {
-          toast(t('next.pane.nothingToOpen'), { tone: 'error' });
-          return;
-        }
         toast(t('next.load.openRef'), {
           tone: 'error',
           description: pageText(res),
@@ -1864,6 +1931,7 @@ export const useRightPane = (
         strip={strip}
         used={state.used}
         onUsed={(ids) => setState((s) => ({ ...s, used: markUsed(s.used, ids, Date.now()) }))}
+        onOpenTask={(target) => openTarget({ tab: 'task', target })}
         onOpenMade={openMade}
         besideDesign={besideDesign}
         design={besideDesign ? design : null}

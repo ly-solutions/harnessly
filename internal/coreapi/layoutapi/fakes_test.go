@@ -170,12 +170,27 @@ type fakeAgents struct {
 }
 
 func (a *fakeAgents) Availability(panelType string) *Unavailable { return a.unavailable[panelType] }
+func (a *fakeAgents) ValidateProfileLaunch(provider, profile string, model, effort any) (*agents.Launch, string) {
+	if profile != "personal" {
+		return nil, "profile unavailable"
+	}
+	l, ok := agents.ReadProfileLaunchShape(profile, model, effort)
+	if !ok || l == nil {
+		return nil, "invalid"
+	}
+	l.Profile = profile
+	return l, ""
+}
+
 func (a *fakeAgents) ValidateLaunch(provider string, model, effort any) (*agents.Launch, string) {
 	if model == "bad" {
 		return nil, "Недопустимое имя модели"
 	}
 	l, _ := agents.ReadLaunchShape(model, effort)
 	return l, ""
+}
+func (a *fakeAgents) SelectOpusFirst() (*agents.Launch, string) {
+	return a.ValidateLaunch(agents.Claude, "opus", nil)
 }
 func (a *fakeAgents) LaunchLine(provider, ws string, l *agents.Launch) (string, error) {
 	line := provider + "-launch --ws " + ws

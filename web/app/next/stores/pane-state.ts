@@ -4,7 +4,7 @@
 // browser's only: localStorage, read once, written a moment after a change; the most recent chats are kept, the ones
 // the machine no longer lists are forgotten. A request for a chat that is not on screen waits in its entry and is
 // placed when the person comes back, instead of taking over the chat they are in.
-import { useCallback, useState, useSyncExternalStore } from 'react';
+import { useCallback, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 import type { IPaneTabs, TTab } from '@/next/features/pane/pane-tabs';
 import type { IPaneRequest } from '@/next/features/pane/intents';
 
@@ -72,6 +72,8 @@ export const isPaneTab = (v: unknown): v is TTab => {
   if (!isRecord(v) || !isString(v.id) || !isString(v.kind)) return false;
   if (SIMPLE_KINDS.has(v.kind)) return true;
   switch (v.kind) {
+    case 'task':
+      return isString(v.target) && v.target.length > 0;
     case 'designly':
       return stringOrNull(v.design);
     case 'subagent':
@@ -163,10 +165,13 @@ export const parseKept = (raw: string | null): TKept => {
   return capKept(kept);
 };
 
-/** The `max` most recent. */
-export const capKept = (kept: TKept, max: number = MAX_CHATS): TKept => {
+/** The panes on screen first, then the most recent, within the same limit. */
+export const capKept = (kept: TKept, max: number = MAX_CHATS, isShown?: (key: string) => boolean): TKept => {
   if (kept.size <= max) return kept;
-  return new Map([...kept].sort((a, b) => b[1].at - a[1].at).slice(0, max));
+  const priority = (key: string) => (isShown?.(key) ? 1 : 0);
+  return new Map(
+    [...kept].sort((a, b) => priority(b[0]) - priority(a[0]) || b[1].at - a[1].at).slice(0, max),
+  );
 };
 
 export const serializeKept = (kept: TKept): string =>
@@ -209,13 +214,14 @@ export const updateKept = (
   machine: string | null,
   change: (pane: IChatPane) => IChatPane,
   now: number,
+  isShown?: (key: string) => boolean,
 ): TKept => {
   const before = kept.get(conv);
   const pane = change(before ?? EMPTY_PANE);
   if (pane === (before ?? EMPTY_PANE)) return kept;
   const next = new Map(kept);
   next.set(conv, { ...pane, machine: machine ?? before?.machine ?? null, at: now });
-  return capKept(next);
+  return capKept(next, MAX_CHATS, isShown);
 };
 
 /** Waits a request for the chat; the newest few are kept. */
@@ -263,6 +269,37 @@ const persistNow = () => {
 
 const all = (): TKept => (kept ??= parseKept(storage.read()));
 
+// Only changes to the part the machine syncs count. An app remembering its scroll or a queued request is not an edit.
+const changedHere = new WeakSet<IChatPane>();
+const shown = new Map<string, number>();
+const isShown = (key: string) => shown.has(key);
+
+const update = (
+  conv: string,
+  machine: string | null,
+  change: (pane: IChatPane) => IChatPane,
+  source: 'local' | 'machine' = 'local',
+) => {
+  const was = all();
+  const next = updateKept(was, conv, machine, change, Date.now(), isShown);
+  if (next === was) return;
+  const before = was.get(conv) ?? EMPTY_PANE;
+  const after = next.get(conv);
+  if (
+    source === 'local' &&
+    after &&
+    (changedHere.has(before) ||
+      after.open !== before.open ||
+      after.maxed !== before.maxed ||
+      after.width !== before.width ||
+      after.tabs !== before.tabs ||
+      after.active !== before.active)
+  ) {
+    changedHere.add(after);
+  }
+  commit(next);
+};
+
 const commit = (next: TKept) => {
   if (next === kept) return;
   kept = next;
@@ -288,11 +325,12 @@ export const chatPaneOf = (conv: string | null): IChatPane =>
 
 export const chatPanes = {
   /** Changes the chat's pane, on screen or not. */
-  update: (conv: string, machine: string | null, change: (pane: IChatPane) => IChatPane) =>
-    commit(updateKept(all(), conv, machine, change, Date.now())),
+  update,
+  /** The synced fields were edited in this page, not just loaded from storage or the machine. */
+  changedHere: (conv: string) => changedHere.has(chatPaneOf(conv)),
   /** A request for a chat that is not on screen: it waits for the person there. */
   queue: (conv: string, machine: string | null, request: IPaneRequest) =>
-    commit(updateKept(all(), conv, machine, (pane) => queueRequest(pane, request), Date.now())),
+    update(conv, machine, (pane) => queueRequest(pane, request)),
   /** Forgets the chats their machine no longer lists. */
   prune: (ctx: IPruneContext) => commit(pruneKept(all(), ctx)),
   /** Writes at once (tests, the page going away). */
@@ -311,6 +349,25 @@ export const resetChatPanes = () => {
 export const useChatPane = (conv: string | null): IChatPane => {
   const get = () => chatPaneOf(conv);
   return useSyncExternalStore(subscribe, get, get);
+};
+
+/** Background snapshots must not evict the current pane or the chat pane that the current view still exports. */
+export const useShownChatPane = (key: string | null): IChatPane => {
+  // Hold the keys before the passive view-sync effect can import other chats' panes.
+  useLayoutEffect(() => {
+    if (key === null) return;
+    const conv = convOfPaneKey(key);
+    const keys = key === conv ? [key] : [key, conv];
+    for (const k of keys) shown.set(k, (shown.get(k) ?? 0) + 1);
+    return () => {
+      for (const k of keys) {
+        const count = shown.get(k) ?? 0;
+        if (count <= 1) shown.delete(k);
+        else shown.set(k, count - 1);
+      }
+    };
+  }, [key]);
+  return useChatPane(key);
 };
 
 /**

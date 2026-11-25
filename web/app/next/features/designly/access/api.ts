@@ -34,6 +34,7 @@ export interface IPerson {
 }
 
 export interface IInvite {
+  teamId?: string;
   id: string;
   title: string;
   role: TInviteRole;
@@ -55,6 +56,8 @@ export interface IAccessRequest {
 
 /** `GET /:project`; the last three only come to a person who manages. */
 export interface IProjectAccess {
+  ownerWorkMachine?: string;
+  teamInvites?: boolean;
   role: TRole | null;
   /** Empty for a stranger: they get the name to ask by, not the address. */
   owner: string | null;
@@ -176,10 +179,11 @@ export const send = async (
   path: `/${string}`,
   body?: unknown,
   signal?: AbortSignal,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<unknown> => {
   const ctl = new AbortController();
   signal?.addEventListener('abort', () => ctl.abort());
-  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(gatewayPath(path), {
@@ -263,6 +267,7 @@ export const decideRequest = (
 ) => fresh(send('POST', `${at(project)}/requests/${encodeURIComponent(id)}`, decision));
 
 export interface IInviteInput {
+  teamId?: string;
   title: string;
   role: TInviteRole;
   roleTtl: TTtlValue;
