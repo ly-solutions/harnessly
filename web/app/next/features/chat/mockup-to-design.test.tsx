@@ -64,7 +64,7 @@ describe('«Continue in Sinopia Design» on an html card', () => {
       project: '',
     });
     await act(async () => answer.resolve(made));
-    expect(screen.getByRole('button', { name: 'Open in Sinopia Design' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Open in Sinopia Design' })).toBeTruthy();
     expect(draftRefs(conv)).toEqual([
       { kind: 'design', id: made.project, title: made.projectTitle, target: made.file },
     ]);
