@@ -968,7 +968,6 @@ func (l *v2Launcher) start(req convo.LaunchRequest, chosen *agents.Launch, promp
 	if mode == "" {
 		mode = v.machineMode(req.Provider)
 	}
-	rt.LaunchMode(req.ID, mode)
 	opts := launch.Options{Provider: string(req.Provider), Cwd: req.Cwd, CwdRoots: []string{req.Cwd}, Launch: chosen,
 		ResumeSessionID: req.ResumeSessionID, ForkSession: req.Fork, PromptFiles: promptFiles}
 	if req.First != "" {
@@ -1002,6 +1001,7 @@ func (l *v2Launcher) start(req convo.LaunchRequest, chosen *agents.Launch, promp
 		rt.LaunchFailed(req.ID, wire.LaunchFailedNoSession)
 		return
 	}
+	rt.LaunchMode(req.ID, mode)
 	rt.LaunchStep(req.ID, wire.StepPrompt)
 	prev, _ := rt.Record(req.ID)
 	_ = rt.Attach(req.ID, found.Tab.SessionName, "", "")
