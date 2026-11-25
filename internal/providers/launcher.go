@@ -134,3 +134,13 @@ func (l Launcher) ClaudeMCPDisabled(profile string) bool {
 	p, ok := Find(profile)
 	return ok && p.DisableMCP
 }
+
+// ClaudeMCPExcluded lists the built-in MCP groups a deployment-defined profile leaves out of a launch; nil for the
+// ordinary profiles.
+func (l Launcher) ClaudeMCPExcluded(profile string) []string {
+	p, ok := Find(profile)
+	if !ok {
+		return nil
+	}
+	return p.ExcludeMCP
+}

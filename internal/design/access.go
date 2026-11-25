@@ -312,9 +312,11 @@ func (l *Library) ClaimOnce(id string, owner Owner, who Identity) {
 
 // ReannounceOwn tells the gateway again of the projects this runtime made (a v2 owner file that is mine) and that the
 // snapshot has no row for: the first news can have been dropped (no agent, no link, a gateway that did not know the
-// event yet), and without a row the person could never share the project. The gateway registers idempotently. Once
-// per project for the life of the runtime; a new snapshot is the proof that the link is up.
-func (l *Library) ReannounceOwn() {
+// event yet), and without a row the person could never share the project. The gateway registers idempotently. A later
+// snapshot still missing the row permits a bounded retry; a recorded row stops it.
+func (l *Library) ReannounceOwn() { l.reannounceOwn(time.Now()) }
+
+func (l *Library) reannounceOwn(now time.Time) {
 	snap, ok := l.Access()
 	if !ok {
 		return
@@ -334,12 +336,15 @@ func (l *Library) ReannounceOwn() {
 		}
 		l.mu.Lock()
 		if l.access.announced == nil {
-			l.access.announced = map[string]bool{}
+			l.access.announced = map[string]time.Time{}
 		}
-		done := l.access.announced[id]
-		l.access.announced[id] = true
+		previous, announced := l.access.announced[id]
+		retry := !announced || now.Sub(previous) >= time.Hour
+		if retry {
+			l.access.announced[id] = now
+		}
 		l.mu.Unlock()
-		if !done {
+		if retry {
 			l.emit(agent.DesignCreated, id)
 		}
 	}

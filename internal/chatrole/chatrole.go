@@ -288,7 +288,7 @@ func GuardCommand(cmd, dir string) string {
 	}})
 	return "{ hl_in=$(cat); hl_out=$(printf '%s' \"$hl_in\" | " + cmd + " 2>/dev/null); hl_rc=$?; " +
 		"if [ $hl_rc -eq 0 ]; then printf '%s' \"$hl_out\"; else " +
-		"hl_s=\"${HARNESSLY_SESSION:-$(tmux display-message -p '#{session_name}' 2>/dev/null)}\"; " +
+		"hl_s=\"${HARNESSLY_SESSION:-$(\"${HARNESSLY_TMUX_BIN:-tmux}\" display-message -p '#{session_name}' 2>/dev/null)}\"; " +
 		"if [ -n \"$hl_s\" ] && [ -f " + shellQuote(dir) + "/\"$hl_s\" ]; then printf '%s' " + shellQuote(string(deny)) + "; fi; fi; }"
 }
 

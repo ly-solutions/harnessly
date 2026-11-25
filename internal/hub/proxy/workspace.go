@@ -449,7 +449,7 @@ func (p *pageRecorder) Flush() {}
 var storeFilePath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/f/.`)
 
 // storeKeyedPath is the same file at the board's keyed address (designaccess filekey.go): <id>/k/<key>/f/….
-var storeKeyedPath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/k/[0-9a-z]+\.[0-9a-z]+\.[A-Za-z0-9_-]+/f/.`)
+var storeKeyedPath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/k/[0-9a-z]+\.[0-9a-z]+\.[A-Za-z0-9_-]+(?:\.[0-9a-f]+)?/f/.`)
 
 // KeyedFiles is the design service's side of a board's keyed address: whose live key a request for a file there
 // carries, "" when it carries none.

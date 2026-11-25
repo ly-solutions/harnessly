@@ -13,7 +13,7 @@ import SiteView, {
 } from '@/next/features/designly/site-view';
 import { usePackExport } from '@/next/features/designly/pack-dialogs';
 import { ACCESS, useProjectAccess } from '@/next/features/designly/access/use-access';
-import { ROLE, claimOwnership, fetchAccess } from '@/next/features/designly/access/api';
+import { ROLE, claimOwnership, fetchAccess, isUnowned } from '@/next/features/designly/access/api';
 import ShareDialog from '@/next/features/designly/access/share-dialog';
 import { guestViewOf } from '@/next/features/designly/access/guest-view';
 import { LINK_KIND, type ILinkContext } from '@/next/features/designly/access/link-form';
@@ -22,6 +22,7 @@ import { isResourceView, useResourceView, VIEW_STATE } from '@/next/features/des
 import PublishSection from '@/next/features/designly/publish/publish-section';
 import { usePublish } from '@/next/features/designly/publish/use-publish';
 import NoAccess from '@/next/features/designly/access/no-access';
+import { designAddress } from '@/next/features/designly/design-address';
 import ProjectAway from '@/next/features/designly/access/project-away';
 import {
   boardHref,
@@ -177,9 +178,6 @@ interface IBodyProps extends IDesignlySiteProps {
   pane?: IPane;
 }
 
-/** The address a design is opened at on its own page: what «Поделиться» gives and the phone's code points to. */
-const designAddress = (id: string) => new URL(routePath({ kind: ROUTE.site, id }), window.location.href).href;
-
 /** The design's first pages are its tabs from the start, as in the design; the rest are opened with «+». */
 /** How often the pages are read again while an agent works on the design, ms. */
 const PAGES_POLL_MS = 4000;
@@ -317,6 +315,7 @@ const DesignlySiteInner = ({
   /** The design's own address on screen (not in a pane): the page on screen is its `?page=`. */
   // A design kept hidden behind another tab (features/shell/kept-screens) has no address of its own: it moves nothing.
   const onScreen = useTabScope()?.active !== false;
+  const card = useCardOf(id);
   const own = pane === undefined && onScreen && route.kind === ROUTE.site && route.id === id ? route : null;
   // Edited with its chat, the tab is the chat's and the chat names it (bindings/tabs.tsx), not the design.
   useTabTitle(
@@ -335,7 +334,6 @@ const DesignlySiteInner = ({
     };
   }, [pageSlot, outsideSlot]);
   // What a share and the phone's code give: the design's own page, not the chat the pane is in.
-  const shareUrl = pane ? designAddress(id) : window.location.href;
 
   // What a read of the project that found it on neither side leaves behind: the card's reason, or the old error where
   // no hub stands behind the runtime.
@@ -354,7 +352,7 @@ const DesignlySiteInner = ({
   useEffect(() => () => projectReads.stop(), [projectReads]);
   useEffect(() => {
     // A poll while the slow machine still answers the last read waits for it.
-    const signal = projectReads.start(`${machine}|${id}|${attempt}|${String(restored)}`);
+    const signal = projectReads.start(`${machine}|${id}|${card ?? ''}|${attempt}|${String(restored)}`);
     if (signal === null) return;
     const abort = { signal };
     // The machine is asked first; when it is slow, has failed or has not got the project, the hub's snapshot opens the
@@ -394,11 +392,12 @@ const DesignlySiteInner = ({
         }
       },
       { store: SNAPSHOT_WAIT_MS, machine: MACHINE_PATIENCE_MS },
+      card,
     );
     // The reads end with another project, machine or attempt (start) or with the page (stop), not with a poll.
     // onMissing is the host's; a new one each render must not load the library again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine, id, attempt, restored, fresh]);
+  }, [machine, id, card, attempt, restored, fresh]);
 
   const turnedAway = gate.state.k === ACCESS.ready && gate.state.access.role === null;
   // A role the gateway has just given reaches the runtime a moment later (its snapshot): the library is read again
@@ -482,6 +481,7 @@ const DesignlySiteInner = ({
 
   const current = tabs.find((x) => x.id === tab) ?? tabs[0];
   const path = current?.hist[current.hi] ?? null;
+  const shareUrl = designAddress(id, path ?? own?.page ?? null);
   const port = project?.port ?? null;
 
   const slotKey = `${port}|${reloadKey}|${reopen}`;
@@ -540,7 +540,7 @@ const DesignlySiteInner = ({
   const mayShow = opened !== null && (!entering || (waited && !refused)) && lateKey === null;
   const plainSrc =
     mayShow && opened.origin !== null && path !== null ? slotBoardHref(opened.origin, id, path) : null;
-  const hubSrc = (page: string | null) => (page === null ? null : storeBoardHref(id, page));
+  const hubSrc = (page: string | null) => (page === null ? null : storeBoardHref(id, page, '', card));
   const src = snapshot !== null ? hubSrc(path) : mayShow ? plainSrc : null;
   const slotOrigin = opened?.origin ?? null;
   const slotError = opened?.error ?? null;
@@ -738,6 +738,10 @@ const DesignlySiteInner = ({
   }, [askedPage, pageAt, project]);
 
   const copyLink = () => {
+    if (gated && isUnowned(gated)) {
+      toast(t('next.access.claimBeforeCopy'), { tone: 'error' });
+      return;
+    }
     navigator.clipboard
       ?.writeText(shareUrl)
       .then(() => toast(t('next.site.linkCopied')))
@@ -792,7 +796,7 @@ const DesignlySiteInner = ({
   });
   const routePage = own?.page ?? null;
   useEffect(() => {
-    if (!own) return;
+    if (!own || !project) return;
     const was = synced.current;
     if (was === null || routePage !== was.route) {
       synced.current = { route: routePage, path: routePage ?? path };
@@ -809,7 +813,7 @@ const DesignlySiteInner = ({
     }
     // `own` is a new object each render; its page and the page on screen are what move this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routePage, path, own !== null]);
+  }, [routePage, path, own !== null, project !== null]);
 
   useEffect(() => {
     const take = () => {
@@ -932,6 +936,9 @@ const DesignlySiteInner = ({
       <ProjectAway
         key={`${id}:${away}`}
         project={id}
+        card={card}
+        page={own?.page ?? null}
+        onPage={own ? (page) => goTo({ ...own, page }) : undefined}
         why={away}
         ownerName={gated?.ownerName ?? ''}
         onBack={back}
@@ -1313,8 +1320,15 @@ const DesignlySiteInner = ({
 };
 
 /** The design with its machine's voice in the fields its cards and its picture editor answer with. */
+/** The copy of a shared project the address names (its card key), for the project on screen. */
+const useCardOf = (id: string): string | undefined => {
+  const route = useRoute();
+  return route.kind === ROUTE.site && route.id === id ? route.card : undefined;
+};
+
 const DesignlySiteBody = (props: IBodyProps) => {
-  const gate = useProjectAccess(props.id);
+  const card = useCardOf(props.id);
+  const gate = useProjectAccess(props.id, card);
   const ownerSource =
     !props.chat && !props.pane && gate.state.k === ACCESS.ready && gate.state.access.role === ROLE.owner
       ? gate.state.access.ownerWorkMachine

@@ -27,6 +27,7 @@ vi.mock('@/platform/config', () => ({
 import Markdown from '@/next/features/chat/markdown';
 import { RefContext } from '@/next/features/chat/ref-chip';
 import { LinkCardsInline } from '@/next/features/chat/link-card';
+import { escapeSemicolons } from '@/next/features/chat/mermaid-block';
 
 afterEach(cleanup);
 
@@ -48,6 +49,32 @@ describe('a mermaid fence', () => {
     await waitFor(() => expect(container.querySelector('.hx-rich__diagram svg')).not.toBeNull());
     fireEvent.click(container.querySelector('.hx-rich__diagram') as Element);
     expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+});
+
+describe('a sequence diagram with «;» in a message', () => {
+  it('has the semicolons escaped for the renderer', () => {
+    const source = 'sequenceDiagram\n  A->>B: нет; да\n  Note over A: раз; два';
+    expect(escapeSemicolons(source)).toBe('sequenceDiagram\n  A->>B: нет#59; да\n  Note over A: раз#59; два');
+  });
+
+  it('leaves other diagrams as they are', () => {
+    const source = 'flowchart LR\n  A --> B;';
+    expect(escapeSemicolons(source)).toBe(source);
+  });
+});
+
+describe('the full-size diagram', () => {
+  it('zooms with its buttons and goes back', async () => {
+    const { container } = render(<Markdown md={'```mermaid\nflowchart LR\n  A --> B\n```'} />);
+    await waitFor(() => expect(container.querySelector('.hx-rich__diagram svg')).not.toBeNull());
+    fireEvent.click(container.querySelector('.hx-rich__diagram') as Element);
+    const canvas = (await screen.findByRole('dialog')).querySelector('.hx-zoom__canvas') as HTMLElement;
+    expect(canvas.style.transform).toContain('scale(1)');
+    fireEvent.click(screen.getByLabelText(/^(Zoom in|Увеличить)$/));
+    expect(canvas.style.transform).toContain('scale(1.25)');
+    fireEvent.click(screen.getByLabelText(/^(Reset zoom|Сбросить масштаб)$/));
+    expect(canvas.style.transform).toContain('scale(1)');
   });
 });
 

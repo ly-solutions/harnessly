@@ -49,36 +49,66 @@ func newFileKeyer(master []byte) *fileKeyer {
 
 // mint is the key of one person for one project: "<end, base 36>.<person>.<mac>"; "" without a key.
 func (k *fileKeyer) mint(userID, project string, now time.Time) string {
-	if k == nil || !keyIDShape(userID) {
+	return k.mintCard(userID, project, "", now)
+}
+
+// mintCard is the key of one person for one holder's copy of a project (a shared card, cardkey.go): the card rides at
+// the key's end and is covered by its MAC, so the files of a board inherit the holder with the path.
+func (k *fileKeyer) mintCard(userID, project, card string, now time.Time) string {
+	if k == nil || (card != "" && !cardShape(card)) || !keyIDShape(userID) {
 		return ""
 	}
 	step := int64(fileKeyStep / time.Second)
 	at := now.Add(fileKeyTTL).Unix()
 	end := strconv.FormatInt((at+step-1)/step*step, 36)
-	return end + "." + userID + "." + k.mac(userID, project, end)
+	key := end + "." + userID + "." + k.mac(userID, scopeOf(project, card), end)
+	if card != "" {
+		key += "." + card
+	}
+	return key
+}
+
+// scopeOf is what a key's MAC covers: the project, and with a card the holder's copy of it.
+func scopeOf(project, card string) string {
+	if card == "" {
+		return project
+	}
+	return project + "\x00" + card
 }
 
 // check says whether key is a live key of this person for this project.
 func (k *fileKeyer) check(key, userID, project string, now time.Time) bool {
-	who, ok := k.person(key, project, now)
-	return ok && who == userID
+	_, ok := k.checkCard(key, userID, project, now)
+	return ok
+}
+
+// checkCard is check that also says the holder's card the key names ("" for a plain key).
+func (k *fileKeyer) checkCard(key, userID, project string, now time.Time) (string, bool) {
+	who, card, ok := k.personCard(key, project, now)
+	return card, ok && who == userID
 }
 
 // person is whose live key of the project key is.
 func (k *fileKeyer) person(key, project string, now time.Time) (string, bool) {
+	who, _, ok := k.personCard(key, project, now)
+	return who, ok
+}
+
+func (k *fileKeyer) personCard(key, project string, now time.Time) (who, card string, ok bool) {
 	if k == nil || !storeKeyShape(key) {
-		return "", false
+		return "", "", false
 	}
 	end, rest, _ := strings.Cut(key, ".")
-	who, sum, _ := strings.Cut(rest, ".")
+	who, rest, _ = strings.Cut(rest, ".")
+	sum, card, _ := strings.Cut(rest, ".")
 	at, err := strconv.ParseInt(end, 36, 64)
 	if err != nil || now.Unix() > at {
-		return "", false
+		return "", "", false
 	}
-	if !hmac.Equal([]byte(sum), []byte(k.mac(who, project, end))) {
-		return "", false
+	if !hmac.Equal([]byte(sum), []byte(k.mac(who, scopeOf(project, card), end))) {
+		return "", "", false
 	}
-	return who, true
+	return who, card, true
 }
 
 // keyedFile is a file at a board's keyed address: …/design/store/<project>/k/<key>/f/<file>.
@@ -136,6 +166,13 @@ func storeKeyShape(key string) bool {
 	who, sum, ok := strings.Cut(rest, ".")
 	if !ok || !keyIDShape(who) || sum == "" {
 		return false
+	}
+	// An optional holder card ends the key.
+	if mac, card, has := strings.Cut(sum, "."); has {
+		if mac == "" || !cardShape(card) {
+			return false
+		}
+		sum = mac
 	}
 	for _, c := range sum {
 		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '-' || c == '_') {

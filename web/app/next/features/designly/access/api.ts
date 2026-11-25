@@ -222,18 +222,22 @@ export const DOC_PREFIX = 'doc:';
 export const docRef = (slug: string): string => `${DOC_PREFIX}${slug}`;
 export const isDocRef = (project: string): boolean => project.startsWith(DOC_PREFIX);
 
-const at = (project: string) =>
+const at = (project: string, card?: string) =>
   (isDocRef(project)
     ? `/docs/${encodeURIComponent(project.slice(DOC_PREFIX.length))}/acl`
-    : `${BASE}/${encodeURIComponent(project)}`) as `/${string}`;
+    : `${BASE}/${encodeURIComponent(project)}${card ? `?card=${encodeURIComponent(card)}` : ''}`) as `/${string}`;
 
 const isAccess = (v: unknown): v is IProjectAccess =>
   typeof v === 'object' && v !== null && 'team' in v && 'canManage' in v;
 
 /** The project's access, or null where there is no gateway (standalone, an old gateway, no answer): nothing is shown then. */
-export const fetchAccess = async (project: string, signal?: AbortSignal): Promise<IProjectAccess | null> => {
+export const fetchAccess = async (
+  project: string,
+  signal?: AbortSignal,
+  card?: string,
+): Promise<IProjectAccess | null> => {
   try {
-    const answer = await send('GET', at(project), undefined, signal);
+    const answer = await send('GET', at(project, card), undefined, signal);
     return isAccess(answer) ? answer : null;
   } catch (failure) {
     if (signal?.aborted) throw failure;

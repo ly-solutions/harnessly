@@ -10,6 +10,7 @@ import AccessAdd from '@/next/features/designly/access/access-add';
 import AccessGeneral from '@/next/features/designly/access/access-general';
 import AccessLinks from '@/next/features/designly/access/access-links';
 import AccessLog, { warmLog } from '@/next/features/designly/access/access-log';
+import AccessSnapshot from '@/next/features/designly/access/access-snapshot';
 import AccessPeople from '@/next/features/designly/access/access-people';
 import AccessRequests from '@/next/features/designly/access/access-requests';
 import AccessTransfer from '@/next/features/designly/access/access-transfer';
@@ -288,7 +289,10 @@ const ShareDialog = ({
                   </div>
                   {v === SUB_VIEW.log && <AccessLog project={project} />}
                   {v === SUB_VIEW.links && (
-                    <AccessLinks {...section} pages={pages} guestRights={guestRights} />
+                    <>
+                      <AccessLinks {...section} pages={pages} guestRights={guestRights} />
+                      {access.role === 'owner' && <AccessSnapshot project={project} pages={pages} />}
+                    </>
                   )}
                   {v === SUB_VIEW.transfer && <AccessTransfer {...section} onDone={() => go(null)} />}
                 </Still>
@@ -331,7 +335,15 @@ const ShareDialog = ({
       </div>
       <div className="hx-modal__foot hx-acc-foot">
         <div className="hx-acc-foot__left">
-          <button type="button" className="hx-btn" data-variant="ghost" data-size="sm" onClick={onCopyLink}>
+          <button
+            type="button"
+            className="hx-btn"
+            data-variant="ghost"
+            data-size="sm"
+            disabled={isUnowned(access)}
+            title={isUnowned(access) ? t('next.access.claimBeforeCopy') : undefined}
+            onClick={onCopyLink}
+          >
             <Icon name="link" size="sm" />
             <span>{t('next.access.copyLink')}</span>
           </button>

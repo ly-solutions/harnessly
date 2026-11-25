@@ -18,18 +18,18 @@ export interface IProjectAccessHook {
   reload: () => void;
 }
 
-export const useProjectAccess = (project: string): IProjectAccessHook => {
+export const useProjectAccess = (project: string, card?: string): IProjectAccessHook => {
   const [state, setState] = useState<TAccessState>({ k: ACCESS.loading });
   const [round, setRound] = useState(0);
 
   useEffect(() => {
     const abort = new AbortController();
-    fetchAccess(project, abort.signal).then(
+    fetchAccess(project, abort.signal, card).then(
       (access) => setState(access ? { k: ACCESS.ready, access } : { k: ACCESS.absent }),
       () => undefined,
     );
     return () => abort.abort();
-  }, [project, round]);
+  }, [project, card, round]);
 
   const apply = useCallback((next: IProjectAccess) => setState({ k: ACCESS.ready, access: next }), []);
   const reload = useCallback(() => setRound((n) => n + 1), []);

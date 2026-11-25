@@ -195,7 +195,7 @@ func TestAppsAtGoesOnlyToAPageThatReadsIt(t *testing.T) {
 	}
 	// Every older form of the page that has the caps before this one is in the hub's list.
 	last := olderCaps[len(olderCaps)-1]
-	if !last.MachineInfo || !last.Antigravity || last.RunsIn {
+	if !last.MachineInfo || !last.Antigravity || !last.RunsIn || last.DesignKey {
 		t.Fatalf("the newest older form: %+v", last)
 	}
 	b, err := Marshal(EvFrame{Ch: ChannelMachine, Seq: 1, E: old})

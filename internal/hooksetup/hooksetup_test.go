@@ -361,6 +361,58 @@ func TestStatusHookScriptPosts(t *testing.T) {
 	}
 }
 
+// A tmux first on the pane's PATH that cannot talk to the runtime's server (another version) must not cost the event
+// its session: the hook asks the runtime's own tmux, named by HARNESSLY_TMUX_BIN, and a pane started by the runtime
+// names its session outright.
+func TestStatusHookAsksTheRuntimesTmux(t *testing.T) {
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("curl not here")
+	}
+	home := t.TempDir()
+	cfg := testConfig(filepath.Join(home, ".acme-ai"))
+	w := New(cfg)
+	got := make(chan string, 4)
+	srv := newRecorder(t, got)
+	if _, err := w.Ensure(srv.port, token); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(w.TokenPath(), []byte(token), 0o600)
+	bin := filepath.Join(home, "bin")
+	_ = os.MkdirAll(bin, 0o700)
+	_ = os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\necho 'server exited unexpectedly' >&2\nexit 1\n"), 0o755)
+	runtimeTmux := filepath.Join(home, "runtime-tmux")
+	_ = os.WriteFile(runtimeTmux, []byte("#!/bin/sh\necho tab-session\n"), 0o755)
+	post := func(env ...string) string {
+		t.Helper()
+		cmd := exec.Command("sh", w.StatusHookPath(), "stop")
+		cmd.Env = append(os.Environ(), append([]string{"HOME=" + home, "PATH=" + bin + ":" + os.Getenv("PATH"), "HARNESSLY_SESSION="}, env...)...)
+		cmd.Stdin = strings.NewReader(`{"session_id":"9764fa81-4c34-4673-af5e-6f243c9d8be1","hook_event_name":"Stop"}`)
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case raw := <-got:
+			var body struct{ Session, AgentSessionID string }
+			if err := json.Unmarshal([]byte(raw), &body); err != nil || body.AgentSessionID == "" {
+				t.Fatalf("%q", raw)
+			}
+			return body.Session
+		case <-time.After(5 * time.Second):
+			t.Fatal("nothing posted")
+		}
+		return ""
+	}
+	if s := post(); s != "" {
+		t.Fatalf("the incompatible tmux answered %q", s)
+	}
+	if s := post("HARNESSLY_TMUX_BIN=" + runtimeTmux); s != "tab-session" {
+		t.Fatalf("session %q through the runtime's tmux", s)
+	}
+	if s := post("HARNESSLY_SESSION=named-session"); s != "named-session" {
+		t.Fatalf("session %q, want the one the pane was started with", s)
+	}
+}
+
 // budgetServer answers the budget hook route with body and records the query.
 func budgetServer(t *testing.T, body string) (port int, queries chan string, headers chan http.Header) {
 	t.Helper()

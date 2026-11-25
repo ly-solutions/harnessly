@@ -135,7 +135,7 @@ describe('the tiles of the types apps add', () => {
     expect(card.querySelector('.hx-dl-card__pin')).toBeNull();
     expect(card.querySelector('.hx-dl-card__del')).toBeNull();
     fireEvent.click(card);
-    expect(onOpen).toHaveBeenCalledWith('idei-1');
+    expect(onOpen).toHaveBeenCalledWith('idei-1', undefined);
   });
 });
 

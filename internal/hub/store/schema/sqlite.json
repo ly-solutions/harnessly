@@ -2059,6 +2059,83 @@
         }
       ]
     },
+    "design_private_snapshot_pages": {
+      "columns": [
+        {
+          "name": "machine_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "position",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "board",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "jpeg",
+          "type": "TEXT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "machine_id",
+        "project_id",
+        "position"
+      ]
+    },
+    "design_private_snapshots": {
+      "columns": [
+        {
+          "name": "machine_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "rev",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "BIGINT",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "machine_id",
+        "project_id"
+      ]
+    },
     "design_projects": {
       "columns": [
         {

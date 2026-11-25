@@ -695,11 +695,24 @@ func TestReannounceOwnProjectsAbsentFromTheSnapshot(t *testing.T) {
 	if err := l.SetAccess(snapshot(map[string]Grant{"known": {Role: "owner", Owner: "s@x", OwnerName: "Пётр"}}, map[string]string{"teamed": "none"})); err != nil {
 		t.Fatal(err)
 	}
-	l.ReannounceOwn()
-	l.ReannounceOwn()
+	now := time.Now()
+	l.reannounceOwn(now)
+	l.reannounceOwn(now.Add(time.Minute))
 	if len(events) != 1 || events[0] != "design.created lost" {
-		t.Fatalf("events: %v", events)
+		t.Fatalf("initial: %v", events)
 	}
+	l.reannounceOwn(now.Add(time.Hour))
+	if len(events) != 2 || events[1] != "design.created lost" {
+		t.Fatalf("missing registration not retried: %v", events)
+	}
+	if err := l.SetAccess(snapshot(map[string]Grant{"known": {Role: "owner"}, "lost": {Role: "owner"}}, map[string]string{"teamed": "none"})); err != nil {
+		t.Fatal(err)
+	}
+	l.reannounceOwn(now.Add(2 * time.Hour))
+	if len(events) != 2 {
+		t.Fatalf("retried confirmed registration: %v", events)
+	}
+
 }
 
 // Heavy files are served at their hash only while the person may open the project.

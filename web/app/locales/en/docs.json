@@ -111,5 +111,10 @@
   "docs.docViewer.notConfiguredHint": "Documents are set up by the hub administrator: see docs/hub/docs.md in the harnessly repository.",
   "docs.docViewer.versionMissing": "Version {sha} was not found in the document's history; showing the current one.",
   "docs.mentionField.people": "People",
-  "docs.mentionField.send": "Send"
+  "docs.mentionField.send": "Send",
+  "docs.nativeView.board": "Board",
+  "docs.nativeView.failed": "Could not read this object",
+  "docs.nativeView.loading": "Loading…",
+  "docs.nativeView.more": "Load more objects",
+  "docs.nativeView.unsupported": "This service cannot show this object here. Open it in the service itself."
 }

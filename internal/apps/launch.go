@@ -562,7 +562,7 @@ func (l *Launcher) agentEnv(tokenFile string) string {
 	if l.CLIHeader != "" {
 		env += " HARNESSLY_CLI_HEADER=" + agents.ShellQuote(l.CLIHeader)
 	}
-	return env + ` HARNESSLY_SESSION="$(tmux display-message -p '#{session_name}' 2>/dev/null)"`
+	return env + ` HARNESSLY_SESSION="${HARNESSLY_SESSION:-$("${HARNESSLY_TMUX_BIN:-tmux}" display-message -p '#{session_name}' 2>/dev/null)}"`
 }
 
 var (

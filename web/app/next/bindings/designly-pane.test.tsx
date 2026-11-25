@@ -72,7 +72,7 @@ describe('the library in the right pane', () => {
     expect(await screen.findByText('Лендинг')).toBeTruthy();
     const card = await screen.findByText('Идеи для лендинга');
     fireEvent.click(card);
-    expect(onOpen).toHaveBeenCalledWith('idei-1');
+    expect(onOpen).toHaveBeenCalledWith('idei-1', undefined);
   });
 
   it('opens a document of an app type in its editor, a design in the viewer', async () => {

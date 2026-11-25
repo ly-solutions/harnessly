@@ -58,7 +58,11 @@ func tmuxSession() string {
 	if os.Getenv("TMUX") == "" {
 		return ""
 	}
-	out, err := exec.Command("tmux", "display-message", "-p", "#{session_name}").Output()
+	bin := os.Getenv("HARNESSLY_TMUX_BIN")
+	if bin == "" {
+		bin = "tmux"
+	}
+	out, err := exec.Command(bin, "display-message", "-p", "#{session_name}").Output()
 	if err != nil {
 		return ""
 	}

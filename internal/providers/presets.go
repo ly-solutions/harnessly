@@ -25,6 +25,8 @@ type Model struct {
 // Preset is a vendor setup.
 type Preset struct {
 	DisableMCP bool
+	// ExcludeMCP are the built-in MCP groups the profile leaves out of a launch (claude.ExcludeGroups).
+	ExcludeMCP []string
 	ID         string
 	Label      string
 	Vendor     wire.ProfileVendor

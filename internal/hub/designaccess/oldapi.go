@@ -141,7 +141,7 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 	if method == http.MethodPost && first == "invites" && third == "accept" && n == 3 {
 		var project, role string
 		var until any
-		holder, err := s.scopedHolder(ctx, m, u, "", section)
+		holder, err := s.scopedHolder(ctx, m, u, "", section, "")
 		if err != nil {
 			return nil, 0, err
 		}
@@ -164,7 +164,7 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 	}
 
 	if method == http.MethodGet && n == 1 {
-		holder, err := s.scopedHolder(ctx, m, u, project, "")
+		holder, err := s.scopedHolder(ctx, m, u, project, "", r.URL.Query().Get("card"))
 		if err != nil {
 			return nil, 0, err
 		}

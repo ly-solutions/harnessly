@@ -105,6 +105,7 @@ type Service struct {
 	notice        Notice
 	bell          Bell
 	shared        bool
+	revs          grantedRevs
 	opens         func(ctx context.Context, userID string, m store.Machine) bool
 	homeOn        func(ctx context.Context, email, machineID string) bool
 	ownerOn       func(ctx context.Context, email, machineID string) bool

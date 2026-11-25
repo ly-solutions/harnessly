@@ -40,7 +40,13 @@ func TestLaunchSliceStartsAConversation(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("no tmux")
 	}
-	dir, home := t.TempDir(), t.TempDir()
+	dir := t.TempDir()
+	// The pane's shell may still write into its home (history, rc files) for a moment after the tmux server is killed,
+	// so the home is removed by the cleanup below, retrying, rather than by t.TempDir's single RemoveAll.
+	home, err := os.MkdirTemp("", "launch-home-")
+	if err != nil {
+		t.Fatal(err)
+	}
 	socket := "hs-test-launch-" + strconv.Itoa(os.Getpid())
 	shell := "/bin/sh"
 	if _, err := os.Stat("/bin/bash"); err == nil {
@@ -51,6 +57,14 @@ func TestLaunchSliceStartsAConversation(t *testing.T) {
 	t.Cleanup(func() {
 		tm.KillServer()
 		_ = os.Remove(filepath.Join(os.TempDir(), "tmux-"+strconv.Itoa(os.Getuid()), socket))
+		for i := 0; i < 20; i++ {
+			if os.RemoveAll(home) == nil {
+				if _, err := os.Stat(home); os.IsNotExist(err) {
+					return
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	})
 	tmuxNames = tm
 	agentBin := filepath.Join(home, "fake-agent")

@@ -121,7 +121,7 @@ func TestLauncherAgentToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, rest, _ := strings.Cut(got.Env, " ")
-	if !strings.HasPrefix(rest, `HARNESSLY_SESSION="$(tmux display-message`) {
+	if !strings.HasPrefix(rest, `HARNESSLY_SESSION="${HARNESSLY_SESSION:-$("${HARNESSLY_TMUX_BIN:-tmux}" display-message`) {
 		t.Fatalf("the launch names the tab's session before the wall: %q", got.Env)
 	}
 	// The guard runs the CLI by its path, past the pane's wrapper: the launch tells it the runtime's header.
