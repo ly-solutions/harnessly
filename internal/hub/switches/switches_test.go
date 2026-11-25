@@ -92,3 +92,34 @@ func TestByPrefixAndCache(t *testing.T) {
 		t.Fatalf("list: %v %v", rows, err)
 	}
 }
+
+func TestDefaultOnUntilARowSaysOff(t *testing.T) {
+	ctx := context.Background()
+	g := New(open(t), func() time.Time { return time.Unix(1000, 0) })
+	if !g.On(ctx, "automation-triggers", "a@example.com", "") {
+		t.Fatal("the schedule of the automations is on with no row")
+	}
+	if !g.On(ctx, "hub-design-home", "a@example.com", "m1") {
+		t.Fatal("Sinopia's home in one answer is on with no row")
+	}
+	for _, f := range []string{"hub-search", "hub-apps-catalog", "hub-notices", "hub-design-owner", "hub-stats", "hub-projects", "hub-eval", "connections-shared", "client-api", "prompt-launch", "tbot-join", "preview-slot-host", "hub-board-events"} {
+		if g.On(ctx, f, "a@example.com", "m1") {
+			t.Fatalf("%s is not in DefaultOn: it stays off with no row", f)
+		}
+	}
+	if err := g.Set(ctx, "automation-triggers", "a@example.com", "", false, "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if g.On(ctx, "automation-triggers", "a@example.com", "") {
+		t.Fatal("the person's off row must beat the default")
+	}
+	if !g.On(ctx, "automation-triggers", "b@example.com", "") {
+		t.Fatal("another person keeps the default")
+	}
+	if err := g.Set(ctx, "automation-triggers", "", "", false, "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if g.On(ctx, "automation-triggers", "b@example.com", "") {
+		t.Fatal("the * off row must turn the default off for everyone")
+	}
+}

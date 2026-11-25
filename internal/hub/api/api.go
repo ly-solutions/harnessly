@@ -13,6 +13,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/searchsync"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -329,7 +330,7 @@ func New(o Options) (*Hub, error) {
 	if h.appTokens != nil && o.Now != nil {
 		h.appTokens.signer.SetClock(o.Now)
 	}
-	h.Orgs = orgs.New(orgs.Deps{Config: cfg, DB: db, Auth: h.Auth, Limiter: o.Limiter, Log: log, Now: o.Now, LimitsChanged: limitsChanged, Rates: rb, Features: h.Features, Events: h.OrgEvents, PeopleChanged: h.Fleet.TouchUser,
+	h.Orgs = orgs.New(orgs.Deps{Config: cfg, DB: db, Auth: h.Auth, Limiter: o.Limiter, Log: log, Now: o.Now, LimitsChanged: limitsChanged, Rates: rb, Features: h.Features, Rollout: h.Switches, Events: h.OrgEvents, PeopleChanged: h.Fleet.TouchUser,
 		MemberGone: func(spaceID, userID string) { px.Kick(spaceID, userID) },
 		MachineGone: func(m store.Machine) {
 			if h.Machines != nil {
@@ -734,6 +735,7 @@ func New(o Options) (*Hub, error) {
 	if u, err := url.Parse(cfg.AppsGuestURL); err == nil && cfg.AppsGuestURL != "" {
 		guestHost = strings.ToLower(u.Host)
 	}
+	loopbackHub := isLoopbackHost(cfg.Host)
 	isGuestHost := func(host string) bool { return guestHost != "" && strings.EqualFold(host, guestHost) }
 	shares := h.Design.Public()
 	legacyDocs := docs.LegacyRedirect(cfg.PublicURL)
@@ -745,8 +747,9 @@ func New(o Options) (*Hub, error) {
 				return
 			}
 			appsView.ServeHTTP(w, r)
-		case guestHost != "" && strings.HasPrefix(r.URL.Path, "/apps/guest/"):
-			// With a host of their own the guest links are not served next to the hub's session.
+		case (guestHost != "" || !loopbackHub && strings.EqualFold(r.Host, cfg.Host)) && strings.HasPrefix(r.URL.Path, "/apps/guest/"):
+			// With a host of their own the guest links are not served next to the hub's session. HRN-1755: and without
+			// one they are not served there either, unless the hub is on this machine (local development).
 			httpx.WriteError(w, r, httpx.ErrNotFound)
 		case h.Design.IsShareAlias(r.Host) && !(cfg.DesignShareDocs && docGuestLink(mux, r)):
 			// A former address of the guest links: /s/<token> goes on to the share host, nothing else is there.
@@ -1262,4 +1265,18 @@ func (h *Hub) wireTriggerModes() {
 		}
 		return nil
 	})
+}
+
+// isLoopbackHost is whether a host[:port] names this machine: localhost or a loopback address.
+func isLoopbackHost(hostport string) bool {
+	host := strings.ToLower(hostport)
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = strings.ToLower(h)
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

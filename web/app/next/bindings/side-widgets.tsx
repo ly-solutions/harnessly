@@ -589,7 +589,10 @@ const SideWidgetsBinding = ({ machine, chat = null, onOpenChat }: ISideWidgetsBi
         return {
           key: `app:${f.app.id}/${f.view.id}`,
           title: f.view.label ?? f.view.title ?? f.app.name,
-          hint: f.app.description,
+          // An agent's widget carries a generic English description: say who made it instead.
+          ...(f.app.id.startsWith('local.widget-')
+            ? { hint: t('next.widgets.byAgent'), byAgent: true }
+            : { hint: f.app.description }),
           icon: f.view.icon ?? f.app.icon ?? 'layout-grid',
           // One in the stack but for other chats is pinned to this one too.
           onAdd: () =>

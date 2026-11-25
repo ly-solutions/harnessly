@@ -207,3 +207,48 @@ func TestChangesWithoutAStoreFollowTheGrants(t *testing.T) {
 		t.Fatalf("an account with no grants: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// without a file store a team level the owner chose lists the project for the team, and the library's
+// revision moves when it is set; a level the project got by default does not list it.
+func TestChosenTeamLevelListsWithoutAStore(t *testing.T) {
+	ctx := context.Background()
+	r := newSpaceRig(t, false)
+	for _, u := range []store.User{r.ownerU, r.mateU} {
+		if err := r.db.S().CreateIdentity(ctx, &store.Identity{UserID: u.ID, Provider: "test", Subject: u.ID, Email: u.Email, EmailVerified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := r.svc.registerCreated(ctx, r.owner, "site", r.ownerU.Email); err != nil {
+		t.Fatal(err)
+	}
+	roleOfSite := func() string {
+		t.Helper()
+		lib, err := r.svc.grantedLibrary(ctx, r.mateU, r.mate, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range lib.Artifacts {
+			if a.ID == "site" {
+				return a.Role
+			}
+		}
+		return ""
+	}
+	if role := roleOfSite(); role != "" {
+		t.Fatalf("a default team level listed the project: %q", role)
+	}
+	before, err := r.svc.grantedRev(ctx, r.mateU, r.mate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.svc.now = func() time.Time { return time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC) }
+	if err := r.svc.write(ctx, r.owner, func(tx *txn) error { return tx.setTeam("site", r.ownerU.Email, roleView) }); err != nil {
+		t.Fatal(err)
+	}
+	if role := roleOfSite(); role != roleView {
+		t.Fatalf("the chosen team level: role %q", role)
+	}
+	if after, err := r.svc.grantedRev(ctx, r.mateU, r.mate); err != nil || after <= before {
+		t.Fatalf("the revision did not move: %d -> %d (%v)", before, after, err)
+	}
+}

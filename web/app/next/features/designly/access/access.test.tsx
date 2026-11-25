@@ -524,7 +524,7 @@ describe('an invite link', () => {
     vi.stubGlobal('fetch', fetchMock);
     const onOpen = vi.fn();
     render(<InviteAccept token="tok_12345678" onOpen={onOpen} />);
-    await waitFor(() => expect(onOpen).toHaveBeenCalledWith('p1'));
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith('p1', undefined));
     expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[0]).toContain(
       '/api/platform/design/access/invites/tok_12345678/accept',
     );

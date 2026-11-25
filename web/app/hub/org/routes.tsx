@@ -20,6 +20,7 @@ const SECTIONS: readonly Section[] = [
   'tools',
   'efficiency',
   'settings',
+  'capabilities',
   'extensions',
   'map',
   'profile',

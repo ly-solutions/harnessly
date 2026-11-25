@@ -128,7 +128,7 @@ const Rows = ({ d, base, hl }: { d: SpendDetail; base: string; hl: string | null
 
 const Body = ({ by, span, hl }: { by: SpendCut; span: SpendSpan; hl: string | null }) => {
   const { base } = useOrg();
-  const { data, error, reload } = useLoad((api) => api.spendDetail(by, span), [by, span]);
+  const { data, error, reload } = useLoad((api) => api.spendDetail(by, span), [by, span], 'spend');
   const [kept, setKept] = useState<SpendDetail | null>(data);
   if (data && data !== kept) setKept(data);
   const d = data ?? kept;

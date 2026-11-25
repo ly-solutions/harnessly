@@ -4,8 +4,10 @@
 import { useEffect, useState } from 'react';
 
 import type { AppsConsent } from '../../../hub-api/orgs';
-import { orgErrorText } from '../../org/api/errors';
+import { hubCache } from '../../lib/cache';
+import { orgErrorText, refusedAccess } from '../../org/api/errors';
 import { useOrg } from '../../org/context';
+import { kept } from '../../org/hooks';
 import { Titles } from '../shell';
 import { LinksSection } from './links-section';
 
@@ -68,21 +70,34 @@ const MemberMachines = () => {
 const Screen = () => {
   const { api, shell } = useOrg();
   const org = shell.org.slug;
-  // null while it loads: a switch drawn before the answer would show a rule the hub may not have.
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const keptKey = `apps-consent/${org}`;
+  // null while it loads and no copy of the last visit is kept: a switch drawn from nothing would show a rule the hub
+  // may not have.
+  const [loaded, setLoaded] = useState<Loaded | null>(() => {
+    const value = kept<AppsConsent>(keptKey);
+    return value === 'ask' || value === 'auto' ? { value } : null;
+  });
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
     api.appsConsent(org).then(
-      (value) => live && setLoaded({ value }),
-      (e: unknown) => live && setLoaded({ error: orgErrorText(e) }),
+      (value) => {
+        if (!live) return;
+        hubCache.set(keptKey, value);
+        setLoaded({ value });
+      },
+      (e: unknown) => {
+        if (!live) return;
+        if (refusedAccess(e)) hubCache.remove(keptKey);
+        setLoaded((l) => (l && 'value' in l && !refusedAccess(e) ? l : { error: orgErrorText(e) }));
+      },
     );
     return () => {
       live = false;
     };
-  }, [api, org]);
+  }, [api, org, keptKey]);
 
   const value = loaded && 'value' in loaded ? loaded.value : null;
   const toggle = () => {
@@ -91,6 +106,7 @@ const Screen = () => {
     setFailed(null);
     api.setAppsConsent(org, value === 'auto' ? 'ask' : 'auto').then(
       (next) => {
+        hubCache.set(keptKey, next);
         setLoaded({ value: next });
         setBusy(false);
       },

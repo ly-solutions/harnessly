@@ -7,7 +7,7 @@
 // height, so nothing jumps. The stack is a layer of its own beside the feed (no layout of the feed depends on it), and
 // its data come from their own stores, so typing and the feed's scroll never draw it.
 import { Menu } from '@base-ui/react/menu';
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { t } from '@/next/i18n';
 import Icon from '@/next/ui/icon';
 import MenuPanel, { MenuRoot, useMenuActions } from '@/next/ui/menu-panel';
@@ -31,6 +31,8 @@ export interface IGalleryEntry {
   icon: string;
   /** One line of what it shows; the gallery's rows are the name over it. */
   hint?: string;
+  /** A widget an agent made: the gallery lists these under a label of their own, after the built-in ones. */
+  byAgent?: boolean;
   onAdd: () => void;
 }
 
@@ -196,14 +198,19 @@ const Gallery = ({ entries }: { entries: readonly IGalleryEntry[] }) => {
         align="end"
       >
         {entries.length === 0 && <div className="hx-wg-gallery__empty">{t('next.widgets.galleryEmpty')}</div>}
-        {entries.map((e) => (
-          <Menu.Item key={e.key} className="hx-cmenu__item hx-wg-gallery__item" onClick={e.onAdd}>
-            <Icon name={e.icon} size="sm" />
-            <span className="hx-wg-gallery__txt">
-              <span className="hx-wg-gallery__name">{e.title}</span>
-              {e.hint && <span className="hx-wg-gallery__hint">{e.hint}</span>}
-            </span>
-          </Menu.Item>
+        {entries.map((e, i) => (
+          <Fragment key={e.key}>
+            {e.byAgent && !entries[i - 1]?.byAgent && (
+              <div className="hx-wg-gallery__label">{t('next.widgets.byAgents')}</div>
+            )}
+            <Menu.Item className="hx-cmenu__item hx-wg-gallery__item" onClick={e.onAdd}>
+              <Icon name={e.icon} size="sm" />
+              <span className="hx-wg-gallery__txt">
+                <span className="hx-wg-gallery__name">{e.title}</span>
+                {e.hint && <span className="hx-wg-gallery__hint">{e.hint}</span>}
+              </span>
+            </Menu.Item>
+          </Fragment>
         ))}
       </MenuPanel>
     </MenuRoot>

@@ -20,6 +20,7 @@ func TestDesignGuestLinksLiveInTheOneRegistry(t *testing.T) {
 	created(a, "shop", "owner@example.com")
 	s.Eventually("the project recorded", func() bool { r, ok := snapshotFor(a, "owner@example.com", "shop"); return ok && r == "owner" })
 	ctx := context.Background()
+	putStore(t, s, space, "shop", shopFiles) // HRN-1755: a guest reads the store only
 	base := "/m/" + a.MachineID + "/api/platform/design/access"
 	r := owner.Do("POST", base+"/shop/shares", map[string]any{"rights": "view"})
 	if r.Code != 201 {

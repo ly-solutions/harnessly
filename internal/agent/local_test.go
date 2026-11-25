@@ -64,6 +64,10 @@ func TestAutomationReportTokenIsSingleUse(t *testing.T) {
 	if rec := post(a, "/automations/report", "", `{"runId":"r2","resultToken":"tok2","summary":"s"}`); rec.Code != 503 {
 		t.Fatalf("the right token without a link must ask to retry: %d", rec.Code)
 	}
+	// A run started before this process restarted is unknown here: the hub checks its token, so it is relayed.
+	if rec := post(a, "/automations/report", "", `{"runId":"r3","resultToken":"tok3","summary":"s"}`); rec.Code != 503 {
+		t.Fatalf("a run unknown after a restart must be relayed (retry without a link): %d", rec.Code)
+	}
 	if rec := post(a, "/automations/report", "", `{"runId":1}`); rec.Code != 400 {
 		t.Fatalf("bad body: %d", rec.Code)
 	}

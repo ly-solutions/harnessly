@@ -69,8 +69,11 @@ it.each([false, true])('keeps screenshot selection open with pane open=%s', (pan
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
   }
-  if (!pane) {
-    fireEvent.pointerDown(document.body);
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-  }
+  // a click elsewhere leaves the widgets on; only the button folds them, and the ask outlives the page.
+  fireEvent.pointerDown(document.body);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  window.localStorage.removeItem('hx.widgets.asked');
 });

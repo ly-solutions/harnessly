@@ -3,6 +3,7 @@
 // leaves every page on the machine.
 import { useEffect, useState } from 'react';
 import { appConfig } from '@/platform/config';
+import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
 export interface IHubSwitches {
   stats: boolean;
@@ -20,7 +21,9 @@ export const loadHubSwitches = (hubUrl: string | null): Promise<IHubSwitches> =>
     .then(async (res) => {
       if (!res.ok) return NO_HUB_SWITCHES;
       const body = (await res.json()) as Partial<IHubSwitches>;
-      return { stats: body.stats === true, projects: body.projects === true };
+      const value = readSwitches(body);
+      keepRead(KEPT, value);
+      return value;
     })
     .catch(() => NO_HUB_SWITCHES);
   return pending;
@@ -31,10 +34,20 @@ export const resetHubSwitches = (): void => {
   pending = null;
 };
 
-/** The switches, or null while the hub has not answered yet. */
+const KEPT = 'hub-switches';
+const readSwitches = (v: unknown): IHubSwitches => {
+  const body = (v ?? {}) as Partial<IHubSwitches>;
+  return { stats: body.stats === true, projects: body.projects === true };
+};
+
+/** The switches, or null while the hub has not answered yet and the last page kept none. */
 export const useHubSwitches = (): IHubSwitches | null => {
   const hubUrl = appConfig().hubUrl;
-  const [value, setValue] = useState<IHubSwitches | null>(hubUrl ? null : NO_HUB_SWITCHES);
+  const [value, setValue] = useState<IHubSwitches | null>(() => {
+    if (!hubUrl) return NO_HUB_SWITCHES;
+    const kept = keptRead<unknown>(KEPT);
+    return kept === undefined ? null : readSwitches(kept);
+  });
   useEffect(() => {
     let cancelled = false;
     void loadHubSwitches(hubUrl).then((v) => {

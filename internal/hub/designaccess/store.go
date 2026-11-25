@@ -281,13 +281,31 @@ func (t *txn) fold(p project, email string) (folded, error) {
 	if err != nil {
 		return folded{}, err
 	}
-	if p.TeamLevel != levelNone && !t.homeOpens(p.ID, person.user) {
-		// The team level is the space's door to a project; a machine closed to the person (a private one, or
-		// one whose owner's work their role may not read) keeps it shut, and with it the stewardship it carries. The
-		// owner, the person's own grant and a grant to their team still count.
+	if p.TeamLevel != levelNone && !t.homeOpens(p.ID, person.user) && !t.teamChosen(p.ID) {
+		// The team level a project got by default is the space's door to it; a machine closed to the person
+		// (a private one, or one whose owner's work their role may not read) keeps it shut, and with it the stewardship
+		// it carries. The owner, the person's own grant and a grant to their team still count. A level the owner chose
+		// in the access dialog is their sharing, not a default: the hub serves the project, not the machine.
 		p.TeamLevel = levelNone
 	}
 	return foldAccess(p, m, grants, person, t.w.orgOf(p.HomeTeam), t.now), nil
+}
+
+// teamChosen says whether the project's team level was set by someone in the access dialog (a "team" line of its log)
+// rather than given when it was recorded.
+func (t *txn) teamChosen(projectID string) bool {
+	k := "team\x00" + t.key(projectID) + "\x00" + projectID
+	if ok, seen := t.opened[k]; seen {
+		return ok
+	}
+	var n int
+	err := t.q.QueryRow(t.ctx, `SELECT COUNT(*) FROM design_access_log WHERE machine_id = ? AND project_id = ? AND action = 'team'`, t.key(projectID), projectID).Scan(&n)
+	chosen := err == nil && n > 0
+	if t.opened == nil {
+		t.opened = map[string]bool{}
+	}
+	t.opened[k] = chosen
+	return chosen
 }
 
 // homeOpens says whether the person may open the machine a project's rows are under (key).

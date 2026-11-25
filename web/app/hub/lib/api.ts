@@ -1,6 +1,7 @@
 // The typed client of the hub's HTTP API (docs/hub/api.md). One function per endpoint; every call answers the JSON
 // the contract names or throws an ApiError carrying the contract's error code. The screens decide by `code`, never by
 // the message.
+import { hubCache } from './cache';
 import { type BusEvent, type BusLevel, type BusSubscription, type BusTrigger, EVENTS_API } from './events';
 import type { NetworkPolicy } from './network';
 import type { RolloutSwitch, SwitchKey, SwitchPut } from './switches';
@@ -242,6 +243,8 @@ export const createApi = (fetcher: Fetcher = (input, init) => fetch(input, init)
         post<SignedIn>('/api/auth/passkey/login/finish', { challengeId, credential }),
       logout: async () => {
         await post<void>('/api/auth/logout');
+        // What the screens last showed this person goes with the session.
+        hubCache.clear();
         try {
           for (const key of Object.keys(localStorage))
             if (key.startsWith('hx-offline-person:')) localStorage.removeItem(key);

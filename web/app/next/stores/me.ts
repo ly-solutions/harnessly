@@ -7,6 +7,7 @@ import { createStore, useStore } from '@/next/core/store';
 import { clusterApi } from '@/next/core/net/machine';
 import { getPage, sendJson } from '@/next/core/net/http';
 import type { MachineId } from '@/next/protocol/v2';
+import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
 /** The recognition models of dictation: the machine's own, OpenAI's, Yandex's. */
 export const VOICE_ENGINE_IDS = ['local', 'chatgpt', 'openai', 'yandex'] as const;
@@ -251,8 +252,22 @@ export async function loadMe(): Promise<MeState> {
     // A source that throws (a stand-in, a reader's bug) is a failure like any other, never a page stuck on it.
     st = { k: 'failed', code: 'http' };
   }
-  meStore.set(st);
+  // a live me is kept for the next page; a failed read leaves the one the page shows (kept or live) in place.
+  if (st.k === 'ready') keepRead('me', st.me);
+  if (st.k !== 'failed' || meStore.get().k !== 'ready') meStore.set(st);
   return st;
+}
+
+/** The me the last page read for the person, through readMe again; null when none is kept or it is someone else's. */
+export function keptMe(person: string): Me | null {
+  const raw = keptRead<unknown>('me');
+  if (raw === undefined) return null;
+  try {
+    const me = readMe(raw);
+    return personKey(me) === person ? me : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Pessimistic: the settings change on the source's answer; a conflict reloads and reports it. */
@@ -260,7 +275,9 @@ export async function patchSettings(patch: Partial<PersonSettings>): Promise<Pat
   const st = meStore.get();
   if (st.k !== 'ready') return { r: 'failed' };
   const res = await source.patch(st.me.rev, patch);
-  if (res.r === 'accepted') meStore.set({ k: 'ready', me: res.me });
-  else if (res.r === 'refused' && res.code === 'conflict') await loadMe();
+  if (res.r === 'accepted') {
+    meStore.set({ k: 'ready', me: res.me });
+    keepRead('me', res.me);
+  } else if (res.r === 'refused' && res.code === 'conflict') await loadMe();
   return res;
 }

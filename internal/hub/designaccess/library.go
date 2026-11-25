@@ -255,6 +255,14 @@ func (s *Service) storeLibraryOf(ctx context.Context, u store.User, m store.Mach
 			out.Artifacts = append(out.Artifacts, a)
 		}
 	}
+	// Projects other spaces shared with the person by name (foreign.go), for a page that reads card keys.
+	if keys {
+		far, err := s.foreignLibrary(ctx, u, m)
+		if err != nil {
+			return storeLibrary{}, err
+		}
+		out.Artifacts = append(out.Artifacts, far...)
+	}
 	sort.SliceStable(out.Artifacts, func(i, j int) bool { return out.Artifacts[i].UpdatedAt > out.Artifacts[j].UpdatedAt })
 	// The person's shelves: their own layout file, with the projects they cannot see left out.
 	if raw, err := lister.ReadFile(ctx, spaceID, ".folders/"+layoutKey(email)+".json", 1<<20); err == nil && raw != nil {
@@ -306,8 +314,11 @@ func (s *Service) grantedLibrary(ctx context.Context, u store.User, m store.Mach
 			OR EXISTS (SELECT 1 FROM design_invites i JOIN design_invite_acceptances a ON a.invite_id=i.id WHERE i.machine_id=p.machine_id AND i.project_id=p.project_id AND a.person_email=?)
 			OR EXISTS (SELECT 1 FROM design_team_grants g WHERE g.machine_id=p.machine_id AND g.project_id=p.project_id AND (
 				g.team_id IN (SELECT team_id FROM team_members WHERE user_id=?) OR
-				g.team_id IN (SELECT 'space:' || space_id FROM memberships WHERE user_id=?))))
-		ORDER BY p.updated_at DESC, p.project_id, p.machine_id`, m.SpaceID, email, email, email, u.ID, u.ID)
+				g.team_id IN (SELECT 'space:' || space_id FROM memberships WHERE user_id=?)))
+			OR (p.team_level <> 'none' AND (COALESCE(p.home_team, '') = '' OR
+				p.home_team IN (SELECT team_id FROM team_members WHERE user_id=?) OR
+				p.home_team IN (SELECT 'space:' || space_id FROM memberships WHERE user_id=?))))
+		ORDER BY p.updated_at DESC, p.project_id, p.machine_id`, m.SpaceID, email, email, email, u.ID, u.ID, u.ID, u.ID)
 	if err != nil {
 		return out, err
 	}
@@ -353,8 +364,11 @@ func (s *Service) grantedLibrary(ctx context.Context, u store.User, m store.Mach
 		if p == nil {
 			continue
 		}
-		// A machine or space default is not an explicit grant to a shared card.
-		p.TeamLevel = levelNone
+		// A level the project got by default is not a grant to a shared card; one its owner chose in the access dialog
+		// is, and fold weighs it like any other.
+		if !holder.teamChosen(c.id) {
+			p.TeamLevel = levelNone
+		}
 		f, err := holder.fold(*p, email)
 		if err != nil {
 			return out, err

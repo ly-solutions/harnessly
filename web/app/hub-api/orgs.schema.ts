@@ -59,6 +59,27 @@ export const orgView = obj({ org, tenants: arr(tenant), teams: arr(team), me, fe
 export const featureView = obj({ name: str, enabled: bool, forced: bool });
 export const featuresResponse = obj({ features: arr(featureView) });
 
+export const capabilityItem = obj({
+  id: str,
+  group: str,
+  name: str,
+  description: str,
+  source: lit('env', 'org', 'rollout'),
+  enabled: bool,
+  detail: opt(str),
+  defaultOn: bool,
+  needs: opt(str),
+  why: opt(str),
+  forced: opt(bool),
+  setBy: opt(str),
+  canToggle: bool,
+});
+export const capabilitiesResponse = obj({
+  groups: arr(str),
+  capabilities: arr(capabilityItem),
+  canChange: bool,
+});
+
 const spaceRef = obj({ id: str, slug: str, name: str, role: lit('owner', 'member') });
 export const orgList = obj({
   orgs: arr(

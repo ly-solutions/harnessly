@@ -286,6 +286,37 @@ func TestLibraryLeavesOutProjectsOfAClosedMachine(t *testing.T) {
 	}
 }
 
+// a team level its owner chose in the access dialog shares the project with the team even when its machine is
+// private: the hub serves the project, not the machine. A level it got by default still stays behind the machine.
+func TestChosenTeamLevelPassesAClosedMachine(t *testing.T) {
+	ctx := context.Background()
+	r := newSpaceRig(t, true)
+	if done, err := r.svc.registerCreated(ctx, r.owner, "team-site", r.ownerU.Email); err != nil || !done {
+		t.Fatalf("registerCreated: %v %v", done, err)
+	}
+	r.svc.UseView(&fakeLibrary{items: []LibraryItem{{ID: "team-site", Title: "Сайт", UpdatedAt: 1000, Kind: "site", Rev: 1}}})
+	r.svc.opens = func(_ context.Context, userID string, m store.Machine) bool {
+		return m.ID != r.owner.ID || userID == r.ownerU.ID
+	}
+	listed := func() string {
+		for _, a := range askLibrary(t, r, r.mateU, r.mate).Artifacts {
+			if a.ID == "team-site" {
+				return a.Role
+			}
+		}
+		return ""
+	}
+	if role := listed(); role != "" {
+		t.Fatalf("a default team level of a private machine let the mate in: %q", role)
+	}
+	if err := r.svc.write(ctx, r.owner, func(tx *txn) error { return tx.setTeam("team-site", r.ownerU.Email, roleComment) }); err != nil {
+		t.Fatal(err)
+	}
+	if role := listed(); role != roleComment {
+		t.Fatalf("the team level the owner chose: role %q, want %q", role, roleComment)
+	}
+}
+
 // Sinopia's home in one answer goes on to the machine only for whom hub-design-home is on; for the rest the
 // hub answers 404 home_off and the page asks part by part, as before.
 func TestHomeInOneAnswerIsBehindItsSwitch(t *testing.T) {

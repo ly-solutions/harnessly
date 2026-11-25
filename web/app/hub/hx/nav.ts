@@ -34,6 +34,8 @@ export const NAV_HINT: Partial<Record<Section, string>> = {
     'В каком состоянии харнес агентов: цена MR, что чинить первым, скиллы, изменения и что они сдвинули, гипотезы, сессии, прогоны.',
   accounts: 'Подписки Claude и Codex, ключи API: кто на чём работает и сколько осталось.',
   settings: 'Вход, политика машин и чатов, ссылки, оплата или лицензия, журнал действий.',
+  capabilities:
+    'Что в хабе включено и что можно включить: регулярные задачи, документы, учёт расходов и другое.',
 };
 
 /**
@@ -58,6 +60,7 @@ export const navOf = (
   if (role !== 'member') items.push(item('accounts', 'Модели и подписки', 'cpu', 'accounts'));
   if (extViews && role !== 'member') items.push(item('extensions', 'Расширения', 'blocks', 'extensions'));
   if (role === 'admin') items.push(item('settings', 'Настройки организации', 'settings', 'settings'));
+  if (role === 'admin') items.push(item('capabilities', 'Возможности', 'sliders-horizontal', 'capabilities'));
   return [{ label: 'Организация', items }];
 };
 
@@ -66,7 +69,7 @@ export const hxSectionsOf = (role: Role, features: readonly string[], extViews =
   const env: Section[] = features.includes('env') ? ['env'] : [];
   const tools: Section[] = features.includes('ui.hx.live') ? ['efficiency', 'tools'] : [];
   // The organization's own settings are its admin's only.
-  const settings: Section[] = role === 'admin' ? ['settings'] : [];
+  const settings: Section[] = role === 'admin' ? ['settings', 'capabilities'] : [];
   return role === 'member'
     ? ['overview', 'analytics', 'machines', 'map', 'profile', ...tools, ...env]
     : [

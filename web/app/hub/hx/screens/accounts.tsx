@@ -473,7 +473,7 @@ const FoundBox = ({
 
 const Screen = () => {
   const { shell, base } = useOrg();
-  const { data, error, reload } = useLoad((api) => api.accounts(), []);
+  const { data, error, reload } = useLoad((api) => api.accounts(), [], 'accounts');
   const url = useUrl(CARDS);
   const [saved, setSaved] = useState<Record<string, Account>>({});
   const [notice, setNotice] = useState<string | null>(null);

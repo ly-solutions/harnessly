@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An agent asked to write to a teammate's agent looks in `harnessly peers`: the harnessly MCP server's
+  instructions now say that a chat of another person or machine is listed by `harnessly peers` and written to with
+  `harnessly peers send`, and that Claude Code's ListAgents sees only this machine. Before, the agent checked ListAgents,
+  found nobody and told the person the teammate was unreachable. Scenario `peers-teammate-chat`: haiku 4/8 → 8/8.
 - `harnessly eval` with Codex: the login copy gets an empty `refresh_token` and a fresh `last_refresh` (Codex showed its
   sign-in screen without the field, and the real image generator answered 401), Codex runs without its own sandbox in a
   stand (Landlock is the boundary; bubblewrap could not start and every command failed), and the tool calls of Codex's

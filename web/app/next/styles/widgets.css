@@ -123,25 +123,56 @@
 }
 
 .hx-wg-gallery {
-  min-width: 240px;
+  width: 296px;
+  padding: 6px;
 }
+/* A row: the icon centred on the name and its one line of hint, the same height for every widget. */
 .hx-wg-gallery__item {
-  align-items: flex-start;
-  padding-block: 6px;
+  box-sizing: border-box;
+  gap: 12px;
+  min-height: 48px;
+  padding: 7px 10px;
+}
+.hx-wg-gallery__item + .hx-wg-gallery__item {
+  margin-top: 2px;
+}
+.hx-wg-gallery__item > .hx-icon:first-child {
+  flex: none;
+  color: var(--cm-fg3);
+  transition: color 120ms ease;
+}
+.hx-wg-gallery__item:hover > .hx-icon:first-child,
+.hx-wg-gallery__item[data-highlighted] > .hx-icon:first-child {
+  color: var(--cm-fg);
 }
 .hx-wg-gallery__txt {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 .hx-wg-gallery__name {
-  color: var(--hx-fg-1);
+  color: var(--cm-fg);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
 }
 .hx-wg-gallery__hint {
-  color: var(--hx-fg-3);
-  font-size: var(--hx-text-xs);
+  overflow: hidden;
+  color: var(--cm-fg3);
+  font-size: 12px;
   line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The widgets agents made, under the built-in ones. */
+.hx-wg-gallery__label {
+  padding: 12px 10px 4px;
+  color: var(--cm-fg3);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 .hx-wg-gallery__empty {
   padding: 8px 10px;

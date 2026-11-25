@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { platformPath } from '@/next/core/net/machine';
 import { runtimeJson } from '@/next/core/net/runtime-json';
 import type { MachineId } from '@/next/protocol/v2';
+import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
 export type TOutcome = 'ok' | 'quiet' | 'failed';
 export type TWhen = 'changed' | 'always' | 'failure' | 'never';
@@ -147,14 +148,21 @@ type TLoad<T> = { k: 'loading' } | { k: 'ready'; v: T } | { k: 'failed'; error: 
 
 /** The routines, read again every 30 s while the page is open and at once after a change (`reload`). */
 export const useRoutines = (m: MachineId) => {
-  const [state, setState] = useState<TLoad<IRoutinesList>>({ k: 'loading' });
+  // the list the last page read draws at once; the live one replaces it.
+  const [state, setState] = useState<TLoad<IRoutinesList>>(() => {
+    const v = keptRead<IRoutinesList>(`routines:${m}`);
+    return v && Array.isArray(v.routines) ? { k: 'ready', v } : { k: 'loading' };
+  });
   const [tick, setTick] = useState(0);
   const reload = useCallback(() => setTick((n) => n + 1), []);
   useEffect(() => {
     let live = true;
     const read = () =>
       listRoutines(m).then(
-        (v) => live && setState({ k: 'ready', v }),
+        (v) => {
+          keepRead(`routines:${m}`, v);
+          if (live) setState({ k: 'ready', v });
+        },
         (e: unknown) =>
           live &&
           setState((s) => (s.k === 'ready' ? s : { k: 'failed', error: String((e as Error)?.message ?? e) })),

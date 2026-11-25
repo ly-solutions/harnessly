@@ -23,6 +23,7 @@ import {
   loadMe,
   meStore,
   personKey,
+  keptMe,
   setMeSource,
   type MeSource,
   type MeState,
@@ -33,6 +34,7 @@ import { machinesStore, mergeMachines, putMachines, type FleetMachine } from '@/
 import { seedLimits } from '@/next/bindings/use-limits';
 import { queuedChatsStore, watchQueuedChats } from '@/next/commands/queued-chats';
 import { parsePage, type Machine, type MachineId } from '@/next/protocol/v2';
+import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
 /** IndexedDB gets this long to give back the cached chats before the network starts. */
 export const CACHE_WAIT_MS = 300;
@@ -276,9 +278,26 @@ export function bootNext(o: BootOptions = {}): Promise<BootState> {
     // The person's choices kept in the browser follow the settings from here (stores/synced-prefs.ts).
     startPrefsSync();
     if (gone()) return bootStore.get();
+    // what the last page read of the person draws now, the live answers replace it when they come.
+    const shownMe = hint ? keptMe(hint) : null;
+    if (shownMe && meStore.get().k === 'loading') meStore.set({ k: 'ready', me: shownMe });
+    const shownMachines = hint ? keptMachines() : null;
     // The person's machines are asked alongside me: one after the other cost the first screen a round trip.
     const machinesAsked = loadMachines(gone);
     const meAsked = loadMe();
+    if (shownMachines) {
+      startMachines(shownMachines, shownMe?.settings.defaultMachine ?? null, o, gone);
+      void settleMe(meAsked, mine, openKV);
+      const machines = await machinesAsked;
+      if (gone()) return bootStore.get();
+      if (machines === 'signed-out') return signOut({ k: 'signed-out' });
+      // Offline or a failing list: the kept machines stay, their sockets say what is reachable.
+      if (!Array.isArray(machines)) return bootStore.get();
+      keepRead(MACHINES_KEY, machines);
+      applyFleet(machines);
+      for (const m of machines) if (m.usage !== undefined) seedLimits(m.id, m.usage);
+      return bootStore.get();
+    }
     const me = await Promise.race([
       meAsked,
       new Promise<MeState>((r) => pageClock().setTimeout(() => r({ k: 'loading' }), ME_FIRST_SCREEN_MS)),
@@ -302,30 +321,67 @@ export function bootNext(o: BootOptions = {}): Promise<BootState> {
     if (gone()) return bootStore.get();
     if (machines === 'signed-out') return set({ k: 'signed-out' });
     if (!Array.isArray(machines)) return set({ k: 'failed', code: machines.code });
-    batch(() => {
-      putMachines(machines);
-      // the limits the hub remembers draw before any machine answers.
-      for (const m of machines) if (m.usage !== undefined) seedLimits(m.id, m.usage);
-    });
-    if (o.hub) hub.configure(o.hub);
-    // Every machine's socket opens at once; /hello is asked of each on its own, behind them. Waiting for every
-    // machine's answer held the page up to 10 s on one machine that was off.
-    const preferred = me.k === 'ready' ? me.me.settings.defaultMachine : null;
-    const all = machines.map((m) => m.id);
-    hub.start(all, pickActive(machines, preferred));
-    for (const m of machines) {
-      // A machine the list already calls unreachable is not asked: its socket says when it is back.
-      if (m.reach === 'unreachable') continue;
-      void checkRuntime(m.id).then((v2) => {
-        if (v2) return pokeAgentCLIs(m.id);
-        if (gone()) return;
-        dropOutdated(m.id, preferred);
-      });
-    }
-    if (fromHub(machines)) followFleet(o.fleetSource);
-    return set({ k: 'ready', machines: all });
+    keepRead(MACHINES_KEY, machines);
+    return startMachines(machines, me.k === 'ready' ? me.me.settings.defaultMachine : null, o, gone);
   })();
   return booted;
+}
+
+/** The kept read of the person's machine list (stores/kept-reads.ts). */
+const MACHINES_KEY = 'machines';
+
+/** The machines the last page read, when there are any: a list kept is the person's own (their IndexedDB). */
+function keptMachines(): FleetMachine[] | null {
+  const list = keptRead<unknown>(MACHINES_KEY);
+  if (!Array.isArray(list) || list.length === 0) return null;
+  return list.every(
+    (m) => typeof m === 'object' && m !== null && typeof (m as { id?: unknown }).id === 'string',
+  )
+    ? (list as FleetMachine[])
+    : null;
+}
+
+/** me as it comes after the first screen drew from what was kept: taken as the first answer would have been. */
+async function settleMe(
+  asked: Promise<MeState>,
+  mine: number,
+  openKV: (person: string) => KV,
+): Promise<void> {
+  const me = await asked;
+  if (mine !== generation) return;
+  if (me.k === 'ready') await adopt(me, openKV);
+  else if (me.k === 'signed-out') signOut(me);
+  else retryMe(mine, openKV);
+}
+
+/** Opens the page on a list of machines: their sockets, each one's /hello behind them, and the fleet's stream. */
+function startMachines(
+  machines: FleetMachine[],
+  preferred: MachineId | null,
+  o: BootOptions,
+  gone: () => boolean,
+): BootState {
+  batch(() => {
+    putMachines(machines);
+    // the limits the hub remembers draw before any machine answers.
+    for (const m of machines) if (m.usage !== undefined) seedLimits(m.id, m.usage);
+  });
+  if (o.hub) hub.configure(o.hub);
+  // Every machine's socket opens at once; /hello is asked of each on its own, behind them. Waiting for every
+  // machine's answer held the page up to 10 s on one machine that was off.
+  const all = machines.map((m) => m.id);
+  hub.start(all, pickActive(machines, preferred));
+  for (const m of machines) {
+    // A machine the list already calls unreachable is not asked: its socket says when it is back.
+    if (m.reach === 'unreachable') continue;
+    void checkRuntime(m.id).then((v2) => {
+      if (v2) return pokeAgentCLIs(m.id);
+      if (gone()) return;
+      dropOutdated(m.id, preferred);
+    });
+  }
+  if (fromHub(machines)) followFleet(o.fleetSource);
+  return set({ k: 'ready', machines: all });
 }
 
 /**
@@ -376,7 +432,10 @@ export async function refreshFleet(): Promise<void> {
       fleetAgain = false;
       const res = await getPage(clusterApi('/machines'), (v) => v as FleetMachine[], 10000);
       if (mine !== generation) return;
-      if ('ok' in res && Array.isArray(res.value)) applyFleet(res.value);
+      if ('ok' in res && Array.isArray(res.value)) {
+        keepRead(MACHINES_KEY, res.value);
+        applyFleet(res.value);
+      }
     } while (fleetAgain && mine === generation);
   } finally {
     fleetReading = false;

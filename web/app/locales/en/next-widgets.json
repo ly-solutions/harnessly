@@ -3,6 +3,8 @@
   "next.widgets.add": "Widget",
   "next.widgets.gallery": "Add a widget",
   "next.widgets.galleryEmpty": "Every widget is added already",
+  "next.widgets.byAgent": "Made by an agent",
+  "next.widgets.byAgents": "Made by agents",
   "next.widgets.menu": "Widget actions",
   "next.widgets.fold": "Fold",
   "next.widgets.unfold": "Unfold",

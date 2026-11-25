@@ -247,8 +247,8 @@ Owners receive `job` and `login`; members receive `machine`, `machineRemoved`, `
 
 Parts of the hub that are new ship dark: each is a flag, off until switched on for an organization. A flag is on for an
 organization when, in this order: the instance forces it (`HUB_FEATURES_FORCE`: `name` on, `-name` off); else the
-organization chose (the `org_features` table); else the instance defaults it on (`HUB_FEATURES_DEFAULT`); else it is
-off. A choice made by this process is seen at once, one made by another replica within 5 seconds.
+organization chose (the `org_features` table); else the instance defaults it on (the built-in `org.events` and
+`machine.seats`, which need no service or secret, then `HUB_FEATURES_DEFAULT`); else it is off. A choice made by this process is seen at once, one made by another replica within 5 seconds.
 
 | Flag | Switches on |
 | --- | --- |
@@ -276,6 +276,27 @@ off. A choice made by this process is seen at once, one made by another replica 
   { "name": "org.events", "enabled": true, "forced": true }
 ] }
 ```
+
+`GET /api/orgs/{org}/capabilities` is the list behind the settings screen «Возможности»: every part of the hub that may be
+on or off (the instance's settings, the organizations' flags above, the rollout switches of
+[rollout-switches.md](rollout-switches.md)), each with a Russian name and description, its state, whether it is on by
+default, what else it needs and why it is off by default. Only an administrator of the organization (or of the
+installation) reads it; it changes nothing.
+
+```json
+{ "groups": ["Регулярные задачи и автоматизация"],
+  "canChange": false,
+  "capabilities": [
+    { "id": "HUB_AUTOMATIONS", "group": "Регулярные задачи и автоматизация", "name": "…", "description": "…",
+      "source": "env", "enabled": true, "defaultOn": true, "setBy": "HUB_AUTOMATIONS", "canToggle": false },
+    { "id": "env", "source": "org", "enabled": false, "defaultOn": false, "why": "…", "canToggle": true }
+  ] }
+```
+
+`source` says where it is decided: `env` (the instance's settings, shown and never changed here, `setBy` names the
+variable), `org` (an organization's flag, changed with `PUT /api/orgs/{org}/features/{name}`) or `rollout` (a switch of
+the installation, shown for everyone, changed with `PUT /api/admin/switches`). `canToggle` is true only for an
+administrator of the installation (`canChange`) and for a flag the instance does not force.
 
 `forced: true`: the instance decides (`HUB_FEATURES_FORCE`), the organization's choice changes nothing. The flags that
 are on also come in the organization's view as `features: string[]` (`GET /api/orgs/{org}`), and the instance's own in
@@ -975,7 +996,7 @@ requests already carry the base path and pass the route filter unchanged, `X-For
 | `HUB_RATES_URL` | `https://www.cbr.ru/scripts/XML_daily.asp` | the Central Bank's daily rates the organizations' money is shown in ([analytics.md](analytics.md#money-and-periods)); `off` never fetches: dollars unless an admin put a rate in `currency_rates` |
 | `HUB_AGENT_URL` | `HUB_PUBLIC_URL` | the address machines reach the hub at (`http(s)://host[:port][/path]`), when it differs from the people's one: the install command and script, registration, the signature of a machine's dial, the ssh install and the runtime domain use it; people's links, cookies and sign-in keep `HUB_PUBLIC_URL`; reported as `agentUrl` in `/api/config` |
 | `HUB_FEATURES_FORCE` | | comma-separated flags the instance decides for every organization: `name` forces on, `-name` forces off ([Feature flags](#feature-flags)) |
-| `HUB_FEATURES_DEFAULT` | | comma-separated flags that are on for every organization that has not chosen |
+| `HUB_FEATURES_DEFAULT` | `org.events,machine.seats` built in | comma-separated flags that are on for every organization that has not chosen, on top of the built-in two: `name` adds one, `-name` takes a built-in one away |
 | `HUB_PROXY_JWT_JWKS_URL` | | the identity provider's key set; setting it turns [proxy sign-in](#proxy-sign-in) on |
 | `HUB_PROXY_JWT_AUDIENCE` | | required with the key set: the `aud` the token must carry |
 | `HUB_PROXY_JWT_ISSUER` | | when set, the `iss` the token must carry |

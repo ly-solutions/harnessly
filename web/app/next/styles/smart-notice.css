@@ -1276,8 +1276,8 @@
 /* The chip in a card of the right column's stack (styles/notice-stack.css): 32px, its ring inside it. */
 .hx-ns .hx-sn__chip {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: var(--ns-chip, 32px);
+  height: var(--ns-chip, 32px);
 }
 .hx-ns .hx-sn__ring {
   inset: 0;

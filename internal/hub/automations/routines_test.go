@@ -280,3 +280,21 @@ func TestFeedForTheDay(t *testing.T) {
 		t.Fatalf("trigger run: %+v", tr)
 	}
 }
+
+func TestLateTimeoutDoesNotCountAgainstANewerSuccess(t *testing.T) {
+	s, c, _ := routineSvc(t)
+	r := addRoutine(t, s, "late", Routine{})
+	old, _ := started(t, s, r, "manual:1")
+	c.at = c.at.Add(time.Minute)
+	run, token := started(t, s, r, "manual:2")
+	report(t, s, run, token, Report{Outcome: "ok", Summary: "Готово"})
+	c.at = c.at.Add(3 * time.Hour)
+	s.sweepRoutines(context.Background())
+	if got, _ := s.runByID(context.Background(), old.ID); got.Outcome != OutcomeFailed {
+		t.Fatalf("old run: %+v", got)
+	}
+	r, _ = s.ruleByID(context.Background(), r.ID)
+	if r.FailStreak != 0 {
+		t.Fatalf("a newer success must keep the streak at 0: %d", r.FailStreak)
+	}
+}

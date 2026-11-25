@@ -153,7 +153,13 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 		if err != nil {
 			return nil, 0, err
 		}
-		return map[string]any{"project": project, "role": role, "until": until}, 200, nil
+		out := map[string]any{"project": project, "role": role, "until": until}
+		if holder.SpaceID != m.SpaceID {
+			// Another space's project (foreign.go): the page opens its card.
+			out["cardKey"] = cardKey(holder.ID, project)
+			out["role"] = foreignRole(role)
+		}
+		return out, 200, nil
 	}
 	project := first
 	if project == "" {
@@ -163,11 +169,13 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 		return nil, 0, fail("not_found", "Проект не найден")
 	}
 
+	foreign := false
 	if method == http.MethodGet && n == 1 {
 		holder, err := s.scopedHolder(ctx, m, u, project, "", r.URL.Query().Get("card"))
 		if err != nil {
 			return nil, 0, err
 		}
+		foreign = holder.SpaceID != m.SpaceID
 		m = holder
 	}
 	t, err := s.read(ctx, m)
@@ -185,6 +193,12 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 		v, f, err := t.view(p, email)
 		if err != nil {
 			return nil, 0, err
+		}
+		if foreign && f.Role != "" {
+			// Another space's project (foreign.go): read-only, its sharing is not this person's to manage.
+			// Only what a reader sees: never the project's people or invitations.
+			return map[string]any{"role": foreignRole(f.Role), "owner": v["owner"], "ownerName": v["ownerName"], "team": levelNone,
+				"teamInvites": false, "canManage": false, "editorsCanShare": false, "request": nil}, 200, nil
 		}
 		if f.Role == "" {
 			v["owner"] = nil

@@ -10,11 +10,11 @@ import '@/next/styles/design-access.css';
 export interface IInviteAcceptProps {
   token: string;
   /** Where the project opens; the screen navigates there by default. */
-  onOpen?: (project: string) => void;
+  onOpen?: (project: string, card?: string) => void;
 }
 
 /** One request per link: the effect runs twice in development, and a second take would spend a second place. */
-const TAKEN = new Map<string, Promise<{ project: string }>>();
+const TAKEN = new Map<string, Promise<{ project: string; cardKey?: string }>>();
 const takeOnce = (token: string, attempt: number) => {
   const key = `${token}#${attempt}`;
   const known = TAKEN.get(key);
@@ -29,7 +29,8 @@ const takeOnce = (token: string, attempt: number) => {
 
 const InviteAccept = ({
   token,
-  onOpen = (project) => goTo({ kind: ROUTE.site, id: project }, { replace: true }),
+  onOpen = (project, card) =>
+    goTo({ kind: ROUTE.site, id: project, ...(card ? { card } : {}) }, { replace: true }),
 }: IInviteAcceptProps) => {
   const [failure, setFailure] = useState<{ gone: boolean; text: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -37,7 +38,7 @@ const InviteAccept = ({
   useEffect(() => {
     let live = true;
     takeOnce(token, attempt).then(
-      (taken) => live && onOpen(taken.project),
+      (taken) => live && onOpen(taken.project, taken.cardKey),
       (error: Error) => {
         if (!live) return;
         const gone = error instanceof AccessError && error.code === 'gone';

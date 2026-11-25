@@ -305,10 +305,14 @@ func (a *Agent) automationReport(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	expected, had := a.automationTokens[runID]
-	delete(a.automationTokens, runID) // single-use regardless of outcome
+	if had {
+		a.automationTokens[runID] = "" // single-use regardless of outcome: an empty token is a used one
+	}
 	a.mu.Unlock()
-	if !had || subtle.ConstantTimeCompare([]byte(resultToken), []byte(expected)) != 1 {
-		Log("warn", "automation report rejected: bad or already-used token", F{"runId", runID})
+	// A run this process does not know was started before it restarted (an update): the hub keeps the token's hash
+	// and checks it itself, so the report is relayed rather than lost — refusing it left the run hanging for hours.
+	if had && (expected == "" || subtle.ConstantTimeCompare([]byte(resultToken), []byte(expected)) != 1) {
+		Log("warn", "automation report rejected: bad token", F{"runId", runID})
 		w.WriteHeader(403)
 		return
 	}

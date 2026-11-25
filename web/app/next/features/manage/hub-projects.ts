@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { appConfig } from '@/platform/config';
 import type { ISidebarProject } from '@/next/features/sidebar/types';
 import { useHubSwitches } from './hub-switches';
+import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
 export interface IHubProject {
   id: string;
@@ -17,24 +18,42 @@ export interface IHubProject {
 }
 
 const EVERY_MS = 60_000;
+const KEPT = 'hub-projects';
+
+const readProjects = (v: unknown): IHubProject[] =>
+  Array.isArray(v)
+    ? v.filter(
+        (p): p is IHubProject =>
+          typeof p === 'object' &&
+          p !== null &&
+          typeof (p as IHubProject).id === 'string' &&
+          typeof (p as IHubProject).name === 'string' &&
+          typeof (p as IHubProject).machineId === 'string',
+      )
+    : [];
 const NONE: readonly IHubProject[] = [];
 
 /** The registry's projects, or [] while the switch is off, the hub has not answered or answers no. */
 export const useHubProjects = (): readonly IHubProject[] => {
   const hubUrl = appConfig().hubUrl;
   const on = useHubSwitches()?.projects === true;
-  const [rows, setRows] = useState<readonly IHubProject[]>([]);
+  // the rows the last page read draw until the hub answers.
+  const [rows, setRows] = useState<readonly IHubProject[]>(() => readProjects(keptRead<unknown>(KEPT)));
   useEffect(() => {
     if (!hubUrl || !on) return undefined;
     let cancelled = false;
     const load = () => {
       fetch(`${hubUrl}/api/me/projects`, { credentials: 'include' })
-        .then(async (res) =>
-          res.ok ? (((await res.json()) as { projects?: IHubProject[] }).projects ?? []) : [],
-        )
-        .catch(() => [] as IHubProject[])
+        .then(async (res) => {
+          if (!res.ok) return [] as IHubProject[];
+          const list = readProjects(((await res.json()) as { projects?: unknown }).projects);
+          keepRead(KEPT, list);
+          return list;
+        })
+        // Offline: the rows the page has stay.
+        .catch(() => null)
         .then((list) => {
-          if (!cancelled) setRows(list);
+          if (!cancelled && list !== null) setRows(list);
         });
     };
     load();

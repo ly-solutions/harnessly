@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/ly-solutions/harnessly/internal/hub/auth"
+	"github.com/ly-solutions/harnessly/internal/hub/authz"
+	"github.com/ly-solutions/harnessly/internal/hub/capabilities"
 	"github.com/ly-solutions/harnessly/internal/hub/features"
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
@@ -39,6 +41,36 @@ func (s *Service) view(ctx context.Context, st store.Store, p *auth.Principal, o
 func (s *Service) mountFeatures(mux *http.ServeMux) {
 	mux.Handle("GET /api/orgs/{org}/features", s.OrgGate(s.featuresList))
 	mux.Handle("PUT /api/orgs/{org}/features/{name}", s.OrgGate(s.featureSet))
+	mux.Handle("GET /api/orgs/{org}/capabilities", s.OrgGate(s.capabilities))
+}
+
+// CapabilitiesResponse is GET /api/orgs/{org}/capabilities.
+type CapabilitiesResponse struct {
+	Groups       []string            `json:"groups"`
+	Capabilities []capabilities.Item `json:"capabilities"`
+	// CanChange says the person is an administrator of the installation: only they may toggle a flag or a switch.
+	CanChange bool `json:"canChange"`
+}
+
+// capabilities is the list behind the settings screen «Возможности»: every part of the hub that may be on or off, with
+// its state and where it is set. Only the organization's administrator reads it (an administrator of the installation
+// does as well); it changes nothing.
+func (s *Service) capabilities(w http.ResponseWriter, r *http.Request, tc *tenant.Ctx) error {
+	ctx := r.Context()
+	o := *tc.Org
+	if _, err := authz.New(s.db.S()).Can(ctx, Principal(tc.Person), authz.Check{Action: authz.Manage, Scope: authz.Scope{Kind: store.ScopeOrg, ID: o.ID}}); err != nil {
+		return err
+	}
+	g := capabilities.Gates{Rollout: s.rollout}
+	if s.features != nil {
+		g.Org = s.features
+	}
+	httpx.WriteJSON(w, http.StatusOK, CapabilitiesResponse{
+		Groups:       capabilities.Groups,
+		Capabilities: capabilities.List(ctx, s.cfg, g, o.ID, tc.Person.Admin),
+		CanChange:    tc.Person.Admin,
+	})
+	return nil
 }
 
 func (s *Service) featureView(ctx context.Context, orgID, name string) FeatureView {

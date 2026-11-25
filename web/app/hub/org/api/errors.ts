@@ -11,6 +11,8 @@ const WHO: Record<Needs, string> = {
 export class OrgApiError extends Error {
   readonly code:
     | 'forbidden'
+    // The session is gone (a 401); a kept copy of what the person saw goes with it.
+    | 'unauthenticated'
     | 'self_change'
     | 'last_admin'
     | 'no_recipient'
@@ -68,6 +70,7 @@ export const orgErrorText = (e: unknown): string => {
     if (e.code === 'busy') return 'На машине уже что-то идёт. Подождите, пока закончится.';
     if (e.code === 'not_ready') return 'Живые данные хаба ещё не подключены.';
     if (e.code === 'network') return 'Нет связи с хабом.';
+    if (e.code === 'unauthenticated') return 'Сессия закончилась. Войдите заново.';
   }
   // A message of the hub is Russian; a raw English one (a client-side throw, a library) is never shown as it is.
   if (e instanceof Error && /[а-яё]/i.test(e.message)) return e.message;
@@ -75,3 +78,11 @@ export const orgErrorText = (e: unknown): string => {
     return 'Хаб не ответил как надо. Попробуйте ещё раз.';
   return 'Не получилось. Попробуйте ещё раз.';
 };
+
+/**
+ * The hub refused the person (no session, no role, no such organization or tenant). A kept copy of what they saw
+ * must not outlive that; any other failure (no network, a restart) leaves the copy on the screen.
+ */
+export const refusedAccess = (e: unknown): boolean =>
+  e instanceof OrgApiError &&
+  (e.code === 'forbidden' || e.code === 'not_found' || e.code === 'unauthenticated');

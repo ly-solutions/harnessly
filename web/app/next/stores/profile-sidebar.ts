@@ -8,6 +8,7 @@ import { getPage, sendBody } from '@/next/core/net/http';
 import { EMPTY_PROFILE } from '@/next/features/sidebar/profile-layout';
 import { parseCentral, type ProfileSidebar } from '@/next/protocol/v2';
 import { t } from '@/next/i18n';
+import { keepRead, keptRead, onReadsRestored } from '@/next/stores/kept-reads';
 
 const TIMEOUT_MS = 15_000;
 const PATH = '/history/sidebar';
@@ -20,6 +21,8 @@ export type ProfileSidebarView =
   | { k: 'ready'; rev: number; doc: ProfileSidebar };
 
 const LOADING: ProfileSidebarView = { k: 'loading' };
+/** The kept read of the person's sidebar (stores/kept-reads.ts): projects and favorites draw before the cluster answers. */
+const KEPT = 'profile-sidebar';
 export const profileSidebarStore = createStore<ProfileSidebarView>(LOADING);
 export const useProfileSidebar = (): ProfileSidebarView => useStore(profileSidebarStore);
 
@@ -28,6 +31,7 @@ const adopt = (rev: number, doc: ProfileSidebar | null): void => {
   const have = profileSidebarStore.get();
   if (have.k === 'ready' && have.rev > rev) return;
   profileSidebarStore.set({ k: 'ready', rev, doc: doc ?? EMPTY_PROFILE });
+  keepRead(KEPT, { enabled: true, rev, doc });
 };
 
 export async function refreshProfileSidebar(): Promise<void> {
@@ -48,6 +52,19 @@ export async function refreshProfileSidebar(): Promise<void> {
   }
   adopt(res.value.rev, res.value.doc);
 }
+
+function seedKept(): void {
+  if (profileSidebarStore.get().k !== 'loading') return;
+  const raw = keptRead<unknown>(KEPT);
+  if (raw === undefined) return;
+  try {
+    const kept = parseCentral.sidebar(raw);
+    if (kept.enabled) adopt(kept.rev, kept.doc);
+  } catch {
+    // A kept answer this page cannot read is no answer.
+  }
+}
+onReadsRestored(seedKept);
 
 let queue: Promise<unknown> = Promise.resolve();
 

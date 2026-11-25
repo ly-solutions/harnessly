@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/hub/config"
 	"github.com/ly-solutions/harnessly/internal/hub/features"
 	"github.com/ly-solutions/harnessly/internal/hub/hubtest"
 	"github.com/ly-solutions/harnessly/internal/hub/orgs"
@@ -44,7 +45,7 @@ func TestFeaturesAreOffUntilAnAdministratorSwitchesThemOn(t *testing.T) {
 	anna.Join(tenant, boris)
 	org := create(t, anna, "Acme", tenant).Org.ID
 
-	// Dark by default, in the list and in the organization's view.
+	// Dark by default, in the list and in the organization's view, but for the two flags the hub itself turns on.
 	for _, p := range []*hubtest.Person{anna, boris} {
 		if f, ok := featureState(t, p, org, features.Env); !ok || f.Enabled || f.Forced {
 			t.Errorf("env = %+v", f)
@@ -52,7 +53,7 @@ func TestFeaturesAreOffUntilAnAdministratorSwitchesThemOn(t *testing.T) {
 	}
 	var v orgs.View
 	anna.Do("GET", "/api/orgs/"+org, nil).JSON(&v)
-	if v.Features == nil || len(v.Features) != 0 {
+	if !slices.Equal(v.Features, config.DefaultFeatures) {
 		t.Errorf("view features = %#v", v.Features)
 	}
 	// Somebody outside the organization does not see it exists.
@@ -88,7 +89,7 @@ func TestFeaturesAreOffUntilAnAdministratorSwitchesThemOn(t *testing.T) {
 		t.Errorf("env after = %+v", f)
 	}
 	anna.Do("GET", "/api/orgs/"+org, nil).JSON(&v)
-	if !slices.Equal(v.Features, []string{"env"}) {
+	if !slices.Equal(v.Features, []string{"env", "org.events", "machine.seats"}) {
 		t.Errorf("view features = %v", v.Features)
 	}
 	if !s.Hub.Features.On(t.Context(), org, features.Env) || s.Hub.Features.On(t.Context(), org, features.Catalog) {
@@ -154,7 +155,7 @@ func TestInstanceListsDecideBeforeAndAfterTheOrganization(t *testing.T) {
 	// /api/config tells what the instance itself switches on.
 	var cfg struct{ Features []string }
 	s.Browser().Do("GET", "/api/config", nil).JSON(&cfg)
-	if !slices.Equal(cfg.Features, []string{"ui.hx", "env", "catalog"}) {
+	if !slices.Equal(cfg.Features, []string{"ui.hx", "env", "catalog", "machine.seats"}) {
 		t.Errorf("config features = %v", cfg.Features)
 	}
 }

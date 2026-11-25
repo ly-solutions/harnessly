@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/hub/metrics"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 	"github.com/ly-solutions/harnessly/internal/storerev"
@@ -57,7 +58,8 @@ func (s *Service) storeRev(ctx context.Context, m store.Machine, req hubproto.De
 	return head, head > 0, nil
 }
 
-// fromStore answers what fetch would ask the machine for; done false when the machine has to be asked.
+// fromStore answers what fetch would ask the machine for; done false when the machine has to be asked. Only the
+// owner's side (the link's making) is left to fetch: a guest reads through guestFetch.
 func (s *Service) fromStore(ctx context.Context, machine string, req hubproto.DesignPublicTokenRequest, segs []string, r *http.Request, pass []string) (*http.Response, bool, error) {
 	if s.view == nil {
 		return nil, false, nil
@@ -71,12 +73,17 @@ func (s *Service) fromStore(ctx context.Context, machine string, req hubproto.De
 	}
 	at, ok, err := s.storeRev(ctx, m, req)
 	if err != nil {
-		s.log.Warn("design: the store did not answer a guest read, the machine is asked", "project", req.Project, "error", err)
+		s.log.Warn("design: the store did not answer an owner read, the machine is asked", "project", req.Project, "error", err)
 		return nil, false, nil
 	}
 	if !ok {
 		return nil, false, nil
 	}
+	return s.readStore(ctx, m, req, at, segs, r, pass)
+}
+
+// readStore answers a read of the project at a revision of the store.
+func (s *Service) readStore(ctx context.Context, m store.Machine, req hubproto.DesignPublicTokenRequest, at int64, segs []string, r *http.Request, pass []string) (*http.Response, bool, error) {
 	method := http.MethodGet
 	if r != nil && r.Method == http.MethodHead {
 		method = http.MethodHead
@@ -100,6 +107,49 @@ func (s *Service) fromStore(ctx context.Context, machine string, req hubproto.De
 		return s.view.Serve(w, r, m.SpaceID, req.Project, at, segs, req.Pages, req.Rev != "")
 	})
 	return res, true, err
+}
+
+// guestStoreRev is the revision of the store a guest link reads: the one it is pinned to, or the project's newest.
+// a guest is served from the hub's store and nowhere else, never from the owner's machine, so what the store
+// cannot say is an answer of its own: the store is off, the project is not in it yet, the link is pinned to a version
+// of git made before the library moved to the store, or the store did not answer.
+func (s *Service) guestStoreRev(ctx context.Context, g guestReq) (int64, error) {
+	if s.view == nil || g.m.SpaceID == "" {
+		return 0, gNoStore
+	}
+	if g.l.Rev != "" {
+		n, ok := storerev.Of(g.l.Rev)
+		if !ok {
+			return 0, gOutdated
+		}
+		return n, nil
+	}
+	head, err := s.view.Head(ctx, g.m.SpaceID, g.l.Project)
+	if err != nil {
+		s.log.Warn("design: the store did not answer a guest read", "project", g.l.Project, "error", err)
+		return 0, gLater
+	}
+	if head <= 0 {
+		return 0, gUnpublished
+	}
+	return head, nil
+}
+
+// guestFetch reads design-public/<project>/<sub> of a guest link from the store only; the owner's machine is never asked.
+func (s *Service) guestFetch(ctx context.Context, g guestReq, segs []string, r *http.Request, pass ...string) (*http.Response, error) {
+	at, err := s.guestStoreRev(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	res, _, err := s.readStore(ctx, g.m, g.scope(), at, segs, r, pass)
+	metrics.CountRead(metrics.ReadDesign, metrics.FromStore)
+	if err != nil {
+		if r == nil || r.Context().Err() == nil {
+			s.log.Warn("design: the store did not serve a guest read", "project", g.l.Project, "error", err)
+		}
+		return nil, gLater
+	}
+	return res, nil
 }
 
 // pinFromStore answers the two questions a new link asks: may a link be made (__share) and which version a pinned one
@@ -208,12 +258,9 @@ const eventsFor = 5 * time.Minute
 
 // guestVersion is the version a link shows now: the store's revision of its project, or the one it is pinned to.
 func (s *Service) guestVersion(w http.ResponseWriter, r *http.Request, g guestReq) error {
-	at, ok, err := s.storeRev(r.Context(), g.m, g.scope())
+	at, err := s.guestStoreRev(r.Context(), g)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		return gNoProject
 	}
 	guestJSON(w, 200, map[string]any{"version": at, "rev": storerev.ID(at), "pinned": g.l.Version == "pinned"})
 	return nil
@@ -227,8 +274,8 @@ func (s *Service) guestEvents(w http.ResponseWriter, r *http.Request, g guestReq
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
-	head, ok, err := s.storeRev(r.Context(), g.m, g.scope())
-	if err != nil || !ok {
+	head, err := s.guestStoreRev(r.Context(), g)
+	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}

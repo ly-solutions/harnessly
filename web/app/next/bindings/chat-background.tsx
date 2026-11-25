@@ -4,7 +4,7 @@
 // The pane opening always takes it away, even when the person had opened it; the pane shutting gives back what the room
 // says. The header's button shows it or folds it, and a fold stays until the chat is changed. A stop goes to the
 // runtime as bg.stop and waits for it.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useCodeAsks } from '@/next/bindings/code-asks';
 import { settled } from '@/next/bindings/outcome';
 import { stopBackground } from '@/next/commands';
@@ -66,8 +66,13 @@ export const useChatBackground = (
   const tasks = useBackground(conv);
   const recap = useConversation(conv)?.recap ?? null;
   const shots = useShots(conv);
-  // What the person asked of the column in this chat: null leaves it to the room there is.
-  const [asked, setAsked] = useState<{ conv: ConvId | null; shown: boolean } | null>(null);
+  // What the person asked of the column by the header's button: null leaves it to the room there is. It holds in every
+  // chat and after a reload until the button is pressed again: the widgets stay while they are on.
+  const [asked, setAskedState] = useState<{ shown: boolean } | null>(readAsked);
+  const setAsked = useCallback((next: { shown: boolean } | null) => {
+    setAskedState(next);
+    writeAsked(next);
+  }, []);
   const [rail, setRail] = useState<HTMLElement | null>(null);
   const [stopping, setStopping] = useState<ReadonlySet<string>>(() => new Set());
   const { room, pane } = useRailRoom(rail);
@@ -103,13 +108,15 @@ export const useChatBackground = (
   const islandHas = tasks.length > 0 || recap !== null || (shots?.length ?? 0) > 0 || codesMounted;
   const notesHas = dropsMounted || folder.pending;
   const has = islandHas || notesHas;
-  // The pane opening takes back a column the person had opened (a fold they made stays); this runs in render, once per change.
+  // An open pane leaves no room beside the chat: the column the person had opened steps aside when the pane opens and
+  // comes back as asked when it shuts; the button opens it over the pane again. This runs in render, once per change.
   const [paneWas, setPaneWas] = useState(pane);
+  const [aside, setAside] = useState(false);
   if (pane !== paneWas) {
     setPaneWas(pane);
-    if (pane && asked?.shown) setAsked(null);
+    setAside(pane);
   }
-  const override = asked && asked.conv === conv ? asked.shown : null;
+  const override = aside ? null : (asked?.shown ?? null);
   // On its own the column is open when it has room and the pane is shut, and whenever a command waits for a code.
   // A drop does not open it by itself where there is no room beside the chat or the pane is open: the column would stand
   // over the feed's text. There the header's button says it (and a notice still reaches the notification centre).
@@ -125,33 +132,14 @@ export const useChatBackground = (
   // A chat with nothing for the column but the widgets: the header's button folds and unfolds them.
   const open = has ? shown : widgetsShown;
   const widgetsMounted = usePresentFlag(widgetsShown, SIDE_EXIT_MS).mounted;
-  // Where the column has no room beside the chat, the widgets the button opened are a popover at the button over the
-  // feed's edge, not a column: nothing of the feed moves, and a click away or Esc shuts them.
+  // Where the column has no room beside the chat, the widgets the button opened stand at the button over the feed's
+  // edge. They stay there until the button folds them: a click elsewhere or on a card does not.
   const widgetsPop = widgetsShown && !room;
-  useEffect(() => {
-    if (!widgetsPop) return;
-    const shut = () => setAsked(null);
-    const away = (event: PointerEvent) => {
-      const el = event.target instanceof Element ? event.target : null;
-      // The cards' menus and the gallery stand in portals: a click there is a click in the popover.
-      if (el?.closest('.hx-col, .hx-bg-btn, [role="menu"], [role="dialog"]')) return;
-      shut();
-    };
-    const esc = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) shut();
-    };
-    document.addEventListener('pointerdown', away, true);
-    document.addEventListener('keydown', esc);
-    return () => {
-      document.removeEventListener('pointerdown', away, true);
-      document.removeEventListener('keydown', esc);
-    };
-  }, [widgetsPop]);
-
   // What the button asks for: what the room already says is no ask at all, so the column keeps following the room.
   const toggle = () => {
     const next = !open;
-    setAsked(next === (has ? auto : room && !pane) ? null : { conv, shown: next });
+    setAside(false);
+    setAsked(next === (has ? auto : room && !pane) ? null : { shown: next });
   };
 
   const onStop = (task: BackgroundTask) => {
@@ -275,5 +263,26 @@ export const useChatBackground = (
       />
     ) : null;
 
-  return { header, panel, show: () => setAsked({ conv, shown: true }) };
+  return { header, panel, show: () => setAsked({ shown: true }) };
 };
+
+/** Where the button's ask is kept for the next visit; storage that is off or full only forgets it. */
+const ASKED_KEY = 'hx.widgets.asked';
+
+function readAsked(): { shown: boolean } | null {
+  try {
+    const v = window.localStorage.getItem(ASKED_KEY);
+    return v === '1' ? { shown: true } : v === '0' ? { shown: false } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeAsked(next: { shown: boolean } | null) {
+  try {
+    if (next === null) window.localStorage.removeItem(ASKED_KEY);
+    else window.localStorage.setItem(ASKED_KEY, next.shown ? '1' : '0');
+  } catch {
+    // Private mode or full storage: the ask lasts for this page only.
+  }
+}

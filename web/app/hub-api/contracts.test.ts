@@ -26,6 +26,8 @@ assertType<Equal<Infer<typeof os.me>, O.Me>>(true);
 assertType<Equal<Infer<typeof os.orgView>, O.OrgView>>(true);
 assertType<Equal<Infer<typeof os.featureView>, O.FeatureView>>(true);
 assertType<Equal<Infer<typeof os.featuresResponse>, O.FeaturesResponse>>(true);
+assertType<Equal<Infer<typeof os.capabilityItem>, O.CapabilityItem>>(true);
+assertType<Equal<Infer<typeof os.capabilitiesResponse>, O.CapabilitiesResponse>>(true);
 assertType<Equal<Infer<typeof os.orgList>, O.OrgList>>(true);
 assertType<Equal<Infer<typeof os.member>, O.Member>>(true);
 assertType<Equal<Infer<typeof os.auditEvent>, O.AuditEvent>>(true);
@@ -124,6 +126,7 @@ const schemaOf: Record<string, Schema<unknown>> = {
   'orgs/view-lead.json': os.orgView,
   'orgs/view-member.json': os.orgView,
   'orgs/features.json': os.featuresResponse,
+  'orgs/capabilities.json': os.capabilitiesResponse,
   'orgs/members.json': os.members,
   'orgs/audit.json': os.auditPage,
   'analytics/overview-admin.json': as_.overviewResponse,

@@ -22,6 +22,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/rates"
 	"github.com/ly-solutions/harnessly/internal/hub/spaces"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
+	"github.com/ly-solutions/harnessly/internal/hub/switches"
 	"github.com/ly-solutions/harnessly/internal/hub/tenant"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
@@ -47,6 +48,8 @@ type Deps struct {
 	Rates *rates.Book
 	// Features are the organizations' flags; nil: every flag is off.
 	Features *features.Store
+	// Rollout answers the rollout switches the list of capabilities shows (internal/hub/switches); nil: all off.
+	Rollout switches.Gate
 	// Events is the bus of the organizations' live stream; nil: there is none.
 	Events events.OrgBus
 	// EnvChanged runs after a setting the machines' environment lists carry changed (the rule for apps); nil: nothing.
@@ -75,12 +78,13 @@ type Service struct {
 	mGone    func(m store.Machine)
 	rates    *rates.Book
 	features *features.Store
+	rollout  switches.Gate
 	bus      events.OrgBus
 }
 
 // New makes the service.
 func New(d Deps) *Service {
-	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, lim: d.Limiter, log: d.Log, now: d.Now, onLimits: d.LimitsChanged, onEnv: d.EnvChanged, onPeople: d.PeopleChanged, rates: d.Rates, features: d.Features, bus: d.Events, gone: d.MemberGone, mGone: d.MachineGone}
+	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, lim: d.Limiter, log: d.Log, now: d.Now, onLimits: d.LimitsChanged, onEnv: d.EnvChanged, onPeople: d.PeopleChanged, rates: d.Rates, features: d.Features, rollout: d.Rollout, bus: d.Events, gone: d.MemberGone, mGone: d.MachineGone}
 	if s.now == nil {
 		s.now = time.Now
 	}

@@ -226,8 +226,20 @@ func readAll(res *http.Response, max int64) ([]byte, error) {
 	return b, nil
 }
 
-// pin takes the project's current version for a link pinned to it.
+// pin takes the project's current version for a link pinned to it. HRN-1755: a guest reads only the store, so with a
+// store the version is a revision of it, and a project the store has nothing of yet gets no pinned link (it would
+// open as «not published»); the machine's git version is taken only by a hub that has no store at all.
 func (s *Service) pin(ctx context.Context, m store.Machine, project string) (string, error) {
+	if s.view != nil && m.SpaceID != "" {
+		head, err := s.view.Head(ctx, m.SpaceID, project)
+		if err != nil {
+			s.log.Warn("design: the store did not answer a pin", "project", project, "error", err)
+			return "", fail("unavailable", "Хаб не смог прочитать проект из хранилища, версию не удалось закрепить. Попробуйте ещё раз")
+		}
+		if head <= 0 {
+			return "", fail("not_published", "Проект ещё не опубликован на хабе: дождитесь, пока он синхронизируется, и повторите")
+		}
+	}
 	return s.pinWith(ctx, m, project, s.fetch)
 }
 
@@ -297,15 +309,19 @@ type guestError struct {
 func (e guestError) Error() string { return e.text }
 
 var (
-	gNotFound     = guestError{404, "Ссылка не найдена"}
-	gNoProject    = guestError{404, "Проект не найден"}
-	gNoFile       = guestError{404, "Файл не найден"}
-	gNoPage       = guestError{404, "Страница не найдена"}
-	gExpired      = guestError{410, "Срок ссылки истёк"}
-	gRevoked      = guestError{410, "Ссылка отозвана"}
-	gTooMany      = guestError{429, "Слишком много запросов, попробуйте через минуту"}
-	gInternal     = guestError{500, "Что-то пошло не так, попробуйте позже"}
-	gMachine      = guestError{502, "Машина владельца недоступна, попробуйте позже"}
+	gNotFound  = guestError{404, "Ссылка не найдена"}
+	gNoProject = guestError{404, "Проект не найден"}
+	gNoFile    = guestError{404, "Файл не найден"}
+	gNoPage    = guestError{404, "Страница не найдена"}
+	gExpired   = guestError{410, "Срок ссылки истёк"}
+	gRevoked   = guestError{410, "Ссылка отозвана"}
+	gTooMany   = guestError{429, "Слишком много запросов, попробуйте через минуту"}
+	gInternal  = guestError{500, "Что-то пошло не так, попробуйте позже"}
+	// a guest is served from the hub's store only, so «the machine is unavailable» is never what it is told.
+	gLater        = guestError{503, "Попробуйте позже"}
+	gUnpublished  = guestError{404, "Проект ещё не опубликован"}
+	gOutdated     = guestError{410, "Ссылка устарела, попросите владельца поделиться заново"}
+	gNoStore      = guestError{503, "Просмотр по ссылке сейчас недоступен на этом хабе"}
 	gViewOnly     = guestError{403, "Эту ссылку можно только смотреть"}
 	gNoMedia      = guestError{403, "Файл недоступен"}
 	gBadRange     = guestError{416, "Неверный диапазон"}
@@ -317,7 +333,7 @@ var (
 var statusTitles = map[int]string{
 	400: "Некорректный запрос", 403: "Нет доступа", 404: "Ссылка не найдена", 405: "Так ссылку не открыть", 410: "Ссылка отозвана",
 	416: "Неверный диапазон", 429: "Слишком много запросов, попробуйте через минуту", 500: "Что-то пошло не так, попробуйте позже",
-	502: "Машина владельца недоступна, попробуйте позже", 503: "Сервис пока недоступен",
+	503: "Сервис пока недоступен",
 }
 
 func baseHeaders(h http.Header) {
@@ -515,16 +531,9 @@ func (s *Service) guestFail(w http.ResponseWriter, g guestReq, err error) {
 			if ge.status == 0 {
 				ge.status = 400
 			}
-		} else if errors.Is(err, errNoMachine) || errors.Is(err, errRuntime) {
-			ge = gMachine
 		} else {
-			var ne net.Error
-			if errors.As(err, &ne) || errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "offline") {
-				ge = gMachine
-			} else {
-				s.log.Warn("guest request failed", "error", err)
-				ge = gMachine
-			}
+			s.log.Warn("guest request failed", "error", err)
+			ge = gLater
 		}
 	}
 	if g.asJSON {
@@ -548,7 +557,7 @@ type indexBoard struct {
 
 // guestIndex is what the guest page reads of the project: the link's terms and the boards it opens.
 func (s *Service) guestIndex(ctx context.Context, g guestReq) (map[string]any, []indexBoard, error) {
-	res, err := s.fetch(ctx, g.m.ID, g.scope(), nil, nil)
+	res, err := s.guestFetch(ctx, g, nil, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -558,11 +567,11 @@ func (s *Service) guestIndex(ctx context.Context, g guestReq) (map[string]any, [
 	}
 	if res.StatusCode != 200 {
 		res.Body.Close()
-		return nil, nil, gMachine
+		return nil, nil, gLater
 	}
 	raw, err := readAll(res, maxIndex)
 	if err != nil {
-		return nil, nil, gMachine
+		return nil, nil, gLater
 	}
 	var idx struct {
 		Title  string          `json:"title"`
@@ -572,7 +581,7 @@ func (s *Service) guestIndex(ctx context.Context, g guestReq) (map[string]any, [
 	}
 	var probe map[string]json.RawMessage
 	if json.Unmarshal(raw, &probe) != nil || json.Unmarshal(raw, &idx) != nil || idx.Boards == nil && string(probe["boards"]) != "[]" {
-		return nil, nil, gMachine
+		return nil, nil, gLater
 	}
 	boards := []indexBoard{}
 	for _, b := range idx.Boards {
@@ -633,17 +642,17 @@ func (s *Service) guestShell(w http.ResponseWriter, r *http.Request, g guestReq)
 	if err != nil {
 		return err
 	}
-	res, err := s.fetch(ctx, g.m.ID, g.scope(), []string{"_app", "index.html"}, nil)
+	res, err := s.guestFetch(ctx, g, []string{"_app", "index.html"}, nil)
 	if err != nil {
 		return err
 	}
 	if res.StatusCode != 200 {
 		res.Body.Close()
-		return gMachine
+		return gLater
 	}
 	raw, err := readAll(res, maxShell)
 	if err != nil {
-		return gMachine
+		return gLater
 	}
 	page := string(raw)
 	base := "/s/" + g.l.Token + "/"
@@ -709,7 +718,7 @@ func safeType(v string) string {
 func copyBody(w http.ResponseWriter, res *http.Response, max int64, head bool) error {
 	defer res.Body.Close()
 	if res.ContentLength > max {
-		return gMachine
+		return gLater
 	}
 	if res.ContentLength >= 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(res.ContentLength))
@@ -756,7 +765,7 @@ func (s *Service) guestFile(w http.ResponseWriter, r *http.Request, g guestReq) 
 	}
 	// the file's version goes to the guest as its ETag and comes back as If-None-Match, so a file that has not
 	// changed is not sent again once the guest's copy is a moment old.
-	res, err := s.fetch(r.Context(), g.m.ID, g.scope(), segs, r, "If-None-Match")
+	res, err := s.guestFetch(r.Context(), g, segs, r, "If-None-Match")
 	if err != nil {
 		return err
 	}
@@ -777,7 +786,7 @@ func (s *Service) guestFile(w http.ResponseWriter, r *http.Request, g guestReq) 
 		if res.StatusCode == 404 || res.StatusCode == 403 {
 			return gNoFile
 		}
-		return gMachine
+		return gLater
 	}
 	h := w.Header()
 	baseHeaders(h)
@@ -836,7 +845,7 @@ func (s *Service) guestApp(w http.ResponseWriter, r *http.Request, g guestReq) e
 	if !ok {
 		return gNoFile
 	}
-	res, err := s.fetch(r.Context(), g.m.ID, g.scope(), append([]string{"_app"}, segs...), r)
+	res, err := s.guestFetch(r.Context(), g, append([]string{"_app"}, segs...), r)
 	if err != nil {
 		return err
 	}
@@ -845,7 +854,7 @@ func (s *Service) guestApp(w http.ResponseWriter, r *http.Request, g guestReq) e
 		if res.StatusCode == 404 {
 			return gNoFile
 		}
-		return gMachine
+		return gLater
 	}
 	h := w.Header()
 	baseHeaders(h)
@@ -875,7 +884,7 @@ func (s *Service) guestMedia(w http.ResponseWriter, r *http.Request, g guestReq)
 	if rg := r.Header.Get("Range"); rg != "" && !rangeRe.MatchString(rg) {
 		return gBadRange
 	}
-	res, err := s.fetch(r.Context(), g.m.ID, g.scope(), []string{"__media", g.media}, r, "Range", "If-Range")
+	res, err := s.guestFetch(r.Context(), g, []string{"__media", g.media}, r, "Range", "If-Range")
 	if err != nil {
 		return err
 	}
@@ -886,7 +895,7 @@ func (s *Service) guestMedia(w http.ResponseWriter, r *http.Request, g guestReq)
 		return gNoFile
 	default:
 		res.Body.Close()
-		return gMachine
+		return gLater
 	}
 	h := w.Header()
 	baseHeaders(h)

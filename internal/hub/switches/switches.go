@@ -1,7 +1,8 @@
 // Package switches is the rollout switches: a feature turned on or off for a person on a machine without a release
 // (docs/hub/rollout-switches.md). A row names a feature, a person's email and a machine id; "*" in either matches anyone.
 // The most specific row wins (both named, then the person, then the machine, then both "*"); no row means off, so a
-// new feature ships dark and is turned on pair by pair, then with a "*" row for everyone.
+// new feature ships dark and is turned on pair by pair, then with a "*" row for everyone. The exception is DefaultOn:
+// a feature that has needed nothing but the hub since it shipped is on until a row says it is off.
 package switches
 
 import (
@@ -17,6 +18,13 @@ import (
 // CacheTTL is how long an answer is kept; a change made by this process is seen at once, one made by another replica
 // within this time.
 const CacheTTL = 5 * time.Second
+
+// DefaultOn are the features that are on when no row speaks: what asks for no service, secret or domain and only needs
+// the hub to run. A row with enabled = false turns one off again, for anyone or for a person.
+// «automation-triggers» is the schedule and the waiting of the automations and the routines (docs/hub/routines.md);
+// «hub-design-home» is Sinopia's home in one answer and the library's long poll (docs/hub/rollout-switches.md): it falls
+// back to the machine, or to the page's own reads, whenever the hub has no answer.
+var DefaultOn = map[string]bool{"automation-triggers": true, "hub-design-home": true}
 
 // Gate answers whether a feature is on for a person on a machine.
 // The switches of the hub-first plan: what the person's pages read from the hub instead of from a machine.
@@ -108,7 +116,10 @@ func (s *Store) On(ctx context.Context, feature, person, machine string) bool {
 	if err != nil {
 		return false
 	}
-	on, _ := decide(rows)
+	on, ok := decide(rows)
+	if !ok {
+		on = DefaultOn[feature]
+	}
 	s.put(key, entry{on: on})
 	return on
 }

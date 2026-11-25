@@ -59,6 +59,17 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 		section, file, keyed, card = "f", rest, true, held
 	}
 	ctx := r.Context()
+	// A card of a project another space shared with the person (foreign.go): read from that space's store, read-only.
+	foreign := false
+	if s.view != nil && card != "" {
+		held, ok, err := s.foreignHolder(ctx, m, u, project, card)
+		if err != nil {
+			return err
+		}
+		if ok {
+			m, foreign = held, true
+		}
+	}
 	if s.view == nil {
 		if section != "f" && section != "index.json" && section != "snapshot" {
 			return fail("store_off", "Хранилище дизайнов не подключено")
@@ -91,6 +102,9 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 		return fail("not_found", "Проект не найден")
 	}
 	read := r.Method == http.MethodGet || r.Method == http.MethodHead
+	if foreign && section == "file" {
+		return fail("forbidden", "Проект другого пространства открыт только для просмотра")
+	}
 	if section != "file" {
 		if !read {
 			return fail("bad_request", "Метод не поддерживается")
@@ -149,7 +163,7 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 		case "head":
 			out := map[string]any{"version": head, "rev": storerev.ID(head)}
 			// The key of the board addresses, for a page that builds them itself (filekey.go).
-			if key := s.files.mint(u.ID, project, s.now()); key != "" {
+			if key := s.files.mintCard(u.ID, project, foreignCard(foreign, card), s.now()); key != "" {
 				out["key"] = key
 			}
 			writeJSON(w, http.StatusOK, out)
@@ -170,7 +184,7 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 			// A board opened by its plain address goes to its keyed one, so its own files reach the hub.
 			if !keyed && s.files != nil && storeNavigation(r) {
 				h := w.Header()
-				h.Set("Location", keyedLocation(segs, s.files.mint(u.ID, project, s.now()), r.URL.RawQuery))
+				h.Set("Location", keyedLocation(segs, s.files.mintCard(u.ID, project, foreignCard(foreign, card), s.now()), withoutCard(r.URL.Query(), r.URL.RawQuery)))
 				h.Set("Cache-Control", "no-store")
 				h.Set("Referrer-Policy", "strict-origin")
 				w.WriteHeader(http.StatusFound)

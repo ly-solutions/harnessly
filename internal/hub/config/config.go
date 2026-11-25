@@ -262,8 +262,9 @@ type Config struct {
 	// Docs (HUB_DOCS=on) switches on the documents and boards side: the hub answers <platform api>/docs and the agents'
 	// doc.publish / doc.acl (docs/hub/docs.md). Off: nothing of it is served and the page says so.
 	Docs bool
-	// Automations (HUB_AUTOMATIONS=on) switches on the automations: rules that turn an outside event into a conversation on
-	// the owner's machine (docs/hub/automations.md). AutomationsSecret (HUB_AUTOMATIONS_SECRET) is what the sender of an
+	// Automations (HUB_AUTOMATIONS, on by default; off switches them off) are the automations and the routines: rules that
+	// turn an outside event or the clock into a conversation on the owner's machine (docs/hub/automations.md). Nothing
+	// opens to the outside by itself: the event doors stay shut until their secrets are set. AutomationsSecret (HUB_AUTOMATIONS_SECRET) is what the sender of an
 	// event puts in X-Automation-Secret; without it the event door stays shut. AutomationsPortEnv (HUB_AUTOMATIONS_PORT_ENV,
 	// default AGENT_REPORT_PORT) is the variable the started conversation finds its machine agent's port in;
 	// AutomationsTokenEnv (HUB_AUTOMATIONS_TOKEN_ENV, default HARNESS_AUTOMATION_RESULT_TOKEN) the one it finds its report
@@ -385,7 +386,8 @@ type Config struct {
 	DesignDerived bool
 	// AppsGuestURL (HUB_APPS_GUEST_URL) is the origin of the guest links to apps (docs/hub/apps-guest-host.md): it serves
 	// /apps/guest/<token>/ and nothing else, so a guest's view never runs next to the hub's session. Empty: the links
-	// are served on the hub's own origin, as before.
+	// are served on the hub's own origin only when the hub is on this machine (localhost, a loopback address: local
+	// development); on any other hub they are not served at all.
 	AppsGuestURL string
 	// DesignPlatformAPI (HUB_DESIGN_PLATFORM_API) is the runtime's platform prefix the design page calls, /api/platform
 	// by default; the hub learns a machine's own prefix from its page's first request.
@@ -444,6 +446,11 @@ type Config struct {
 	WebDir   string
 	LogLevel string
 }
+
+// DefaultFeatures are the organizations' flags that are on for an organization that has not chosen, before
+// HUB_FEATURES_DEFAULT is read. Only what needs nothing else to run: both change how screens are drawn or fed and
+// ask for no service, domain or secret (docs/hub/api.md, «Feature flags»).
+var DefaultFeatures = []string{"org.events", "machine.seats"}
 
 // Features is the instance level of the organizations' flags (internal/hub/features). A name in Force is decided by the
 // instance, on or off, whatever an organization chose (`name` forces it on, `-name` off); a name in Default is what an
@@ -803,7 +810,15 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 		}
 	}
 	c.Features.Force = featureList(get("HUB_FEATURES_FORCE"), "HUB_FEATURES_FORCE", bad)
-	c.Features.Default = featureList(get("HUB_FEATURES_DEFAULT"), "HUB_FEATURES_DEFAULT", bad)
+	// What the instance puts on for an organization that has not chosen: the built-in list, then HUB_FEATURES_DEFAULT on
+	// top of it (`name` adds, `-name` takes one of the built-in ones away).
+	c.Features.Default = map[string]bool{}
+	for _, n := range DefaultFeatures {
+		c.Features.Default[n] = true
+	}
+	for n, on := range featureList(get("HUB_FEATURES_DEFAULT"), "HUB_FEATURES_DEFAULT", bad) {
+		c.Features.Default[n] = on
+	}
 
 	if c.Edition != EditionSelfHosted && c.Edition != EditionCloud {
 		bad("HUB_EDITION must be self-hosted or cloud, got %q", c.Edition)
@@ -935,7 +950,7 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 			c.EventBusRetention = d
 		}
 	}
-	switch strings.ToLower(def("HUB_AUTOMATIONS", "off")) {
+	switch strings.ToLower(def("HUB_AUTOMATIONS", "on")) {
 	case "on", "true", "1", "yes":
 		c.Automations = true
 	case "off", "false", "0", "no":

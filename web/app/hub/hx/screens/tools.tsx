@@ -233,6 +233,7 @@ const Screen = () => {
   const loaded = useLoad(
     (api) => api.toolsList(shell.org.slug, { from: win.from, to: win.to }),
     [shell.org.slug, scope.kind === 'org' ? 'all' : scope.tenant.slug, win.from, win.to],
+    'tools',
   );
   const { data, error, reload } = loaded;
 

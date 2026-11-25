@@ -357,3 +357,52 @@ describe('the kept list (HRN-902)', () => {
     );
   });
 });
+
+describe('Sinopia library (HRN-1758)', () => {
+  it('comes back after a reload and gives way to what the page shows', async () => {
+    const lib = await import('@/next/stores/library-views');
+    const kv = memoryKV();
+    persistence = startPersistence(kv, { person: 'u1' });
+    await persistence.ready;
+    lib.putLibraryView('m1', { designs: [{ id: 'site' }], from: 'machine', layout: null });
+    await persistence.flushNow();
+    persistence.stop();
+    expect((await kv.get<{ designs: { id: string }[] }>('library', 'm1'))?.designs).toEqual([{ id: 'site' }]);
+
+    const restored: string[] = [];
+    const off = lib.onLibraryView(
+      (m, v, r) => r && restored.push(`${m}:${(v.designs[0] as { id: string }).id}`),
+    );
+    // The page showed m1 already: what was kept does not replace it. A machine it has not shown takes the kept view.
+    await kv.set('library', 'm2', { designs: [{ id: 'deck' }], from: 'store', layout: null });
+    persistence = startPersistence(kv, { person: 'u1' });
+    await persistence.ready;
+    off();
+    expect(restored).toEqual(['m2:deck']);
+    expect(lib.libraryView('m2')?.designs).toEqual([{ id: 'deck' }]);
+  });
+});
+
+describe('kept reads (HRN-1758)', () => {
+  it('a read kept comes back after a reload, a live one wins, and one too big is not written', async () => {
+    const reads = await import('@/next/stores/kept-reads');
+    const kv = memoryKV();
+    persistence = startPersistence(kv, { person: 'u1' });
+    await persistence.ready;
+    reads.keepRead('machines', [{ id: 'm1' }]);
+    reads.keepRead('huge', 'x'.repeat(600 * 1024));
+    await persistence.flushNow();
+    persistence.stop();
+    expect(await kv.get('reads', 'machines')).toEqual([{ id: 'm1' }]);
+    expect(await kv.get('reads', 'huge')).toBeUndefined();
+
+    reads.forgetReads();
+    await kv.set('reads', 'me', { name: 'kept' });
+    reads.keepRead('me', { name: 'live' });
+    persistence = startPersistence(kv, { person: 'u1' });
+    await persistence.ready;
+    expect(reads.keptRead('machines')).toEqual([{ id: 'm1' }]);
+    expect(reads.keptRead('me')).toEqual({ name: 'live' });
+    reads.forgetReads();
+  });
+});

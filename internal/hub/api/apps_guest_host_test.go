@@ -42,3 +42,17 @@ func TestAppsGuestHostIsNotTheHubsOwn(t *testing.T) {
 		t.Errorf("default: %s", r)
 	}
 }
+
+// without HUB_APPS_GUEST_URL the guest links are not served next to the hub's session unless the hub is on
+// this machine (local development, where the hub is on 127.0.0.1 or localhost).
+func TestAppsGuestLinksAreNotOnAPublicHubsOrigin(t *testing.T) {
+	const public = "hub.example.com"
+	s := hubtest.New(t, hubtest.Env("HUB_PUBLIC_URL", "http://"+public))
+	if s.Hub.Store == nil {
+		t.Skip("the hub runs without a store")
+	}
+	r := s.Browser().DoAt(s.URL, public, "GET", "/apps/guest/unknown/", nil)
+	if r.Code != 404 || strings.Contains(string(r.Body), "This link has ended.") {
+		t.Errorf("a public hub must not serve guest links on its own origin: %s", r)
+	}
+}

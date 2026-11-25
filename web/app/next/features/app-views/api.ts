@@ -24,6 +24,7 @@ import {
   type TStorageScope,
   type TTarget,
 } from '@/next/features/app-views/bridge';
+import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
 export interface IAppView {
   id: string;
@@ -296,12 +297,23 @@ export const BUILTIN_APP_ICON: Readonly<Record<string, string>> = {
 };
 
 export const loadInstalledApps = (m: MachineId): Promise<IInstalledApps> =>
-  runtimeJson<IInstalledApps>(m, platformPath('/installed-apps')).then((list) => ({
-    ...list,
-    apps: list.apps.map((a) =>
-      BUILTIN_APP_ICON[a.id] === undefined ? a : { ...a, icon: BUILTIN_APP_ICON[a.id] },
-    ),
-  }));
+  runtimeJson<IInstalledApps>(m, platformPath('/installed-apps')).then((list) => {
+    const out = {
+      ...list,
+      apps: list.apps.map((a) =>
+        BUILTIN_APP_ICON[a.id] === undefined ? a : { ...a, icon: BUILTIN_APP_ICON[a.id] },
+      ),
+    };
+    keepRead(keptAppsKey(m), out);
+    return out;
+  });
+
+/** the machine's installed apps as the last page read them, drawn until the machine answers. */
+const keptAppsKey = (m: MachineId) => `installed-apps:${m}`;
+export const keptInstalledApps = (m: MachineId): IInstalledApps | null => {
+  const v = keptRead<IInstalledApps>(keptAppsKey(m));
+  return v && Array.isArray(v.apps) && v.apps.every((a) => typeof a?.id === 'string') ? v : null;
+};
 
 /** The runtime's refusal says its code in `error`; a view gets it as the code of its HarnesslyError. */
 const asBridgeError = (e: unknown): BridgeError => {
@@ -892,12 +904,15 @@ export const useInstalledApps = (
       clearTimeout(again);
     };
   }, [m, reload, key, enabled, failures]);
-  if (!enabled || state === null) return { list: null, error: null };
-  if (state.key === key) return state;
+  if (!enabled) return { list: null, error: null };
+  // What the last page read draws while this one has nothing of its own, and stays when a read fails (offline).
+  const kept = keptInstalledApps(m);
+  if (state === null) return { list: kept, error: null };
+  if (state.key === key) return state.list === null && kept ? { list: kept, error: null } : state;
   // Read again for the same machine and `reload`: the old list stays until the new one comes, so nothing flickers.
   return state.m === m && state.key.startsWith(`${m}|${reload}|`) && state.list !== null
     ? { list: state.list, error: null }
-    : { list: null, error: null };
+    : { list: kept, error: null };
 };
 
 /** One setting of an app, as its form draws it (internal/apps/setup.go). */

@@ -4,6 +4,7 @@ import { noteCurrency } from '../../money';
 import { OrgApiError } from '../errors';
 
 const CODES: Record<string, OrgApiError['code']> = {
+  unauthenticated: 'unauthenticated',
   forbidden: 'forbidden',
   forbidden_scope: 'forbidden',
   self_change: 'self_change',

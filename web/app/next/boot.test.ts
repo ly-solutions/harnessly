@@ -248,6 +248,49 @@ describe('whose data the page keeps', () => {
     expect(meStore.get().k).toBe('ready');
   });
 
+  it('draws the machines and me the last page read before me answers, and keeps the live ones (HRN-1758)', async () => {
+    const rt = new FakeRuntime();
+    await bootFake({ rt, start: false });
+    const kv = memoryKV();
+    await kv.set('reads', 'machines', [
+      {
+        id: rt.machineId,
+        name: 'kept',
+        host: '',
+        reach: 'online',
+        lastSeenAt: null,
+        runtime: null,
+        agents: [],
+      },
+    ]);
+    await kv.set('reads', 'me', {
+      email: 'a@x.ru',
+      name: 'Kept Name',
+      settings: ((await localMeSource({ email: 'a@x.ru' }).load()) as { me: { settings: unknown } }).me
+        .settings,
+      rev: 1,
+    });
+    const good = localMeSource({ email: 'a@x.ru' });
+    const me: MeSource = {
+      load: () => new Promise((resolve) => setTimeout(() => resolve(good.load()), 10_000)),
+      patch: good.patch,
+    };
+    let ready = false;
+    const booting = bootNext(bootOpts(rt, () => kv, me, 'a@x.ru')).then((st) => {
+      ready = true;
+      return st;
+    });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(ready).toBe(true);
+    expect(await booting).toEqual({ k: 'ready', machines: [rt.machineId] });
+    const shown = meStore.get();
+    expect(shown.k === 'ready' && shown.me.name).toBe('Kept Name');
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settle();
+    const live = meStore.get();
+    expect(live.k === 'ready' && live.me.name).not.toBe('Kept Name');
+  });
+
   it('a me retry that hears 401 is the sign-in screen, not a local success', async () => {
     const rt = new FakeRuntime();
     await bootFake({ rt, start: false });

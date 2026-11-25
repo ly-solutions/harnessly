@@ -35,6 +35,7 @@ import { useConversationList } from '@/next/stores/conversations';
 import { bindDesignConv } from '@/next/bindings/design-conv';
 import { designKey } from '@/next/features/designly/design-conv';
 import { LIBRARY_SAFETY_MS, watchLibrary } from '@/next/features/designly/library-watch';
+import { onLibraryView } from '@/next/stores/library-views';
 import type { Conversation, MachineId } from '@/next/protocol/v2';
 import { goTo, ROUTE } from '@/next/routes/routes';
 import { toast } from '@/next/ui/toast';
@@ -173,6 +174,17 @@ const useDesignLibrary = (machine: MachineId, withAppDocs = false) => {
       );
     },
     [machine, withAppDocs],
+  );
+
+  // The library an earlier page kept comes back from IndexedDB a moment after the first frame: it is drawn
+  // while nothing better is on screen, and read anew behind.
+  useEffect(
+    () =>
+      onLibraryView((m, view, restored) => {
+        if (!restored || m !== machine || loaded.current) return;
+        setDesigns(view.designs as IDesign[]);
+      }),
+    [machine],
   );
 
   useEffect(() => {

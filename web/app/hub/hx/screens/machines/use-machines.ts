@@ -25,7 +25,11 @@ const POLL_MS = 3_000;
 export const useMachineList = () => {
   const { scope, shell } = useOrg();
   const slug = scope.kind === 'org' ? 'all' : scope.tenant.slug;
-  const loaded = useLoad((api) => api.machinesList(shell.org.slug, { scope: slug }), [shell.org.slug, slug]);
+  const loaded = useLoad(
+    (api) => api.machinesList(shell.org.slug, { scope: slug }),
+    [shell.org.slug, slug],
+    'machines',
+  );
   const [over, setOver] = useState<Record<string, OrgMachine>>({});
   // A fresh answer already knows what the card changed: drop the laid-over copies (while rendering, not after).
   const [seen, setSeen] = useState<MachinesList | null>(null);
@@ -47,7 +51,11 @@ export const useMachineList = () => {
 export const useMachineAttention = (): number => {
   const { scope, shell } = useOrg();
   const slug = scope.kind === 'org' ? 'all' : scope.tenant.slug;
-  const loaded = useLoad((api) => api.machinesList(shell.org.slug, { scope: slug }), [shell.org.slug, slug]);
+  const loaded = useLoad(
+    (api) => api.machinesList(shell.org.slug, { scope: slug }),
+    [shell.org.slug, slug],
+    'machines',
+  );
   const now = useNow(60_000);
   return useMemo(
     () => (loaded.data ? machineSignals(loaded.data.groups, now).length : 0),

@@ -1,6 +1,7 @@
 // The currency the shown amounts are in. The hub says it in every answer with money (docs/hub/analytics.md): dollars
 // while it knows no rate. A screen writes amounts with this symbol, so a dollar is never drawn as a ruble.
 import type { Currency, Money } from '../../hub-api/common';
+import { hubCache } from '../lib/cache';
 
 const SYMBOL: Record<Currency['code'], string> = { RUB: '₽', USD: '$' };
 
@@ -9,8 +10,20 @@ let current: Currency['code'] = 'RUB';
 let perUsd = 0;
 
 export const setShownCurrency = (code: Currency['code'], rate?: number): void => {
+  const was = `${current}${perUsd}`;
   current = code;
   if (rate && rate > 0) perUsd = rate;
+  // Kept beside the copies of the amounts, which are drawn before any answer says what they are in.
+  if (`${current}${perUsd}` !== was) hubCache.set('currency', { code: current, perUsd });
+};
+
+/** Takes back the currency kept with the copies, so an amount drawn from a copy is written in what it was in. */
+export const restoreShownCurrency = (): void => {
+  const c = hubCache.get<{ code?: unknown; perUsd?: unknown }>('currency');
+  if (c && (c.code === 'RUB' || c.code === 'USD')) {
+    current = c.code;
+    if (typeof c.perUsd === 'number' && c.perUsd > 0) perUsd = c.perUsd;
+  }
 };
 
 /** Remembers the currency any answer of the hub carries, so every screen writes money the same way. */

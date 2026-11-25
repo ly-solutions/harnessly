@@ -252,6 +252,7 @@ func TestDesignResourceAccessThroughHubAndRuntime(t *testing.T) {
 	if !strings.HasPrefix(made.URL, "http://"+shareHost+"/s/") || !made.Link.Copyable || made.Link.ForWhom != "Клиент" || made.Link.DisabledAt != nil {
 		t.Fatalf("made: %+v", made)
 	}
+	putStore(t, s, space, "shop", shopFiles) // HRN-1755: a guest reads the store only
 	guest := s.Browser()
 	open := func(u string) int {
 		t.Helper()

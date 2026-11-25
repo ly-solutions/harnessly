@@ -32,6 +32,7 @@ import { defaultCwdStore, projectsStore } from '@/next/stores/projects';
 import { resetProfileSidebar } from '@/next/stores/profile-sidebar';
 import { resetCentral } from '@/next/stores/central';
 import { newChatMachineStore } from '@/next/stores/new-chat';
+import { forgetReads } from '@/next/stores/kept-reads';
 
 const clear = <K, V>(s: KeyedStore<K, V>) => {
   for (const k of [...s.keys()]) s.delete(k);
@@ -75,5 +76,6 @@ export function clearPersonData(): void {
   resetCache();
   resetProfileSidebar();
   resetCentral();
+  forgetReads();
   newChatMachineStore.set(null);
 }

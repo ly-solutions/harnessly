@@ -1,0 +1,54 @@
+{
+  "groups": ["Регулярные задачи и автоматизация", "Документы, макеты и ссылки", "Окружение агентов"],
+  "canChange": false,
+  "capabilities": [
+    {
+      "id": "HUB_AUTOMATIONS",
+      "group": "Регулярные задачи и автоматизация",
+      "name": "Регулярные задачи и автоматизации",
+      "description": "Вы просите агента в чате: «каждое утро присылай дайджест», и хаб сам запускает такую задачу на вашей машине.",
+      "source": "env",
+      "enabled": true,
+      "defaultOn": true,
+      "setBy": "HUB_AUTOMATIONS",
+      "canToggle": false
+    },
+    {
+      "id": "automation-triggers",
+      "group": "Регулярные задачи и автоматизация",
+      "name": "Запуск по расписанию и по ожиданию",
+      "description": "Регулярные задачи и правила срабатывают по времени.",
+      "source": "rollout",
+      "enabled": true,
+      "defaultOn": true,
+      "needs": "Включённые «Регулярные задачи и автоматизации».",
+      "canToggle": false
+    },
+    {
+      "id": "HUB_LIMITS_ENFORCE",
+      "group": "Расходы и лимиты",
+      "name": "Лимиты расходов на машинах",
+      "description": "Что делают машины с лимитами.",
+      "source": "env",
+      "enabled": true,
+      "detail": "Только предупреждает",
+      "defaultOn": false,
+      "why": "Может остановить людям работу, поэтому включается осознанно.",
+      "setBy": "HUB_LIMITS_ENFORCE",
+      "canToggle": false
+    },
+    {
+      "id": "env",
+      "group": "Окружение агентов",
+      "name": "Окружение машин",
+      "description": "Экран «Окружение».",
+      "source": "org",
+      "enabled": false,
+      "defaultOn": false,
+      "why": "Меняет то, что ставится на машины людей, поэтому включается осознанно.",
+      "forced": true,
+      "setBy": "HUB_FEATURES_FORCE",
+      "canToggle": false
+    }
+  ]
+}

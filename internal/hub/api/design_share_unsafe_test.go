@@ -32,11 +32,13 @@ func TestDesignShareFailsClosedOnAnUnsafeRuntime(t *testing.T) {
 		return ok && role == "owner"
 	})
 
-	for _, version := range []string{"latest", "pinned"} {
-		r := owner.Do("POST", base+"/shop/shares", map[string]any{"rights": "view", "version": version})
-		if r.Code != 409 || !strings.Contains(r.String(), "share_unsafe_runtime") || !strings.Contains(r.String(), "harnessly doctor share") {
-			t.Fatalf("a %s link on an unsafe runtime: %s", version, r)
-		}
+	// with a store a pinned link needs the project in it, and a guest never reads the runtime, so the probe
+	// matters for the links of a project the store has nothing of (the machine is asked about those).
+	if r := owner.Do("POST", base+"/shop/shares", map[string]any{"rights": "view", "version": "latest"}); r.Code != 409 || !strings.Contains(r.String(), "share_unsafe_runtime") || !strings.Contains(r.String(), "harnessly doctor share") {
+		t.Fatalf("a latest link on an unsafe runtime: %s", r)
+	}
+	if r := owner.Do("POST", base+"/shop/shares", map[string]any{"rights": "view", "version": "pinned"}); r.Code != 409 || !strings.Contains(r.String(), "not_published") {
+		t.Fatalf("a pinned link to a project not in the store: %s", r)
 	}
 	var list []map[string]any
 	owner.Do("GET", base+"/shop/shares", nil).JSON(&list)
@@ -52,18 +54,18 @@ func TestDesignShareFailsClosedOnAnUnsafeRuntime(t *testing.T) {
 	var link struct{ URL string }
 	r.JSON(&link)
 	path := strings.TrimPrefix(link.URL, "http://"+shareHost)
+	putStore(t, s, space, "shop", shopFiles)
 	guest := s.Browser()
 	open := func(p string) hubtest.Resp { t.Helper(); return guest.DoAt(s.URL, shareHost, "GET", p, nil) }
 	if r := open(path + "/f/Main.dc.html"); r.Code != 200 || !strings.Contains(string(r.Body), "shop main") {
-		t.Fatalf("guest page on a safe runtime: %s", r)
+		t.Fatalf("guest page from the store: %s", r)
 	}
 
-	// The runtime turns unsafe (moved into a sandbox): the guest is refused in words of their own, not «machine down».
+	// The runtime turns unsafe (moved into a sandbox): a guest reads the store, which does not depend on the machine.
 	unsafe.Store(true)
 	for _, p := range []string{"/index.json", "/f/Main.dc.html"} {
-		r := open(path + p)
-		if r.Code != 503 || strings.Contains(string(r.Body), "shop main") || !strings.Contains(string(r.Body), "гарантий безопасности") {
-			t.Fatalf("guest %s on an unsafe runtime: %s", p, r)
+		if r := open(path + p); r.Code != 200 {
+			t.Fatalf("guest %s with the owner's runtime unsafe: %s", p, r)
 		}
 	}
 }

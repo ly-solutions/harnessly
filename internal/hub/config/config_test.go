@@ -31,6 +31,45 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+// What a hub does with nothing set: the automations and routines are on (their doors to the outside stay shut without
+// their secrets), and the two flags that need nothing else are on for an organization that has not chosen.
+func TestLoadSwitchDefaults(t *testing.T) {
+	base := map[string]string{"HUB_PUBLIC_URL": "https://h.example.com", "HUB_SMTP_URL": "smtp://mail.example.com"}
+	with := func(kv ...string) map[string]string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	c, err := Load(env(with()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Automations || c.AutomationsSecret != "" || c.LaunchToken != "" {
+		t.Errorf("automations: on %v, secret %q, launch token %q", c.Automations, c.AutomationsSecret, c.LaunchToken)
+	}
+	if !c.Features.Default["org.events"] || !c.Features.Default["machine.seats"] || len(c.Features.Default) != len(DefaultFeatures) {
+		t.Errorf("default flags: %v", c.Features.Default)
+	}
+	// Everything that opens a door, a service, a domain or an enforcement stays off.
+	if c.Docs || c.EventBus || c.UsageIngest || c.Peers || c.Memory || c.VoiceTakes || c.TbotJoin.On || c.ResourceAccess || c.Replicas ||
+		c.ChatGuestLinks || c.DesignSnapshotLinks || c.DesignShareDocs || c.DesignDerived || c.LimitsEnforce != "off" || c.SSHAllowPrivate {
+		t.Errorf("a switch that needs more than the hub is on: %+v", c)
+	}
+	// The operator's list goes on top of the built-in one: it adds and it takes away.
+	c, err = Load(env(with("HUB_FEATURES_DEFAULT", "ui.hx,-org.events", "HUB_AUTOMATIONS", "off")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Automations || !c.Features.Default["ui.hx"] || c.Features.Default["org.events"] || !c.Features.Default["machine.seats"] {
+		t.Errorf("operator's choice: automations %v, flags %v", c.Automations, c.Features.Default)
+	}
+}
+
 func TestLoadFileVariants(t *testing.T) {
 	dir := t.TempDir()
 	secret := filepath.Join(dir, "secret")

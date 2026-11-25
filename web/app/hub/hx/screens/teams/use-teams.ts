@@ -2,11 +2,13 @@
 // hub refuses it the change is taken back and the reason is said. The hub's own answer replaces the local guess.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { orgErrorText } from '../../../org/api/errors';
+import { hubCache } from '../../../lib/cache';
+import { orgErrorText, refusedAccess } from '../../../org/api/errors';
 import type { TeamsView } from '../../../org/api/teams';
 import type { OrgApi } from '../../../org/api';
 import { useOrg } from '../../../org/context';
 import { useOrgPeople } from '../../../org/events';
+import { kept } from '../../../org/hooks';
 
 export interface Op {
   /** The screen's guess of the view after the action. */
@@ -35,11 +37,14 @@ export const useTeams = (slug: string): TeamsState => {
   const { api, shell } = useOrg();
   const org = shell.org.slug;
   const key = `${org}/${slug}`;
-  const [state, setState] = useState<{ key: string; base: TeamsView | null; error: unknown }>({
+  const keptKey = `teams/${key}`;
+  // Drawn from the copy of the last visit (the people and teams of this scope), the live answer replaces it.
+  const [state, setState] = useState<{ key: string; base: TeamsView | null; error: unknown }>(() => ({
     key,
-    base: null,
+    base: kept<TeamsView>(keptKey),
     error: null,
-  });
+  }));
+  if (state.key !== key) setState({ key, base: kept<TeamsView>(keptKey), error: null });
   const [pending, setPending] = useState<{ key: string; ops: Op[] }>({ key, ops: [] });
   const [problem, setProblem] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -52,15 +57,23 @@ export const useTeams = (slug: string): TeamsState => {
   useEffect(() => {
     let alive = true;
     api.teamsView(org, slug).then(
-      (base) => alive && setState({ key, base, error: null }),
-      // A quiet refresh that fails keeps what is on the screen.
-      (error: unknown) =>
-        alive && setState((s) => (s.key === key && s.base ? s : { key, base: null, error })),
+      (base) => {
+        if (!alive) return;
+        hubCache.set(keptKey, base);
+        setState({ key, base, error: null });
+      },
+      (error: unknown) => {
+        if (!alive) return;
+        const refused = refusedAccess(error);
+        if (refused) hubCache.remove(keptKey);
+        // A quiet refresh that fails keeps what is on the screen; a refusal does not.
+        setState((s) => (s.key === key && s.base && !refused ? s : { key, base: null, error }));
+      },
     );
     return () => {
       alive = false;
     };
-  }, [api, org, slug, key, tick]);
+  }, [api, org, slug, key, keptKey, tick]);
 
   const reload = useCallback(() => {
     setState((s) => ({ key: s.key, base: null, error: null }));
@@ -76,6 +89,7 @@ export const useTeams = (slug: string): TeamsState => {
         let ok = false;
         try {
           const next = await op.run(api, org, slug);
+          hubCache.set(`teams/${at}`, next);
           if (current.current === at) setState({ key: at, base: next, error: null });
           ok = true;
         } catch (e) {

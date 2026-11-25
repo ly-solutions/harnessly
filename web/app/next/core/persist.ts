@@ -4,6 +4,8 @@
 // try/catch: in a private window or with storage blocked the page works the same, it only forgets on reload.
 
 import { pageClock } from '@/next/core/clock';
+import { onLibraryView, restoreLibraryView, type KeptLibraryView } from '@/next/stores/library-views';
+import { onKeepRead, restoreReads } from '@/next/stores/kept-reads';
 import { setResume } from '@/next/core/realtime/cursors';
 import { batch } from '@/next/core/store';
 import {
@@ -46,8 +48,8 @@ import {
 import { resumeOf } from '@/next/core/realtime/cursors';
 import type { Conversation, ConvId, MachineId, Project } from '@/next/protocol/v2';
 
-export type Area = 'drafts' | 'outbox' | 'feeds' | 'convs' | 'stash';
-const AREAS: Area[] = ['drafts', 'outbox', 'feeds', 'convs', 'stash'];
+export type Area = 'drafts' | 'outbox' | 'feeds' | 'convs' | 'stash' | 'library' | 'reads';
+const AREAS: Area[] = ['drafts', 'outbox', 'feeds', 'convs', 'stash', 'library', 'reads'];
 
 /** A key-value store per area; never throws, a failure reads as nothing. */
 export interface KV {
@@ -64,6 +66,8 @@ export function memoryKV(): KV & { dump(): Record<Area, Map<string, unknown>> } 
     feeds: new Map(),
     convs: new Map(),
     stash: new Map(),
+    library: new Map(),
+    reads: new Map(),
   };
   const clone = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));
   return {
@@ -86,7 +90,7 @@ export function idbKV(name = dbNameOf(LOCAL_PERSON)): KV {
   const open = () =>
     (db ??= new Promise<IDBDatabase | null>((resolve) => {
       try {
-        const req = indexedDB.open(name, 3);
+        const req = indexedDB.open(name, 5);
         req.onupgradeneeded = () => {
           for (const a of AREAS)
             if (!req.result.objectStoreNames.contains(a)) req.result.createObjectStore(a);
@@ -135,6 +139,12 @@ export const FEEDS_KEPT_MAX = STORED_CHATS * 4;
 const FEEDS_SWEEP_MS = 10 * 60_000;
 /** The sidebar's list is kept for this many chats, the most recent ones. */
 export const STORED_LIST = 300;
+/** How many cards of a machine's Sinopia library are kept for the next page, and how soon after it showed. */
+export const STORED_LIBRARY = 500;
+export const LIBRARY_DELAY_MS = 2000;
+/** A kept read (stores/kept-reads.ts) is written this long after its last answer, and only up to READ_MAX_BYTES. */
+export const READS_DELAY_MS = 1000;
+export const READ_MAX_BYTES = 512 * 1024;
 
 /** The sidebar's list of the active machine as its snapshot last showed it. */
 export interface CachedList {
@@ -264,11 +274,13 @@ export function startPersistence(kv: KV, o: PersistOptions = {}): Persistence {
   const enableOutbox = () => (outboxLoaded ??= loadOutbox().catch(() => {}));
 
   const ready = (async () => {
-    const [drafts, feeds, lists, stashed] = await Promise.all([
+    const [drafts, feeds, lists, stashed, libraries, reads] = await Promise.all([
       kv.all<KeptDraft>('drafts'),
       kv.all<KeptFeed>('feeds'),
       kv.all<CachedList>('convs'),
       kv.all<StashItem[]>('stash'),
+      kv.all<KeptLibraryView>('library'),
+      kv.all<unknown>('reads'),
     ]);
     if (o.outbox !== false) await enableOutbox();
     draftsLoaded = true;
@@ -304,8 +316,59 @@ export function startPersistence(kv: KV, o: PersistOptions = {}): Persistence {
       for (const [k, items] of stashed)
         if (!stashStore.has(k as DraftKey) && Array.isArray(items) && items.length > 0)
           stashStore.set(k as DraftKey, items);
+      // Sinopia's library of each machine, as the last page showed it: the home draws it at once.
+      for (const [machine, view] of libraries) restoreLibraryView(machine, view);
+      // The reads a screen waits for: the machines, me, the sidebar's lists, the apps.
+      restoreReads(reads);
     });
   })().catch(() => {});
+
+  // A library the page showed is written a moment later, the newest of each machine, at most STORED_LIBRARY cards.
+  const libraryTimers = new Map<string, unknown>();
+  const libraryShown = new Map<string, KeptLibraryView>();
+  const writeLibrary = (machine: string) => {
+    libraryTimers.delete(machine);
+    const view = libraryShown.get(machine);
+    libraryShown.delete(machine);
+    if (view) track(kv.set('library', machine, { ...view, designs: view.designs.slice(0, STORED_LIBRARY) }));
+  };
+  const unLibrary = onLibraryView((machine, view, restored) => {
+    if (restored || stopped) return;
+    libraryShown.set(machine, view);
+    const was = libraryTimers.get(machine);
+    if (was) clock.clearTimeout(was);
+    libraryTimers.set(
+      machine,
+      clock.setTimeout(() => writeLibrary(machine), LIBRARY_DELAY_MS),
+    );
+  });
+
+  // A kept read is written a moment after its last answer; one too big to keep is dropped instead.
+  const readTimers = new Map<string, unknown>();
+  const readsShown = new Map<string, unknown>();
+  const writeRead = (key: string) => {
+    readTimers.delete(key);
+    if (!readsShown.has(key)) return;
+    const value = readsShown.get(key);
+    readsShown.delete(key);
+    let size = 0;
+    try {
+      size = value === undefined ? 0 : JSON.stringify(value).length;
+    } catch {
+      size = Infinity;
+    }
+    track(value === undefined || size > READ_MAX_BYTES ? kv.del('reads', key) : kv.set('reads', key, value));
+  };
+  const unReads = onKeepRead((key, value) => {
+    if (stopped) return;
+    readsShown.set(key, value);
+    const was = readTimers.get(key);
+    if (was) clock.clearTimeout(was);
+    readTimers.set(
+      key,
+      clock.setTimeout(() => writeRead(key), READS_DELAY_MS),
+    );
+  });
 
   const writeDraft = (k: DraftKey) => {
     draftTimers.delete(k);
@@ -442,6 +505,14 @@ export function startPersistence(kv: KV, o: PersistOptions = {}): Persistence {
         clock.clearTimeout(listTimer);
         writeList();
       }
+      for (const [machine, t] of [...libraryTimers]) {
+        clock.clearTimeout(t);
+        writeLibrary(machine);
+      }
+      for (const [key, t] of [...readTimers]) {
+        clock.clearTimeout(t);
+        writeRead(key);
+      }
       while (pending.size > 0) await Promise.all([...pending]);
     },
     stop() {
@@ -452,6 +523,10 @@ export function startPersistence(kv: KV, o: PersistOptions = {}): Persistence {
       unRecent();
       unFeeds();
       unList.forEach((off) => off());
+      unLibrary();
+      for (const t of libraryTimers.values()) clock.clearTimeout(t);
+      unReads();
+      for (const t of readTimers.values()) clock.clearTimeout(t);
       for (const t of draftTimers.values()) clock.clearTimeout(t);
       if (feedsTimer !== null) clock.clearTimeout(feedsTimer);
       if (listTimer !== null) clock.clearTimeout(listTimer);

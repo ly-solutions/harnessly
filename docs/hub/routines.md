@@ -20,8 +20,9 @@ link — with these differences:
 | Quiet hours, cap | 0–8 Moscow, 3 a day | none, 48 a day (set `limits` to change) |
 | Model | `sonnet` | its own, or `HUB_ROUTINES_MODEL` (default `sonnet`) |
 
-The schedule needs the rollout switch `automation-triggers` for the person, like any schedule; the routes need
-`HUB_AUTOMATIONS=on`.
+The schedule is behind the rollout switch `automation-triggers`, which is on until a row turns it off for a person or for
+everyone ([rollout-switches.md](rollout-switches.md)); the routes need `HUB_AUTOMATIONS`, on by default (`off` shuts
+them).
 
 ## The routine
 

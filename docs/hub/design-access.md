@@ -54,18 +54,33 @@ A link is `https://<HUB_DESIGN_SHARE_URL host>/s/<token>`. It shows the whole pr
 path) read-only. Revoking a link makes it answer `410` at once; restarting the hub or the machine changes nothing.
 
 The share host is a separate origin so a guest page never runs next to the hub's session. On it the hub serves only
-`/s/...`: no hub API, no machine paths. The hub asks the runtime for a short guest token for the linked project
-(`hubproto.OpDesignPublicToken`) and fetches the project's public files with it; the hub never signs those tokens and a
-token opens only that project.
+`/s/...`: no hub API, no machine paths.
 
-A project in the hub's store (docs/hub/store.md) is read from the store instead, and no machine takes part: the hub
-puts the revision into a folder of its own (`<data>/design-view`: each blob read from the store once and linked into
-every revision that has it) and answers with the runtime's own code for a guest read. A live link shows the project's
-newest revision, a pinned one the store revision it was made at (`0000…<rev>` in hex); the owner's machine is asked
-only whether the apps allow a link, when it is on. `/s/<token>/version` is the version the link shows, and
-`/s/<token>/events` streams `event: rev` each time a live link's project gets a newer revision (the guest page loads
-the board again); a pinned link answers `204` there. The machine is still read for a project the store has nothing of
-yet, and for a link pinned to a version of git made before the move.
+**A guest is served from the hub's store and nowhere else.** The hub never reads the owner's machine for a
+guest, so a guest link works with the machine off, and a guest's request cannot reach a machine's runtime or tunnel
+(the hub asks the machine for a guest token only for the owner's own checks when a link is made). The hub puts the
+revision into a folder of its own (`<data>/design-view`: each blob read from the store once and linked into every
+revision that has it) and answers with the runtime's own code for a guest read. A live link shows the project's newest
+revision, a pinned one the store revision it was made at (`0000…<rev>` in hex). `/s/<token>/version` is the version the
+link shows, and `/s/<token>/events` streams `event: rev` each time a live link's project gets a newer revision (the
+guest page loads the board again); a pinned link answers `204` there. What the store cannot serve is told to the guest
+in a page of its own, never as «the machine is unavailable»:
+
+| Case | Status | Guest sees |
+| --- | --- | --- |
+| the project is not in the store yet (the machine's sync has not put it there) | `404` | «Проект ещё не опубликован» |
+| a link pinned to a version of git, made before the library moved to the store | `410` | «Ссылка устарела, попросите владельца поделиться заново» |
+| the store did not answer | `503` | «Попробуйте позже» |
+| the hub has no store (`HUB_STORE=off`) | `503` | «Просмотр по ссылке сейчас недоступен на этом хабе» |
+
+With no store configured guest links cannot be served at all: the owner can still make one (the machine is asked as
+before), but every guest read answers the last line of the table.
+
+Making a link: a live link is made even when the project is not in the store yet (it opens as soon as the machine's
+sync has put the project there); a pinned link needs the project in the store, since it pins one of its revisions, and
+answers `409 not_published` otherwise. The owner's own checks (may a link be made, the apps' check, a static snapshot's
+capture) still ask the machine when it is on; a guest never does.
+
 A file of a link pinned to a store revision never changes, so the guest's browser keeps it for good
 (`Cache-Control: private, max-age=31536000, immutable`); the guest page's own assets are hashed and kept the same way.
 
@@ -105,6 +120,21 @@ A deck's PDF for guests is built by any machine of the space whose person may ed
 holding the store's lease `pdf/<project>` (two minutes, refreshed while it builds). Whether the PDF is behind is the
 store's newest revision of what it is made of against the revision written beside it (`.media/published/deck.pdf.rev`),
 not the files' times. The published files sync, so the hub serves the PDF to guests with every machine off.
+
+## A project shared with another space
+
+A project shared by email with a person who is no member of its space (another tenant) reaches them too.
+Only a personal grant crosses spaces: their email among the project's people, or an invitation they accepted. The team
+level, a team grant and the space level stay inside their space.
+
+- The project is a card of its own in the person's library under a machine of their own space, named by its card key.
+  It is read from the hub's store of the owner's space only: neither the person's machine nor the owner's takes part.
+  Without a file store no project crosses spaces.
+- It opens read-only, whatever role the owner gave: writes through the hub answer `403`, and the access view shows the
+  role `view` without the project's people, invitations or settings.
+- A revocation closes it at once, and the library's long poll wakes on a grant or a revocation in any space.
+- An invitation link of another space leads the person into their own workspace (or a machine of their own) and opens
+  the card after they accept.
 
 ## A machine of a closed cluster
 

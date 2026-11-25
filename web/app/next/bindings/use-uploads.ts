@@ -184,9 +184,20 @@ export function useUploads(
       const intoHub =
         central &&
         (connectionStore.get(machine)?.k !== 'live' || (toHub && file.size <= HUB_ATTACH_MAX_BYTES));
+      const toMachine = () =>
+        uploadFile(machine, file, (sent) => progressOf(id, sent, mark), abort.signal, session);
+      // The hub's store can fail on its own (its S3 key revoked): a machine that is on then takes the file
+      // itself, as before HRN-1718, instead of the person seeing every picture refused.
       const road = intoHub
-        ? keepInHub(machine, file, (sent) => progressOf(id, sent, mark), abort.signal)
-        : uploadFile(machine, file, (sent) => progressOf(id, sent, mark), abort.signal, session);
+        ? keepInHub(machine, file, (sent) => progressOf(id, sent, mark), abort.signal).then((kept) =>
+            !kept.ok &&
+            kept.code !== UPLOAD_FAILURE.aborted &&
+            kept.code !== UPLOAD_FAILURE.tooLarge &&
+            connectionStore.get(machine)?.k === 'live'
+              ? toMachine()
+              : kept,
+          )
+        : toMachine();
       void road.then((outcome) => {
         controllers.current.delete(id);
         if (outcome.ok) {

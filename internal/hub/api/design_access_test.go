@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"github.com/ly-solutions/harnessly/internal/design"
 	"github.com/ly-solutions/harnessly/internal/hub/api"
@@ -157,6 +156,9 @@ func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
 		r2, ok2 := snapshotFor(a, "member@example.com", "other")
 		return ok1 && ok2 && r1 == "owner" && r2 == "owner"
 	})
+	// a guest reads the hub's store and never the machine, so the projects are in it, as the sync leaves them.
+	putStore(t, s, space, "shop", shopFiles)
+	putStore(t, s, space, "other", map[string]string{"artifact.json": `{"title":"Other"}`, "project/Main.dc.html": `<html><body>someone else's</body></html>`})
 
 	// The owner runs the access of their project.
 	access := func(p *hubtest.Person) (string, bool) {
@@ -228,6 +230,7 @@ func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
 	// A guest, signed in nowhere, opens the project on the share host: its page, nothing else of it, nothing of the hub.
 	guest := s.Browser()
 	open := func(p string) hubtest.Resp { t.Helper(); return guest.DoAt(s.URL, shareHost, "GET", p, nil) }
+	asked := len(a.Calls(hubproto.OpDesignPublicToken))
 	if r := open(path + "/index.json"); r.Code != 200 || !strings.Contains(string(r.Body), "Main.dc.html") || strings.Contains(string(r.Body), "Secret.dc.html") {
 		t.Fatalf("guest index: %s", r)
 	}
@@ -252,23 +255,10 @@ func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
 	if r := open("/s/not-a-token/index.json"); r.Code != 404 {
 		t.Fatalf("an unknown link: %s", r)
 	}
-	if n := len(a.Calls(hubproto.OpDesignPublicToken)); n == 0 {
-		t.Fatal("the hub signed the guest's read itself: the runtime was never asked for a token")
-	}
-	for _, c := range a.Calls(hubproto.OpDesignPublicToken) {
-		if c.Str("project") != "shop" {
-			t.Fatalf("a token asked for %q", c.Str("project"))
-		}
-	}
-	// The runtime's token lasts a minute (expiresAt in milliseconds): past it the hub asks for a fresh one instead of
-	// carrying the dead token, which the runtime refuses and the guest sees as «the owner's machine is unavailable».
-	asked := len(a.Calls(hubproto.OpDesignPublicToken))
-	s.Clock.Advance(61 * time.Second)
-	if r := open(path + "/f/Main.dc.html"); r.Code != 200 {
-		t.Fatalf("guest page a minute later: %s", r)
-	}
-	if n := len(a.Calls(hubproto.OpDesignPublicToken)); n <= asked {
-		t.Fatal("the hub kept a guest token past its expiry")
+	// The guest was served from the store: the runtime was asked for no token (the owner's checks of the apps, when
+	// the link was made, are the only reads of it).
+	if n := len(a.Calls(hubproto.OpDesignPublicToken)); n != asked {
+		t.Fatalf("a guest read reached the owner's machine: %d token requests", n-asked)
 	}
 
 	// A second link, then a restart of the hub: the links, the records and the snapshot come back from the database.
@@ -282,7 +272,7 @@ func TestDesignShareLinksThroughHubAndRuntime(t *testing.T) {
 
 	s.Restart()
 	owner, member = s.SignIn("owner@example.com"), s.SignIn("member@example.com")
-	if r := open(path + "/index.json"); r.Code == 200 {
+	if r := open(path + "/index.json"); r.Code != 200 {
 		t.Fatalf("a guest read while the machine is offline: %s", r)
 	}
 	before := len(a.Calls(hubproto.OpDesignAccess))

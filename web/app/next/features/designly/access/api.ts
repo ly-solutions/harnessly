@@ -395,11 +395,13 @@ export const revokeGuestLink = async (project: string, id: string): Promise<void
 /** Takes a link: the project it opens. 410 is a link that ran out, was revoked or is spent. */
 export const acceptInvite = async (
   token: string,
-): Promise<{ project: string; role: TRole; until: string | null }> =>
+): Promise<{ project: string; role: TRole; until: string | null; cardKey?: string }> =>
   (await send('POST', `${BASE}/invites/${encodeURIComponent(token)}/accept`, {})) as {
     project: string;
     role: TRole;
     until: string | null;
+    /** A project of another space (tenant): its card in the library, opened by it. */
+    cardKey?: string;
   };
 
 export const revokeAll = (project: string) => fresh(send('POST', `${at(project)}/revoke-all`, {}));

@@ -1,6 +1,7 @@
 // Designly over v2 (/api/v2/designly/*): the library lists the machine's Claude Design projects with their boards,
 // kinds and the conversations drawing them; a new project opens a conversation of an agent in its folder. The pictures
 // come from the runtime's library route; a board opens in a preview slot of its own origin.
+import { libraryView, putLibraryView } from '@/next/stores/library-views';
 import { gatewayPath, platformPath, runtimePath } from '@/next/core/net/machine';
 import { hubJson, postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { readCheck, readPageLog } from '@/next/features/designly/server-data';
@@ -16,6 +17,7 @@ import {
   type DesignSystemInfo,
   type MachineId,
 } from '@/next/protocol/v2';
+import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
 export type IDesign = DesignArtifact;
 export type IDesignSystem = DesignSystemInfo;
@@ -42,8 +44,15 @@ let kept: { machine: MachineId; library: IDesignLibrary } | null = null;
  * its port and its boards: the home has just read them, so the design does not ask again before it can ask for its
  * page. It is a start only; the design reads the library anew behind it.
  */
-export const keptLibrary = (m: MachineId): IDesignLibrary | null =>
-  kept && kept.machine === m ? kept.library : null;
+export const keptLibrary = (m: MachineId): IDesignLibrary | null => {
+  if (kept && kept.machine === m) return kept.library;
+  // after a reload, the cards the last page showed from the machine and its library server as it was then.
+  const view = libraryView(m) as ILibraryView | null;
+  const server = keptRead<{ port?: unknown; root?: unknown }>(`design-server:${m}`);
+  if (!view || view.from !== 'machine' || typeof server?.port !== 'number' || typeof server.root !== 'string')
+    return null;
+  return { port: server.port, root: server.root, designs: view.designs };
+};
 
 export const fetchLibrary = async (m: MachineId, signal?: AbortSignal): Promise<IDesignLibrary> => {
   const library = await viaHome(m, 'library', parsePage.designlyLibrary, () =>
@@ -51,6 +60,7 @@ export const fetchLibrary = async (m: MachineId, signal?: AbortSignal): Promise<
   );
   const read = { port: library.port, root: library.root, designs: library.artifacts };
   kept = { machine: m, library: read };
+  keepRead(`design-server:${m}`, { port: read.port, root: read.root });
   return read;
 };
 
@@ -107,10 +117,8 @@ export interface ILibraryView {
   layout: ILibraryLayout | null;
 }
 
-const lastViews = new Map<MachineId, ILibraryView>();
-
-/** The last library the home showed for this machine, from either side; null before any. */
-export const lastLibraryView = (m: MachineId): ILibraryView | null => lastViews.get(m) ?? null;
+/** The last library the home showed for this machine, from either side (or kept from an earlier page); null before any. */
+export const lastLibraryView = (m: MachineId): ILibraryView | null => libraryView(m) as ILibraryView | null;
 
 /** A live project keeps its local board paths and chat activity. The Hub owns the person's grants.
  * A shared Hub project can also be present before its files reach this machine. A copy another machine holds carries
@@ -165,12 +173,12 @@ export const readLibrary = (
   new Promise((resolve, reject) => {
     let live: IDesignLibrary | null = null;
     let stored: IStoreLibrary | null = null;
-    const refreshing = lastViews.has(m);
+    const refreshing = libraryView(m) !== null;
     let storeAsked = false;
     let storeFailed = false;
     let machineFailure: unknown = null;
     const put = (view: ILibraryView) => {
-      lastViews.set(m, view);
+      putLibraryView(m, view);
       show(view);
       resolve();
     };

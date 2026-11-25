@@ -34,29 +34,91 @@ func (s *Service) libraryChanges(w http.ResponseWriter, r *http.Request, u store
 		writeJSON(w, http.StatusNotFound, map[string]string{"code": "home_off", "error": "Главная Синопии одним ответом выключена"})
 		return
 	}
-	waiter, ok := s.view.(LibraryWaiter)
+	waiter, _ := s.view.(LibraryWaiter)
 	_, stored := s.view.(Librarian)
 	since, err := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	if err != nil || since < 0 {
 		since = 0
 	}
-	if !ok && !stored && m.SpaceID != "" {
-		s.grantedChanges(w, r, u, m, since)
-		return
-	}
-	if !ok || m.SpaceID == "" {
+	if m.SpaceID == "" || (stored && waiter == nil) {
 		s.writeError(w, fail("store_off", "Хранилище дизайнов не подключено"))
 		return
 	}
+	s.watchView(w, r, u, m, waiter, since)
+}
+
+// watchView holds the poll until the person's view of the library differs from the one the page has: the
+// files' revision in the store (waiter; nil without a store) or what they may see of the space. It answers the view's
+// revision when it moved, or as it is when the wait ends. A view that cannot be read now is an error, never the revision
+// the page already holds: a page that fails to refresh must not go on showing a grant as current.
+func (s *Service) watchView(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine, waiter LibraryWaiter, since int64) {
 	ctx, cancel := context.WithTimeout(r.Context(), libraryWait)
 	defer cancel()
-	rev, err := waiter.WaitLibrary(ctx, m.SpaceID, since)
-	if err != nil {
-		s.writeError(w, err)
-		return
+	watch := &accessWatch{s: s, u: u, m: m}
+	head := int64(-1)
+	rev := int64(-1)
+	for {
+		if waiter != nil {
+			// Returns at once the first time (nothing is past -1); after that when the files move, or after a poll.
+			step, stop := context.WithTimeout(ctx, grantedPoll)
+			h, err := waiter.WaitLibrary(step, m.SpaceID, head)
+			stop()
+			if err != nil {
+				if s.endedWait(w, r, ctx, rev) {
+					return
+				}
+				s.writeError(w, err)
+				return
+			}
+			head = h
+		}
+		if ctx.Err() != nil && rev >= 0 {
+			// The wait ended: the view as last read.
+			s.endedWait(w, r, ctx, rev)
+			return
+		}
+		digest, err := watch.current(ctx)
+		if err != nil {
+			if s.endedWait(w, r, ctx, rev) {
+				return
+			}
+			s.writeError(w, err)
+			return
+		}
+		rev = s.viewRev(u, m, fmt.Sprintf("%d\x00%s", head, digest))
+		if rev > since || ctx.Err() != nil {
+			if r.Context().Err() != nil {
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, http.StatusOK, map[string]int64{"rev": rev})
+			return
+		}
+		if waiter == nil {
+			select {
+			case <-ctx.Done():
+			case <-time.After(grantedPoll):
+			}
+		}
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]int64{"rev": rev})
+}
+
+// endedWait answers a poll whose wait ran out: with the view's revision as last read (rev), or, when none was read, an
+// error the page asks again after. True when the answer is given (or nobody waits for one any more).
+func (s *Service) endedWait(w http.ResponseWriter, r *http.Request, ctx context.Context, rev int64) bool {
+	if r.Context().Err() != nil {
+		return true
+	}
+	if ctx.Err() == nil {
+		return false
+	}
+	if rev >= 0 {
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, map[string]int64{"rev": rev})
+		return true
+	}
+	s.writeError(w, fail("unavailable", "Права доступа сейчас не прочитать"))
+	return true
 }
 
 // grantedPoll is how often the hub looks again at a person's grants while it holds a poll.
@@ -92,67 +154,4 @@ func grantedDigest(lib storeLibrary) string {
 		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%d\n", a.ID, a.CardKey, a.Title, a.Role, a.AccessSource, until, owner, a.UpdatedAt)
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// grantedRev is the person's revision now: the one kept while the library reads the same, else a newer one.
-func (s *Service) grantedRev(ctx context.Context, u store.User, m store.Machine) (int64, error) {
-	// Keys are on: a card of a copy is a card of its own, and the digest tells them apart.
-	lib, err := s.grantedLibrary(ctx, u, m, true)
-	if err != nil {
-		return 0, err
-	}
-	digest := grantedDigest(lib)
-	key := u.ID + "|" + m.SpaceID
-	s.revs.mu.Lock()
-	defer s.revs.mu.Unlock()
-	if s.revs.seen == nil || len(s.revs.seen) >= maxGrantedRevs {
-		s.revs.seen = map[string]grantedRev{}
-	}
-	cur := s.revs.seen[key]
-	if cur.digest != digest {
-		next := s.now().UnixMilli()
-		if next <= cur.rev {
-			next = cur.rev + 1
-		}
-		cur = grantedRev{digest: digest, rev: next}
-		s.revs.seen[key] = cur
-	}
-	return cur.rev, nil
-}
-
-// grantedChanges is the poll of the library with no file store: it holds until what the person is granted has changed
-// since the revision the page has, or the wait ends. A grant that cannot be read now is an error, never the revision
-// the page already holds: a page that fails to refresh must not go on showing the grant as current.
-func (s *Service) grantedChanges(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine, since int64) {
-	ctx, cancel := context.WithTimeout(r.Context(), libraryWait)
-	defer cancel()
-	tick := time.NewTicker(grantedPoll)
-	defer tick.Stop()
-	for {
-		rev, err := s.grantedRev(ctx, u, m)
-		if err != nil {
-			if ctx.Err() != nil && r.Context().Err() == nil {
-				// The wait ended while reading: the page asks again.
-				s.writeError(w, fail("unavailable", "Права доступа сейчас не прочитать"))
-				return
-			}
-			s.writeError(w, err)
-			return
-		}
-		if rev > since {
-			w.Header().Set("Cache-Control", "no-store")
-			writeJSON(w, http.StatusOK, map[string]int64{"rev": rev})
-			return
-		}
-		select {
-		case <-ctx.Done():
-			if r.Context().Err() != nil {
-				return
-			}
-			w.Header().Set("Cache-Control", "no-store")
-			writeJSON(w, http.StatusOK, map[string]int64{"rev": rev})
-			return
-		case <-tick.C:
-		}
-	}
 }

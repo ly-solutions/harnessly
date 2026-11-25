@@ -48,7 +48,7 @@ const TeamRow = ({ r, max, base }: { r: SpendLine; max: number; base: string }) 
 /** «Расход по командам»: each team's spend for the period, against its limit when it has one. */
 export const TeamsSpendCard = ({ period }: { period: OverviewPeriod }) => {
   const { base } = useOrg();
-  const { data } = useLoad((api) => api.spendDetail('team', period), [period]);
+  const { data } = useLoad((api) => api.spendDetail('team', period), [period], 'spend-top-teams');
   const rows = data?.rows ?? [];
   const max = Math.max(1, ...rows.map((r) => r.rub));
   return (

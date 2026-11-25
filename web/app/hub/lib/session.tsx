@@ -1,8 +1,18 @@
 // The two things every screen needs first: the hub's configuration and who is signed in (GET /api/config, GET
 // /api/me; a 401 on the second is just "signed out").
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { type ApiError, isApiError } from './api';
+import { hubCache } from './cache';
 import { useApi } from './env';
 import type { Config, Me } from './types';
 
@@ -17,6 +27,29 @@ export interface Session {
   /** Forgets the person (after a sign-out). */
   clear: () => void;
 }
+
+const SESSION_KEY = 'session';
+
+/** What was last read of the hub's configuration and of the person; a copy that is not of this shape is no copy. */
+export const sessionCopy = (raw: unknown): { config: Config; me: Me | null } | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const { config, me } = raw as { config?: unknown; me?: unknown };
+  if (!config || typeof config !== 'object' || typeof (config as Config).version !== 'string') return null;
+  if (me === null) return { config: config as Config, me: null };
+  const user = (me as Me | undefined)?.user;
+  if (!user || typeof user.id !== 'string' || !Array.isArray((me as Me).spaces)) return null;
+  return { config: config as Config, me: me as Me };
+};
+
+/** Remembers the answers for the next load; a person who is not signed in leaves no copy of anyone's data. */
+const keepSession = (config: Config, me: Me | null) => {
+  if (me) {
+    hubCache.setPerson(me.user.id);
+  } else {
+    hubCache.clear();
+  }
+  hubCache.setShared(SESSION_KEY, { config, me });
+};
 
 const SessionContext = createContext<Session | null>(null);
 
@@ -43,21 +76,45 @@ export const SessionProvider = ({
   loading: ReactNode;
 }) => {
   const api = useApi();
-  const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
+  // Drawn at once from the last answers while the live ones load. The person in it is provisional: the live
+  // /api/me still says who is signed in, and a signed-out answer drops the copy and goes to sign-in as ever.
+  const [seed] = useState(() => sessionCopy(hubCache.getShared(SESSION_KEY)));
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (!seed) return { kind: 'loading' };
+    hubCache.setPerson(seed.me?.user.id ?? null);
+    return { kind: 'ready', config: seed.config, me: seed.me };
+  });
   const [attempt, setAttempt] = useState(0);
+  // True while what is drawn is the copy and not an answer.
+  const provisional = useRef(seed !== null);
 
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
+        // Both at once; the error of the configuration, when there is one, is the one that is shown.
+        const meP = api.me.get().then(
+          (m): Me | null => m,
+          (e: unknown) => {
+            if (isApiError(e, 'unauthenticated')) return null;
+            throw e;
+          },
+        );
+        meP.catch(() => undefined);
         const config = await api.config();
-        const me = await api.me.get().catch((e: unknown) => {
-          if (isApiError(e, 'unauthenticated')) return null;
-          throw e;
-        });
-        if (alive) setPhase({ kind: 'ready', config, me });
+        const me = await meP;
+        if (!alive) return;
+        provisional.current = false;
+        keepSession(config, me);
+        setPhase({ kind: 'ready', config, me });
       } catch (e) {
-        if (alive) setPhase({ kind: 'error', error: isApiError(e) ? e : (e as ApiError) });
+        if (!alive) return;
+        // A copy is on the screen: a refresh that failed (offline, the hub restarting) says nothing, but a refusal
+        // takes the copy away.
+        if (provisional.current && !isApiError(e, 'forbidden')) return;
+        provisional.current = false;
+        hubCache.clear();
+        setPhase({ kind: 'error', error: isApiError(e) ? e : (e as ApiError) });
       }
     })();
     return () => {
@@ -70,11 +127,18 @@ export const SessionProvider = ({
       if (isApiError(e, 'unauthenticated')) return null;
       throw e;
     });
-    setPhase((p) => (p.kind === 'ready' ? { ...p, me } : p));
+    setPhase((p) => {
+      if (p.kind !== 'ready') return p;
+      keepSession(p.config, me);
+      return { ...p, me };
+    });
     return me;
   }, [api]);
 
-  const clear = useCallback(() => setPhase((p) => (p.kind === 'ready' ? { ...p, me: null } : p)), []);
+  const clear = useCallback(() => {
+    hubCache.clear();
+    setPhase((p) => (p.kind === 'ready' ? { ...p, me: null } : p));
+  }, []);
 
   const value = useMemo<Session | null>(
     () => (phase.kind === 'ready' ? { config: phase.config, me: phase.me, reload, clear } : null),

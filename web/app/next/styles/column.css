@@ -97,22 +97,35 @@
 .hx-notes:not(:empty) + * {
   margin-top: 8px;
 }
+/* The notices are one block of the column, drawn like the subagents' card (background.css .hx-side): one raised
+   surface with its heading inside, rows without grounds of their own, the theme's colours instead of the toasts'. */
 .hx-notes .hx-ns {
-  --ns-r: 18px;
+  --ns-r: 12px;
+  --ns-chip: 24px;
+  --ns-bg: var(--hx-bg-raised);
+  --ns-fg: var(--hx-fg-1);
+  --ns-fg2: var(--hx-fg-2);
+  --ns-fg3: var(--hx-fg-3);
+  --ns-fill: var(--hx-bg-hover);
+  --ns-fill2: var(--hx-bg-hover);
   margin: 0;
+  padding: 4px;
+  border-radius: 18px;
+  background: var(--hx-bg-raised);
+  box-shadow:
+    0 0 0 1px var(--hx-border),
+    0 12px 32px rgba(12, 14, 34, 0.08);
 }
-/* The heading of «Ждут ответа» is a title of the column's blocks: its icon and a stronger weight, «Очистить всё» a
-   quiet text on the same line. It shows here (the machine's stack hides its own, notice-stack.css). */
+/* The heading is the card's first line, as «Сабагенты» is: its icon, the name, «Очистить всё» quiet at the end. */
 .hx-notes .hx-ns__head {
   display: flex;
-  gap: 7px;
-  min-height: 28px;
-  /* The column floats over the feed, and in a narrow window the feed's text runs under the heading: it stands on the
-     same backing as the cards under it, so the words never mix with the text behind. */
-  margin-bottom: 6px;
-  padding: 0 8px 0 10px;
-  border-radius: 14px;
-  background: var(--ns-bg);
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 10px 6px 12px;
+  border-radius: 12px;
+  background: none;
 }
 .hx-ns__hicon {
   flex: none;
@@ -136,23 +149,57 @@
   background: var(--hx-bg-hover);
   color: var(--hx-fg-1);
 }
-.hx-notes .hx-ns__hit {
-  min-height: 56px;
-  padding: 10px 12px 10px 10px;
-  gap: 10px;
-}
+/* A notice is a row of the card: no ground and no shadow of its own, the hover's tint as the subagents' rows. */
 .hx-notes .hx-ns__card,
 .hx-notes .hx-ns__face {
-  box-shadow: var(--hx-toast-shadow);
+  background: transparent;
+  box-shadow: none;
+}
+.hx-notes .hx-ns__cards {
+  gap: 2px;
+}
+.hx-notes .hx-ns__hit {
+  gap: 10px;
+  min-height: 0;
+  padding: 8px 10px 8px 12px;
 }
 .hx-notes .hx-ns__hit:hover {
-  background: var(--hx-toast-fill);
+  background: var(--hx-bg-hover);
+}
+.hx-notes .hx-ns__title {
+  font-weight: var(--hx-weight-medium);
+}
+.hx-notes .hx-ns__card[data-gate] .hx-ns__lines {
+  min-height: 24px;
+}
+/* What opens under a row starts where its words do: 12px of padding, the 24px chip and the 10px gap. */
+.hx-notes .hx-ns__body {
+  padding: 0 10px 8px 46px;
+}
+.hx-notes .hx-ns__more {
+  padding: 0 10px 10px 46px;
+}
+/* The folded pile is the top row with «ещё N»: no paper cards fanned under it inside the card. */
+.hx-notes .hx-ns__pile {
+  padding: 0;
+}
+.hx-notes .hx-ns__face {
+  min-height: 0;
+  padding: 8px 10px 8px 12px;
+  border-radius: 12px;
+}
+.hx-notes .hx-ns__pile:hover .hx-ns__face {
+  background: var(--hx-bg-hover);
+  scale: none;
+}
+.hx-notes .hx-ns__under {
+  display: none;
 }
 /* On a phone the notices stand in the sheet, over the island's own ground: a hairline instead of a shadow. */
 .hx-notes[data-sheet] {
   margin: 4px 0 8px;
 }
-.hx-notes[data-sheet] :is(.hx-foldersug__card, .hx-ns__card, .hx-ns__face) {
+.hx-notes[data-sheet] :is(.hx-foldersug__card, .hx-ns) {
   box-shadow: 0 0 0 1px var(--hx-border-strong);
 }
 

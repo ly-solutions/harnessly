@@ -419,7 +419,7 @@ func (s *Service) buildRoutinePrompt(rule Rule, run Run) string {
     curl -sS -X POST "http://127.0.0.1:$%[3]s/automations/report" -H 'content-type: application/json' \
       -H "x-result-token: $%[1]s" --data @report.json
 
-Ответ 200 — готово. Не удалось сделать задачу — всё равно отчитайся с outcome failed и причиной.
+Ответ 200 — готово; 503 — связи с хабом нет, повтори через минуту (до пяти раз). Не удалось сделать задачу — всё равно отчитайся с outcome failed и причиной.
 `, tokenEnv, run.ID, port)
 	return b.String()
 }
@@ -540,10 +540,7 @@ func (s *Service) recordRoutine(ctx context.Context, rule Rule, rep Report) (Run
 
 // afterRoutine counts the streak, pauses after three failures, turns a one-time routine off and tells the person.
 func (s *Service) afterRoutine(ctx context.Context, rule Rule, run Run) {
-	streak := 0
-	if run.Outcome == OutcomeFailed {
-		streak = rule.FailStreak + 1
-	}
+	streak := s.failStreak(ctx, rule, run)
 	paused := ""
 	if streak >= failStreakPause && rule.Enabled {
 		paused = fmt.Sprintf("Пауза после %d сбоев подряд: %s", streak, clip(firstNonEmpty(runError(run), "агент не справился"), 300))
@@ -577,6 +574,31 @@ func (s *Service) afterRoutine(ctx context.Context, rule Rule, run Run) {
 		text = firstNonEmpty(runError(run), text)
 	}
 	s.ring(ctx, rule, "routine:"+run.ID, title, text, icon)
+}
+
+// failStreak counts the failed runs in a row by when they started, not when they ended: a run that timed out hours
+// later must not count against a newer run that went well (it showed «2 сбоя» and could pause a working routine).
+func (s *Service) failStreak(ctx context.Context, rule Rule, run Run) int {
+	// The kept count still bounds it: a resume clears it, and older failures do not come back with the next one.
+	base := rule.FailStreak
+	if run.Outcome == OutcomeFailed {
+		base++
+	}
+	rows, err := s.db.Query(ctx, `SELECT outcome FROM automation_runs WHERE rule_id = ? AND outcome IS NOT NULL
+		ORDER BY created_at DESC, id DESC LIMIT ?`, rule.ID, base+1)
+	if err != nil {
+		return base
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var outcome string
+		if rows.Scan(&outcome) != nil || outcome != OutcomeFailed {
+			break
+		}
+		n++
+	}
+	return min(base, n)
 }
 
 func runError(run Run) string {

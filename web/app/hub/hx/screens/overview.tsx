@@ -96,7 +96,7 @@ const StaffView = ({
   onPeriod,
 }: ViewProps & { slug: string; role: 'admin' | 'lead'; tenantName: string | null }) => {
   const { base } = useOrg();
-  const { data, error, reload } = useLoad((api) => api.overview(slug, period), [slug, period]);
+  const { data, error, reload } = useLoad((api) => api.overview(slug, period), [slug, period], 'overview');
   const shown = useKept<OverviewData>(data);
   const openSpend = useOpenSpend();
   const openActive = useOpenActive();
@@ -148,7 +148,7 @@ const StaffView = ({
 
 const MemberScreen = ({ period, onPeriod }: ViewProps) => {
   const { base } = useOrg();
-  const { data, error, reload } = useLoad((api) => api.myOverview(period), [period]);
+  const { data, error, reload } = useLoad((api) => api.myOverview(period), [period], 'my-overview');
   const shown = useKept<MyOverview>(data);
   const head = <Head role="member" tenantName={null} teamName={null} period={period} onPeriod={onPeriod} />;
   if (!shown)

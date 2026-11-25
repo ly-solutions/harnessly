@@ -93,6 +93,34 @@ export type FeatureView = {
 };
 export type FeaturesResponse = { features: FeatureView[] };
 
+// GET /api/orgs/{org}/capabilities (the organization's admin): every part of the hub that may be on or off, for the
+// screen «Возможности». `source` says where it is decided: env (the hub's own settings, read-only), org (an
+// organization's flag, PUT .../features/{name}) or rollout (a switch of the installation, PUT /api/admin/switches).
+export type CapabilitySource = 'env' | 'org' | 'rollout';
+export type CapabilityItem = {
+  id: string;
+  group: string;
+  name: string;
+  description: string;
+  source: CapabilitySource;
+  enabled: boolean;
+  // detail: a short state when on/off is not all of it («Только предупреждает»).
+  detail?: string;
+  // defaultOn: the hub turns it on itself when nobody chose.
+  defaultOn: boolean;
+  // needs: what else it takes to work (a service, a domain, a secret).
+  needs?: string;
+  // why: why it is off by default.
+  why?: string;
+  // forced: the instance decides it whatever the organization chose.
+  forced?: boolean;
+  // setBy: the setting of the hub that decides it, for what this screen cannot change.
+  setBy?: string;
+  // canToggle: the viewer may switch it here (an administrator of the installation, nothing forced).
+  canToggle: boolean;
+};
+export type CapabilitiesResponse = { groups: string[]; capabilities: CapabilityItem[]; canChange: boolean };
+
 export type OrgListItem = {
   id: string;
   slug: string;

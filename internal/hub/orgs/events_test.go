@@ -95,6 +95,10 @@ func waitListeners(t *testing.T, bus *events.MemoryBus, org string, n int) {
 
 func TestOrgEventsAreDarkUntilTheFlagIsOn(t *testing.T) {
 	v := newVera(t)
+	// The flag is on for an organization that has not chosen; this one chose to have it off.
+	if err := v.s.Hub.Features.Set(context.Background(), v.org, features.OrgEvents, false, ""); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range []*hubtest.Person{v.anna, v.boris, v.vera} {
 		r := p.Do("GET", v.url("/events"), nil)
 		if r.Code != http.StatusNotFound || r.Err() != "not_enabled" {

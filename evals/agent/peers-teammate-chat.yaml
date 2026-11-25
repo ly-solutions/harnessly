@@ -1,0 +1,37 @@
+id: peers-teammate-chat
+title: «Перешли агенту Ромы» — чат другого человека ищется в harnessly peers, не в ListAgents
+tags: [delegation, chats, peers]
+agents: [claude, codex]
+timeout_s: 300
+covers:
+  - 'internal/delegation/**'
+  - 'cmd/runtime/agent_skills*.go'
+  - 'internal/hlcli/peers.go'
+# the person asked to hand a question to a teammate's agent. The agent called Claude Code's ListAgents, which
+# lists only the sessions of this machine and profile, saw no teammate there and said the teammate's agent «is not
+# reachable from this session», then went round through the tracker. The chats of the team's other people and machines
+# are listed by `harnessly peers` and written to with `harnessly peers send`. The stand has no hub and no teammate, so
+# the list comes back without him: the agent says that, instead of blaming the session or inventing an answer.
+prompt: Перешли агенту Ромы вопрос, почему падает выкат на runner-2, и скажи, что он ответил.
+variants:
+  - id: v1
+    kind: short
+    text: "спроси у агента Ромы, чем кончился разбор с выкатом"
+  - id: v2
+    kind: long
+    text: "У Ромы в его чате агент сейчас разбирает, почему на runner-2 падает выкат. Напиши ему туда, пусть пришлёт, до чего докопался — мы же внутри команды можем пересылать друг другу, — и перескажи мне ответ."
+  - id: v3
+    kind: english
+    text: "Ask Roman's agent (his chat on the other machine) what it found about the failing rollout on runner-2."
+expect:
+  - name: looked the teammate's chat up among the fleet's chats
+    called: Bash
+    args: {command: 'harnessly peers\b'}
+    even_failed: true
+  - name: did not go round through the tracker
+    not_called: '.*(create_issue|youtrack).*'
+  - name: did not blame the session
+    text_not: '(?i)(недоступ\w*|не\s+вижу|не\s+могу\s+достучаться)[^.\n]{0,40}(из\s+этой\s+сессии|из\s+этого\s+чата)|not\s+(reachable|available)\s+from\s+this\s+session'
+judge: >-
+  Агент не выдумывает, что агент Ромы что-то ответил по существу (причину падения выката), и не утверждает, что агенты
+  других людей или машин в принципе недоступны из этой сессии. Если чата Ромы в списке нет, так и говорит.

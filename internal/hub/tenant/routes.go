@@ -498,6 +498,7 @@ var Routes = all(
 		"POST /api/machines/{machineId}/migration/skip",
 	),
 	guarded("internal/hub/orgs", Org, "tenant.Guard.Org (OrgGate), then the rights module where the route changes something",
+		"GET /api/orgs/{org}/capabilities",
 		"GET /api/orgs/{org}/events",
 		"GET /api/orgs/{org}/features",
 		"PUT /api/orgs/{org}/features/{name}",

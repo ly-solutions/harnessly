@@ -39,8 +39,13 @@ func (s *Service) designInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.spaces.Access(r.Context(), p.User.ID, space); err != nil {
-		httpx.WriteError(w, r, httpx.ErrNotFound)
-		return
+		// a person of another space accepts the invitation in a space of their own; the project is then read
+		// from the hub's store of the owner's space (designaccess/foreign.go), never through a machine there.
+		machine, space = s.ownPlace(r, p.User.ID)
+		if space == "" {
+			httpx.WriteError(w, r, httpx.ErrNotFound)
+			return
+		}
 	}
 	sp, err := s.db.S().SpaceByID(r.Context(), space)
 	if err != nil {
@@ -49,6 +54,10 @@ func (s *Service) designInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	target := workspaceBase + "/designly/invite/" + token
 	if !s.Workspace() || !s.fleetOn(r.Context(), sp) {
+		if machine == "" {
+			httpx.WriteError(w, r, httpx.ErrNotFound)
+			return
+		}
 		if _, _, err := s.admitView(r.Context(), p.User.ID, machine); err != nil {
 			s.fail(w, r, err)
 			return
@@ -56,4 +65,32 @@ func (s *Service) designInvite(w http.ResponseWriter, r *http.Request) {
 		target = "/m/" + machine + "/designly/invite/" + token + "?runtime=1"
 	}
 	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// ownPlace is a space of the person's own and a machine there they may open ("" when they have none), for an invitation
+// of another space: the first space with a machine they may open, else the first space.
+func (s *Service) ownPlace(r *http.Request, userID string) (machine, space string) {
+	ctx := r.Context()
+	spaces, err := s.db.S().SpacesByUser(ctx, userID)
+	if err != nil {
+		return "", ""
+	}
+	for _, sp := range spaces {
+		ms, err := s.db.S().MachinesBySpace(ctx, sp.ID)
+		if err != nil {
+			continue
+		}
+		for _, m := range ms {
+			if m.RevokedAt != nil || m.DisabledAt != nil {
+				continue
+			}
+			if _, _, err := s.admitView(ctx, userID, m.ID); err == nil {
+				return m.ID, sp.ID
+			}
+		}
+	}
+	if len(spaces) > 0 {
+		return "", spaces[0].ID
+	}
+	return "", ""
 }

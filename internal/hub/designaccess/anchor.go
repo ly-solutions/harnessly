@@ -78,6 +78,13 @@ func (s *Service) AnchorMachines(ctx context.Context, spaceIDs []string, rest st
 // admitted machine. With local storage the same slug may legitimately exist twice: a card key (cardkey.go) names the
 // copy to read, and without one a slug held twice is not found.
 func (s *Service) scopedHolder(ctx context.Context, anchor store.Machine, user store.User, project, invite, card string) (store.Machine, error) {
+	// Another space's project (foreign.go): by its card, or by an invitation to it the person accepts.
+	if held, ok, err := s.foreignHolder(ctx, anchor, user, project, card); err != nil || ok {
+		return held, err
+	}
+	if held, ok, err := s.foreignInvite(ctx, anchor, user, invite); err != nil || ok {
+		return held, err
+	}
 	if s.shared || anchor.SpaceID == "" {
 		return anchor, nil
 	}

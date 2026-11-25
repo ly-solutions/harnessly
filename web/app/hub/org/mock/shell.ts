@@ -1,5 +1,5 @@
 // Fixtures for the shell: the organization «Акме», its tenants and teams, and the three people who look at them.
-import type { AppsConsent, OrgLinks } from '../../../hub-api/orgs';
+import type { AppsConsent, CapabilitiesResponse, OrgLinks } from '../../../hub-api/orgs';
 import type { ShellApi } from '../api/shell';
 import { OrgApiError } from '../api/errors';
 import type { OrgChoice, TeamRef, TenantRef, Viewer } from '../types';
@@ -46,7 +46,74 @@ let mockAppsConsent: AppsConsent = 'ask';
 let mockLinks: OrgLinks = {};
 let mockMemberMachines = true;
 
+// The gallery shows the screen «Возможности» as an administrator of the installation sees it: the toggles work.
+let mockCapabilities: CapabilitiesResponse = {
+  groups: ['Регулярные задачи и автоматизация', 'Расходы и лимиты', 'Окружение агентов'],
+  canChange: true,
+  capabilities: [
+    {
+      id: 'HUB_AUTOMATIONS',
+      group: 'Регулярные задачи и автоматизация',
+      name: 'Регулярные задачи и автоматизации',
+      description:
+        'Вы просите агента в чате: «каждое утро присылай дайджест», и хаб сам запускает такую задачу на вашей машине.',
+      source: 'env',
+      enabled: true,
+      defaultOn: true,
+      setBy: 'HUB_AUTOMATIONS',
+      canToggle: false,
+    },
+    {
+      id: 'automation-triggers',
+      group: 'Регулярные задачи и автоматизация',
+      name: 'Запуск по расписанию и по ожиданию',
+      description: 'Регулярные задачи и правила срабатывают по времени.',
+      source: 'rollout',
+      enabled: true,
+      defaultOn: true,
+      needs: 'Включённые «Регулярные задачи и автоматизации».',
+      canToggle: true,
+    },
+    {
+      id: 'HUB_LIMITS_ENFORCE',
+      group: 'Расходы и лимиты',
+      name: 'Лимиты расходов на машинах',
+      description: 'Что делают машины с лимитами.',
+      source: 'env',
+      enabled: true,
+      detail: 'Только предупреждает',
+      defaultOn: false,
+      why: 'Может остановить людям работу, поэтому включается осознанно.',
+      setBy: 'HUB_LIMITS_ENFORCE',
+      canToggle: false,
+    },
+    {
+      id: 'env',
+      group: 'Окружение агентов',
+      name: 'Окружение машин',
+      description: 'Экран «Окружение»: что получают машины организации.',
+      source: 'org',
+      enabled: false,
+      defaultOn: false,
+      why: 'Меняет то, что ставится на машины людей, поэтому включается осознанно.',
+      canToggle: true,
+    },
+  ],
+};
+
 export const shellMock = (ctx: MockCtx): ShellApi => ({
+  capabilities: async () => {
+    if (ctx.role !== 'admin') throw new OrgApiError('forbidden', '');
+    return later(mockCapabilities);
+  },
+  setCapability: async (_org, _source, id, enabled) => {
+    if (ctx.role !== 'admin') throw new OrgApiError('forbidden', '');
+    mockCapabilities = {
+      ...mockCapabilities,
+      capabilities: mockCapabilities.capabilities.map((c) => (c.id === id ? { ...c, enabled } : c)),
+    };
+    return later(undefined);
+  },
   appsConsent: async () => later(mockAppsConsent),
   setAppsConsent: async (_org, value) => {
     if (ctx.role !== 'admin') throw new OrgApiError('forbidden', '');

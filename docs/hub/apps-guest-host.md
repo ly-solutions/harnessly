@@ -2,7 +2,9 @@
 
 A guest link to an app (`/apps/guest/<token>/…`, docs/hub/apps.md) is served by the hub from its store, with no sign-in:
 the token is the whole authority and the link's rights are what the machine wrote into it. By default it runs on the
-hub's own origin.
+hub's own origin only when the hub itself is on this machine (`localhost`, a loopback address: local development).
+On any other hub, without `HUB_APPS_GUEST_URL` the hub's origin answers `/apps/guest/…` with 404: a guest's
+view would run next to the hub's session, so set the variable to serve app guest links.
 
 `HUB_APPS_GUEST_URL=https://guest.example.com` (off when empty) gives the guests an origin of their own, so an app's view
 never runs next to the hub's session:

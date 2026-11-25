@@ -13,6 +13,7 @@ export type Section =
   | 'tools'
   | 'efficiency'
   | 'settings'
+  | 'capabilities'
   | 'extensions'
   | 'map'
   | 'profile';
