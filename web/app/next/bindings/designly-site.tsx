@@ -928,7 +928,7 @@ const DesignlySiteInner = ({
     );
   }
   if (missing && project === null && granted && exhausted && away !== null) {
-    return <ProjectAway why={away} ownerName={gated?.ownerName ?? ''} onBack={back} />;
+    return <ProjectAway key={id} project={id} why={away} ownerName={gated?.ownerName ?? ''} onBack={back} />;
   }
 
   // «Опубликовать как сайт» lives in «Поделиться», where a manager edits a site design.
