@@ -3,6 +3,7 @@
 // site (a window or an edge) it is the usual chat — the same feed, field, picker, queue and states as anywhere; folded
 // over the site it is the island: the field, and over it the agent's last line with what it does now and «Стоп». A
 // design without a chat gets one with its first message, which is in the column from the moment it is sent.
+import { launchObjectAnnotation } from '@/next/features/app-views/space-context';
 import type { IAppObject } from '@/next/features/voice-live/api';
 import { nothingToSend } from '@/next/features/composer/nothing-to-send';
 import { sendModeNow } from '@/next/stores/chat-state';
@@ -699,6 +700,7 @@ export const useSiteStage = ({
   const spaceLine = useSpaceLine();
 
   /** The typed words with the notes as the agent reads them. */
+  const launchContext = deckCtx ? null : launchObjectAnnotation(app?.object);
   const wrap = (typed: string) =>
     withAnnotations(space ? withoutMention(typed) : typed, [
       ...notes.map((note, i) =>
@@ -712,6 +714,7 @@ export const useSiteStage = ({
         }),
       ),
       ...(deckCtx ? [formatChatContext(notes.length + 1, deckCtx)] : []),
+      ...(launchContext ? [launchContext] : []),
     ]);
   const afterSend = () => {
     setSawRun(false);

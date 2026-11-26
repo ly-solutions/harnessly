@@ -1,3 +1,4 @@
+import { remoteObjectReport } from './space-context';
 // An app's view in a sandboxed frame: shown through a preview slot (so it runs on an origin of its own, never the
 // page's, and the preview's DevTools see it), and talked to only through the bridge (bridge.ts).
 import {
@@ -1125,6 +1126,31 @@ const AppFrame = ({
     }, AUTO_RETRY_MS);
     return () => clearTimeout(id);
   }, [retrying]);
+
+  const reportAllowed = app.permissions.includes('context.publish');
+  useEffect(() => {
+    const config = view.objectReport;
+    if (!config || !reportAllowed || !view.url || !frame || !ready) return;
+    const origin = new URL(view.url).origin;
+    const publish = (object: string | null) => {
+      const data = { object };
+      publishTo.current?.(data, null);
+      offered.current.context = data;
+      void Promise.resolve(offerRef.current?.publish(data)).catch(() => undefined);
+    };
+    const clear = () => publish(null);
+    const receive = (event: MessageEvent) => {
+      const id = remoteObjectReport(event, frame.contentWindow, origin, config);
+      if (id !== undefined) publish(id);
+    };
+    window.addEventListener('message', receive);
+    frame.addEventListener('load', clear);
+    return () => {
+      window.removeEventListener('message', receive);
+      frame.removeEventListener('load', clear);
+      clear();
+    };
+  }, [reportAllowed, view.url, view.objectReport, frame, ready]);
 
   // What the view says before the SDK is up (the shim of every page, or the server's page of refusal): a file that did
   // not load, an exception, a blocked request. It goes to the journal, and the most telling of it is the card's reason.

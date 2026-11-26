@@ -940,3 +940,5 @@ the public catalog. The process comes next.
 Not built yet: the hub's own catalog and storage of packages (the team's and the public list come from the platform's relay,
 the `apps.team` op and its public counterpart, and are not sent by this repo's hub), `app fork` and `app export`, `app eval init`, evals on
 Codex, and the check of a published version against the requests the evals made.
+
+A remote editor can [report its opened object](apps/remote-object-reports.md) to the app stage.

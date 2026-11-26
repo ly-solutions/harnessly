@@ -116,12 +116,13 @@ type pendingView struct {
 // appViewEntry is a view of an app as the page opens it: Path is its entry on the view server (/<app>/<file>), URL the
 // address of one the app's own server hosts.
 type appViewEntry struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title,omitempty"`
-	Targets []string `json:"targets"`
-	Height  string   `json:"height,omitempty"`
-	Path    string   `json:"path,omitempty"`
-	URL     string   `json:"url,omitempty"`
+	ObjectReport *apps.ObjectReport `json:"objectReport,omitempty"`
+	ID           string             `json:"id"`
+	Title        string             `json:"title,omitempty"`
+	Targets      []string           `json:"targets"`
+	Height       string             `json:"height,omitempty"`
+	Path         string             `json:"path,omitempty"`
+	URL          string             `json:"url,omitempty"`
 	// The slots: the name, icon, place and objects of a view that fills one.
 	Label   string   `json:"label,omitempty"`
 	Icon    string   `json:"icon,omitempty"`
@@ -200,6 +201,7 @@ func viewOfApp(a apps.Installed, withDir bool) appView {
 				// A view at an address of the app's own server is framed only when its host is listed in network.frames.
 				if u, ok := m.FrameURL(mv.Entry); ok {
 					e.URL = u
+					e.ObjectReport = mv.ObjectReport
 				}
 			} else if p, err := m.ViewPath(mv.ID); err == nil {
 				e.Path = p

@@ -22,6 +22,7 @@ import {
   spaceChatContext,
   spaceCleared,
   spaceContextOf,
+  reportedObject,
 } from '@/next/features/app-views/space-context';
 import { ConsentStage } from '@/next/features/app-consent/consent-ask';
 import { useInstalledApps, type IAppView, type IInstalledApp } from '@/next/features/app-views/api';
@@ -345,6 +346,23 @@ const AppStagePage = ({
     (appId: string, data: unknown, frame: DOMRect | null) => {
       const now = live.current;
       const shown = now.id === appId;
+      if (!isSpaceApp(appId)) {
+        const object = reportedObject(data);
+        if (shown && object !== undefined) {
+          setInView(appId, object);
+          now.context?.(
+            object === null
+              ? null
+              : {
+                  label: object,
+                  selected: false,
+                  block: false,
+                  text: `Object reported by the app: app:${appId}/object/${object}`,
+                },
+          );
+        }
+        return;
+      }
       const ctx = spaceContextOf(data);
       if (!ctx) {
         // Back to the list: nothing is open, the chip and the place go.
@@ -526,7 +544,7 @@ const AppStagePage = ({
               sendFrom={sendFrom}
               goIn={goIn}
               shareObject={shareObject}
-              publish={space ? publish : undefined}
+              publish={publish}
               host={host}
             />
           );

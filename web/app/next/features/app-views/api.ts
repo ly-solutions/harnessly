@@ -26,7 +26,16 @@ import {
 } from '@/next/features/app-views/bridge';
 import { keepRead, keptRead } from '@/next/stores/kept-reads';
 
+export interface IObjectReport {
+  type: string;
+  idPath: string;
+  matchPath?: string;
+  matchValue?: string;
+  clear?: string[];
+}
+
 export interface IAppView {
+  objectReport?: IObjectReport;
   id: string;
   title?: string;
   targets: string[];

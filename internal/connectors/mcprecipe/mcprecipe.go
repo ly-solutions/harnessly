@@ -58,6 +58,8 @@ type Recipe struct {
 	Thread string `json:"thread,omitempty"`
 	// Cursor is the field whose greatest value is passed back as {{cursor}} ("" — none: things are told apart by id).
 	Cursor string `json:"cursor,omitempty"`
+	// PageCursor is an opaque checkpoint on the whole response, including an empty initial page.
+	PageCursor string `json:"pageCursor,omitempty"`
 	// Every is how often to poll (Go duration, 1m to 24h; 10m by default).
 	Every string `json:"every,omitempty"`
 }
@@ -188,33 +190,33 @@ type thing struct {
 }
 
 // run calls the tool once and maps the answer.
-func run(ctx context.Context, in connectors.Instance, r Recipe, cursor string) ([]thing, error) {
+func run(ctx context.Context, in connectors.Instance, r Recipe, cursor string) ([]thing, string, error) {
 	srv, err := server(in.Config["server"])
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err := guard(ctx, in, srv, r.Tool); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	args, err := json.Marshal(withCursor(r.Args, cursor))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	raw, err := Service.CallTool(ctx, srv.ID, r.Tool, args)
 	if err != nil {
-		return nil, connectors.Sayf("%s did not answer the tool %q", srv.Name, r.Tool)
+		return nil, "", connectors.Sayf("%s did not answer the tool %q", srv.Name, r.Tool)
 	}
 	body, err := answer(raw)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	got := pick(body, r.Items)
-	if got == nil {
-		return nil, nil // an empty answer: nothing there now
+	if got == nil && r.PageCursor == "" {
+		return nil, "", nil // an empty answer: nothing there now
 	}
 	list, ok := got.([]any)
 	if !ok {
-		return nil, connectors.Sayf("The answer has no list at %q", r.Items)
+		return nil, "", connectors.Sayf("The answer has no list at %q", r.Items)
 	}
 	var out []thing
 	for _, v := range list {
@@ -231,7 +233,15 @@ func run(ctx context.Context, in connectors.Instance, r Recipe, cursor string) (
 		}
 		out = append(out, t)
 	}
-	return out, nil
+	var next string
+	if r.PageCursor != "" {
+		var ok bool
+		next, ok = pick(body, r.PageCursor).(string)
+		if !ok || next == "" {
+			return nil, "", connectors.Sayf("The answer has no checkpoint at %q", r.PageCursor)
+		}
+	}
+	return out, next, nil
 }
 
 // answer is the tool's result as data: its structuredContent, else its first text read as JSON.
@@ -345,7 +355,7 @@ func (conn) Check(ctx context.Context, in connectors.Instance) (connectors.Accou
 	if err != nil {
 		return connectors.Account{}, err
 	}
-	things, err := run(ctx, in, r, "")
+	things, _, err := run(ctx, in, r, "")
 	if err != nil {
 		return connectors.Account{}, err
 	}
@@ -380,9 +390,11 @@ func (conn) Poll(ctx context.Context, in connectors.Instance, from connectors.Cu
 	}
 	var m memo
 	if in.Load != nil {
-		_ = in.Load(&m)
+		if err := in.Load(&m); err != nil {
+			return nil, from, err
+		}
 	}
-	things, err := run(ctx, in, r, m.Cursor)
+	things, next, err := run(ctx, in, r, m.Cursor)
 	if err != nil {
 		return nil, from, err
 	}
@@ -405,6 +417,9 @@ func (conn) Poll(ctx context.Context, in connectors.Instance, from connectors.Cu
 		}
 		events = append(events, connectors.Event{Type: EventItem, ID: r.Trigger + ":" + t.id, At: t.at, Actor: t.actor,
 			Title: t.title, URL: t.url, Thread: t.thread, Facts: map[string]string{"trigger": r.Trigger, "server": in.Config["server"]}})
+	}
+	if next != "" {
+		m.Cursor = next
 	}
 	m.Primed = true
 	if len(m.Seen) > seenMax {

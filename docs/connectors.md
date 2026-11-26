@@ -271,6 +271,10 @@ the loop.
   the digest. Every `every` (1m–24h, 10m by default). They go to the hub's journal and the inbox (`feed`) like any
   connector's, and each recipe is a trigger of its own in the catalog (`/events` → «Триггеры»).
 
+A tool can return a checkpoint for an entire page, including an empty first page. Set
+`pageCursor` to the path of that string. The next poll passes it through `{{cursor}}`.
+When configured, a missing checkpoint fails the poll and retains the existing cursor.
+
 ## Folder (`internal/connectors/folder`)
 
 **Connect.** Settings → Connections → Folders → «Folder»: the path (`~/Notes`; it must exist and be inside the home
