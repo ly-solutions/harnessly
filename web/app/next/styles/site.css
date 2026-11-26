@@ -894,48 +894,6 @@
 .hx-tab[data-kind='new'] .hx-tab__name {
   max-width: none;
 }
-.hx-devmenu {
-  width: 340px;
-}
-.hx-devopt {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px 8px 10px;
-}
-.hx-devopt__check {
-  flex: none;
-  color: var(--hx-accent);
-  opacity: 0;
-}
-.hx-devopt[aria-selected='true'] .hx-devopt__check {
-  opacity: 1;
-}
-.hx-devopt__name {
-  color: var(--hx-fg-1);
-  font-size: var(--hx-text-sm);
-  white-space: nowrap;
-}
-.hx-devopt__meta {
-  overflow: hidden;
-  color: var(--hx-fg-3);
-  font-size: var(--hx-text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hx-devopt__meta::before {
-  content: '· ';
-}
-.hx-devopt__size {
-  margin-left: auto;
-  color: var(--hx-fg-3);
-  font-size: var(--hx-text-sm);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.hx-devopt__size:empty {
-  display: none;
-}
 .hx-more {
   width: 290px;
 }
@@ -1057,59 +1015,6 @@
     display: none;
   }
 }
-.hx-devsize {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0 0 4px;
-  padding: 4px 2px 8px 10px;
-  border-bottom: 1px solid var(--hx-border);
-}
-.hx-devsize__label {
-  margin-right: auto;
-  color: var(--hx-fg-3);
-  font-size: var(--hx-text-xs);
-}
-.hx-devsize__in {
-  width: 58px;
-  height: 28px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 8px;
-  outline: none;
-  background: var(--hx-bg-hover);
-  color: var(--hx-fg-1);
-  font: inherit;
-  font-size: var(--hx-text-xs);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  transition: box-shadow 160ms ease;
-}
-.hx-devsize__in:focus {
-  box-shadow: 0 0 0 2px var(--hx-focus);
-}
-.hx-devsize__x {
-  color: var(--hx-fg-3);
-  font-size: 11px;
-}
-.hx-devsize__zoom {
-  min-width: 36px;
-  color: var(--hx-fg-3);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.hx-devsize__zoom:empty {
-  min-width: 4px;
-}
-.hx-devsize .hx-head-btn {
-  width: 28px;
-  height: 28px;
-}
-.hx-devsize .hx-head-btn[aria-disabled='true'] {
-  opacity: 0.35;
-  pointer-events: none;
-}
 .hx-browser__page[data-kind='page'] {
   display: flex;
   overflow: hidden;
@@ -1221,17 +1126,6 @@
 .hx-dev .hx-screen {
   position: relative;
   overflow: hidden;
-}
-.hx-vparea[data-rot='true'] .hx-vpscale {
-  width: var(--dw);
-  height: var(--dh);
-  transform: scale(var(--fit)) translateY(var(--dw)) rotate(-90deg);
-}
-.hx-vparea[data-rot='true'] .hx-vp {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: translateX(var(--sw)) rotate(90deg) scale(var(--k));
 }
 .hx-vpgrab {
   position: absolute;
@@ -1347,9 +1241,6 @@
     display: none;
   }
 }
-.hx-devopt__meta:empty {
-  display: none;
-}
 .hx-strip .hx-tab:not([aria-selected='true']) {
   flex: 0 1 auto;
   flex-basis: auto;
@@ -1442,60 +1333,6 @@
   flex: 1;
   min-height: 0;
   height: auto;
-}
-.hx-vp[data-os='android'] .hx-pbar {
-  padding: 0 22px;
-  font:
-    500 14px/18px Roboto,
-    system-ui,
-    sans-serif;
-}
-.hx-vp[data-os='ipad'] .hx-pbar {
-  padding: 0 22px;
-  font-size: 13px;
-}
-.hx-vp[data-os='android'] .hx-pbar__time,
-.hx-vp[data-os='ipad'] .hx-pbar__time {
-  text-align: left;
-}
-.hx-vp[data-ui='ipad'] .hx-pchrome {
-  height: 50px;
-  justify-content: center;
-  background: #18181b;
-}
-.hx-vp[data-ui='ipad'] .hx-pchrome__url {
-  flex: 0 1 420px;
-  justify-content: center;
-  height: 34px;
-  border-radius: 10px;
-  font-family: -apple-system, system-ui, sans-serif;
-}
-.hx-vp[data-ui='ipad'] :is(.hx-pchrome__tabs, .hx-pchrome__menu) {
-  display: none;
-}
-.hx-vp[data-os='android'] .hx-phome {
-  position: static;
-  flex: none;
-  align-self: center;
-  width: 108px;
-  height: 4px;
-  margin: 10px 0;
-  background: rgba(255, 255, 255, 0.7);
-}
-.hx-vp[data-os='ipad'] .hx-phome {
-  width: 180px;
-  margin-left: -90px;
-}
-.hx-devchrome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px 8px 12px;
-  margin-bottom: 4px;
-}
-.hx-devchrome .hx-switch {
-  pointer-events: none;
 }
 .hx-vparea[data-dev='overview'] {
   padding: 0;
@@ -1738,99 +1575,8 @@
 .hx-pane .hx-tabs__add {
   margin-right: auto;
 }
-.hx-vp[data-os='android'] .hx-pchrome {
-  height: 56px;
-}
-.hx-vp[data-ui='samsung'] .hx-pchrome {
-  background: #17171a;
-}
-.hx-vp[data-ui='samsung'] .hx-pchrome__url {
-  border-radius: 12px;
-}
-.hx-vp[data-os='android'][data-bars='min'] .hx-pchrome {
-  height: 0;
-  opacity: 0;
-}
-.hx-vp[data-ui='iostop'] .hx-pchrome {
-  height: 50px;
-  justify-content: center;
-  background: rgba(28, 28, 32, 0.92);
-}
-.hx-vp[data-ui='iostop'] .hx-pchrome__url {
-  flex: 1;
-  justify-content: center;
-  height: 36px;
-  border-radius: 10px;
-  font:
-    15px/20px -apple-system,
-    'SF Pro Text',
-    system-ui,
-    sans-serif;
-  transition:
-    height 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    background 200ms ease,
-    font-size 260ms ease;
-}
-.hx-vp[data-ui='iostop'] :is(.hx-pchrome__tabs, .hx-pchrome__menu) {
-  display: none;
-}
-.hx-vp[data-ui='iostop'][data-bars='min'] .hx-pchrome {
-  height: 26px;
-}
-.hx-vp[data-ui='iostop'][data-bars='min'] .hx-pchrome__url {
-  height: 22px;
-  background: transparent;
-  font-size: 12px;
-}
-.hx-vp[data-ui='iostop'][data-bars='min'] .hx-pchrome__url .hx-icon {
-  display: none;
-}
-.hx-vp[data-ui='iostop'] .hx-pbot {
-  height: 80px;
-  padding-bottom: 30px;
-  box-sizing: border-box;
-  background: rgba(28, 28, 32, 0.92);
-  color: #0a84ff;
-}
-.hx-vp[data-bars='min'] .hx-pbot {
-  height: 0;
-  padding-bottom: 0;
-  opacity: 0;
-}
-.hx-vp[data-bars='min'] .hx-psafari {
-  left: 30%;
-  right: 30%;
-  bottom: 18px;
-  cursor: pointer;
-}
-.hx-vp[data-bars='min'] .hx-psafari__btn {
-  width: 0;
-  opacity: 0;
-  margin: 0 -4px;
-}
-.hx-vp[data-bars='min'] .hx-psafari__url {
-  height: 30px;
-  font-size: 12px;
-}
-.hx-vp[data-bars='min'] .hx-ps18 {
-  height: 44px;
-  cursor: pointer;
-}
-.hx-vp[data-bars='min'] .hx-ps18__url {
-  height: 24px;
-  background: transparent;
-  font-size: 12px;
-}
-.hx-vp[data-bars='min'] :is(.hx-ps18__aa, .hx-ps18__url .hx-icon, .hx-ps18__tools) {
-  opacity: 0;
-}
 .hx-vpbox {
   position: relative;
-}
-.hx-vp[data-bars='min'] .hx-psam {
-  transform: translateY(calc(100% + 40px));
-  opacity: 0;
-  pointer-events: none;
 }
 .hx-site[data-dock='right'] {
   grid-template-columns: minmax(0, 1fr) 0px;
@@ -2278,169 +2024,6 @@
 .hx-phone__send:hover {
   background: var(--hx-bg-active);
 }
-.hx-pbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--sb);
-  padding: 0 30px 0 34px;
-  padding-top: calc(var(--sb) - 34px);
-  color: #fff;
-  font:
-    600 16px/20px -apple-system,
-    'SF Pro Text',
-    system-ui,
-    sans-serif;
-  letter-spacing: -0.01em;
-}
-.hx-pbar__time {
-  min-width: 54px;
-  text-align: center;
-}
-.hx-pbar__sig {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 1.5px;
-  height: 11px;
-}
-.hx-pbar__sig i {
-  width: 3px;
-  border-radius: 1px;
-  background: currentColor;
-}
-.hx-pbar__sig i:nth-child(1) {
-  height: 4px;
-}
-.hx-pbar__sig i:nth-child(2) {
-  height: 6px;
-}
-.hx-pbar__sig i:nth-child(3) {
-  height: 8.5px;
-}
-.hx-pbar__sig i:nth-child(4) {
-  height: 11px;
-}
-.hx-pbar__wifi {
-  --hx-icon-size: 15px;
-  width: 15px;
-  height: 15px;
-}
-.hx-pbar__bat {
-  position: relative;
-  width: 25px;
-  height: 12px;
-  padding: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 4px;
-}
-.hx-pbar__bat::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  right: -3.5px;
-  width: 2px;
-  height: 4px;
-  border-radius: 0 1px 1px 0;
-  background: rgba(255, 255, 255, 0.4);
-}
-.hx-pbar__bat i {
-  display: block;
-  width: 80%;
-  height: 100%;
-  border-radius: 2px;
-  background: currentColor;
-}
-.hx-pchrome {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 56px;
-  padding: 0 12px 0 14px;
-  background: #1f1f23;
-  color: #e4e4e7;
-}
-.hx-pchrome__url {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 14px;
-  overflow: hidden;
-  border-radius: 20px;
-  background: #2e2e33;
-  font:
-    15px/20px Roboto,
-    system-ui,
-    sans-serif;
-  white-space: nowrap;
-}
-.hx-pchrome__url .hx-icon {
-  color: #a1a1aa;
-}
-.hx-pchrome__tabs {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: 2px solid currentColor;
-  border-radius: 5px;
-  font:
-    600 11px/1 Roboto,
-    system-ui,
-    sans-serif;
-}
-.hx-psafari {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 28px;
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  pointer-events: none;
-}
-.hx-psafari__btn,
-.hx-psafari__url {
-  display: grid;
-  place-items: center;
-  height: 48px;
-  border-radius: 24px;
-  background: rgba(40, 40, 46, 0.62);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
-  box-shadow:
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.22),
-    0 8px 24px rgba(0, 0, 0, 0.35);
-  color: #fff;
-}
-.hx-psafari__btn {
-  flex: none;
-  width: 48px;
-}
-.hx-psafari__url {
-  flex: 1;
-  font:
-    500 15px/20px -apple-system,
-    'SF Pro Text',
-    system-ui,
-    sans-serif;
-}
-.hx-phome {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  z-index: 9;
-  width: 134px;
-  height: 5px;
-  margin-left: -67px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.85);
-  pointer-events: none;
-}
 /* «Все экраны»: the row is the canvas's box (use-canvas-zoom): it keeps its own size, centred in the area while it fits
    and from the left edge once it does not, and pans and zooms. The sizes are devices.ts's (overviewOf, overviewBox). */
 .hx-ovw {
@@ -2581,169 +2164,11 @@
   outline: 2px solid var(--hx-focus);
   outline-offset: 1px;
 }
-.hx-pchrome {
-  overflow: hidden;
-  transition:
-    height 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    padding 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 200ms ease;
-}
-.hx-pbot {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  height: 52px;
-  overflow: hidden;
-  background: #17171a;
-  color: #d4d4d8;
-  transition:
-    height 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 200ms ease;
-}
-.hx-psafari {
-  pointer-events: auto;
-  cursor: default;
-  transition:
-    left 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    right 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    bottom 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.hx-psafari__btn,
-.hx-psafari__url {
-  transition:
-    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 200ms ease,
-    font-size 280ms ease;
-}
-.hx-ps18 {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 8;
-  height: 92px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px 0;
-  box-sizing: border-box;
-  background: rgba(30, 30, 34, 0.72);
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
-  color: #fff;
-  transition: height 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  overflow: hidden;
-}
-.hx-ps18__url {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 40px;
-  padding: 0 12px;
-  box-sizing: border-box;
-  border-radius: 12px;
-  background: rgba(118, 118, 128, 0.32);
-  font:
-    500 15px/20px -apple-system,
-    'SF Pro Text',
-    system-ui,
-    sans-serif;
-  transition:
-    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    background 200ms ease,
-    font-size 280ms ease;
-}
-.hx-ps18__host {
-  flex: 1;
-  text-align: center;
-}
-.hx-ps18__aa {
-  font-size: 13px;
-}
-.hx-ps18__tools {
-  display: flex;
-  justify-content: space-around;
-  width: 100%;
-  color: #0a84ff;
-  transition: opacity 180ms ease;
-}
-.hx-psam {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 32px;
-  z-index: 8;
-  display: flex;
-  gap: 8px;
-  cursor: default;
-  transition:
-    transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 220ms ease;
-}
-.hx-psam__url,
-.hx-psam__side {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 46px;
-  padding: 0 16px;
-  border-radius: 23px;
-  background: rgba(36, 36, 40, 0.6);
-  backdrop-filter: blur(20px) saturate(1.5);
-  -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  box-shadow:
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.16),
-    0 6px 20px rgba(0, 0, 0, 0.35);
-  color: #e4e4e7;
-  font:
-    500 14px/18px 'Samsung One',
-    Roboto,
-    system-ui,
-    sans-serif;
-}
-.hx-psam__url {
-  flex: 1;
-  min-width: 0;
-}
-.hx-psam__host {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hx-psam__side {
-  flex: none;
-  gap: 16px;
-}
-.hx-psam__tabs {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid currentColor;
-  border-radius: 5px;
-  font-size: 10px;
-  line-height: 1;
-}
 .hx-switch[data-on='true'] {
   background: var(--hx-accent);
 }
 .hx-switch[data-on='true'] i {
   transform: translateX(14px);
-}
-@media (prefers-reduced-motion) {
-  .hx-pchrome,
-  .hx-pbot,
-  .hx-psafari,
-  .hx-psam,
-  .hx-ps18,
-  .hx-ps18__url {
-    transition: none;
-  }
 }
 
 /* ── A design that is opening (features/designly/site-skeleton.tsx) ──
@@ -3316,11 +2741,10 @@
     display: none;
   }
   .hx-site-menu.hx-sheet-phone .hx-option,
-  .hx-site-menu.hx-sheet-phone .hx-devopt,
   .hx-site-menu.hx-sheet-phone .hx-more__item {
     min-height: 48px;
   }
-  .hx-site-menu.hx-sheet-phone .hx-devopt__name,
+
   .hx-site-menu.hx-sheet-phone .hx-more__label {
     font-size: var(--hx-text-md);
   }
@@ -3596,19 +3020,6 @@
     border-color 260ms var(--hx-ease-out),
     box-shadow 260ms var(--hx-ease-out),
     opacity 260ms var(--hx-ease-out);
-}
-.hx-dev.hx-dev[data-case='off'] .device-frame {
-  border-color: transparent;
-  background-color: transparent;
-  box-shadow: none;
-}
-.hx-dev[data-case='off'] > :not(.device-frame) {
-  opacity: 0;
-}
-.hx-dev[data-case='off'] .device-screen {
-  box-shadow:
-    0 0 0 1px var(--hx-border-strong),
-    0 20px 50px rgba(0, 0, 0, 0.25);
 }
 
 /* While the zoom pill is dragged, no frame takes the pointer: a fast move over the board must not drop the drag. */

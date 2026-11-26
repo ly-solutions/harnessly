@@ -57,6 +57,7 @@ import { usePaneChatStage, useSiteOnlyStage, type IStageWithChat } from '@/next/
 import { useTabScope, useTabState, useTabTitle } from '@/next/stores/tabs';
 import { useChatPaneView } from '@/next/stores/pane-state';
 import { modeKindOf, modeStateKey, useDesignMode } from '@/next/features/designly/design-mode';
+import { useChatBoards } from '@/next/features/designly/chat-boards';
 import { keepChatPlace } from '@/next/features/designly/chat-place';
 import { goTo, ROUTE, routePath, useRoute, type TAccessFocus } from '@/next/routes/routes';
 import KitChip from '@/next/features/designly/kit/kit-chip';
@@ -77,8 +78,7 @@ import {
   KIT_ACTION,
   KIT_DRAFT_VERSION,
 } from '@/next/features/designly/versions/versions-api';
-import VersionsPanel from '@/next/features/designly/versions/versions-panel';
-import { usePresentFlag } from '@/next/ui/presence';
+import { useDesignSide } from '@/next/features/designly/panel/use-design-side';
 import DesignlyVideo from '@/next/bindings/designly-video';
 import DesignlyScene3d from '@/next/bindings/designly-scene3d';
 import SinopiaStage from '@/next/features/app-views/sinopia/sinopia-stage';
@@ -178,14 +178,11 @@ interface IBodyProps extends IDesignlySiteProps {
   pane?: IPane;
 }
 
-/** The design's first pages are its tabs from the start, as in the design; the rest are opened with «+». */
 /** How often the pages are read again while an agent works on the design, ms. */
 const PAGES_POLL_MS = 4000;
-/** The «Версии» panel's exit, as long as its animation in sinopia.css. */
-const VERSIONS_EXIT_MS = 220;
-const SEED_TABS = 6;
+/** The design opens on its first page; the board switcher of the bar goes to the others. */
 const seedTabs = (boards: readonly { path: string }[]): ISiteTab[] =>
-  boards.slice(0, SEED_TABS).map((b) => newTab(b.path));
+  boards.slice(0, 1).map((b) => newTab(b.path));
 
 const DesignlySiteInner = ({
   gate,
@@ -596,6 +593,11 @@ const DesignlySiteInner = ({
     editing && snapshot === null && storeAt.k === STORE_AT.at && path !== null
       ? storeBoardAtHref(id, path, storeAt.rev, scene)
       : null;
+  // Looking at the design keeps the chat the person edited it with: it slides away and comes back.
+  const [hadChat, setHadChat] = useState(editing);
+  if (editing && !hadChat) setHadChat(true);
+  // The boards the agent wrote in the chat beside the design: the switcher marks them.
+  const chatBoards = useChatBoards(paneConv ?? stage?.conv ?? null, id);
   // The apps on in this document (their panels, selection menu, marks on the boards, the gate before a share). The
   // chat they send tasks to is the one the pane sits beside, or the one the person came from.
   // The design's own chat, when it has no pane or chat it was opened from, is the column's.
@@ -717,26 +719,6 @@ const DesignlySiteInner = ({
     }
   };
 
-  // A board asked for (the card of a turn that wrote it): its tab comes forward, or a new one opens on it. Asked again
-  // (another card, the same board clicked again) it comes forward again; the person's own tab switches stand meanwhile.
-  const askedSeen = useRef(0);
-  useEffect(() => {
-    if (!askedPage || pageAt === 0 || askedSeen.current === pageAt || !project) return;
-    askedSeen.current = pageAt;
-    seeded.current = true;
-    const have = tabs.find((x) => x.hist[x.hi] === askedPage);
-    refreshSlot(askedPage);
-    if (have) {
-      setTab(have.id);
-      return;
-    }
-    const added = newTab(askedPage);
-    setTabs((list) => [...list, added]);
-    setTab(added.id);
-    // refreshSlot and the tab setters are this render's; only a new ask (pageAt) or the project's arrival matter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [askedPage, pageAt, project]);
-
   const copyLink = () => {
     if (gated && isUnowned(gated)) {
       toast(t('next.access.claimBeforeCopy'), { tone: 'error' });
@@ -785,6 +767,17 @@ const DesignlySiteInner = ({
       x.hist[x.hi] === board ? x : { ...x, hist: [...x.hist.slice(0, x.hi + 1), board], hi: x.hi + 1 },
     );
   });
+  // A board asked for (the card of a turn that wrote it): the view turns to it. Asked again (another card,
+  // the same board clicked again) it turns again; the person's own switches stand meanwhile.
+  const askedSeen = useRef(0);
+  useEffect(() => {
+    if (!askedPage || pageAt === 0 || askedSeen.current === pageAt || !project) return;
+    askedSeen.current = pageAt;
+    refreshSlot(askedPage);
+    turnTo(askedPage);
+    // refreshSlot is this render's; only a new ask (pageAt) or the project's arrival matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askedPage, pageAt, project]);
   // The address and the page on screen follow each other: a page switched in the site (a link of a board,
   // the list, a tab) is pushed as `?page=`, so Back and Forward of the browser and a copied address find it; an address
   // that moved (Back, Forward, a deep link) turns the tab, a step of its own history when the page is there.
@@ -912,9 +905,32 @@ const DesignlySiteInner = ({
     };
   })();
 
-  // The versions of the project and of its kit: «Версии» beside the mode switch, the kit's band over the view.
-  const [versionsOpen, setVersionsOpen] = useState(false);
-  const versionsShown = usePresentFlag(versionsOpen && project !== null, VERSIONS_EXIT_MS).mounted;
+  // The design's side panel: «Инструменты» and «Макет» — the overview, the board's settings kept for
+  // everybody, the people's threads, the pages and the versions; the toolbar opens it on a tab.
+  const designSide = useDesignSide({
+    machine,
+    id,
+    title: project?.design.title ?? '',
+    board: path,
+    pages: (project?.design.boards ?? []).map((b) => ({ path: b.path, name: b.title || b.path })),
+    chat: appsChat,
+    chats: project
+      ? [...new Set([...(project.design.convs ?? NO_TOUCHED), ...(project.design.touchedBy ?? NO_TOUCHED)])]
+      : NO_TOUCHED,
+    changed: chatBoards,
+    access: gated,
+    address: shareUrl,
+    kit: kitLink,
+    origin: slotOrigin,
+    mayEdit,
+    onPage: navigate,
+    onShare: gated !== null ? () => setShareOpen(true) : undefined,
+    onRestored: () => {
+      setAttempt((n) => n + 1);
+      setReloadKey((n) => n + 1);
+    },
+  });
+  // The versions of the project and of its kit: «Версии» opens the side panel's tab, the kit's band over the view.
   const kitInfo = useProjectKit(machine, id);
 
   // Who may change pictures: where there is no gateway the design is as it was (its person edits); otherwise the owner and editors.
@@ -995,7 +1011,9 @@ const DesignlySiteInner = ({
       (appChip ?? linkChip)
     );
 
-  const versions = project ? { open: versionsOpen, onToggle: () => setVersionsOpen((v) => !v) } : undefined;
+  const versions = project
+    ? { open: designSide.panel.tab === 'versions', onToggle: () => designSide.panel.open('versions') }
+    : undefined;
   const modeButton: ISiteMode | undefined = (() => {
     if (pane || !onMode) return undefined;
     const state = t(modeStateKey(modeKindOf(project?.design.kind), editing));
@@ -1042,21 +1060,6 @@ const DesignlySiteInner = ({
         onKitChanged={() => setReloadKey((n) => n + 1)}
       />
     ) : undefined;
-  const versionsPanel = versionsShown ? (
-    <VersionsPanel
-      open={versionsOpen}
-      onClose={() => setVersionsOpen(false)}
-      machine={machine}
-      id={id}
-      origin={slotOrigin}
-      page={path}
-      mayEdit={mayEdit}
-      onRestored={() => {
-        setAttempt((n) => n + 1);
-        setReloadKey((n) => n + 1);
-      }}
-    />
-  ) : undefined;
 
   // Before the project is known (the library, the gateway's answer, the waits for a role just given) the design's
   // frame stands with its loader, and a failed read says why with a retry: the screen is never empty.
@@ -1070,9 +1073,6 @@ const DesignlySiteInner = ({
         src={null}
         error={missing ? null : loadError}
         reloadKey={0}
-        onPickTab={() => undefined}
-        onCloseTab={() => undefined}
-        onNewTab={() => undefined}
         onNavigate={() => undefined}
         onHistory={() => undefined}
         onReload={() => undefined}
@@ -1080,8 +1080,6 @@ const DesignlySiteInner = ({
         onCopyLink={() => undefined}
         onRetry={lookAgain}
         onOpenDrawer={onOpenDrawer}
-        onToggleMax={onToggleMax}
-        maxed={maxed}
       />
     );
   }
@@ -1108,23 +1106,6 @@ const DesignlySiteInner = ({
       phoneUrl={isPublicAddress(shareUrl) ? shareUrl : null}
       error={slotError}
       reloadKey={reloadKey}
-      onPickTab={(picked) => {
-        const target = tabs.find((x) => x.id === picked);
-        refreshSlot(target?.hist[target.hi]);
-        setTab(picked);
-      }}
-      onCloseTab={(closing) => {
-        const at = tabs.findIndex((x) => x.id === closing);
-        const next = tabs.filter((x) => x.id !== closing);
-        setTabs(next);
-        if (closing === current?.id && next.length > 0) setTab(next[Math.max(0, at - 1)].id);
-      }}
-      onNewTab={(page) => {
-        refreshSlot(page);
-        const added = newTab(page);
-        setTabs((list) => [...list, added]);
-        setTab(added.id);
-      }}
       onNavigate={navigate}
       onHistory={(step) => {
         refreshSlot(
@@ -1144,15 +1125,24 @@ const DesignlySiteInner = ({
       onCopyLink={copyLink}
       onRetry={() => setReloadKey((n) => n + 1)}
       onOpenDrawer={onOpenDrawer}
-      onToggleMax={onToggleMax}
-      maxed={maxed}
-      stage={viewing ? undefined : stage}
+      stage={hadChat ? stage : undefined}
+      away={viewing}
+      chatBoards={chatBoards}
+      onNewBoard={
+        mayEdit && stage?.fill
+          ? () => {
+              if (viewing) setMode(true);
+              stage.fill?.(t('next.site.boardNewAsk'));
+            }
+          : undefined
+      }
       onBoardError={onBoardError}
       pane={pane && { onShare: copyLink, chat: paneChat }}
       toolPane={viewing ? null : toolPane}
       mode={modeButton}
       access={shareButton}
-      kit={kitChip}
+      // The kit's link is the design system of «Макет» → «Обзор»; the bar keeps only what the project is.
+      kit={appChip}
       devtools={viewing ? undefined : { machine, slot: slotOrigin, artifact: id }}
       images={!viewing && mayEdit && project ? { machine, artifact: id } : undefined}
       downloads={
@@ -1167,6 +1157,10 @@ const DesignlySiteInner = ({
           : undefined
       }
       memoryKey={id}
+      designPanel={designSide.panel}
+      comments={designSide.commentMode}
+      tweaksPort={designSide.tweaksPort}
+      commentsLayer={viewing ? designSide.commentsLayer : undefined}
     />
   );
 
@@ -1241,18 +1235,20 @@ const DesignlySiteInner = ({
           }}
         />
       )}
-      <SinopiaStage
-        machine={machine}
-        kind={project?.design.kind ?? null}
-        id={id}
-        conversation={appsChat}
-        sinopia={sinopia}
-        viewing={viewing}
-        band={kitBand}
-        side={versionsPanel}
-      >
-        {kindView()}
-      </SinopiaStage>
+      {designSide.wrap(
+        <SinopiaStage
+          machine={machine}
+          kind={project?.design.kind ?? null}
+          id={id}
+          conversation={appsChat}
+          sinopia={sinopia}
+          viewing={viewing}
+          band={kitBand}
+          side={designSide.side}
+        >
+          {kindView()}
+        </SinopiaStage>,
+      )}
       {packOut.dialog}
       {snapshot !== null && (
         <div className="hx-snapshot" role="status">

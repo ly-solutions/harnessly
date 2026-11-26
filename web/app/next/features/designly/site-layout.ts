@@ -12,6 +12,8 @@ export interface ISiteLayout {
   chatW: number;
   float: IFloat | null;
   opened: TSiteMode;
+  /** The docked chat is folded to nothing (a double click on its border). */
+  folded?: boolean;
   /** The person placed the chat by hand (picked a mode, dragged it): only then the kept place wins over the default. */
   chosen: boolean;
 }
@@ -43,6 +45,7 @@ export const parseLayout = (raw: unknown): ISiteLayout | null => {
     float: l.float,
     opened: l.opened,
     chosen: l.chosen === true,
+    ...(l.folded === true ? { folded: true } : {}),
   };
 };
 

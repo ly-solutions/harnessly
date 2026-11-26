@@ -52,7 +52,10 @@ export const formatAnnotation = ({ n, picked, comment, style, url, port }: IAnno
     keepInside(text ? `element: ${selector} — «${text}»` : `element: ${selector}`),
     ...(name ? [keepInside(`component: ${name}`)] : []),
     ...(html ? [`html: ${html}`] : []),
-    ...(look ? [`style (already tried on the page, change the source to match): ${look}`] : []),
+    // The words tried are the person's and the page's: one line that cannot close the block.
+    ...(look
+      ? [keepInside(`style (already tried on the page, change the source to match): ${oneLine(look)}`)]
+      : []),
     ...(typed ? [`comment: ${keepInside(typed)}`] : []),
     '</annotation>',
   ].join('\n');

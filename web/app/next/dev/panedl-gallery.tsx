@@ -301,9 +301,6 @@ const Viewer = ({
           : null
       }
       reloadKey={reloadKey}
-      onPickTab={() => {}}
-      onCloseTab={() => {}}
-      onNewTab={() => {}}
       onNavigate={(next) =>
         setTab((x) => ({ ...x, hist: [...x.hist.slice(0, x.hi + 1), next], hi: x.hi + 1 }))
       }
@@ -315,8 +312,6 @@ const Viewer = ({
       onCopyLink={() => {}}
       onRetry={() => setReloadKey((n) => n + 1)}
       onOpenDrawer={() => {}}
-      onToggleMax={() => {}}
-      maxed={false}
       downloads={long ? { machine: MACHINE, artifact: DESIGN, archives: false } : undefined}
       mode={
         site

@@ -1785,7 +1785,7 @@ test('10. a new design opens with its chat; an edit picked on its page goes to t
   await expect(section).toHaveAttribute('data-scrolling', 'false', { timeout: 10_000 });
 
   // The browser bar's «Pick» is the island's switch: it turns picking on over the page, and off again.
-  const pickTool = page.locator('.hx-browser__tool');
+  const pickTool = page.locator('.hx-pick-tool, .hx-browser__pick').first();
   await expect(pickTool).toHaveAttribute('aria-disabled', 'false', { timeout: 20_000 });
   await pickTool.click();
   await expect(section).toHaveAttribute('data-pick', 'true');
@@ -1794,9 +1794,9 @@ test('10. a new design opens with its chat; an edit picked on its page goes to t
   await expect(section).toHaveAttribute('data-pick', 'false');
   await expect(pickTool).toHaveAttribute('aria-pressed', 'false');
 
-  // The device menu: «Overview» shows the page in several sizes side by side, a card takes its device in a case, and
-  // an iPhone draws its status bar, which the menu's switch takes away.
-  const device = page.locator('.hx-devopt').filter({ hasText: /^Overview/ });
+  // The device menu: «All screens» shows the page in several sizes side by side, a card takes its device in a case, and
+  // an iPhone draws its status bar and its browser.
+  const device = page.locator('.hx-devopt').filter({ hasText: /^All screens/ });
   const deviceMenu = async () => {
     await page.locator('.hx-browser__dev').click();
     await expect(page.locator('.hx-devmenu')).toBeVisible();
@@ -1810,19 +1810,20 @@ test('10. a new design opens with its chat; an edit picked on its page goes to t
   );
   await page.locator('.hx-ovw__label').filter({ hasText: 'iPhone 15 Pro' }).click();
   await expect(page.locator('.hx-ovw')).toHaveCount(0);
-  await expect(page.locator('.hx-vp[data-os="ios"] .hx-pbar')).toBeVisible();
-  await expect(page.locator('.hx-vp[data-ui="ios26"] .hx-psafari')).toBeVisible();
+  await expect(page.locator('.hx-vp[data-os="ios"] .hx-sb')).toBeVisible();
+  await expect(page.locator('.hx-vp[data-ui="safari26"] .hx-brf')).toBeVisible();
+  // The pill beside the phone takes the status bar away and puts it back.
+  const status = page.locator('.hx-phonepill [data-item="status"]');
+  await status.click();
+  await expect(page.locator('.hx-sb')).toHaveCount(0);
+  await status.click();
+  await expect(page.locator('.hx-sb')).toBeVisible();
   await deviceMenu();
-  await expect(page.locator('.hx-devmenu .hx-dl-pop__label')).toHaveText(['Browser', 'Device']);
-  await page.locator('.hx-devchrome').click();
-  await expect(page.locator('.hx-pbar')).toHaveCount(0);
-  await page.locator('.hx-devchrome').click();
-  await expect(page.locator('.hx-pbar')).toBeVisible();
   await page
     .locator('.hx-devopt')
-    .filter({ hasText: /^Responsive/ })
+    .filter({ hasText: /^Fit to window/ })
     .click();
-  await expect(page.locator('.hx-pbar')).toHaveCount(0);
+  await expect(page.locator('.hx-sb')).toHaveCount(0);
   await expect(page.locator('.hx-devmenu')).toHaveCount(0);
 
   // «More» offers picking too, with its key.
@@ -1901,8 +1902,8 @@ test('10b. the page is shown with its live settings and its DevTools: the elemen
             .__dcRegistry.Root.propOverrides,
       );
 
-  // «Live settings»: the board's own settings in a panel over the page; a change is seen on the page at once.
-  const tweaksButton = page.locator('.hx-browser__bar [aria-label="Live settings"]');
+  // «Page settings»: the board's own settings in a panel over the page; a change is seen on the page at once.
+  const tweaksButton = page.locator('.hx-browser__bar [aria-label="Page settings"]');
   await expect(tweaksButton).toHaveAttribute('aria-disabled', 'false', { timeout: 30_000 });
   await tweaksButton.click();
   const tweaks = page.locator('.hx-tweaks');
@@ -1930,8 +1931,8 @@ test('10b. the page is shown with its live settings and its DevTools: the elemen
   await expect(tweaks).toHaveCount(0);
 
   // DevTools: the page's console, with its errors counted on the tab, and its network.
-  const devButton = page.locator('.hx-browser__bar [aria-label="Developer tools"]');
-  await devButton.click();
+  await page.locator('.hx-browser__bar [aria-label="More"]').click();
+  await page.locator('.hx-more__item', { hasText: 'Developer tools' }).click();
   const dev = page.locator('.hx-devtools');
   await expect(dev).toHaveAttribute('data-open', 'true');
   await expect(section).toHaveAttribute('data-dev', 'true');
@@ -2025,10 +2026,10 @@ test('10b. the page is shown with its live settings and its DevTools: the elemen
   await expect(side.locator('.hx-els__label')).toHaveText('Menu');
   await expect(tag('p').locator('.hx-els__row')).toHaveAttribute('aria-selected', 'true');
   await inspect.click();
-  await page.locator('.hx-browser__tool').click();
+  await page.locator('.hx-pick-tool, .hx-browser__pick').first().click();
   await expect(inspect).toHaveAttribute('aria-pressed', 'false');
   await expect(section).toHaveAttribute('data-pick', 'true');
-  await page.locator('.hx-browser__tool').click();
+  await page.locator('.hx-pick-tool, .hx-browser__pick').first().click();
   await expect(section).toHaveAttribute('data-pick', 'false');
   await inspect.click();
   await page.keyboard.press('Escape');

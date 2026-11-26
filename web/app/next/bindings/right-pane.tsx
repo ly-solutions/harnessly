@@ -19,6 +19,7 @@ import { isShareable } from '@/next/features/filedoc/api';
 import { FileShareButton } from '@/next/features/filedoc/file-share';
 import ToolPane, { TOOLS_TAB, type IPaneTab } from '@/next/features/pane/tool-pane';
 import ToolsLauncher, { type ITool, type IToolGroup } from '@/next/features/pane/tools-launcher';
+import { DesignToolsContext } from '@/next/features/designly/panel/design-side';
 import MadeBlock from '@/next/features/pane/made-block';
 import { ConsentAsks } from '@/next/features/app-consent/consent-ask';
 import { heldTools, quietTools, toolOfRequest } from '@/next/features/pane/tools-order';
@@ -1067,6 +1068,34 @@ const PaneBody = (props: IPaneBodyProps) => {
   };
   const actions = paneActions();
 
+  // The launcher: the pane's own home, and «Инструменты» of a design's side panel beside the design.
+  const launcherNode = (
+    <ToolsLauncher
+      tools={marked}
+      groups={groups}
+      ready={made.holds !== null}
+      head={
+        <>
+          <ConsentAsks machine={conv.machineId} conversation={conv.id} variant="pane" />
+          <MadeBlock
+            cards={made.cards}
+            onOpen={(card) => {
+              const item = made.open(card);
+              if (item) props.onOpenMade(item);
+            }}
+          />
+        </>
+      }
+      onOpen={openTool}
+      onAddress={(address) => {
+        if (props.onAppAddress?.(address.text)) return;
+        // An address already open in a tab is that tab, not a second one.
+        const have = tabs.find((x) => browserAt(x, address.text));
+        if (have) setActive(have.id);
+        else add({ id: nextId(), kind: 'browser', hist: [address], hi: 0 });
+      }}
+    />
+  );
   return (
     <ToolPane
       tabs={[
@@ -1121,33 +1150,7 @@ const PaneBody = (props: IPaneBodyProps) => {
       {legacyTab && legacy.render(legacyTab.id)}
       {tab?.kind === 'task' && <ChatTaskTab key={tab.id} target={tab.target} onOpen={props.onOpenTask} />}
       {onPinned && <PinnedAppTab machine={conv.machineId} conversation={conv.id} pinned={pinned} />}
-      {launcher && (
-        <ToolsLauncher
-          tools={marked}
-          groups={groups}
-          ready={made.holds !== null}
-          head={
-            <>
-              <ConsentAsks machine={conv.machineId} conversation={conv.id} variant="pane" />
-              <MadeBlock
-                cards={made.cards}
-                onOpen={(card) => {
-                  const item = made.open(card);
-                  if (item) props.onOpenMade(item);
-                }}
-              />
-            </>
-          }
-          onOpen={openTool}
-          onAddress={(address) => {
-            if (props.onAppAddress?.(address.text)) return;
-            // An address already open in a tab is that tab, not a second one.
-            const have = tabs.find((x) => browserAt(x, address.text));
-            if (have) setActive(have.id);
-            else add({ id: nextId(), kind: 'browser', hist: [address], hi: 0 });
-          }}
-        />
-      )}
+      {launcher && launcherNode}
       {tab?.kind === 'side' && (
         <SideChat
           messages={side.messages}
@@ -1166,17 +1169,19 @@ const PaneBody = (props: IPaneBodyProps) => {
         <MachineTab key={tab.id} machineId={conv.machineId} machineName={machineName} />
       )}
       {tab?.kind === 'designly' && (
-        <DesignlyPane
-          key={tab.id}
-          machine={conv.machineId}
-          conv={conv.id}
-          design={tab.design}
-          page={tab.page ?? null}
-          pageAt={tab.pageAt ?? 0}
-          onOpen={(design) =>
-            setTabs((list) => list.map((x) => (x.id === tab.id ? { ...tab, design, page: null } : x)))
-          }
-        />
+        <DesignToolsContext value={launcherNode}>
+          <DesignlyPane
+            key={tab.id}
+            machine={conv.machineId}
+            conv={conv.id}
+            design={tab.design}
+            page={tab.page ?? null}
+            pageAt={tab.pageAt ?? 0}
+            onOpen={(design) =>
+              setTabs((list) => list.map((x) => (x.id === tab.id ? { ...tab, design, page: null } : x)))
+            }
+          />
+        </DesignToolsContext>
       )}
       {tab?.kind === 'app' && (
         <AppTab

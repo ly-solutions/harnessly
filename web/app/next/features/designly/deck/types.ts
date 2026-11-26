@@ -269,7 +269,8 @@ export type TDeckPatchOp = (typeof DECK_PATCH_OP)[keyof typeof DECK_PATCH_OP];
  * drag message. A mismatch is refused as `changed` unless exactly one element matches.
  */
 export type TDeckPatch =
-  | { op: 'text'; tpl: number; was: string; html: string }
+  /** `style`, when set, goes on the same element in the same write (a hand edit's size and colour). */
+  | { op: 'text'; tpl: number; was: string; html: string; style?: Record<string, string | null> }
   /** null removes the property. */
   | { op: 'style'; tpl: number; was: string; style: Record<string, string | null> }
   /** Board pixels, written as `translate` in cqw; in px when the board says the block sits in a container (`px`). */

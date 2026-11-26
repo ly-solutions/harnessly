@@ -790,6 +790,7 @@
           editor: item.editor || typeof item.default,
           options: (item.options || []).map(function (option) { return { value: option, text: label(String(option)) }; }),
           value: Object.prototype.hasOwnProperty.call(overrides, key) ? overrides[key] : item.default,
+          def: item.default,
           min: item.min, max: item.max, step: item.step,
           live: true
         });
@@ -799,10 +800,10 @@
     var board = currentBoard();
     var tweak = board && board.tweaks;
     if (tweak && tweak.variants && tweak.variants.length > 1) {
-      items.push({ name: 'variant', label: 'State', section: 'Screen', editor: 'enum', value: here().searchParams.get('v') || tweak.variants[0],
+      items.push({ name: 'variant', label: 'State', section: 'Screen', editor: 'enum', value: here().searchParams.get('v') || tweak.variants[0], def: tweak.variants[0],
         options: tweak.variants.map(function (variant) { return { value: variant, text: label(variant) }; }) });
     }
-    if (tweak && tweak.themes) items.push({ name: 'theme', label: 'Theme', section: 'Screen', editor: 'enum', value: here().searchParams.get('theme') || 'dark', options: THEMES });
+    if (tweak && tweak.themes) items.push({ name: 'theme', label: 'Theme', section: 'Screen', editor: 'enum', value: here().searchParams.get('theme') || 'dark', def: 'dark', options: THEMES });
     return items;
   }
   function setControl(item, value) {
@@ -943,6 +944,7 @@
       return {
         name: String(item.name), label: String(item.label), section: String(item.section), editor: String(item.editor),
         value: item.value === undefined ? null : item.value,
+        def: plain(item.def) && item.def !== undefined ? item.def : null,
         options: (item.options || []).filter(function (option) { return plain(option.value); }).map(function (option) { return { value: option.value, text: String(option.text) }; }),
         min: typeof item.min === 'number' ? item.min : null, max: typeof item.max === 'number' ? item.max : null, step: typeof item.step === 'number' ? item.step : null
       };
@@ -1484,7 +1486,11 @@
   var pickSeq = 0;
   var pickedBlocks = new Map();
   var lookKept = new Map();
-  var LOOK_PROPS = { background: ['background-color', 'background-image'], radius: ['border-radius'], opacity: ['opacity'] };
+  var LOOK_PROPS = { background: ['background-color', 'background-image'], radius: ['border-radius'], opacity: ['opacity'], size: ['font-size'], weight: ['font-weight'], color: ['color'] };
+  // Where the words a block had are kept beside its properties; only a block of one run of text takes other words.
+  var KEPT_WORDS = '#words';
+  var WORDS_MAX = 2000;
+  function onlyWords(el) { return el.childNodes && el.childNodes.length === 1 && el.childNodes[0].nodeType === 3 ? el.childNodes[0] : null; }
   function pickHide() {
     if (pickBox) { pickBox.remove(); pickBox = null; pickLabel = null; }
   }
@@ -1565,7 +1571,14 @@
       var style = getComputedStyle(el);
       var radius = /^(\d+(?:\.\d+)?)px$/.exec(String(style.borderTopLeftRadius));
       var opacity = parseFloat(String(style.opacity));
-      return { background: colorHex(String(style.backgroundColor)), radius: radius ? Number(radius[1]) : null, opacity: isFinite(opacity) ? opacity : 1 };
+      var look = { background: colorHex(String(style.backgroundColor)), radius: radius ? Number(radius[1]) : null, opacity: isFinite(opacity) ? opacity : 1 };
+      var size = parseFloat(String(style.fontSize));
+      var weight = parseFloat(String(style.fontWeight));
+      if (isFinite(size)) look.font = { size: size, weight: isFinite(weight) ? weight : 400, color: colorHex(String(style.color)) };
+      var words = onlyWords(el);
+      var said = words ? String(words.nodeValue) : '';
+      if (said.trim() !== '' && said.length <= WORDS_MAX) look.words = said.replace(/\s+/g, ' ').trim();
+      return look;
     } catch (e) { return null; }
   }
   /** Puts a look on the block (`!important`), keeping what the block had inline the first time a property is touched. */
@@ -1573,9 +1586,22 @@
     var values = {
       background: item.background === null ? null : [item.background, 'none'],
       radius: item.radius === null ? null : [item.radius + 'px'],
-      opacity: item.opacity === null ? null : [String(item.opacity)]
+      opacity: item.opacity === null ? null : [String(item.opacity)],
+      size: item.size === undefined || item.size === null ? null : [item.size + 'px'],
+      weight: item.weight === undefined || item.weight === null ? null : [String(item.weight)],
+      color: item.color === undefined || item.color === null ? null : [item.color]
     };
-    ['background', 'radius', 'opacity'].forEach(function (group) {
+    // The words go into the one text node the block has, which the board's own code goes on holding.
+    var node = onlyWords(el);
+    if (node) {
+      if (item.text === undefined || item.text === null) {
+        if (KEPT_WORDS in kept) { node.nodeValue = kept[KEPT_WORDS].value; delete kept[KEPT_WORDS]; }
+      } else {
+        if (!(KEPT_WORDS in kept)) kept[KEPT_WORDS] = { value: String(node.nodeValue), priority: '' };
+        node.nodeValue = item.text;
+      }
+    }
+    ['background', 'radius', 'opacity', 'size', 'weight', 'color'].forEach(function (group) {
       var wanted = values[group];
       LOOK_PROPS[group].forEach(function (property, index) {
         if (wanted === null) {
@@ -1612,6 +1638,10 @@
       if (item.background !== null && !(typeof item.background === 'string' && /^#[0-9a-f]{6}$/i.test(item.background))) return null;
       if (item.radius !== null && !(typeof item.radius === 'number' && item.radius >= 0 && item.radius <= 1000)) return null;
       if (item.opacity !== null && !(typeof item.opacity === 'number' && item.opacity >= 0 && item.opacity <= 1)) return null;
+      if (item.size !== undefined && item.size !== null && !(typeof item.size === 'number' && item.size > 0 && item.size <= 1000)) return null;
+      if (item.weight !== undefined && item.weight !== null && !(typeof item.weight === 'number' && item.weight >= 100 && item.weight <= 900)) return null;
+      if (item.color !== undefined && item.color !== null && !(typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color))) return null;
+      if (item.text !== undefined && item.text !== null && !(typeof item.text === 'string' && item.text.length <= WORDS_MAX)) return null;
     }
     return raw;
   }
@@ -2486,6 +2516,175 @@
     if (data.type === 'tk:deck-pointer' && typeof data.on === 'boolean') deckPointer = data.on;
     if (data.type === 'tk:deck-done') deckLeave(false);
   });
+  // The person's own hand on a board of a design, as its host asks: `tk:menu-mode {on}` takes the right click
+  // (a two-finger press) and answers `tk:menu {x, y, label, editable}`; `tk:pick-at {x, y}` picks the block at a point
+  // as a click of the pick does; `tk:text-mode {on}` lets a double click edit a plain text where it stands and
+  // `tk:text-at {x, y}` starts it at a point. While a text is edited the board says `tk:text-state {on, label, size}`,
+  // takes `tk:text-cmd {cmd}` (the selected words), `tk:text-style {prop, value}` (the whole block) and
+  // `tk:text-done {cancel}`; ended changed, it answers `tk:text-save {tpl, was, html, fp, style}`, which the host writes
+  // into the source (deckpatch.go). `tk:text-dynamic` says a text is filled in by the board's code.
+  var handMenu = false;
+  var handArmed = false;
+  var hand = null;
+  var handCss = null;
+  var HAND_CMDS = { bold: 1, italic: 1, underline: 1, strikeThrough: 1, removeFormat: 1 };
+  var HAND_PROPS = { 'font-size': 1, color: 1 };
+  function handElement(node) {
+    var el = node && node.nodeType === 1 ? node : node && node.parentElement;
+    return el && el !== document.body && el !== document.documentElement && !domOurs(el) ? el : null;
+  }
+  function handLabel(el) {
+    var named = el.closest('[data-block]');
+    if (named) return String(named.getAttribute('data-block')).slice(0, 60);
+    var words = deckWords(el);
+    return words ? words.slice(0, 40) : String(el.localName);
+  }
+  function handHtml(el) {
+    // The browser writes a struck word as <strike>; a board keeps <s>.
+    return deckClean(String(el.innerHTML).replace(/<(\/?)strike(?=[\s>\/])/gi, '<$1s'));
+  }
+  function handTell() {
+    if (!hand) { tellHostDom({ type: 'tk:text-state', on: false, label: '', size: 0 }); return; }
+    tellHostDom({ type: 'tk:text-state', on: true, label: handLabel(hand.el), size: deckRound(parseFloat(getComputedStyle(hand.el).fontSize) || 0) });
+  }
+  function handSelectAll(el) {
+    var selection = getSelection();
+    if (!selection) return;
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  function handStart(el) {
+    if (hand && hand.el === el) return;
+    handEnd(false);
+    if (!handCss) {
+      handCss = document.createElement('style');
+      handCss.setAttribute('data-tk-library-mark', '');
+      handCss.textContent = '[data-tk-hand]{outline:2px solid #8b5cf6 !important;outline-offset:3px;cursor:text !important;-webkit-user-select:text !important;user-select:text !important;-webkit-user-modify:read-write}';
+      document.documentElement.appendChild(handCss);
+    }
+    hand = { el: el, tpl: deckNumber(el), was: deckClean(el.innerHTML), raw: el.innerHTML, fp: deckFingerprint(el), css: el.getAttribute('style'), style: {} };
+    el.setAttribute('data-tk-hand', '');
+    el.setAttribute('contenteditable', 'true');
+    el.setAttribute('spellcheck', 'false');
+    el.focus({ preventScroll: true });
+    handSelectAll(el);
+    handTell();
+  }
+  function handEnd(cancel) {
+    if (!hand) return;
+    var edit = hand;
+    hand = null;
+    var el = edit.el;
+    var html = handHtml(el);
+    el.removeAttribute('data-tk-hand');
+    el.removeAttribute('contenteditable');
+    el.removeAttribute('spellcheck');
+    if (document.activeElement === el) el.blur();
+    var selection = getSelection();
+    if (selection) selection.removeAllRanges();
+    if (cancel) {
+      //! nosemgrep: direct-inner-html-assignment
+      el.innerHTML = edit.raw; // what the element held before the edit
+      if (edit.css === null) el.removeAttribute('style'); else el.setAttribute('style', edit.css);
+    } else {
+      var styled = Object.keys(edit.style).length > 0;
+      if (styled || html !== edit.was) {
+        tellHostDom({ type: 'tk:text-save', tpl: edit.tpl, was: edit.was, html: html === edit.was ? null : html, fp: edit.fp, style: styled ? edit.style : null });
+      }
+    }
+    handTell();
+  }
+  // A text at a node starts to be edited; false where there is none to edit (a text of the board's code is said so).
+  function handTry(node) {
+    var text = deckTextAt(node);
+    if (text) { handStart(text); return true; }
+    var el = node && node.closest ? node.closest('[data-dc-tpl]') : null;
+    var source = el && deckOwnWords(el) ? deckSourceOf(el) : null;
+    if (source && String(source.textContent).indexOf('{{') >= 0) tellHostDom({ type: 'tk:text-dynamic' });
+    return false;
+  }
+  if (parentWin) {
+    window.addEventListener('contextmenu', function (event) {
+      if (!handMenu || picking || deckOn) return;
+      var target = pickTarget(event);
+      // The menu of a text being edited is the browser's (spelling, paste).
+      if (hand && hand.el.contains(target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handEnd(false);
+      var el = handElement(target);
+      tellHostDom({ type: 'tk:menu', x: Math.round(event.clientX), y: Math.round(event.clientY), label: el ? handLabel(el) : '', editable: !!(el && deckTextAt(el)) });
+    }, true);
+    window.addEventListener('dblclick', function (event) {
+      if (!handArmed || picking || deckOn) return;
+      var target = pickTarget(event);
+      if (hand && hand.el.contains(target)) return;
+      if (handTry(target)) event.preventDefault();
+    }, true);
+    window.addEventListener('pointerdown', function (event) {
+      if (hand && !hand.el.contains(pickTarget(event))) handEnd(false);
+    }, true);
+    // A press on the text being edited writes in it: no link or button around it acts.
+    window.addEventListener('click', function (event) {
+      if (!hand || !hand.el.contains(pickTarget(event))) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+    window.addEventListener('paste', function (event) {
+      if (!hand || !hand.el.contains(event.target)) return;
+      event.preventDefault();
+      var words = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
+      document.execCommand('insertText', false, words.replace(/\s+/g, ' '));
+    }, true);
+    window.addEventListener('keydown', function (event) {
+      if (!hand || !hand.el.contains(event.target)) return;
+      if (event.key === 'Escape' || (event.key === 'Enter' && !event.shiftKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handEnd(false);
+      }
+    }, true);
+    window.addEventListener('message', function (event) {
+      var data = event.data;
+      if (event.source !== parentWin || event.origin !== hostOrigin || !data || typeof data !== 'object') return;
+      var point = typeof data.x === 'number' && typeof data.y === 'number' && isFinite(data.x) && isFinite(data.y);
+      if (data.type === 'tk:menu-mode' && typeof data.on === 'boolean') handMenu = data.on;
+      if (data.type === 'tk:text-mode' && typeof data.on === 'boolean') {
+        handArmed = data.on;
+        if (!data.on) handEnd(false);
+      }
+      // The slot's bridge picks where it is there; a board shown without it picks here.
+      if (data.type === 'tk:pick-at' && point && !slotBridge) {
+        var at = document.elementFromPoint(data.x, data.y);
+        if (at && pickable(at)) tellPicked(at, data.x, data.y);
+      }
+      if (data.type === 'tk:text-at' && point && handArmed) handTry(document.elementFromPoint(data.x, data.y));
+      if (!hand) return;
+      if (data.type === 'tk:text-cmd' && HAND_CMDS[data.cmd] === 1) {
+        hand.el.focus({ preventScroll: true });
+        var selection = getSelection();
+        if (selection && (!selection.rangeCount || selection.isCollapsed || !hand.el.contains(selection.anchorNode))) handSelectAll(hand.el);
+        try { document.execCommand('styleWithCSS', false, false); } catch (e) {}
+        document.execCommand(data.cmd, false, null);
+        // The eraser takes the block's own size and colour of this edit back too.
+        if (data.cmd === 'removeFormat') {
+          if (hand.css === null) hand.el.removeAttribute('style'); else hand.el.setAttribute('style', hand.css);
+          hand.style = {};
+        }
+        handTell();
+      }
+      if (data.type === 'tk:text-style' && HAND_PROPS[data.prop] === 1) {
+        var value = data.value;
+        if (value !== null && (typeof value !== 'string' || !/^[#\w.%() ,-]{1,40}$/.test(value))) return;
+        if (value === null) hand.el.style.removeProperty(data.prop); else hand.el.style.setProperty(data.prop, value);
+        hand.style[data.prop] = value;
+        handTell();
+      }
+      if (data.type === 'tk:text-done') handEnd(data.cancel === true);
+    });
+  }
   // Drawing a picture into an element (Sinopia's picture generation). A pick tells what the host needs to write
   // one into the board's source: the element's template number and fingerprint (null when the source does not name it),
   // its shape, whether it is an <img>, and what it was drawn from (data-gen-prompt, data-gen-job).

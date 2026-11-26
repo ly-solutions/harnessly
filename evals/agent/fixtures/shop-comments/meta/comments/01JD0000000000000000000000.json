@@ -1,0 +1,20 @@
+{
+  "id": "01JD0000000000000000000000",
+  "page": "",
+  "x": 40,
+  "y": 120,
+  "label": "Кнопка «В корзину»",
+  "text": "@harnessly кнопку «В корзину» сделайте заметнее — сейчас её не видно на фоне карточки",
+  "by": {
+    "name": "Анна",
+    "email": "anna@example.com"
+  },
+  "at": "2026-11-20T10:00:00Z",
+  "resolved": false,
+  "resolvedBy": null,
+  "resolvedAt": null,
+  "view": "site",
+  "board": "Каталог.dc.html",
+  "block": "button",
+  "agent": true
+}

@@ -70,11 +70,12 @@ test("«К чату» stays the chat's view after another chat and a reload", as
   const base = page.url().replace(/\/c\/[^/]+$/, '');
 
   // Both chats edit the design: each is the design with its chat.
-  const toChat = page.locator('.hx-site__to-chat');
+  // The head of a design's chat has one button, its menu: «Chat only» is the way to the plain chat.
+  const chatMenu = page.locator('.hx-chatmenu__btn');
   await page.goto(`${base}/designly/${design}?chat=${b}&edit=1`);
-  await expect(toChat).toBeVisible({ timeout: 30_000 });
+  await expect(chatMenu).toBeVisible({ timeout: 30_000 });
   await page.goto(`${base}/designly/${design}?chat=${a}&edit=1`);
-  await expect(toChat).toBeVisible({ timeout: 30_000 });
+  await expect(chatMenu).toBeVisible({ timeout: 30_000 });
   // The head names the chat, with no switch of the design's chats (the sidebar and ⌘K switch them).
   await expect(page.locator('.hx-site__chat-title')).toHaveText('alpha landing');
   await expect(page.locator('.hx-chatswitch')).toHaveCount(0);
@@ -83,7 +84,8 @@ test("«К чату» stays the chat's view after another chat and a reload", as
   // «К чату» in A: the plain chat.
   const gotIt = page.getByRole('button', { name: 'Got it' });
   if (await gotIt.isVisible()) await gotIt.click();
-  await toChat.click();
+  await chatMenu.click();
+  await page.locator('.hx-chatmenu__row', { hasText: 'Chat only' }).click();
   await expect(page).toHaveURL(new RegExp(`/c/${a}$`));
   await expect(page.locator('.hx-sidebar')).toBeVisible();
   await page.waitForTimeout(1000);
@@ -92,7 +94,7 @@ test("«К чату» stays the chat's view after another chat and a reload", as
   // B from the sidebar: B keeps its own view, the design.
   await page.locator('.hx-sidebar__list').getByText('beta chat').first().click();
   await expect(page).toHaveURL(new RegExp(`/designly/${design}\\?.*chat=${b}`));
-  await expect(toChat).toBeVisible({ timeout: 30_000 });
+  await expect(chatMenu).toBeVisible({ timeout: 30_000 });
   await shot(page, '3-b-design');
 
   // Back to A, from the sidebar of the start page (the design's rail folds it): still the plain chat.

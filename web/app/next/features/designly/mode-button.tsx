@@ -24,15 +24,22 @@ const VersionsButton = ({ mode }: { mode: ISiteMode }) =>
     </button>
   ) : null;
 
-/** compact: a phone's bar, each part said by its icon only (the hint says the rest). */
-const ModeButton = ({ mode, compact = false }: { mode: ISiteMode; compact?: boolean }) => (
+interface IModeButtonProps {
+  mode: ISiteMode;
+  /** A phone's bar: each part said by its icon only (the hint says the rest). */
+  compact?: boolean;
+  /** The site's bar: icons, and the chosen part's name too where the bar is wide. */
+  icons?: boolean;
+}
+
+const ModeButton = ({ mode, compact = false, icons = false }: IModeButtonProps) => (
   <>
-    <ModeSwitch mode={mode} compact={compact} />
+    <ModeSwitch mode={mode} compact={compact} icons={icons} />
     <VersionsButton mode={mode} />
   </>
 );
 
-const ModeSwitch = ({ mode, compact }: { mode: ISiteMode; compact: boolean }) => {
+const ModeSwitch = ({ mode, compact, icons }: Required<IModeButtonProps>) => {
   const { action } = mode;
   if (!action)
     return (
@@ -65,8 +72,9 @@ const ModeSwitch = ({ mode, compact }: { mode: ISiteMode; compact: boolean }) =>
       aria-label={t('next.site.modeSwitch')}
       data-editing={mode.editing}
       data-compact={compact}
+      data-icons={icons}
     >
-      <span className="hx-modeseg__thumb" aria-hidden="true" />
+      {!icons && <span className="hx-modeseg__thumb" aria-hidden="true" />}
       {parts.map((part) => (
         <button
           key={part.k}

@@ -1,0 +1,361 @@
+/* The design's bar, the chat's «⋯» and the folded chat. */
+
+/* The bar: the board switcher takes the room; its name first, the project after it. */
+.hx-browser__bar {
+  gap: 4px;
+}
+.hx-browser__bar .hx-browser__addr {
+  margin: 0 4px;
+}
+.hx-browser__bar .hx-browser__url {
+  justify-content: flex-start;
+}
+.hx-browser__url .hx-browser__path {
+  flex: 1;
+  text-align: left;
+}
+.hx-browser__chev {
+  flex: none;
+  margin-left: auto;
+  color: var(--hx-fg-3);
+}
+.hx-browser__bar > :is(.hx-head-btn, .hx-modeseg) {
+  animation: hx-bar-in 260ms var(--hx-ease-out) backwards;
+}
+@keyframes hx-bar-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+
+/* The switcher's list: 360 wide under the address, the chat's boards first. */
+.hx-pgpick[data-boards] {
+  width: min(360px, calc(100cqw - 24px));
+}
+.hx-pgpick__group {
+  padding: 8px 10px 4px;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+.hx-pgpick__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--hx-accent);
+}
+.hx-pgpick__check {
+  flex: none;
+  margin-left: auto;
+  color: var(--hx-fg-2);
+}
+.hx-pgpick__dot + .hx-pgpick__check {
+  margin-left: 0;
+}
+.hx-pgpick__new {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  margin-top: 4px;
+  padding: 0 10px;
+  border: 0;
+  border-top: 1px solid var(--hx-border);
+  background: none;
+  color: var(--hx-fg-2);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  cursor: pointer;
+}
+.hx-pgpick__new:hover {
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+}
+
+/* «⋯» of the design: marks on the right, «Скачать» unfolding under itself. */
+.hx-more__check {
+  flex: none;
+  color: var(--hx-accent);
+  opacity: 0;
+}
+.hx-more__item[aria-checked='true'] > .hx-more__check {
+  opacity: 1;
+}
+.hx-more__chev {
+  flex: none;
+  color: var(--hx-fg-3);
+  transition: transform 160ms ease;
+}
+.hx-more__item[aria-expanded='true'] > .hx-more__chev {
+  transform: rotate(180deg);
+}
+.hx-more__sub {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 4px 17px;
+  padding-left: 8px;
+  border-left: 1px solid var(--hx-border);
+  animation: hx-sub-in 240ms var(--hx-ease-out) backwards;
+}
+@keyframes hx-sub-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.hx-more {
+  max-height: calc(100cqh - 70px);
+  max-height: min(640px, calc(100dvh - 140px));
+  overflow-y: auto;
+}
+
+/* The chat's head: its name and «⋯». */
+.hx-chatmenu {
+  width: 268px;
+}
+.hx-chatmenu__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.hx-chatmenu__row > .hx-icon {
+  flex: none;
+  color: var(--hx-fg-3);
+}
+.hx-chatmenu__row > .hx-option__name {
+  flex: 1;
+  text-align: left;
+}
+.hx-chatmenu__row > .hx-chatmenu__check {
+  color: var(--hx-fg-1);
+}
+.hx-chatmenu__kbd {
+  color: var(--hx-fg-3);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+}
+.hx-site__chat-rename {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The field's pill over the page names its chat and opens it. */
+.hx-island__status[data-quiet='true'] .hx-island__ic {
+  display: none;
+}
+.hx-island__status[data-quiet='true'] .hx-island__step {
+  color: var(--hx-fg-2);
+}
+
+/* The chat folded to nothing (a double click on its border) and the chat leaving while the design is only looked at:
+   its column goes to nothing and the design takes the width. */
+.hx-site[data-mode='chat'] {
+  transition:
+    grid-template-columns 420ms var(--site-ease),
+    column-gap 420ms var(--site-ease);
+}
+.hx-site[data-resizing] {
+  transition: none;
+}
+.hx-site__chat {
+  transition:
+    opacity 260ms ease,
+    transform 420ms var(--site-ease);
+}
+.hx-site[data-mode='chat']:is([data-folded='true'], [data-away='true']) {
+  grid-template-columns: 0px minmax(0, 1fr);
+  column-gap: 0;
+}
+.hx-site[data-mode='chat']:is([data-folded='true'], [data-away='true']) .hx-site__chat {
+  opacity: 0;
+  transform: translateX(-24px);
+  transition-delay: 0s;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity 260ms ease,
+    transform 420ms var(--site-ease),
+    visibility 0s linear 420ms;
+}
+/* The leaving chat keeps its width: its words do not rewrap while the column closes. */
+.hx-site[data-mode='chat']:not([data-phone='true']) .hx-site__chat > * {
+  min-width: var(--site-chat);
+  box-sizing: border-box;
+}
+.hx-site[data-mode='float'][data-away='true'] .hx-site__chat {
+  opacity: 0;
+  transform: translateY(16px) scale(0.97);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity 260ms ease,
+    transform 360ms var(--site-ease),
+    visibility 0s linear 360ms;
+}
+.hx-site:is([data-folded='true'], [data-away='true']) .hx-island {
+  opacity: 0;
+  transform: translateY(16px) scale(0.97);
+  pointer-events: none;
+  visibility: hidden;
+}
+.hx-site[data-mode='chat'][data-folded='true'] .hx-site__split {
+  left: 4px;
+  cursor: pointer;
+}
+.hx-site[data-away='true'] .hx-site__split {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-width: 900px) {
+  .hx-site[data-mode='chat'] .hx-site__chat > * {
+    min-width: 0;
+  }
+  .hx-site[data-mode='chat']:is([data-folded='true'], [data-away='true']) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hx-site[data-mode='chat'][data-away='true'] .hx-site__view {
+    transform: none;
+    visibility: visible;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-site[data-mode='chat'],
+  .hx-site__chat {
+    transition-duration: 1ms;
+  }
+}
+.hx-site[data-mode='island'] .hx-island__status[data-quiet='true'] {
+  align-self: flex-start;
+  min-width: 240px;
+}
+/* Folded into its pill, the field says nothing: the pill is the way in. */
+.hx-site[data-min='true'] .hx-island__status[data-quiet='true'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The menu of a right click on the page. */
+.hx-canvasmenu {
+  top: var(--cy, 0);
+  left: var(--cx, 0);
+  z-index: 30;
+  width: 250px;
+  transform-origin: 0 0;
+}
+.hx-canvasmenu__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The bar of a text edited by hand: a strip over the page, which moves down for it. */
+.hx-textstrip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 8;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 52px;
+  pointer-events: none;
+}
+.hx-textbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  max-width: calc(100% - 16px);
+  height: 36px;
+  padding: 0 4px;
+  border: 1px solid var(--hx-border-strong);
+  border-radius: 11px;
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay);
+  pointer-events: auto;
+  animation: hx-bar-in 160ms var(--hx-ease-out) backwards;
+}
+.hx-textbar__btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hx-textbar__btn:hover {
+  background: var(--hx-bg-hover);
+}
+.hx-textbar__btn small {
+  font-size: 9px;
+}
+.hx-textbar__btn i {
+  font-family: Georgia, serif;
+}
+.hx-textbar__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--hx-border);
+}
+.hx-textbar__ink {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--hx-border-strong);
+  border-radius: 50%;
+  background: #16171a;
+}
+.hx-textbar__ink[data-ink='accent'] {
+  background: #7b6cf0;
+}
+.hx-textbar__ink[data-ink='red'] {
+  background: #e5484d;
+}
+.hx-textbar__ink[data-ink='grey'] {
+  background: #8a8f98;
+}
+.hx-textbar__done {
+  height: 28px;
+  margin-left: 4px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--hx-accent);
+  color: #fff;
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  font-weight: var(--hx-weight-semibold);
+  cursor: pointer;
+}
+.hx-vparea {
+  transition: padding-top 220ms var(--hx-ease-out);
+}
+.hx-site[data-handing='true'] .hx-vparea {
+  padding-top: 56px;
+}
+.hx-site[data-handing='true'] .hx-vparea[data-dev='fill'] {
+  box-sizing: border-box;
+}
+/* The bar's buttons keep their size in a narrow pane: the board switcher gives the room. */
+.hx-browser__bar > :not(.hx-browser__addr) {
+  flex: none;
+}

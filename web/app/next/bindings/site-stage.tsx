@@ -10,8 +10,9 @@ import { chatTitleOf } from '@/next/features/designly/chat-title';
 import { useTourFill } from '@/next/features/tour/use-tour-fill';
 import { useTourStep } from '@/next/features/tour/use-tour-step';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { interrupt, sendMessage } from '@/next/commands';
+import { interrupt, pinConversation, renameConversation, sendMessage } from '@/next/commands';
 import { uploadSrc } from '@/next/commands/uploads';
+import { settled } from '@/next/bindings/outcome';
 import ChatView, { type TChatOpeners } from '@/next/bindings/chat-view';
 import { openFileInChat } from '@/next/bindings/open-file-in-chat';
 import { keepLayout, keptLayout } from '@/next/features/designly/site-layout';
@@ -636,6 +637,8 @@ export const useSiteStage = ({
   const [dock, setDock] = useState<TDock>(kept?.dock ?? 'left');
   const [chatW, setChatW] = useState(kept?.chatW ?? CHAT_WIDTH);
   const [sview, setSview] = useState(false);
+  // The docked chat folded to nothing (a double click on its border).
+  const [folded, setFolded] = useState(kept?.folded === true);
   // Where the chat stood open last: the folded one opens there again.
   const [opened, setOpened] = useState<TSiteMode>(kept?.opened ?? (space ? 'float' : 'chat'));
   // The chat of this screen keeps its place with the chat's view on the machine (stores/chat-view.ts).
@@ -643,8 +646,18 @@ export const useSiteStage = ({
     if (keep && convId) noteLayoutKey(convId, key);
   }, [keep, convId, key]);
   useEffect(() => {
-    if (keep) keepLayout(layoutKey, { mode, min, dock, chatW, float, opened, chosen });
-  }, [keep, layoutKey, mode, min, dock, chatW, float, opened, chosen]);
+    if (keep)
+      keepLayout(layoutKey, {
+        mode,
+        min,
+        dock,
+        chatW,
+        float,
+        opened,
+        chosen,
+        ...(folded ? { folded } : {}),
+      });
+  }, [keep, layoutKey, mode, min, dock, chatW, float, opened, chosen, folded]);
 
   // One draft for the folded field and the open one: the chat's, or the design's own before it has a chat.
   const designDraft: DraftKey = `design:${key}`;
@@ -769,6 +782,7 @@ export const useSiteStage = ({
     setSview(false);
     setPicking(false);
     setNoteDraft(null);
+    setFolded(false);
   };
   // The section the stage stands in, and a space's selection on the page: the window opens beside it.
   const sectionEl = useRef<HTMLElement | null>(null);
@@ -827,12 +841,12 @@ export const useSiteStage = ({
   const pickTool = bridged ? (
     <button
       type="button"
-      className="hx-head-btn hx-tipped"
+      className="hx-head-btn hx-tipped hx-pick-tool"
       aria-pressed={picking}
       aria-label={t('next.notes.pick')}
       onClick={onPick}
     >
-      <Icon name="square-dashed-mouse-pointer" />
+      <Icon name="square-mouse-pointer" />
       <span className="hx-tip" data-align="end">
         {t('next.notes.pickTip')}
         <kbd>V</kbd>
@@ -946,6 +960,30 @@ export const useSiteStage = ({
     },
     onMode: changeMode,
     more,
+    own:
+      convId && conv
+        ? {
+            pinned: conv.pinned,
+            onRename: (name) =>
+              void settled(renameConversation(machine, convId, name)).catch((failure: Error) =>
+                toast(t('next.sidebar.renameFailed'), { tone: 'error', description: failure.message }),
+              ),
+            onPin: () =>
+              void settled(pinConversation(machine, convId, !conv.pinned)).catch((failure: Error) =>
+                toast(t(conv.pinned ? 'next.sidebar.unpinFailed' : 'next.sidebar.pinFailed'), {
+                  tone: 'error',
+                  description: failure.message,
+                }),
+              ),
+          }
+        : undefined,
+    folded,
+    onFolded: (next) => {
+      setChosen(true);
+      setFolded(next);
+      setPicking(false);
+      setNoteDraft(null);
+    },
     onOpenSite: () => setSview(true),
     onToChat: convId ? openChatPage : undefined,
   };
@@ -955,6 +993,7 @@ export const useSiteStage = ({
     mode,
     onMode: changeMode,
     min: mode === 'island' && min,
+    folded: mode === 'chat' && folded,
     run: runOf(status),
     busy: status?.k === ISLAND_STATUS.run,
     // «Правки» pick all the time, but not while a note is being written.
@@ -1125,6 +1164,7 @@ export const useSiteStage = ({
         }
         holding={!empty || (draft?.attachments.length ?? 0) > 0}
         status={status}
+        chatPill={space || mode !== 'island' ? undefined : headTitle}
         last={convId ? <ConvLast conv={convId} machine={machine} onExpand={expand} /> : null}
         onStop={() => convId && void interrupt(machine, convId)}
         onDismiss={() => setSawRun(false)}

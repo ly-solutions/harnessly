@@ -30,3 +30,19 @@ export const rowAfter = (key: string, at: number, count: number): number => {
   if (key === 'End') return count - 1;
   return at;
 };
+
+/**
+ * The two parts of the board switcher: the boards of this chat (the ones the agent wrote, the newest first,
+ * then the ones opened here) and every other board, in the project's order.
+ */
+export const boardGroups = (
+  pages: readonly ISitePage[],
+  changed: ReadonlySet<string>,
+  opened: readonly string[],
+): { chat: ISitePage[]; rest: ISitePage[] } => {
+  const order = [...new Set([...[...changed].reverse(), ...opened])];
+  const byPath = new Map(pages.map((p) => [p.path, p]));
+  const chat = order.map((path) => byPath.get(path)).filter((p): p is ISitePage => p !== undefined);
+  const inChat = new Set(chat.map((p) => p.path));
+  return { chat, rest: pages.filter((p) => !inChat.has(p.path)) };
+};

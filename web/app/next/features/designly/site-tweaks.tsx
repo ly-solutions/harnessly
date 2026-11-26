@@ -182,7 +182,8 @@ const Control = ({ tweak, onChange }: IControlProps) => {
   const kind = tweakKind(tweak);
   if (kind === TWEAK_KIND.seg) return <Segments tweak={tweak} onChange={onChange} />;
   if (kind === TWEAK_KIND.colors) return <Colors tweak={tweak} onChange={onChange} />;
-  if (kind === TWEAK_KIND.select) return <Select tweak={tweak} onChange={onChange} />;
+  if (kind === TWEAK_KIND.select || kind === TWEAK_KIND.step)
+    return <Select tweak={tweak} onChange={onChange} />;
   if (kind === TWEAK_KIND.range) return <Range tweak={tweak} onChange={onChange} />;
   if (kind === TWEAK_KIND.toggle)
     return (

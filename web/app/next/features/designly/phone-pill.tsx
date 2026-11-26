@@ -1,8 +1,9 @@
-// The phone's pill: beside a phone or a tablet on the canvas, the way it is drawn — turned or upright, its case,
-// its status bar, the browser's bars, a fingertip instead of the pointer (no hover). It stands on the phone's right, level
-// with its top, and follows it as the canvas moves; with no room there it lies over the phone. Dragged, it stays where it
-// was put; its menu (a right click) has the same with names, back to its place, hide (floating-pill.tsx).
-import { useRef, useState } from 'react';
+// The phone's pill: beside a phone or a tablet on the canvas, the way it is drawn — turned or
+// upright, its case, its status bar, folded (a foldable), the browser it is shown in (any of them on any device), a
+// fingertip instead of the pointer (no hover), and the page's settings. It stands on the phone's right, level with its
+// top, and follows it as the canvas moves; with no room there it lies over the phone. Dragged, it stays where it was
+// put; its menu (a right click) has the switches with names, back to its place, hide (floating-pill.tsx).
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   PillMenuFoot,
   pillStore,
@@ -13,6 +14,7 @@ import { besideBox, PILL_AXIS, PILL_KEY } from '@/next/features/designly/zoom-pi
 import Icon from '@/next/ui/icon';
 import { usePresentFlag } from '@/next/ui/presence';
 import { t } from '@/next/i18n';
+import { BROWSER_SHELF, BROWSERS } from '@/next/features/designly/devices';
 
 /** The phone's pill's place and whether it is hidden, shared by every canvas of the page. */
 export const PHONE_PILL = pillStore(PILL_KEY.phone);
@@ -29,15 +31,27 @@ export interface IPhoneToggle {
   onToggle: () => void;
 }
 
+export interface IPhoneBrowsers {
+  /** The browser on screen. */
+  id: string;
+  /** The device's system's own. */
+  native: string;
+  onPick: (id: string) => void;
+}
+
 interface IPhonePillProps {
   /** There is a phone or a tablet on the canvas: the pill comes, and leaves with its animation when there is none. */
   active: boolean;
   rot: IPhoneToggle;
-  /** Null where the device has no case (the bare phone), or no interface of its own (turned). */
+  /** Null where the device has no case (the bare phone). */
   frame: IPhoneToggle | null;
-  status: IPhoneToggle | null;
-  browser: IPhoneToggle | null;
+  status: IPhoneToggle;
+  /** A foldable: folded, and what a press does. */
+  fold: (IPhoneToggle & { tip: string }) | null;
+  browser: IPhoneBrowsers;
   touch: IPhoneToggle;
+  /** «Настройки страницы», after a line. */
+  settings: (IPhoneToggle & { disabled: boolean }) | null;
   /** What moves the phone on the canvas or changes the pill: another device, a turn. */
   watch: string;
 }
@@ -50,6 +64,40 @@ interface IItem {
   tip?: string;
   toggle: IPhoneToggle;
 }
+
+/** The browsers beside the pill, shelf by shelf; the device's own is said to be its own. */
+const BrowserMenu = ({ browser, onClose }: { browser: IPhoneBrowsers; onClose: () => void }) => (
+  <div
+    className="hx-site-menu hx-brpop"
+    role="menu"
+    aria-label={t('next.site.browserGroup')}
+    onPointerDown={(event) => event.stopPropagation()}
+    onContextMenu={(event) => event.stopPropagation()}
+  >
+    {Object.values(BROWSER_SHELF).map((shelf) => (
+      <Fragment key={shelf}>
+        <div className="hx-dl-pop__label">{t(`next.site.browserShelf.${shelf}`)}</div>
+        {BROWSERS.filter((b) => b.shelf === shelf).map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            role="menuitemradio"
+            className="hx-option hx-brpop__row"
+            aria-checked={b.id === browser.id}
+            onClick={() => {
+              browser.onPick(b.id);
+              onClose();
+            }}
+          >
+            <span className="hx-brpop__dot" aria-hidden="true" />
+            <span className="hx-option__name">{t(`next.site.browsers.${b.id}`)}</span>
+            {b.id === browser.native && <span className="hx-brpop__own">{t('next.site.browserOwn')}</span>}
+          </button>
+        ))}
+      </Fragment>
+    ))}
+  </div>
+);
 
 /** The phone on the canvas, in the coordinates of the pill's parent. */
 const phoneBox = (area: HTMLElement) => {
@@ -85,11 +133,43 @@ const followPhone = (area: HTMLElement, again: () => void) => {
   };
 };
 
-export const PhonePill = ({ active, rot, frame, status, browser, touch, watch }: IPhonePillProps) => {
+export const PhonePill = ({
+  active,
+  rot,
+  frame,
+  status,
+  fold,
+  browser,
+  touch,
+  settings,
+  watch,
+}: IPhonePillProps) => {
   const hidden = usePillPrefs(PHONE_PILL).hidden;
   const shown = usePresentFlag(active && !hidden, OUT_MS);
   const [axis, setAxis] = useState<string>(PILL_AXIS.col);
+  const [browsers, setBrowsers] = useState(false);
+  if (browsers && !shown.mounted) setBrowsers(false);
   const ref = useRef<HTMLDivElement>(null);
+  // The list of browsers folds on a press elsewhere and on Esc.
+  useEffect(() => {
+    if (!browsers) return;
+    const onDown = (event: PointerEvent) => {
+      if (!(event.target as Element).closest('.hx-brpop, [data-item="browser"]')) setBrowsers(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setBrowsers(false);
+    };
+    const onBlur = () => setBrowsers(false);
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKey);
+    // A press on the page is in its own window.
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [browsers]);
   const pill = useFloatingPill(ref, PHONE_PILL, {
     auto: (area, el) => {
       const box = phoneBox(area);
@@ -117,45 +197,80 @@ export const PhonePill = ({ active, rot, frame, status, browser, touch, watch }:
   });
   if (!shown.mounted) return null;
 
-  const turned = rot.on ? t('next.site.portrait') : t('next.site.landscape');
   const items: IItem[] = [
-    { id: 'rot', icon: 'rotate-cw', label: t('next.site.landscape'), tip: turned, toggle: rot },
+    { id: 'rot', icon: 'rotate-cw', label: t('next.site.rotate'), toggle: rot },
     frame && { id: 'frame', icon: 'smartphone', label: t('next.site.phoneFrame'), toggle: frame },
-    status && { id: 'status', icon: 'signal', label: t('next.site.phoneStatus'), toggle: status },
-    browser && { id: 'browser', icon: 'panel-bottom', label: t('next.site.phoneBrowser'), toggle: browser },
+    { id: 'status', icon: 'wifi', label: t('next.site.phoneStatus'), toggle: status },
+    fold && { id: 'fold', icon: 'fold-vertical', label: fold.tip, toggle: fold },
     {
       id: 'touch',
-      icon: 'pointer',
+      icon: 'locate',
       label: t('next.site.phoneTouch'),
       tip: t('next.site.phoneTouchTip'),
       toggle: touch,
     },
   ].filter((item): item is IItem => item !== null);
+  const button = (item: IItem) => (
+    <button
+      key={item.id}
+      type="button"
+      className="hx-head-btn hx-tipped"
+      aria-label={item.label}
+      aria-pressed={item.toggle.on}
+      data-item={item.id}
+      onClick={item.toggle.onToggle}
+    >
+      <Icon name={item.icon} size="sm" />
+      <span className="hx-tip">{item.tip ?? item.label}</span>
+    </button>
+  );
+  const browserName = t(`next.site.browsers.${browser.id}`);
 
   return (
     <div
       ref={ref}
       className="hx-phonepill"
       data-state={shown.state}
+      data-browsers={browsers}
       role="toolbar"
       aria-label={t('next.site.phonePill')}
       aria-orientation={axis === PILL_AXIS.col ? 'vertical' : 'horizontal'}
       {...pill.bind}
     >
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          className="hx-head-btn hx-tipped"
-          aria-label={item.label}
-          aria-pressed={item.toggle.on}
-          data-item={item.id}
-          onClick={item.toggle.onToggle}
-        >
-          <Icon name={item.icon} size="sm" />
-          <span className="hx-tip">{item.tip ?? item.label}</span>
-        </button>
-      ))}
+      {items.filter((item) => item.id !== 'touch').map(button)}
+      <button
+        type="button"
+        className="hx-head-btn hx-tipped"
+        aria-label={t('next.site.browserOf', { name: browserName })}
+        aria-haspopup="menu"
+        aria-expanded={browsers}
+        data-item="browser"
+        onClick={() => setBrowsers((open) => !open)}
+      >
+        <Icon name="globe" size="sm" />
+        {!browsers && <span className="hx-tip">{t('next.site.browserOf', { name: browserName })}</span>}
+      </button>
+      {items.filter((item) => item.id === 'touch').map(button)}
+      {settings && (
+        <>
+          <span className="hx-phonepill__sep" />
+          <button
+            type="button"
+            className="hx-head-btn hx-tipped"
+            aria-label={t('next.site.tweaks.title')}
+            aria-pressed={settings.on}
+            aria-disabled={settings.disabled}
+            data-item="settings"
+            onClick={() => !settings.disabled && settings.onToggle()}
+          >
+            <Icon name="sliders-horizontal" size="sm" />
+            <span className="hx-tip">
+              {settings.disabled ? t('next.site.tweaksNone') : t('next.site.tweaks.title')}
+            </span>
+          </button>
+        </>
+      )}
+      {browsers && <BrowserMenu browser={browser} onClose={() => setBrowsers(false)} />}
       {pill.menu.value !== null && (
         <div
           className="hx-site-menu hx-phonepill__menu"

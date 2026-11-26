@@ -1640,3 +1640,247 @@ button.hx-acc-set:focus-visible,
     transition: none;
   }
 }
+
+/* «Кто откроет по ссылке» and «Ссылки-приглашения» as cards, the new link's form inside its card. */
+.hx-acc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--hx-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--hx-bg-app) 50%, transparent);
+}
+.hx-acc-card__h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--hx-text-sm);
+}
+.hx-acc-card__h .hx-icon {
+  color: var(--hx-fg-3);
+}
+.hx-acc-card__hint {
+  margin: 0;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+.hx-acc-seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--hx-bg-app);
+}
+.hx-acc-seg button {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--hx-fg-3);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 160ms,
+    color 160ms;
+}
+.hx-acc-seg button[aria-checked='true'] {
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.hx-acc-seg--auto {
+  width: auto;
+}
+.hx-acc-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  cursor: pointer;
+}
+.hx-acc-add[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--hx-accent) 18%, transparent);
+}
+.hx-acc-link {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--hx-bg-raised);
+}
+.hx-acc-link__t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--hx-text-sm);
+}
+.hx-acc-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+  font-size: 11px;
+}
+.hx-acc-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hx-bg-hover);
+  overflow: hidden;
+}
+.hx-acc-bar i {
+  display: block;
+  width: var(--w, 0%);
+  height: 100%;
+  border-radius: 2px;
+  background: var(--hx-accent);
+  transition: width 240ms var(--hx-ease-out);
+}
+.hx-acc-link__a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hx-acc-link__url {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--hx-bg-app);
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hx-acc-link__url--hidden {
+  color: var(--hx-fg-3);
+}
+.hx-acc-new {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--hx-bg-raised);
+  animation: hx-acc-new-in 200ms var(--hx-ease-out) backwards;
+}
+@keyframes hx-acc-new-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.hx-acc-new__name {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: 8px;
+  background: var(--hx-bg-app);
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+}
+.hx-acc-new__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--hx-text-sm);
+  color: var(--hx-fg-2);
+}
+.hx-acc-new__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.hx-acc-chips {
+  display: flex;
+  gap: 4px;
+}
+.hx-acc-chips button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: 999px;
+  background: none;
+  color: var(--hx-fg-2);
+  font: inherit;
+  font-size: var(--hx-text-xs);
+  cursor: pointer;
+}
+.hx-acc-chips button[aria-checked='true'] {
+  border-color: var(--hx-accent);
+  color: var(--hx-fg-1);
+  background: color-mix(in srgb, var(--hx-accent) 14%, transparent);
+}
+.hx-acc-count {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--hx-bg-app);
+}
+.hx-acc-count button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--hx-fg-2);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.hx-acc-count button:hover {
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+}
+.hx-acc-count span {
+  min-width: 36px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.hx-acc-toggle {
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--hx-fg-3) 45%, transparent);
+  padding: 2px;
+  display: flex;
+  cursor: pointer;
+  transition: background 160ms;
+}
+.hx-acc-toggle i {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 160ms;
+}
+.hx-acc-toggle[aria-checked='true'] {
+  background: var(--hx-accent);
+}
+.hx-acc-toggle[aria-checked='true'] i {
+  transform: translateX(14px);
+}
+.hx-acc-foot [data-done] {
+  color: var(--hx-success, #2f9e6e);
+}

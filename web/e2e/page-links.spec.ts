@@ -138,7 +138,7 @@ test('a link of a board switches the site to its page, with its props, Back and 
   await expect.poll(() => pageParam(page), { timeout: 20_000 }).toBe('Оплата.dc.html');
   await expect(frame.getByRole('heading', { name: 'Оплата · Mobile' })).toBeVisible({ timeout: 30_000 });
   await expect(frame.locator('#loading')).toHaveText('Загрузка: да');
-  await page.getByRole('button', { name: 'Живые настройки' }).click();
+  await page.getByRole('button', { name: 'Настройки страницы' }).click();
   await expect(page.locator('.hx-tweaks')).toBeVisible();
   await expect(page.locator('.hx-tweaks')).toContainText('Загрузка');
   await page.screenshot({ path: join(shots, 'links-2-pay-props.png') });

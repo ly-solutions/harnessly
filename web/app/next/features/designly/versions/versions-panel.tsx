@@ -45,7 +45,7 @@ const timeOf = (at: number) =>
     minute: '2-digit',
   });
 
-const useHistory = (machine: MachineId, id: string, on: boolean) => {
+export const useHistory = (machine: MachineId, id: string, on: boolean) => {
   const [history, setHistory] = useState<IProjectHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -84,7 +84,7 @@ interface ICompareProps {
 }
 
 /** A version against now: the boards that changed, and one of them side by side. */
-const Compare = ({ machine, id, origin, point, page }: ICompareProps) => {
+export const Compare = ({ machine, id, origin, point, page }: ICompareProps) => {
   const [diff, setDiff] = useState<IProjectDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [board, setBoard] = useState<string | null>(null);

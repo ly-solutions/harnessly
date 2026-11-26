@@ -7,6 +7,8 @@ export const TWEAK_KIND = {
   seg: 'seg',
   /** Many or long options in a list. */
   select: 'select',
+  /** The steps of a scenario, gone through one by one (‹ ›). */
+  step: 'step',
   /** Options that are all colours. */
   colors: 'colors',
   toggle: 'toggle',
@@ -21,9 +23,13 @@ const SEG_MAX = 4;
 const SEG_CHARS = 30;
 const HEX = /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i;
 
+/** What a board calls the steps of a scenario: its screens one after another. */
+const STEP_EDITORS = new Set(['step', 'steps', 'scenario']);
+
 export const tweakKind = (c: ITweak): TTweakKind => {
   if (c.options.length > 0) {
     if (c.options.every((o) => typeof o.value === 'string' && HEX.test(o.value))) return TWEAK_KIND.colors;
+    if (STEP_EDITORS.has(c.editor) && c.options.length > 1) return TWEAK_KIND.step;
     const chars = c.options.reduce((sum, o) => sum + o.text.length, 0);
     return c.options.length <= SEG_MAX && chars <= SEG_CHARS ? TWEAK_KIND.seg : TWEAK_KIND.select;
   }
@@ -55,3 +61,13 @@ export const tweakGroups = (controls: readonly ITweak[]) => {
 /** How far along its bounds a slider stands, as a percentage. */
 export const rangeShare = (value: number, min: number, max: number) =>
   `${Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100)).toFixed(1)}%`;
+
+/** The board's setting stands away from what the board itself is drawn with. */
+export const tweakChanged = (c: ITweak) => c.def !== null && c.value !== null && c.value !== c.def;
+
+/** The option after (or before) the one the setting stands at, round the list. */
+export const stepOption = (c: ITweak, by: 1 | -1) => {
+  const at = c.options.findIndex((o) => o.value === c.value);
+  const n = c.options.length;
+  return c.options[((((at < 0 ? 0 : at) + by) % n) + n) % n];
+};

@@ -173,7 +173,7 @@ describe('readBridgeMessage: settings of a board', () => {
       type: 'tk:tweaks',
       controls: [control, null, { name: '' }, 'x', { label: 'no name' }],
     });
-    expect(read).toEqual({ k: 'tweaks', controls: [control] });
+    expect(read).toEqual({ k: 'tweaks', controls: [{ ...control, def: null }] });
   });
 
   it('keeps plain values only and bounds the lists and the texts', () => {

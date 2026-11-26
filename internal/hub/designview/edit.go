@@ -40,6 +40,8 @@ var EditRoutes = map[string]func(*design.API, *http.Request) design.Answer{
 	"video/overlay":    (*design.API).VideoOverlay,
 	"video/comments":   (*design.API).VideoComments,
 	"scene3d/comments": (*design.API).Scene3DComments,
+	"site/comments":    (*design.API).SiteComments,
+	"site/props":       (*design.API).SiteProps,
 }
 
 // workspace is the hub's working copy of one project: the files as of head, with what each was when written.

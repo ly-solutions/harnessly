@@ -30,8 +30,11 @@ const inRoot = (ui: ReactNode) =>
 const settle = () => act(() => void vi.advanceTimersByTime(1000));
 const away = () => act(() => void vi.advanceTimersByTime(400));
 // Real entries, so the texts come from the dictionary built out of entries/: the newest one and one of a day before it.
+// Not the entry about the cards themselves: its words name the «Новое» mark the test looks for.
 const newest = ENTRIES[0] as IEntry;
-const older = ENTRIES.find((entry) => entry.date < newest.date) as IEntry;
+const older = ENTRIES.find(
+  (entry) => entry.date < newest.date && entry.id !== 'hrn-713-whats-new-cards',
+) as IEntry;
 const SOME = [newest, older];
 const title = (entry: IEntry) => t(`next.whatsNew.${entry.id}.title`);
 

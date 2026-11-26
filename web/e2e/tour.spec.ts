@@ -308,7 +308,7 @@ test('site lesson counts the real actions', async ({ page }) => {
 
   await expect(title(page)).toHaveText('Нажмите «Выделить»', { timeout: 10_000 });
   await snap(page, 'pick');
-  const pick = page.locator('.hx-browser__tool[aria-label="Выделить"]');
+  const pick = page.locator('.hx-pick-tool, .hx-browser__pick').first();
   await expect(pick).not.toHaveAttribute('aria-disabled', 'true', { timeout: 15_000 });
   await pick.click();
 
@@ -336,7 +336,8 @@ test('site lesson counts the real actions', async ({ page }) => {
   await expect(page).toHaveURL(/\/designly\/relay-site/);
   await expect(title(page)).toHaveText('Откройте страницу «Цены»', { timeout: 10_000 });
   await snap(page, 'page');
-  await page.getByText('Цены', { exact: true }).first().click();
+  await page.locator('.hx-browser__url').click();
+  await page.locator('.hx-pgpick__row').filter({ hasText: 'Цены' }).click();
   await expect(title(page)).toHaveText('Переключите «За год»', { timeout: 10_000 });
   await expect(anchor).toBeVisible({ timeout: 20_000 });
   await site.locator('label[for="yr"]').click();
@@ -358,6 +359,7 @@ test('site lesson counts the real actions', async ({ page }) => {
     expect(apart).toBe(true);
   }
   await snap(page, 'device');
+  await page.locator('.hx-devshelf__head', { hasText: 'iPhone' }).click();
   await page
     .getByRole('menuitemradio', { name: /^iPhone 14/ })
     .first()

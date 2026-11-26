@@ -7,7 +7,9 @@
 // for more. Every change waits for the gateway and shows what it answered. On the phone it is a bottom sheet.
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import AccessAdd from '@/next/features/designly/access/access-add';
-import AccessGeneral from '@/next/features/designly/access/access-general';
+import LinkAudience from '@/next/features/designly/access/link-audience';
+import InviteCards from '@/next/features/designly/access/invite-cards';
+import { useGuestLinks } from '@/next/features/designly/access/use-guest-links';
 import AccessLinks from '@/next/features/designly/access/access-links';
 import AccessLog, { warmLog } from '@/next/features/designly/access/access-log';
 import AccessSnapshot from '@/next/features/designly/access/access-snapshot';
@@ -18,6 +20,7 @@ import {
   askAccess,
   atLeast,
   isUnowned,
+  type IGuestLink,
   type IProjectAccess,
   type TGuestRights,
 } from '@/next/features/designly/access/api';
@@ -64,6 +67,8 @@ export interface IShareDialogProps {
 }
 
 const ALL_RIGHTS: readonly TGuestRights[] = ['view', 'comment'];
+/** «Скопировано» stays this long. */
+const COPIED_MS = 1800;
 
 /** A view leaves in this long (styles/design-access.css, .hx-acc-view--sub[data-state='closing']). */
 const VIEW_OUT_MS = 220;
@@ -83,6 +88,8 @@ export interface IFrameProps {
   initialFocus?: RefObject<HTMLElement | null>;
   onClose: () => void;
   title: string;
+  /** A line under the title: what is shared. */
+  lead?: string;
   actions: ReactNode;
   children: ReactNode;
 }
@@ -94,6 +101,7 @@ export const Frame = ({
   initialFocus,
   onClose,
   title,
+  lead,
   actions,
   children,
 }: IFrameProps) => {
@@ -104,6 +112,7 @@ export const Frame = ({
         open={open}
         onClose={onClose}
         title={title}
+        lead={lead}
         boxClass={fixedHead ? 'hx-acc hx-acc--one' : 'hx-acc'}
         actions={actions}
         initialFocus={initialFocus}
@@ -121,6 +130,7 @@ export const Frame = ({
       <div className="hx-modal__head">
         <div>
           <h2 className="hx-modal__title">{title}</h2>
+          {lead && <p className="hx-modal__lead">{lead}</p>}
         </div>
         {actions}
         <button type="button" className="hx-head-btn" aria-label={t('next.modal.close')} onClick={onClose}>
@@ -167,17 +177,21 @@ interface IMainProps {
   me: string | null;
   field: RefObject<HTMLInputElement | null>;
   extra?: ReactNode;
+  /** The links without sign-in; null where there are none («Все по ссылке» is not offered). */
+  guests: readonly IGuestLink[] | null;
+  onGuests: (links: IGuestLink[]) => void;
 }
 
 /** The main view, drawn again only when what it shows changes, not when a view slides over it. */
-const Main = memo(({ project, access, action, onNext, me, field, extra }: IMainProps) => {
+const Main = memo(({ project, access, action, onNext, me, field, extra, guests, onGuests }: IMainProps) => {
   const section = { project, access, action, onNext };
   return (
     <>
       <AccessAdd {...section} inputRef={field} />
       <AccessRequests {...section} />
       <AccessPeople {...section} me={me} />
-      <AccessGeneral {...section} />
+      <LinkAudience {...section} guests={guests} onGuests={onGuests} />
+      <InviteCards {...section} />
       {extra}
     </>
   );
@@ -211,6 +225,15 @@ const ShareDialog = ({
   const section = { project, access, action, onNext };
   const manages = access.canManage;
   const links = guestRights.length > 0;
+  const guestLinks = useGuestLinks(open && manages && links ? project : null);
+  const guests = guestLinks.state.k === 'ready' ? guestLinks.state.links : null;
+  // «Копировать ссылку» says «Скопировано» for a moment.
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   // The dialog opens again on its main view (adjusted while rendering; a closing dialog keeps its view as it leaves).
   const [wasOpen, setWasOpen] = useState(open);
@@ -244,7 +267,8 @@ const ShareDialog = ({
   const covered = useCovered(view !== null);
   const stateOf = (v: TSubView): TPresenceState | typeof IDLE => (v === sub.value ? sub.state : IDLE);
 
-  const shareTitle = t('next.access.shareTitle', { name: title || t('next.access.untitled') });
+  const shareTitle = t('next.access.share');
+  const shareLead = t('next.access.shareLead', { name: title || t('next.access.untitled') });
 
   return (
     <Frame
@@ -252,6 +276,7 @@ const ShareDialog = ({
       onClose={onClose}
       initialFocus={manages ? field : undefined}
       title={shareTitle}
+      lead={shareLead}
       actions={manages && <ShareMenu {...section} links={links} onView={go} />}
     >
       <div className="hx-modal__body hx-acc-body" ref={body}>
@@ -266,6 +291,8 @@ const ShareDialog = ({
                 me={me.k === 'ready' ? me.me.email : null}
                 field={field}
                 extra={extra}
+                guests={guests}
+                onGuests={guestLinks.put}
               />
             </div>
             {seen.map((v) => (
@@ -342,10 +369,14 @@ const ShareDialog = ({
             data-size="sm"
             disabled={isUnowned(access)}
             title={isUnowned(access) ? t('next.access.claimBeforeCopy') : undefined}
-            onClick={onCopyLink}
+            data-done={copied || undefined}
+            onClick={() => {
+              onCopyLink();
+              setCopied(true);
+            }}
           >
-            <Icon name="link" size="sm" />
-            <span>{t('next.access.copyLink')}</span>
+            <Icon name={copied ? 'check' : 'link'} size="sm" />
+            <span>{copied ? t('next.access.copiedShort') : t('next.access.copyLink')}</span>
           </button>
           {manages && links && (
             <Tooltip label={t('next.access.linkSettings')}>

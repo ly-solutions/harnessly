@@ -16,7 +16,7 @@ const look = { background: '#112233', radius: 16, opacity: 1 };
 describe('withValue', () => {
   it('holds only what differs from the block', () => {
     const radius = withValue(NO_EDIT, look, 'radius', 8);
-    expect(radius).toEqual({ background: null, radius: 8, opacity: null });
+    expect(radius).toEqual({ ...NO_EDIT, background: null, radius: 8, opacity: null });
     expect(withValue(radius, look, 'radius', 16)).toEqual(NO_EDIT);
     expect(withValue(NO_EDIT, look, 'opacity', 100)).toEqual(NO_EDIT);
     expect(withValue(NO_EDIT, look, 'opacity', 80).opacity).toBe(80);
@@ -34,8 +34,8 @@ describe('withValue', () => {
 
 describe('shownValues and stepRadius', () => {
   it('shows the edit over the block, the fill as the theme when it is not changed', () => {
-    expect(shownValues(NO_EDIT, look)).toEqual({ background: null, radius: 16, opacity: 100 });
-    expect(shownValues({ background: '#FFFFFF', radius: 2, opacity: 35 }, look)).toEqual({
+    expect(shownValues(NO_EDIT, look)).toMatchObject({ background: null, radius: 16, opacity: 100 });
+    expect(shownValues({ ...NO_EDIT, background: '#FFFFFF', radius: 2, opacity: 35 }, look)).toMatchObject({
       background: '#FFFFFF',
       radius: 2,
       opacity: 35,
@@ -59,7 +59,7 @@ describe('what the page wears', () => {
   const radius = { ...NO_EDIT, radius: 4 };
 
   it('turns an edit into the bridge look: opacity as a share', () => {
-    expect(toItem(3, { background: '#FFFFFF', radius: 8, opacity: 80 })).toEqual({
+    expect(toItem(3, { ...NO_EDIT, background: '#FFFFFF', radius: 8, opacity: 80 })).toEqual({
       id: 3,
       background: '#FFFFFF',
       radius: 8,
@@ -81,7 +81,7 @@ describe('what the page wears', () => {
 
 describe('styleLine', () => {
   it('is CSS the agent can read, with what the block had', () => {
-    expect(styleLine({ background: '#FFFFFF', radius: 8, opacity: 85 }, look)).toBe(
+    expect(styleLine({ ...NO_EDIT, background: '#FFFFFF', radius: 8, opacity: 85 }, look)).toBe(
       'background: #FFFFFF (was #112233); border-radius: 8px (was 16px); opacity: 0.85 (was 1)',
     );
   });
@@ -90,9 +90,33 @@ describe('styleLine', () => {
     expect(styleLine(NO_EDIT, look)).toBe('');
     expect(
       styleLine(
-        { background: '#FFFFFF', radius: 8, opacity: null },
+        { ...NO_EDIT, background: '#FFFFFF', radius: 8, opacity: null },
         { ...look, background: null, radius: null },
       ),
     ).toBe('background: #FFFFFF; border-radius: 8px');
+  });
+});
+
+describe('the type of a block (HRN-1764)', () => {
+  const typed = { ...look, font: { size: 20, weight: 400, color: '#111111' }, words: 'Old words' };
+
+  it('keeps only what differs from the block', () => {
+    expect(withValue(NO_EDIT, typed, 'size', 100)).toEqual(NO_EDIT);
+    expect(withValue(NO_EDIT, typed, 'weight', 400)).toEqual(NO_EDIT);
+    expect(withValue(NO_EDIT, typed, 'text', 'Old words')).toEqual(NO_EDIT);
+    expect(withValue(NO_EDIT, typed, 'color', '#111111')).toEqual(NO_EDIT);
+  });
+
+  it('sends the size in pixels of the block’s own and says what was', () => {
+    const edit = { ...NO_EDIT, size: 150, weight: 700, color: '#E5484D', text: 'New' };
+    expect(toItem(2, edit, typed)).toMatchObject({ size: 30, weight: 700, color: '#E5484D', text: 'New' });
+    expect(styleLine(edit, typed)).toBe(
+      'text: «New» (was «Old words»); font-size: 30px (was 20px); font-weight: 700 (was 400); color: #E5484D (was #111111)',
+    );
+  });
+
+  it('reads a note kept before the type as no change of it', () => {
+    const old = { background: null, radius: 4, opacity: null } as unknown as typeof NO_EDIT;
+    expect(styleLine(old, typed)).toBe('border-radius: 4px (was 16px)');
   });
 });

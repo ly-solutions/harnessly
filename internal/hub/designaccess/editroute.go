@@ -19,7 +19,7 @@ import (
 // machine off the hub reads it from the store. Everything else, and a project the store has nothing of, goes to the
 // machine as before.
 
-var editPath = regexp.MustCompile(`^/api/[A-Za-z0-9_-]+/design/((?:deck|video|scene3d)(?:/[a-z]+)?)$`)
+var editPath = regexp.MustCompile(`^/api/[A-Za-z0-9_-]+/design/((?:deck|video|scene3d|site)(?:/[a-z]+)?)$`)
 
 // editBodyMax caps what the hub reads of an edit (a slide's patch is the largest); a larger body goes to the machine.
 const editBodyMax = 4 << 20
@@ -30,6 +30,14 @@ func editNeed(route, method string) (string, bool) {
 	switch {
 	case route == "deck" || route == "video":
 		return roleView, read
+	case route == "site/props":
+		// The settings everybody sees a board with: picked by whoever may comment.
+		if read {
+			return roleView, true
+		}
+		return roleComment, method == http.MethodPut
+	case route == "site/comments" && read:
+		return roleView, true
 	case strings.HasSuffix(route, "/comments"), route == "video/scene" && (method == http.MethodPost || method == http.MethodPatch):
 		return roleComment, method == http.MethodPost || method == http.MethodPatch
 	default:
@@ -102,7 +110,17 @@ func (s *Service) serveEdit(w http.ResponseWriter, r *http.Request, u store.User
 	}
 	in := r.Clone(ctx)
 	in.Body = io.NopCloser(bytes.NewReader(raw))
-	err = s.view.Edit(ctx, w, in, m.SpaceID, project, normEmail(u.Email), route)
+	var rec *answerRecorder
+	out := w
+	if route == "site/comments" && r.Method == http.MethodPost {
+		rec = &answerRecorder{ResponseWriter: w}
+		out = rec
+	}
+	err = s.view.Edit(ctx, out, in, m.SpaceID, project, normEmail(u.Email), route)
+	if err == nil && rec != nil {
+		rec.flush()
+		s.ringSiteMentions(t, p, m, project, normEmail(u.Email), rec)
+	}
 	switch {
 	case errors.Is(err, ErrConflict):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "Проект только что изменили: обновите его и повторите правку", "code": "conflict"})

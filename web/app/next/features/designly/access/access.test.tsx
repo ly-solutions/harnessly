@@ -126,7 +126,7 @@ const openMenu = async (name: string | RegExp) => {
 describe('the share dialog', () => {
   it('shows the field, who has access, requests and general access; nothing dangerous on the main screen', async () => {
     inRoot(<ShareDialog {...shareProps(manager)} />);
-    expect(await screen.findByText(t('next.access.shareTitle', { name: 'Landing' }))).toBeTruthy();
+    expect(await screen.findByText(t('next.access.shareLead', { name: 'Landing' }))).toBeTruthy();
     expect(screen.getByLabelText(t('next.access.addField'))).toBeTruthy();
     expect(screen.getByText(t('next.access.whoHas'))).toBeTruthy();
     expect(screen.getByText('ann@x.ru')).toBeTruthy();
@@ -135,17 +135,17 @@ describe('the share dialog', () => {
     expect(screen.getByText(t('next.access.you'))).toBeTruthy();
     expect(screen.getByText(t('next.access.requests'))).toBeTruthy();
     expect(screen.getByText('bob@x.ru')).toBeTruthy();
+    // «Кто откроет по ссылке»: the team's level is «Вся организация», with its line.
     expect(
-      screen.getByRole('button', {
-        name: `${t('next.access.general')}: ${t('next.access.general.view')}`,
-      }),
-    ).toBeTruthy();
-    expect(screen.getByText(t('next.access.general.view.hint'))).toBeTruthy();
+      screen.getByRole('radio', { name: t('next.access.audience.org') }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(screen.getByText(t('next.access.audience.org.hint'))).toBeTruthy();
     expect(screen.getByRole('button', { name: t('next.access.copyLink') })).toBeTruthy();
     expect(screen.getByRole('button', { name: t('next.access.done') })).toBeTruthy();
     expect(screen.queryByText(t('next.access.revokeAll'))).toBeNull();
     expect(screen.queryByText(t('next.access.transferItem'))).toBeNull();
-    expect(screen.queryByText('Agency')).toBeNull();
+    // The invite links are cards of the main screen now.
+    expect(screen.getByText(t('next.access.invites.title'))).toBeTruthy();
   });
 
   it('viewer sees only own role and request button', async () => {
@@ -250,14 +250,11 @@ describe('the share dialog', () => {
     expect(await screen.findByText(untilLabel('2026-11-12T12:00:00Z')!)).toBeTruthy();
   });
 
-  it('changes the general access from its one row', async () => {
+  it('changes who opens the link from its segment', async () => {
     const fetchMock = gateway();
     vi.stubGlobal('fetch', fetchMock);
     inRoot(<ShareDialog {...shareProps(manager)} />);
-    const menu = await openMenu(new RegExp(`^${t('next.access.general')}`));
-    fireEvent.click(
-      within(menu).getByRole('menuitemradio', { name: new RegExp(t('next.access.general.none')) }),
-    );
+    fireEvent.click(await screen.findByRole('radio', { name: t('next.access.audience.invited') }));
     await waitFor(() =>
       expect(calls(fetchMock)).toContainEqual([
         expect.stringContaining('/p1/team'),
@@ -380,9 +377,9 @@ describe('the share dialog', () => {
     const fetchMock = gateway();
     vi.stubGlobal('fetch', fetchMock);
     inRoot(<ShareDialog {...shareProps(manager)} />);
-    fireEvent.click(await screen.findByRole('button', { name: t('next.access.linkSettings') }));
+    // The invite's card on the main screen revokes it.
     expect(await screen.findByText('Agency')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: t('next.access.revoke') }));
+    fireEvent.click(screen.getByRole('button', { name: t('next.access.invites.revoke') }));
     await waitFor(() =>
       expect(calls(fetchMock)).toContainEqual([
         expect.stringContaining('/p1/invites/i1'),

@@ -1,0 +1,1429 @@
+/* The devices of an open design: our own cases, the status bar and the browsers of a phone or a tablet,
+   the silhouettes of the device menu and the animations of a device. The cases of Devices.css are vendor-devices.css.
+   The colours here are the devices' own, the same in either theme. */
+
+/* ── Our cases: the body round a screen of the device's true size (devices.ts CASES) ── */
+.hx-dv {
+  --rim: #3a3b40;
+  --body: #0b0b0c;
+  position: relative;
+  box-sizing: border-box;
+  width: var(--bw);
+  height: var(--bh);
+  padding: var(--pt) var(--pr) var(--pb) var(--ps);
+  border-radius: var(--rb);
+  background-color: transparent;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+  transition:
+    padding 480ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    border-radius 480ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    background-color 300ms,
+    box-shadow 300ms;
+  animation: hx-device-in 460ms var(--site-ease) backwards;
+}
+.hx-dv > .device-frame,
+.hx-dv .device-screen {
+  width: 100%;
+  height: 100%;
+}
+.hx-dv .hx-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--rs);
+  /* The glass of a browser's bar is clipped by the screen's corners too. */
+  clip-path: inset(0 round var(--rs));
+  background: #fff;
+  perspective: 1600px;
+}
+.hx-dv[data-framed='true'] {
+  background-color: var(--body);
+  /* The body's glints. */
+  background-image: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.1),
+    transparent 30%,
+    transparent 70%,
+    rgba(255, 255, 255, 0.06)
+  );
+  box-shadow:
+    0 0 0 2.5px var(--rim),
+    0 0 0 3.5px rgba(0, 0, 0, 0.6),
+    0 30px 70px rgba(0, 0, 0, 0.55);
+}
+.hx-dv[data-framed='true'] .hx-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+.hx-dv[data-kind='se'] {
+  --rim: #d8d8dc;
+  --body: #0d0d0f;
+}
+.hx-dv[data-kind='notch'] {
+  --rim: #c9ccd2;
+  --body: #0d0d0f;
+}
+.hx-dv[data-kind='island'] {
+  --rim: #8d8a85;
+}
+.hx-dv[data-kind='air'] {
+  --rim: #c7c5c0;
+}
+.hx-dv[data-kind='ultra'] {
+  --rim: #5d5c58;
+}
+.hx-dv:is([data-kind='flip'], [data-kind='flipc'], [data-kind='foldc'], [data-kind='foldo']) {
+  --rim: #2f3036;
+}
+.hx-dv[data-kind='pixel'] {
+  --rim: #2c2d31;
+}
+.hx-dv[data-kind='duo'] {
+  --rim: #d6d6d8;
+  --body: #f1f1f1;
+}
+.hx-dv[data-kind='ipadpro'] {
+  --rim: #8d8a85;
+}
+.hx-dv[data-kind='ipadhome'] {
+  --rim: #d8d8dc;
+  --body: #f4f4f6;
+}
+.hx-dv[data-kind='tab'] {
+  --rim: #55565c;
+}
+/* The side buttons; a tablet has one on its top edge, a lying device none in sight. */
+.hx-dv[data-framed='true']::before,
+.hx-dv[data-framed='true']::after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--rim);
+}
+.hx-dv[data-framed='true']::before {
+  top: 24%;
+  right: -5px;
+  height: 74px;
+}
+.hx-dv[data-framed='true']::after {
+  top: 18%;
+  left: -5px;
+  height: 110px;
+  background: linear-gradient(var(--rim) 0 40%, transparent 40% 52%, var(--rim) 52%);
+}
+.hx-dv:is(
+    [data-kind='ipadpro'],
+    [data-kind='ipadhome'],
+    [data-kind='tab'],
+    [data-kind='duo'],
+    [data-kind='foldo']
+  )::after {
+  display: none;
+}
+.hx-dv:is([data-kind='ipadpro'], [data-kind='ipadhome'], [data-kind='tab'])::before {
+  top: -5px;
+  right: 40px;
+  width: 60px;
+  height: 3px;
+}
+.hx-vparea[data-rot='true'] .hx-dv::before,
+.hx-vparea[data-rot='true'] .hx-dv::after {
+  display: none;
+}
+/* The camera's cuts. */
+.hx-cut {
+  position: absolute;
+  left: 50%;
+  z-index: 10;
+  display: none;
+  background: #000;
+  pointer-events: none;
+}
+.hx-vparea:not([data-rot='true']) .hx-dv[data-framed='true'] .hx-cut {
+  display: block;
+}
+.hx-dv[data-kind='notch'] .hx-cut {
+  top: 0;
+  width: 162px;
+  height: 32px;
+  margin-left: -81px;
+  border-radius: 0 0 20px 20px;
+}
+.hx-dv:is([data-kind='island'], [data-kind='air']) .hx-cut {
+  top: 11px;
+  width: 122px;
+  height: 36px;
+  margin-left: -61px;
+  border-radius: 20px;
+}
+.hx-dv:is(
+    [data-kind='punch'],
+    [data-kind='ultra'],
+    [data-kind='flip'],
+    [data-kind='foldc'],
+    [data-kind='pixel']
+  )
+  .hx-cut {
+  top: 10px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px #1d1d22;
+}
+.hx-dv[data-kind='foldo'] .hx-cut {
+  top: 10px;
+  left: 75%;
+  width: 11px;
+  height: 11px;
+  margin-left: -5px;
+  border-radius: 50%;
+}
+/* The outer screen of a Flip: two lenses in its corner. */
+.hx-dv[data-kind='flipc'] .hx-cut {
+  top: 14px;
+  left: 16px;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  border-radius: 50%;
+  background: #050506;
+  box-shadow:
+    inset 0 0 0 4px #1b1b20,
+    40px 0 0 0 #050506;
+}
+.hx-vparea
+  .hx-dv:is(
+    [data-kind='se'],
+    [data-kind='duo'],
+    [data-kind='bare'],
+    [data-kind='ipadpro'],
+    [data-kind='ipadhome'],
+    [data-kind='tab']
+  )
+  .hx-cut {
+  display: none;
+}
+/* The folds. */
+.hx-crease {
+  position: absolute;
+  z-index: 8;
+  display: none;
+  pointer-events: none;
+}
+.hx-dv[data-kind='foldo'] .hx-crease {
+  display: block;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 14px;
+  margin-left: -7px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 0, 0, 0.07) 40%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(0, 0, 0, 0.07) 60%,
+    transparent
+  );
+}
+.hx-dv[data-kind='flip'] .hx-crease {
+  display: block;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 14px;
+  margin-top: -7px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(0, 0, 0, 0.07) 40%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(0, 0, 0, 0.07) 60%,
+    transparent
+  );
+}
+.hx-dv[data-kind='duo'] .hx-crease {
+  display: block;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 30px;
+  margin-left: -15px;
+  background: linear-gradient(90deg, #f1f1f1, #cfcfd2 30%, #bdbdc1 50%, #cfcfd2 70%, #f1f1f1);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+/* The «Home» button and the camera of the old cases. */
+.hx-hbtn,
+.hx-pcam {
+  position: absolute;
+  left: 50%;
+  display: none;
+  pointer-events: none;
+}
+.hx-dv[data-framed='true']:is([data-kind='se'], [data-kind='ipadhome']) .hx-hbtn {
+  display: block;
+  bottom: 13px;
+  width: 48px;
+  height: 48px;
+  margin-left: -24px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px #2a2a2e;
+}
+.hx-dv[data-framed='true'][data-kind='ipadhome'] .hx-hbtn {
+  bottom: 12px;
+  box-shadow: inset 0 0 0 2px #c4c4c8;
+}
+.hx-dv[data-framed='true']:is([data-kind='se'], [data-kind='ipadhome']) .hx-pcam {
+  display: block;
+  top: 32px;
+  width: 54px;
+  height: 6px;
+  margin-left: -27px;
+  border-radius: 3px;
+  background: #2a2a2e;
+}
+.hx-dv[data-framed='true'][data-kind='ipadhome'] .hx-pcam {
+  top: 30px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4px;
+  border-radius: 50%;
+}
+.hx-dv[data-framed='true']:is([data-kind='ipadpro'], [data-kind='tab']) .hx-pcam {
+  display: block;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: #1d1d22;
+  box-shadow: inset 0 0 0 1.5px #333;
+}
+.hx-vparea[data-rot='true'] .hx-dv :is(.hx-hbtn, .hx-pcam) {
+  display: none;
+}
+/* A case of Devices.css: the page fills its screen. */
+.hx-dev .hx-screen {
+  background: #fff;
+}
+.hx-dev :is(.device-sensors, .device-header) {
+  z-index: 20;
+}
+
+/* ── The page on a screen: the status bar, the browser, the page between them ── */
+.hx-vp:not([data-os='none']) {
+  background: #fff;
+}
+.hx-vp[data-os='ios'],
+.hx-vp[data-os='ipad'] {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.hx-vp[data-os='android'],
+.hx-vp[data-os='duo'] {
+  font-family: Roboto, 'Google Sans', 'Segoe UI', system-ui, sans-serif;
+}
+.hx-vp .hx-icon {
+  flex: none;
+}
+.hx-sb {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  color: #111;
+  line-height: 1;
+}
+.hx-sb b {
+  font-weight: 600;
+}
+.hx-sb__r {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hx-sb__r .hx-icon {
+  width: 15px;
+  height: 15px;
+}
+.hx-vp[data-os='ios'] .hx-sb {
+  height: 50px;
+  padding: 6px 30px 0 34px;
+  font-size: 16px;
+}
+.hx-vp[data-os='ios'] .hx-sb b {
+  font-size: 17px;
+  letter-spacing: -0.2px;
+}
+.hx-vp[data-os='ios']:is([data-kind='island'], [data-kind='air']) .hx-sb {
+  height: 54px;
+  padding-top: 8px;
+}
+.hx-vp[data-os='ios'][data-kind='se'] .hx-sb {
+  height: 20px;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.hx-vp[data-os='ios'][data-kind='se'] .hx-sb b {
+  position: absolute;
+  left: 50%;
+  translate: -50% 0;
+  font-size: 12px;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-sb {
+  height: 32px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-sb b {
+  font-weight: 500;
+}
+.hx-vp[data-kind='foldo'] .hx-sb {
+  padding: 0 20px;
+}
+.hx-vp[data-kind='flipc'] .hx-sb {
+  padding-left: 96px;
+}
+.hx-vp[data-os='ipad'] .hx-sb {
+  height: 26px;
+  padding: 0 20px;
+  font-size: 12px;
+}
+.hx-sb__sig {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 11px;
+}
+.hx-sb__sig i {
+  width: 3px;
+  border-radius: 1px;
+  background: #111;
+}
+.hx-sb__sig i:nth-child(1) {
+  height: 4px;
+}
+.hx-sb__sig i:nth-child(2) {
+  height: 6px;
+}
+.hx-sb__sig i:nth-child(3) {
+  height: 8.5px;
+}
+.hx-sb__sig i:nth-child(4) {
+  height: 11px;
+}
+.hx-sb__bat {
+  position: relative;
+  box-sizing: border-box;
+  width: 25px;
+  height: 12px;
+  padding: 1.5px;
+  border: 1.5px solid #111;
+  border-radius: 4px;
+}
+.hx-sb__bat::before {
+  content: '';
+  display: block;
+  width: 80%;
+  height: 100%;
+  border-radius: 1.5px;
+  background: #111;
+}
+.hx-sb__bat::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: -4px;
+  width: 2px;
+  height: 4px;
+  border-radius: 0 1px 1px 0;
+  background: #111;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-sb__bat {
+  width: 9px;
+  height: 14px;
+  padding: 1px;
+  border-radius: 2px;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-sb__bat::before {
+  width: 100%;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-sb__bat::after {
+  top: -3px;
+  right: auto;
+  left: 2px;
+  width: 3px;
+  height: 2px;
+}
+
+/* The address. */
+.hx-burl {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: #eceef1;
+  color: #111;
+  font-size: 14px;
+}
+.hx-burl b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-burl small {
+  color: #111;
+  font-size: 12px;
+  font-weight: 600;
+}
+.hx-burl .hx-icon {
+  width: 14px;
+  height: 14px;
+  color: #555;
+}
+.hx-burl[data-centred='true'] {
+  justify-content: center;
+}
+.hx-burl[data-centred='true'] > :first-child {
+  margin-right: auto;
+}
+.hx-burl[data-centred='true'] > b {
+  margin: 0 auto 0 0;
+}
+.hx-burl[data-centred='true'] > .hx-icon:last-child {
+  margin-left: auto;
+}
+.hx-vp[data-os='ios'] .hx-burl {
+  height: 38px;
+  border-radius: 11px;
+  background: rgba(118, 118, 128, 0.12);
+  font-size: 16px;
+}
+.hx-vp[data-os='ios'] .hx-burl small {
+  font-size: 13px;
+  letter-spacing: -0.3px;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-burl {
+  height: 44px;
+  border-radius: 24px;
+  background: #eef1f6;
+  color: #1f1f1f;
+  font-size: 15px;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-burl .hx-icon {
+  width: 15px;
+  height: 15px;
+  color: #444746;
+}
+
+/* The bar over the page. */
+.hx-brt {
+  z-index: 3;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  height: 52px;
+  overflow: hidden;
+  padding: 6px 12px 8px;
+  background: #f7f7f8;
+  border-bottom: 1px solid #e3e3e6;
+  color: #1d6ef5;
+  animation: hx-brt-in 340ms cubic-bezier(0.2, 0.9, 0.2, 1) backwards;
+  transition:
+    height 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 200ms ease;
+}
+.hx-brt .hx-icon {
+  width: 18px;
+  height: 18px;
+}
+.hx-vp:is([data-os='ios'], [data-os='ipad']) .hx-brt > .hx-icon {
+  width: 22px;
+  height: 22px;
+  color: #007aff;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-brt {
+  gap: 10px;
+  height: 58px;
+  padding: 6px 10px 8px;
+  border-bottom: 0;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  color: #444746;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-brt > .hx-icon {
+  width: 20px;
+  height: 20px;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-brt > .hx-icon[data-i='ellipsis'] {
+  rotate: 90deg;
+}
+.hx-vp[data-os='ipad'] .hx-brt {
+  gap: 16px;
+  padding: 6px 18px;
+}
+.hx-vp[data-os='ipad'] .hx-burl {
+  flex: 0 1 420px;
+  height: 34px;
+  margin: 0 auto;
+}
+.hx-brt__tabs {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 19px;
+  height: 19px;
+  border: 2px solid #444746;
+  border-radius: 5px;
+  color: #444746;
+  font-size: 11px;
+  font-weight: 700;
+}
+.hx-brt[data-t='tg'] {
+  justify-content: space-between;
+  gap: 10px;
+  height: 52px;
+  padding: 0 14px;
+  background: #fff;
+  border-bottom: 1px solid #e9e9ec;
+}
+.hx-brt[data-t='tg'] > .hx-icon {
+  color: #2a9ef4;
+}
+.hx-brt__close {
+  flex: none;
+  color: #2a9ef4;
+  font-size: 15px;
+}
+.hx-brt__app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  color: #111;
+  font-size: 15px;
+  line-height: 1.15;
+}
+.hx-brt__app b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-brt__app small {
+  color: #8a8f98;
+  font-size: 11px;
+}
+/* The bars under the page. */
+.hx-brb {
+  z-index: 3;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  padding: 8px 14px 26px;
+  background: #f7f7f8;
+  border-top: 1px solid #e3e3e6;
+  color: #1d6ef5;
+  animation: hx-brb-in 360ms cubic-bezier(0.2, 0.9, 0.2, 1) backwards;
+}
+.hx-brb[data-slim='true'] {
+  padding: 6px 14px 24px;
+}
+.hx-brb__i {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+.hx-brb__i .hx-icon {
+  width: 21px;
+  height: 21px;
+}
+.hx-vp:is([data-os='ios'], [data-os='ipad']) .hx-brb {
+  background: rgba(249, 249, 249, 0.86);
+  border-top: 0.5px solid rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  color: #007aff;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-brb {
+  background: #fff;
+  border-top: 1px solid #eceef2;
+  color: #444746;
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-brb[data-slim='true'] {
+  padding-bottom: 18px;
+}
+.hx-brb .hx-brt__tabs {
+  width: 21px;
+  height: 21px;
+}
+/* Safari of iOS 26: round buttons and the address under glass, over the page. */
+.hx-brf {
+  position: absolute;
+  right: 12px;
+  bottom: 26px;
+  left: 12px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #111;
+  animation: hx-brb-in 360ms cubic-bezier(0.2, 0.9, 0.2, 1) backwards;
+  transition:
+    left 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    right 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    bottom 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.hx-brf__b,
+.hx-brf__u {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(14px) saturate(2) brightness(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(2) brightness(1.08);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.14),
+    0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.35);
+  transition:
+    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 200ms ease,
+    font-size 280ms ease;
+}
+.hx-brf__b {
+  flex: none;
+  width: 48px;
+  border-radius: 50%;
+}
+.hx-brf__b .hx-icon {
+  width: 20px;
+  height: 20px;
+}
+.hx-brf__u {
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 14px;
+  border-radius: 26px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+.hx-brf__host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-brf__fav {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #8b7cff, #5b4bdc);
+}
+/* The home indicator, over everything; the old cases and the Duo have none. */
+.hx-navb {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  height: 22px;
+  pointer-events: none;
+}
+.hx-navb span {
+  width: 134px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.82);
+}
+.hx-vp:is([data-os='android'], [data-os='duo']) .hx-navb span {
+  width: 100px;
+  height: 4px;
+  background: #333;
+}
+.hx-vp[data-os='ipad'] .hx-navb span {
+  width: 310px;
+  max-width: 40%;
+}
+.hx-vp:is([data-kind='se'], [data-kind='ipadhome'], [data-kind='duo']) .hx-navb,
+.hx-dv[data-framed='false'] .hx-navb {
+  display: none;
+}
+/* Scrolled down, the bars fold; a press on what is left unfolds them. */
+.hx-vp[data-bars='min'] .hx-brt {
+  height: 26px;
+  padding-block: 2px;
+}
+.hx-vp[data-bars='min'] .hx-brt > :not(.hx-burl, .hx-brt__app) {
+  display: none;
+}
+.hx-vp[data-bars='min'] .hx-brt .hx-burl {
+  height: 22px;
+  justify-content: center;
+  background: transparent;
+  font-size: 12px;
+}
+.hx-vp[data-bars='min'] .hx-brt .hx-burl > :not(b) {
+  display: none;
+}
+.hx-vp[data-bars='min'] .hx-brt .hx-burl > b {
+  margin: 0;
+}
+.hx-vp[data-bars='min'] .hx-brt__app small {
+  display: none;
+}
+.hx-vp[data-bars='min'] .hx-brb {
+  display: none;
+}
+.hx-vp[data-bars='min'] .hx-brf {
+  right: 30%;
+  bottom: 18px;
+  left: 30%;
+  cursor: pointer;
+}
+.hx-vp[data-bars='min'] .hx-brf__b {
+  width: 0;
+  margin: 0 -4px;
+  opacity: 0;
+}
+.hx-vp[data-bars='min'] .hx-brf__u {
+  height: 30px;
+  font-size: 12px;
+}
+
+/* ── The animations of a device ── */
+/* A turn: the case swings a quarter round to its new place. */
+.hx-vpscale > [data-turn='land'] {
+  animation: hx-to-land 560ms cubic-bezier(0.25, 1.2, 0.3, 1);
+}
+.hx-vpscale > [data-turn='port'] {
+  animation: hx-to-port 560ms cubic-bezier(0.25, 1.2, 0.3, 1);
+}
+@keyframes hx-to-land {
+  from {
+    rotate: 90deg;
+    scale: 0.86;
+  }
+}
+@keyframes hx-to-port {
+  from {
+    rotate: -90deg;
+    scale: 0.86;
+  }
+}
+/* Another device: its screen wakes, out of the blur and the dark. Two names of one move, so the next pick plays again. */
+.hx-vpscale > [data-wake='a'] .hx-vp > * {
+  animation: hx-wake-a 600ms cubic-bezier(0.2, 0.9, 0.2, 1) backwards;
+}
+.hx-vpscale > [data-wake='b'] .hx-vp > * {
+  animation: hx-wake-b 600ms cubic-bezier(0.2, 0.9, 0.2, 1) backwards;
+}
+@keyframes hx-wake-a {
+  from {
+    filter: blur(16px) brightness(0.15);
+    scale: 1.06;
+  }
+}
+@keyframes hx-wake-b {
+  from {
+    filter: blur(16px) brightness(0.15);
+    scale: 1.06;
+  }
+}
+/* Folding: half of the screen swings over the hinge while the screen goes dark; unfolding is the way back. */
+.hx-fpanel {
+  position: absolute;
+  z-index: 12;
+  display: none;
+  pointer-events: none;
+}
+.hx-dv[data-hinge='v'] .hx-fpanel {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 50%;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #151519 0%, #0b0b0d 60%, #1a1a1f 100%);
+}
+.hx-dv[data-hinge='h'] .hx-fpanel {
+  top: 50%;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform-origin: center top;
+  background: linear-gradient(180deg, #151519 0%, #0b0b0d 60%, #1a1a1f 100%);
+}
+.hx-dv:is([data-fold='close'], [data-fold='open']) .hx-fpanel {
+  display: block;
+}
+.hx-dv[data-hinge='v'][data-fold='close'] .hx-fpanel {
+  animation: hx-pan-close-v 360ms cubic-bezier(0.55, 0, 0.75, 0.4) forwards;
+}
+.hx-dv[data-hinge='h'][data-fold='close'] .hx-fpanel {
+  animation: hx-pan-close-h 360ms cubic-bezier(0.55, 0, 0.75, 0.4) forwards;
+}
+.hx-dv[data-hinge='v'][data-fold='open'] .hx-fpanel {
+  animation: hx-pan-open-v 760ms cubic-bezier(0.22, 1, 0.3, 1) forwards;
+}
+.hx-dv[data-hinge='h'][data-fold='open'] .hx-fpanel {
+  animation: hx-pan-open-h 760ms cubic-bezier(0.22, 1, 0.3, 1) forwards;
+}
+@keyframes hx-pan-close-v {
+  0% {
+    transform: rotateY(0);
+    opacity: 0;
+    box-shadow: none;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotateY(-178deg);
+    opacity: 1;
+    box-shadow: -30px 0 60px rgba(0, 0, 0, 0.6);
+  }
+}
+@keyframes hx-pan-close-h {
+  0% {
+    transform: rotateX(0);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotateX(178deg);
+    opacity: 1;
+  }
+}
+@keyframes hx-pan-open-v {
+  0% {
+    transform: rotateY(-178deg);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotateY(0);
+    opacity: 0;
+  }
+}
+@keyframes hx-pan-open-h {
+  0% {
+    transform: rotateX(178deg);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotateX(0);
+    opacity: 0;
+  }
+}
+.hx-dv:is([data-fold='close'], [data-fold='dim']) .hx-vp > * {
+  animation: hx-scr-off 320ms cubic-bezier(0.4, 0, 0.8, 0.4) forwards;
+}
+@keyframes hx-scr-off {
+  to {
+    filter: blur(10px) brightness(0.25) saturate(0.6);
+    scale: 0.985;
+  }
+}
+.hx-dv:is([data-fold='wake'], [data-fold='open']) .hx-vp > * {
+  animation: hx-scr-wake 640ms cubic-bezier(0.2, 0.9, 0.2, 1) backwards;
+}
+.hx-dv[data-fold='open'] .hx-vp > * {
+  animation-delay: 120ms;
+  animation-duration: 760ms;
+}
+@keyframes hx-scr-wake {
+  from {
+    filter: blur(18px) brightness(0.1) saturate(1.4);
+    scale: 1.07;
+  }
+  60% {
+    filter: blur(2px) brightness(0.95);
+  }
+}
+/* The body leans as it folds and springs as it opens. */
+.hx-dv[data-fold='close'] {
+  animation: hx-body-close 360ms cubic-bezier(0.55, 0, 0.75, 0.4) forwards;
+}
+.hx-dv[data-fold='dim'] {
+  animation: hx-body-dim 280ms ease-in forwards;
+}
+.hx-dv[data-fold='wake'] {
+  animation: hx-body-wake 620ms cubic-bezier(0.25, 1.35, 0.35, 1);
+}
+.hx-dv[data-fold='open'] {
+  animation: hx-body-open 760ms cubic-bezier(0.25, 1.25, 0.35, 1);
+}
+.hx-dv[data-hinge='h'][data-fold='close'] {
+  animation-name: hx-body-close-h;
+}
+.hx-dv[data-hinge='h'][data-fold='wake'] {
+  animation-name: hx-body-wake-h;
+}
+.hx-dv[data-hinge='h'][data-fold='open'] {
+  animation-name: hx-body-open-h;
+}
+@keyframes hx-body-close {
+  to {
+    transform: perspective(1400px) rotateY(-16deg) scale(0.95);
+  }
+}
+@keyframes hx-body-close-h {
+  to {
+    transform: perspective(1400px) rotateX(14deg) scale(0.95);
+  }
+}
+@keyframes hx-body-dim {
+  to {
+    transform: perspective(1400px) scale(0.97);
+  }
+}
+@keyframes hx-body-wake {
+  from {
+    transform: perspective(1400px) rotateY(18deg) scale(0.9);
+    opacity: 0.4;
+  }
+}
+@keyframes hx-body-wake-h {
+  from {
+    transform: perspective(1400px) rotateX(-16deg) scale(0.9);
+    opacity: 0.4;
+  }
+}
+@keyframes hx-body-open {
+  from {
+    transform: perspective(1400px) rotateY(-12deg) scale(0.9);
+  }
+}
+@keyframes hx-body-open-h {
+  from {
+    transform: perspective(1400px) rotateX(12deg) scale(0.9);
+  }
+}
+/* While a fold plays, the sizes change at once: the keyframes are the motion. */
+.hx-vparea:has([data-fold='wake'], [data-fold='open']) :is(.hx-vpbox, .hx-vpscale, .hx-dv) {
+  transition: none;
+}
+@keyframes hx-brt-in {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+@keyframes hx-brb-in {
+  from {
+    transform: translateY(110%);
+    opacity: 0;
+  }
+}
+
+/* ── The device menu: the size and the scale on one grid, silhouettes, shelves ── */
+.hx-devmenu {
+  width: 300px;
+  max-height: min(640px, calc(100dvh - 140px));
+  overflow-y: auto;
+}
+.hx-devsize {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px 12px 54px 28px;
+  gap: 6px 4px;
+  align-items: center;
+  padding: 4px 2px 8px 10px;
+}
+.hx-devsize__label {
+  margin: 0;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-devsize__in {
+  box-sizing: border-box;
+  width: 54px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition: box-shadow 160ms ease;
+}
+.hx-devsize__in:focus {
+  box-shadow: 0 0 0 2px var(--hx-focus);
+}
+.hx-devsize__x {
+  color: var(--hx-fg-3);
+  font-size: 11px;
+  text-align: center;
+}
+.hx-devsize__fit {
+  width: 28px;
+  height: 28px;
+}
+.hx-devscale {
+  display: flex;
+  grid-column: 2 / span 3;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--hx-bg-hover);
+}
+.hx-devscale button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--hx-fg-2);
+  cursor: pointer;
+}
+.hx-devscale button:hover {
+  background: var(--hx-bg-active);
+  color: var(--hx-fg-1);
+}
+.hx-devscale button[aria-disabled='true'] {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.hx-devscale span {
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hx-devmenu > .hx-devsize + .hx-dl-pop__label {
+  border-top: 1px solid var(--hx-border);
+  padding-top: 8px;
+}
+.hx-devopt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 10px;
+}
+.hx-devopt__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-sm);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hx-devopt__size {
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hx-devopt > .hx-devopt__check {
+  flex: none;
+  opacity: 0;
+}
+.hx-devopt[aria-checked='true'] > .hx-devopt__check {
+  opacity: 1;
+}
+.hx-devshelf {
+  display: flex;
+  flex-direction: column;
+}
+.hx-devshelf__chev {
+  flex: none;
+  color: var(--hx-fg-3);
+  transition: transform 160ms ease;
+}
+.hx-devshelf__head[aria-expanded='true'] {
+  background: var(--hx-bg-hover);
+}
+.hx-devshelf__head[aria-expanded='true'] > .hx-devshelf__chev {
+  transform: rotate(180deg);
+}
+.hx-devshelf__head[data-on='true'] .hx-devopt__size {
+  color: var(--hx-fg-2);
+}
+.hx-devshelf__list {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 4px 18px;
+  padding-left: 8px;
+  border-left: 1px solid var(--hx-border);
+  animation: hx-sub-in 240ms var(--hx-ease-out) backwards;
+}
+.hx-dgw {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--hx-fg-3);
+}
+.hx-devopt:hover .hx-dgw,
+.hx-devopt[aria-checked='true'] .hx-dgw,
+.hx-devopt[data-on='true'] .hx-dgw {
+  color: var(--hx-fg-1);
+}
+.hx-dg {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: 10px;
+  height: 18px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+.hx-dg i {
+  position: absolute;
+  display: block;
+  background: currentColor;
+}
+.hx-dg[data-k='notch'] i {
+  top: -1px;
+  left: 50%;
+  width: 5px;
+  height: 2.5px;
+  margin-left: -2.5px;
+  border-radius: 0 0 1.5px 1.5px;
+}
+.hx-dg[data-k='island'] i {
+  top: 1.5px;
+  left: 50%;
+  width: 4px;
+  height: 1.5px;
+  margin-left: -2px;
+  border-radius: 1px;
+}
+.hx-dg[data-k='punch'] i {
+  top: 1.5px;
+  left: 50%;
+  width: 2px;
+  height: 2px;
+  margin-left: -1px;
+  border-radius: 50%;
+}
+.hx-dg[data-k='bare'] {
+  border-style: dashed;
+  border-radius: 2px;
+}
+.hx-dg:is([data-k='bare'], [data-k='fill'], [data-k='home'], [data-k='tabhome']) i {
+  display: none;
+}
+.hx-dg[data-k='home'] {
+  border-width: 3.5px 1.5px;
+  border-radius: 2.5px;
+}
+.hx-dg[data-k='flip'] i {
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  margin-top: -0.5px;
+  opacity: 0.6;
+}
+.hx-dg[data-k='fold'] {
+  width: 16px;
+  border-radius: 2.5px;
+}
+.hx-dg[data-k='fold'] i {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  margin-left: -0.5px;
+  opacity: 0.6;
+}
+.hx-dg[data-k='duo'] {
+  width: 18px;
+  height: 13px;
+  border-radius: 2px;
+}
+.hx-dg[data-k='duo'] i {
+  top: -1px;
+  bottom: -1px;
+  left: 50%;
+  box-sizing: border-box;
+  width: 2.5px;
+  margin-left: -1.25px;
+  background: var(--hx-bg-raised);
+  border-right: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+}
+.hx-dg:is([data-k='tablet'], [data-k='tabhome']) {
+  width: 14px;
+  border-radius: 2.5px;
+}
+.hx-dg[data-k='tabhome'] {
+  border-width: 3px 1.5px;
+}
+.hx-dg[data-k='tablet'] i {
+  top: 1.5px;
+  left: 50%;
+  width: 1.5px;
+  height: 1.5px;
+  margin-left: -0.75px;
+  border-radius: 50%;
+}
+.hx-dg[data-k='laptop'] {
+  width: 15px;
+  height: 10px;
+  margin-bottom: 2px;
+  border-radius: 2px 2px 0 0;
+}
+.hx-dg[data-k='laptop'] i {
+  right: -3px;
+  bottom: -3.5px;
+  left: -3px;
+  height: 1.5px;
+  border-radius: 1px;
+}
+.hx-dg:is([data-k='monitor'], [data-k='fill']) {
+  width: 18px;
+  height: 11px;
+  border-radius: 2px;
+}
+.hx-dg[data-k='monitor'] {
+  margin-bottom: 4px;
+}
+.hx-dg[data-k='monitor'] i {
+  bottom: -4.5px;
+  left: 50%;
+  width: 6px;
+  height: 1.5px;
+  margin-left: -3px;
+  border-radius: 1px;
+}
+.hx-dg[data-k='fill'] {
+  height: 13px;
+  border-style: dashed;
+}
+.hx-dg[data-k='all'] {
+  width: 8px;
+  height: 13px;
+  margin-right: 9px;
+  border-radius: 2px;
+}
+.hx-dg[data-k='all'] i {
+  top: -1.5px;
+  left: 9px;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  background: none;
+}
+
+/* ── The browsers beside the phone's pill ── */
+.hx-phonepill__sep {
+  align-self: stretch;
+  height: 1px;
+  margin: 2px 6px;
+  background: var(--hx-border);
+}
+.hx-phonepill[data-axis='row'] .hx-phonepill__sep {
+  width: 1px;
+  height: auto;
+  margin: 6px 2px;
+}
+.hx-brpop {
+  top: -8px;
+  right: calc(100% + 10px);
+  width: 280px;
+  max-height: min(520px, 70cqh);
+  max-height: min(520px, calc(100dvh - 180px));
+  overflow-y: auto;
+  cursor: default;
+}
+.hx-phonepill[data-side='end'] .hx-brpop {
+  right: auto;
+  left: calc(100% + 10px);
+}
+.hx-phonepill[data-drop='up'] .hx-brpop {
+  top: auto;
+  bottom: -8px;
+}
+.hx-brpop__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.hx-brpop__row > .hx-option__name {
+  flex: 1;
+  text-align: left;
+}
+.hx-brpop__dot {
+  box-sizing: border-box;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--hx-fg-3);
+  border-radius: 50%;
+  transition:
+    border-width 180ms cubic-bezier(0.3, 1.5, 0.4, 1),
+    border-color 180ms;
+}
+.hx-brpop__row[aria-checked='true'] > .hx-brpop__dot {
+  border: 4px solid var(--hx-accent);
+}
+.hx-brpop__own {
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+
+/* The zoom's figures stay on one line. */
+.hx-zoomctl__pct {
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-dv,
+  .hx-brt,
+  .hx-brb,
+  .hx-brf,
+  .hx-vpscale > *,
+  .hx-vp > * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

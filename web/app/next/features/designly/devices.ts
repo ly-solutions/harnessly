@@ -2,10 +2,10 @@
 // viewport is the page's CSS size; the box is what is drawn and `fit` scales it into the area so all of it shows. A phone
 // or a tablet in a case also draws its own interface (a status bar, the browser's bars) which takes room from the page.
 
-export const PHONE_OS = { ios: 'ios', android: 'android', ipad: 'ipad' } as const;
+export const PHONE_OS = { ios: 'ios', android: 'android', ipad: 'ipad', duo: 'duo' } as const;
 export type TPhoneOs = (typeof PHONE_OS)[keyof typeof PHONE_OS];
 
-/** The groups of the device menu; the last three are also the chips of «Все экраны». */
+/** A phone, a tablet, a computer or the view itself; phones and tablets are also the chips of «Все экраны». */
 export const DEVICE_GROUP = {
   view: 'view',
   phones: 'phones',
@@ -14,145 +14,212 @@ export const DEVICE_GROUP = {
 } as const;
 export type TDeviceGroup = (typeof DEVICE_GROUP)[keyof typeof DEVICE_GROUP];
 
+/** The shelves of the device menu: «По окну» and «Все экраны» stand open, the rest unfold one at a time. */
+export const DEVICE_SHELF = {
+  view: 'view',
+  iphone: 'iphone',
+  samsung: 'samsung',
+  other: 'other',
+  tablets: 'tablets',
+  computers: 'computers',
+} as const;
+export type TDeviceShelf = (typeof DEVICE_SHELF)[keyof typeof DEVICE_SHELF];
+
+/**
+ * A drawn case of our own (design-devices.css): its edges round the screen, the corners of the body and of the screen.
+ * The page is shown in it at the device's true size. The colours and the cuts are the CSS's, by the case's name.
+ */
+export interface ICase {
+  top: number;
+  side: number;
+  bottom: number;
+  radius: number;
+  screen: number;
+}
+
+export const CASES = {
+  se: { top: 74, side: 14, bottom: 74, radius: 46, screen: 0 },
+  notch: { top: 12, side: 12, bottom: 12, radius: 56, screen: 46 },
+  island: { top: 11, side: 11, bottom: 11, radius: 60, screen: 50 },
+  air: { top: 9, side: 9, bottom: 9, radius: 58, screen: 50 },
+  punch: { top: 9, side: 9, bottom: 9, radius: 40, screen: 33 },
+  ultra: { top: 7, side: 7, bottom: 7, radius: 16, screen: 10 },
+  flip: { top: 9, side: 9, bottom: 9, radius: 34, screen: 28 },
+  flipc: { top: 12, side: 12, bottom: 12, radius: 44, screen: 34 },
+  foldc: { top: 9, side: 9, bottom: 9, radius: 26, screen: 20 },
+  foldo: { top: 12, side: 12, bottom: 12, radius: 26, screen: 16 },
+  pixel: { top: 10, side: 10, bottom: 10, radius: 48, screen: 40 },
+  duo: { top: 14, side: 14, bottom: 14, radius: 24, screen: 8 },
+  bare: { top: 0, side: 0, bottom: 0, radius: 14, screen: 14 },
+  ipadpro: { top: 20, side: 20, bottom: 20, radius: 38, screen: 22 },
+  ipadhome: { top: 72, side: 24, bottom: 72, radius: 36, screen: 0 },
+  tab: { top: 16, side: 16, bottom: 16, radius: 30, screen: 16 },
+} as const satisfies Record<string, ICase>;
+export type TCase = keyof typeof CASES;
+/** The screen's corners with the case taken off. */
+const NO_CASE_RADIUS = 14;
+
+/** The little silhouette of a device in the menu: the shape and the proportions of the real screen. */
+export type TGlyph =
+  | 'fill'
+  | 'all'
+  | 'notch'
+  | 'island'
+  | 'punch'
+  | 'home'
+  | 'flip'
+  | 'fold'
+  | 'duo'
+  | 'bare'
+  | 'tablet'
+  | 'tabhome'
+  | 'laptop'
+  | 'monitor';
+
+/** A case of Devices.css (vendor-devices.css): its classes, the size of the case and of its screen. */
+export interface IDevicesCss {
+  cls: string;
+  color: string;
+  fw: number;
+  fh: number;
+  sw: number;
+  sh: number;
+}
+
 export interface IDevice {
   id: string;
   icon: string;
   group: TDeviceGroup;
-  /** The case of Devices.css and its colour; none for a bare size. */
-  cls?: string;
-  color?: string;
+  shelf: TDeviceShelf;
+  glyph: TGlyph;
   vw?: number;
   vh?: number;
-  /** The case and its screen in pixels of the case. */
-  fw?: number;
-  fh?: number;
-  sw?: number;
-  sh?: number;
-  /** The family of the interface drawn in the case, the system it belongs to and the status bar's height in CSS pixels. */
-  ui?: 'safari' | 'chrome' | 'ipad';
+  /** The drawn case; none for a computer or the view. */
+  case?: TCase;
+  /** The case of Devices.css drawn instead of ours while the device stands upright and unfolded. */
+  css?: IDevicesCss;
+  /** The system it runs: its status bar and the browser it starts with. */
   os?: TPhoneOs;
-  sb?: number;
-  /** The browser the device starts with; without it the first of its system's. */
-  browser?: string;
+  /** A foldable folded: its outer screen and that screen's case; `hinge` is the way it folds. */
+  fold?: { vw: number; vh: number; case: TCase; hinge: 'v' | 'h' };
 }
 
-// The menu's order: the view, then the phones (the bare one last), the tablet and the computers.
+const cssCase = (
+  cls: string,
+  color: string,
+  fw: number,
+  fh: number,
+  sw: number,
+  sh: number,
+): IDevicesCss => ({
+  cls: `device-${cls}`,
+  color: `device-${color}`,
+  fw,
+  fh,
+  sw,
+  sh,
+});
+const IPHONE_14 = cssCase('iphone-14', 'starlight', 428, 868, 390, 830);
+const iphonePro = (color: string) => cssCase('iphone-14-pro', color, 428, 868, 390, 830);
+
+const phone = (
+  shelf: TDeviceShelf,
+  id: string,
+  vw: number,
+  vh: number,
+  os: TPhoneOs,
+  kind: TCase,
+  glyph: TGlyph,
+  extra: Partial<IDevice> = {},
+): IDevice => ({
+  id,
+  icon: 'smartphone',
+  group: DEVICE_GROUP.phones,
+  shelf,
+  vw,
+  vh,
+  os,
+  case: kind,
+  glyph,
+  ...extra,
+});
+const tablet = (
+  shelf: TDeviceShelf,
+  id: string,
+  vw: number,
+  vh: number,
+  os: TPhoneOs,
+  kind: TCase,
+  glyph: TGlyph,
+  extra: Partial<IDevice> = {},
+): IDevice => ({
+  ...phone(shelf, id, vw, vh, os, kind, glyph, extra),
+  icon: 'tablet',
+  group: DEVICE_GROUP.tablets,
+});
+const computer = (id: string, vw: number, vh: number, glyph: 'laptop' | 'monitor'): IDevice => ({
+  id,
+  icon: glyph,
+  group: DEVICE_GROUP.computers,
+  shelf: DEVICE_SHELF.computers,
+  vw,
+  vh,
+  glyph,
+});
+
+// The menu's order: the view, then the phones shelf by shelf, the tablets and the computers. The sizes are the CSS
+// viewports of Chromium's device list (the S24 Ultra and the Surface Duo, absent there, are the makers').
 export const DEVICES: readonly IDevice[] = [
-  { id: 'fill', icon: 'monitor', group: DEVICE_GROUP.view },
-  { id: 'overview', icon: 'layout-grid', group: DEVICE_GROUP.view },
-  {
-    id: 'ip14',
-    icon: 'smartphone',
+  { id: 'fill', icon: 'monitor', group: DEVICE_GROUP.view, shelf: DEVICE_SHELF.view, glyph: 'fill' },
+  { id: 'overview', icon: 'layout-grid', group: DEVICE_GROUP.view, shelf: DEVICE_SHELF.view, glyph: 'all' },
+  phone(DEVICE_SHELF.iphone, 'ipse', 375, 667, PHONE_OS.ios, 'se', 'home', {
+    css: cssCase('iphone-8', 'spacegray', 428, 868, 375, 667),
+  }),
+  phone(DEVICE_SHELF.iphone, 'ip14', 390, 844, PHONE_OS.ios, 'notch', 'notch', { css: IPHONE_14 }),
+  phone(DEVICE_SHELF.iphone, 'ip15', 393, 852, PHONE_OS.ios, 'island', 'island', {
+    css: iphonePro('silver'),
+  }),
+  phone(DEVICE_SHELF.iphone, 'ipair', 420, 912, PHONE_OS.ios, 'air', 'island', { css: iphonePro('gold') }),
+  phone(DEVICE_SHELF.iphone, 'ip16', 440, 956, PHONE_OS.ios, 'island', 'island', { css: iphonePro('black') }),
+  phone(DEVICE_SHELF.samsung, 's24', 360, 780, PHONE_OS.android, 'punch', 'punch'),
+  phone(DEVICE_SHELF.samsung, 's24u', 384, 824, PHONE_OS.android, 'ultra', 'punch'),
+  phone(DEVICE_SHELF.samsung, 'flip', 360, 880, PHONE_OS.android, 'flip', 'flip', {
+    fold: { vw: 360, vh: 374, case: 'flipc', hinge: 'h' },
+  }),
+  tablet(DEVICE_SHELF.samsung, 'fold', 928, 1080, PHONE_OS.android, 'foldo', 'fold', {
     group: DEVICE_GROUP.phones,
-    vw: 390,
-    vh: 844,
-    cls: 'device-iphone-14',
-    color: '',
-    ui: 'safari',
-    os: 'ios',
-    sb: 47,
-    fw: 428,
-    fh: 868,
-    sw: 390,
-    sh: 830,
-  },
-  {
-    id: 'ip15',
-    icon: 'smartphone',
-    group: DEVICE_GROUP.phones,
-    vw: 393,
-    vh: 852,
-    cls: 'device-iphone-14-pro',
-    color: 'device-black',
-    ui: 'safari',
-    os: 'ios',
-    sb: 54,
-    fw: 428,
-    fh: 868,
-    sw: 390,
-    sh: 830,
-  },
-  {
-    id: 'ip16',
-    icon: 'smartphone',
-    group: DEVICE_GROUP.phones,
-    vw: 402,
-    vh: 874,
-    cls: 'device-iphone-14-pro',
-    color: 'device-silver',
-    ui: 'safari',
-    os: 'ios',
-    sb: 54,
-    fw: 428,
-    fh: 868,
-    sw: 390,
-    sh: 830,
-  },
-  {
-    id: 'px7',
-    icon: 'smartphone',
-    group: DEVICE_GROUP.phones,
-    vw: 412,
-    vh: 915,
-    cls: 'device-google-pixel-6-pro',
-    color: 'device-black',
-    ui: 'chrome',
-    os: 'android',
-    browser: 'chrome',
-    sb: 36,
-    fw: 404,
-    fh: 862,
-    sw: 376,
-    sh: 816,
-  },
-  {
-    id: 's24',
-    icon: 'smartphone',
-    group: DEVICE_GROUP.phones,
-    vw: 360,
-    vh: 780,
-    cls: 'device-google-pixel-6-pro',
-    color: 'device-black',
-    ui: 'chrome',
-    os: 'android',
-    browser: 'sam85',
-    sb: 36,
-    fw: 404,
-    fh: 862,
-    sw: 376,
-    sh: 816,
-  },
-  { id: 'bare', icon: 'smartphone', group: DEVICE_GROUP.phones, vw: 393, vh: 852 },
-  {
-    id: 'ipad',
-    icon: 'tablet',
-    group: DEVICE_GROUP.tablets,
-    vw: 834,
-    vh: 1194,
-    cls: 'device-ipad-pro',
-    color: 'device-spacegray',
-    ui: 'ipad',
-    os: 'ipad',
-    sb: 24,
-    fw: 560,
-    fh: 778,
-    sw: 506,
-    sh: 724,
-  },
-  { id: 'lap', icon: 'laptop', group: DEVICE_GROUP.computers, vw: 1280, vh: 800 },
-  { id: 'fhd', icon: 'monitor', group: DEVICE_GROUP.computers, vw: 1920, vh: 1080 },
+    fold: { vw: 484, vh: 1188, case: 'foldc', hinge: 'v' },
+  }),
+  phone(DEVICE_SHELF.other, 'px9', 360, 808, PHONE_OS.android, 'pixel', 'punch', {
+    css: cssCase('google-pixel-6-pro', 'black', 404, 862, 376, 816),
+  }),
+  tablet(DEVICE_SHELF.other, 'duo', 1114, 720, PHONE_OS.duo, 'duo', 'duo', { group: DEVICE_GROUP.phones }),
+  phone(DEVICE_SHELF.other, 'bare', 393, 852, PHONE_OS.ios, 'bare', 'bare'),
+  tablet(DEVICE_SHELF.tablets, 'ipad', 834, 1194, PHONE_OS.ipad, 'ipadpro', 'tablet', {
+    css: cssCase('ipad-pro', 'spacegray', 560, 778, 506, 724),
+  }),
+  tablet(DEVICE_SHELF.tablets, 'ipad9', 810, 1080, PHONE_OS.ipad, 'ipadhome', 'tabhome', {
+    css: cssCase('ipad-pro-2017', 'spacegray', 560, 800, 510, 680),
+  }),
+  tablet(DEVICE_SHELF.tablets, 'tabs9', 640, 1024, PHONE_OS.android, 'tab', 'tablet'),
+  computer('lap', 1280, 800, 'laptop'),
+  computer('fhd', 1920, 1080, 'monitor'),
 ];
+
+/** The ids kept by a browser or a guest link from before the devices were renamed. */
+const DEVICE_ALIAS: Readonly<Record<string, string>> = { px7: 'px9' };
+export const deviceIdOf = (id: string): string => DEVICE_ALIAS[id] ?? id;
 
 /** A phone or a tablet turns (lying: its width and height swapped); «По окну» and the computers do not. */
 export const canRotate = (device: IDevice): boolean =>
   device.group === DEVICE_GROUP.phones || device.group === DEVICE_GROUP.tablets;
 
 export const deviceOf = (id: string): IDevice =>
-  DEVICES.find((d) => d.id === id) ?? DEVICES.find((d) => d.id === 'fill') ?? DEVICES[0];
+  DEVICES.find((d) => d.id === deviceIdOf(id)) ?? DEVICES.find((d) => d.id === 'fill') ?? DEVICES[0];
 
-/** The menu's groups in their order, each with its devices in the order of DEVICES. */
-export const deviceGroups = (): { group: TDeviceGroup; devices: IDevice[] }[] =>
-  Object.values(DEVICE_GROUP).map((group) => ({ group, devices: DEVICES.filter((d) => d.group === group) }));
+/** The menu's shelves in their order, each with its devices in the order of DEVICES. */
+export const deviceShelves = (): { shelf: TDeviceShelf; devices: IDevice[] }[] =>
+  Object.values(DEVICE_SHELF).map((shelf) => ({ shelf, devices: DEVICES.filter((d) => d.shelf === shelf) }));
 
 /** The size a menu row shows on its right («393×852»); null for the view's rows, which have none of their own. */
 export const deviceSizeText = (device: IDevice): string | null =>
@@ -193,7 +260,11 @@ export interface IViewport {
   bh: number;
   fit: number;
   k: number;
+  /** How a phone or a tablet is cased: a case of Devices.css, ours, or none (the screen alone); null for the rest. */
+  skin: TSkin | null;
 }
+
+export type TSkin = { k: 'css'; css: IDevicesCss } | { k: 'own'; case: TCase; edges: ICase; framed: boolean };
 
 // The field (island, notes) floats over the page: a device keeps the whole area, its bottom as narrow as the sides.
 const PAD = 48;
@@ -201,52 +272,79 @@ const PAD = 48;
  *  site.css is the same. */
 export const FILL_INSET = 0;
 
+export interface IViewportOpts {
+  /** Room kept under the box (the pane's pill). */
+  padBottom?: number;
+  /** Room kept beside the box (the phone's pill). */
+  padSide?: number;
+  /** The device's case is drawn; off, the screen alone. */
+  framed?: boolean;
+  /** A foldable folded: its outer screen. */
+  folded?: boolean;
+}
+
 /** The viewport for a device in an area; `size` is the person's own size of «По окну», `rot` turns a device. */
 export const viewportOf = (
   device: IDevice,
   area: ISize,
   size: ISize | null,
   rot: boolean,
-  padBottom = PAD,
+  { padBottom = PAD, padSide = 0, framed = true, folded = false }: IViewportOpts = {},
 ): IViewport => {
-  if (device.id === 'overview') {
-    return {
-      kind: VP_KIND.overview,
-      rot: false,
-      vw: area.w,
-      vh: area.h,
-      cvh: area.h,
-      bw: area.w,
-      bh: area.h,
-      fit: 1,
-      k: 1,
-    };
-  }
-  if (device.id === 'fill' && !size) {
+  const plain = { rot: false, fit: 1, k: 1, skin: null };
+  if (device.id === 'overview' || (device.id === 'fill' && !size)) {
     const w = Math.max(0, area.w - 2 * FILL_INSET);
     const h = Math.max(0, area.h - 2 * FILL_INSET);
-    return { kind: VP_KIND.fill, rot: false, vw: w, vh: h, cvh: h, bw: w, bh: h, fit: 1, k: 1 };
+    const kind = device.id === 'overview' ? VP_KIND.overview : VP_KIND.fill;
+    return { ...plain, kind, vw: w, vh: h, cvh: h, bw: w, bh: h };
   }
   const custom = device.id === 'fill';
   const turned = !custom && rot;
-  const base: ISize = custom && size ? size : { w: device.vw ?? area.w, h: device.vh ?? area.h };
+  const outer = folded ? device.fold : undefined;
+  const base: ISize =
+    custom && size ? size : { w: outer?.vw ?? device.vw ?? area.w, h: outer?.vh ?? device.vh ?? area.h };
   const vw = turned ? base.h : base.w;
   const vh = turned ? base.w : base.h;
   const fitOf = (w: number, h: number) =>
-    Math.max(MIN_FIT, Math.min(1, (area.w - PAD) / w, (area.h - padBottom) / h));
-  if (!device.cls || !device.fw || !device.fh || !device.sw || !device.sh) {
-    return { kind: VP_KIND.size, rot: false, vw, vh, cvh: vh, bw: vw, bh: vh, fit: fitOf(vw, vh), k: 1 };
+    Math.max(MIN_FIT, Math.min(1, (area.w - PAD - padSide) / w, (area.h - padBottom) / h));
+  const kind = outer?.case ?? device.case;
+  if (custom || !kind) {
+    return { ...plain, kind: VP_KIND.size, vw, vh, cvh: vh, bw: vw, bh: vh, fit: fitOf(vw, vh) };
   }
-  // In a case the screen is fixed: the page of width vw is scaled into it, its height is what fits.
-  const k = (turned ? device.sh : device.sw) / vw;
-  const cvh = Math.round((turned ? device.sw : device.sh) / k);
-  const bw = turned ? device.fh : device.fw;
-  const bh = turned ? device.fw : device.fh;
-  return { kind: VP_KIND.frame, rot: turned, vw, vh, cvh, bw, bh, fit: fitOf(bw, bh), k };
+  // A case of Devices.css stands upright and unfolded: its screen is fixed, the page of width vw is scaled into it.
+  if (framed && !turned && !outer && device.css) {
+    const { css } = device;
+    const k = css.sw / vw;
+    const cvh = Math.round(css.sh / k);
+    const skin: TSkin = { k: 'css', css };
+    return {
+      rot: false,
+      kind: VP_KIND.frame,
+      vw,
+      vh,
+      cvh,
+      bw: css.fw,
+      bh: css.fh,
+      fit: fitOf(css.fw, css.fh),
+      k,
+      skin,
+    };
+  }
+  const cased: ICase = framed
+    ? CASES[kind]
+    : { top: 0, side: 0, bottom: 0, radius: NO_CASE_RADIUS, screen: NO_CASE_RADIUS };
+  // Lying, the case lies with the device: its top is on the left.
+  const edges: ICase = turned
+    ? { top: cased.side, side: cased.top, bottom: cased.side, radius: cased.radius, screen: cased.screen }
+    : cased;
+  const bw = turned ? vw + cased.top + cased.bottom : vw + 2 * cased.side;
+  const bh = turned ? vh + 2 * cased.side : vh + cased.top + cased.bottom;
+  const skin: TSkin = { k: 'own', case: kind, edges, framed: framed && kind !== 'bare' };
+  return { rot: turned, kind: VP_KIND.frame, vw, vh, cvh: vh, bw, bh, fit: fitOf(bw, bh), k: 1, skin };
 };
 
 /** The custom properties the viewport's CSS reads (--bw, --vw, --k, --fit and the case's sizes). */
-export const viewportVars = (vp: IViewport, device: IDevice): Record<string, string> => {
+export const viewportVars = (vp: IViewport): Record<string, string> => {
   const vars: Record<string, string> = {
     '--bw': `${vp.bw}px`,
     '--bh': `${vp.bh}px`,
@@ -255,18 +353,28 @@ export const viewportVars = (vp: IViewport, device: IDevice): Record<string, str
     '--k': vp.k.toFixed(4),
     '--fit': vp.fit.toFixed(4),
   };
-  if (vp.kind === VP_KIND.frame && device.fw && device.fh && device.sw && device.sh) {
-    vars['--dw'] = `${device.fw}px`;
-    vars['--dh'] = `${device.fh}px`;
-    vars['--sw'] = `${device.sw}px`;
-    vars['--sh'] = `${device.sh}px`;
-    if (device.sb !== undefined) vars['--sb'] = `${device.sb}px`;
+  if (vp.skin?.k === 'css') {
+    const { css } = vp.skin;
+    vars['--dw'] = `${css.fw}px`;
+    vars['--dh'] = `${css.fh}px`;
+    vars['--sw'] = `${css.sw}px`;
+    vars['--sh'] = `${css.sh}px`;
+  }
+  if (vp.skin?.k === 'own') {
+    const { edges } = vp.skin;
+    vars['--pt'] = `${edges.top}px`;
+    vars['--ps'] = `${edges.side}px`;
+    // Lying, the far side is the case's bottom.
+    vars['--pr'] = `${vp.rot ? CASES[vp.skin.case].bottom : edges.side}px`;
+    vars['--pb'] = `${edges.bottom}px`;
+    vars['--rb'] = `${edges.radius}px`;
+    vars['--rs'] = `${edges.screen}px`;
   }
   return vars;
 };
 
 /** The devices «Все экраны» shows, by group (the bare phone is the size of iPhone 15 Pro, so it is left out). */
-export const OVERVIEW_IDS = ['ip14', 'ip15', 'ip16', 'px7', 's24', 'ipad', 'lap', 'fhd'] as const;
+export const OVERVIEW_IDS = ['ip14', 'ip15', 'ip16', 'px9', 's24', 'ipad', 'lap', 'fhd'] as const;
 /** The groups «Все экраны» can show: its chips. */
 export const OVERVIEW_GROUPS = [DEVICE_GROUP.phones, DEVICE_GROUP.tablets, DEVICE_GROUP.computers] as const;
 export type TOverviewGroup = (typeof OVERVIEW_GROUPS)[number];
@@ -338,37 +446,101 @@ export const overviewBox = (cards: readonly IOverviewCard[], underField: boolean
 export const syncedScroll = (y: number): number => Math.max(0, Math.round(y));
 
 /**
- * How a phone's browser spends the screen: heights in CSS pixels as [unfolded, folded]. `top` and `bot` bars push the
- * page (it grows when they fold), `over` hangs over the page under glass, `gest` is the gesture strip of Android.
+ * A browser a phone or a tablet is shown in (site-device.tsx draws it): its bars over and under the page. Any of them
+ * may be put on any device; each system starts with its own.
  */
 export interface IBrowser {
   id: string;
-  top?: readonly [number, number];
-  bot?: readonly [number, number];
-  over?: readonly [number, number];
-  gest?: number;
+  shelf: TBrowserShelf;
+  /** A bar over the page: the browser's address, or the head of a mini app. */
+  top?: 'addr' | 'tg';
+  /** The address is centred, with «аА» on its left (Safari). */
+  centred?: boolean;
+  aa?: boolean;
+  /** Icons before and after the address of the top bar; `tabs` is the counter of open tabs. */
+  lead?: readonly string[];
+  trail?: readonly string[];
+  /** A bar under the page: an address, a row of icons, or both. */
+  addrBelow?: boolean;
+  icons?: readonly string[];
+  /** Round buttons and the address under glass over the page (Safari of iOS 26). */
+  float?: boolean;
 }
 
-export const BROWSERS: Record<TPhoneOs, readonly IBrowser[]> = {
-  ios: [
-    { id: 'ios26', over: [76, 40] },
-    { id: 'ios18', over: [92, 44] },
-    { id: 'iostop', top: [50, 26], bot: [80, 0] },
-    { id: 'pwa' },
-  ],
-  android: [
-    { id: 'chrome', top: [56, 0], gest: 24 },
-    { id: 'sam85', over: [72, 0], gest: 24 },
-    { id: 'samsung', top: [56, 0], bot: [52, 0], gest: 24 },
-    { id: 'pwa', gest: 24 },
-  ],
-  ipad: [{ id: 'ipad', top: [50, 50] }],
+export const BROWSER_SHELF = {
+  iphone: 'iphone',
+  android: 'android',
+  tablet: 'tablet',
+  inapp: 'inapp',
+} as const;
+export type TBrowserShelf = (typeof BROWSER_SHELF)[keyof typeof BROWSER_SHELF];
+
+const SAFARI_TOOLS = ['chevron-left', 'chevron-right', 'share', 'book-open', 'copy'] as const;
+/** No browser at all: a page opened from the home screen. */
+export const BROWSER_NONE = 'home';
+
+export const BROWSERS: readonly IBrowser[] = [
+  { id: 'safari26', shelf: 'iphone', float: true },
+  { id: 'safari18', shelf: 'iphone', addrBelow: true, icons: SAFARI_TOOLS },
+  { id: 'safaritop', shelf: 'iphone', top: 'addr', aa: true, centred: true, icons: SAFARI_TOOLS },
+  {
+    id: 'chromeios',
+    shelf: 'iphone',
+    top: 'addr',
+    icons: ['chevron-left', 'chevron-right', 'plus', 'copy', 'ellipsis'],
+  },
+  { id: 'chrome', shelf: 'android', top: 'addr', lead: ['house'], trail: ['tabs', 'ellipsis'] },
+  {
+    id: 'samsung',
+    shelf: 'android',
+    top: 'addr',
+    icons: ['chevron-left', 'chevron-right', 'house', 'bookmark-plus', 'copy', 'menu'],
+  },
+  { id: 'yandex', shelf: 'android', addrBelow: true, icons: ['chevron-left', 'house', 'copy', 'menu'] },
+  { id: 'firefox', shelf: 'android', addrBelow: true, icons: ['house', 'copy', 'ellipsis'] },
+  {
+    id: 'edge',
+    shelf: 'android',
+    top: 'addr',
+    icons: ['chevron-left', 'chevron-right', 'plus', 'copy', 'menu'],
+  },
+  {
+    id: 'ipados',
+    shelf: 'tablet',
+    top: 'addr',
+    aa: true,
+    centred: true,
+    lead: ['panel-left', 'chevron-left', 'chevron-right'],
+    trail: ['share', 'plus', 'copy'],
+  },
+  { id: 'telegram', shelf: 'inapp', top: 'tg' },
+  { id: BROWSER_NONE, shelf: 'inapp' },
+];
+
+/** The browser a system starts with. */
+export const NATIVE_BROWSER: Record<TPhoneOs, string> = {
+  ios: 'safari26',
+  android: 'chrome',
+  ipad: 'ipados',
+  duo: 'edge',
 };
 
-/** The browser a device shows: the one asked for if it is the device's system's, else the device's own. */
+/** The ids kept from before: Safari and Samsung Internet had other names. */
+const BROWSER_ALIAS: Readonly<Record<string, string>> = {
+  ios26: 'safari26',
+  ios18: 'safari18',
+  iostop: 'safaritop',
+  sam85: 'samsung',
+  ipad: 'ipados',
+  pwa: BROWSER_NONE,
+};
+
+/** The browser a device shows: the one asked for, else its system's own; null where it has no system. */
 export const browserOf = (device: IDevice, wanted: string | null): IBrowser | null => {
-  const list = device.os ? BROWSERS[device.os] : [];
-  return list.find((b) => b.id === wanted) ?? list.find((b) => b.id === device.browser) ?? list[0] ?? null;
+  if (!device.os) return null;
+  const asked = wanted === null ? null : (BROWSER_ALIAS[wanted] ?? wanted);
+  const own = NATIVE_BROWSER[device.os];
+  return BROWSERS.find((b) => b.id === asked) ?? BROWSERS.find((b) => b.id === own) ?? null;
 };
 
 export const BARS = { full: 'full', min: 'min' } as const;

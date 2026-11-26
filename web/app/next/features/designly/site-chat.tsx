@@ -9,6 +9,8 @@ import { inHiddenScreen } from '@/next/features/shell/kept-screens';
 import Logo from '@/next/ui/logo';
 import { usePresence, usePresentFlag } from '@/next/ui/presence';
 import {
+  Fragment,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -29,7 +31,8 @@ import {
   type TDropZone,
 } from '@/next/features/designly/site-drag';
 import { PANE_CHATS, type TPaneChat } from '@/next/features/designly/pane-chat';
-import { ChatTerminalButton } from '@/next/features/terminal/chat-terminal';
+import { ChatTerminalContext } from '@/next/features/terminal/chat-terminal';
+import { KEY_SCOPE, useKeyHint, useKeys } from '@/next/features/designly/sdk/keys';
 import LinkCard, { type TCardKind } from '@/next/features/chat/link-card';
 import Icon from '@/next/ui/icon';
 import { plural, t } from '@/next/i18n';
@@ -203,48 +206,124 @@ export interface IChatMoreItem {
   pick: () => void;
 }
 
-/** «⋯» of the design's chat: what the usual chat's menu does with it, to go on in another model or on another machine. */
-const ChatMore = ({ items }: { items: readonly IChatMoreItem[] }) => {
+/** What the chat's own menu does with the chat itself; absent while the design has no chat yet. */
+export interface ISiteChatOwn {
+  pinned: boolean;
+  onRename: (title: string) => void;
+  onPin: () => void;
+}
+
+/** The layouts the design's chat menu offers; «Правки» is the picking mode of the page, not a place of the chat. */
+const CHAT_LAYOUTS = ['chat', 'float', 'island'] as const;
+
+/**
+ * «⋯» of the design's chat, the one button of its head: where the chat stands («Только чат» is the chat's
+ * own page), the agent's terminal, the chat's name and its pin, and going on in another model or on another machine.
+ */
+const ChatMore = ({
+  mode,
+  onMode,
+  onOnlyChat,
+  onRename,
+  own,
+  items,
+}: {
+  mode: TSiteMode;
+  onMode: (mode: TSiteMode) => void;
+  onOnlyChat?: () => void;
+  onRename?: () => void;
+  own?: ISiteChatOwn;
+  items: readonly IChatMoreItem[];
+}) => {
   const { open, setOpen, menu, root } = useMenu();
+  const terminal = useContext(ChatTerminalContext);
+  const termKey = useKeyHint('site.terminal');
+  useKeys(KEY_SCOPE.site, { 'site.terminal': terminal ? () => terminal.onToggle() : undefined });
+  const row = (icon: string, label: string, pick: () => void, kbd?: string | null) => (
+    <button
+      type="button"
+      role="menuitem"
+      className="hx-option hx-chatmenu__row"
+      onClick={() => {
+        setOpen(false);
+        pick();
+      }}
+    >
+      <Icon name={icon} size="sm" />
+      <span className="hx-option__name">{label}</span>
+      {kbd && <kbd className="hx-chatmenu__kbd">{kbd}</kbd>}
+    </button>
+  );
   return (
     <div className="hx-placement" ref={root}>
       <button
         type="button"
-        className="hx-head-btn hx-tipped"
+        className="hx-head-btn hx-tipped hx-chatmenu__btn"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={t('next.site.chatMore')}
+        aria-label={t('next.site.chatMenu')}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() => setOpen((on) => !on)}
       >
         <Icon name="ellipsis" />
         {!open && (
           <span className="hx-tip" data-pos="below" data-align="end">
-            {t('next.site.chatMore')}
+            {t('next.site.chatMenu')}
           </span>
         )}
       </button>
       {menu.value !== null && (
         <div
-          className="hx-site-menu hx-site-menu--end hx-placement__menu"
+          className="hx-site-menu hx-site-menu--end hx-chatmenu"
           data-state={menu.state}
           role="menu"
+          aria-label={t('next.site.chatMenu')}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          {items.map((item) => (
+          <div className="hx-dl-pop__label">{t('next.site.layout')}</div>
+          {CHAT_LAYOUTS.map((id) => (
             <button
-              key={item.id}
+              key={id}
               type="button"
-              role="menuitem"
-              className="hx-option"
+              role="menuitemradio"
+              className="hx-option hx-chatmenu__row"
+              aria-checked={id === mode}
               onClick={() => {
                 setOpen(false);
-                item.pick();
+                if (id !== mode) onMode(id);
               }}
             >
-              <Icon name={item.icon} size="sm" />
-              <span className="hx-option__name">{item.label}</span>
+              <Icon name={MODE_ICON[id]} size="sm" />
+              <span className="hx-option__name">{t(`next.site.placement.${id}`)}</span>
+              {id === mode && <Icon name="check" size="sm" className="hx-chatmenu__check" />}
             </button>
+          ))}
+          {onOnlyChat && row('message-square', t('next.site.chatOnly'), onOnlyChat)}
+          {terminal && (
+            <>
+              <div className="hx-more__sep" />
+              {row(
+                'square-terminal',
+                t(terminal.open ? 'next.site.termHide' : 'next.site.termShow'),
+                terminal.onToggle,
+                termKey,
+              )}
+            </>
+          )}
+          {own && (
+            <>
+              <div className="hx-more__sep" />
+              {onRename && row('pencil', t('next.rowMenu.rename'), onRename)}
+              {row(
+                own.pinned ? 'pin-off' : 'pin',
+                t(own.pinned ? 'next.rowMenu.unpin' : 'next.rowMenu.pin'),
+                own.onPin,
+              )}
+            </>
+          )}
+          {items.length > 0 && <div className="hx-more__sep" />}
+          {items.map((item) => (
+            <Fragment key={item.id}>{row(item.icon, item.label, item.pick)}</Fragment>
           ))}
         </div>
       )}
@@ -272,11 +351,16 @@ export interface ISiteChatProps {
   onHide: () => void;
   /** Where the chat stands, picked in its head; `section` is the design's area, a first window's room. */
   onMode: (mode: TSiteMode, section: { width: number; height: number }) => void;
-  /** The «⋯» of the chat: going on in another model or on another machine; empty without a chat yet. */
+  /** Going on in another model or on another machine, in the chat's «⋯»; empty without a chat yet. */
   more: readonly IChatMoreItem[];
+  /** The chat's name and pin in «⋯»; absent while the design has no chat yet. */
+  own?: ISiteChatOwn;
+  /** The docked chat is folded to nothing (a double click on its border); the same click unfolds it. */
+  folded?: boolean;
+  onFolded?: (folded: boolean) => void;
   /** On a phone: the site over the chat. */
   onOpenSite: () => void;
-  /** «К чату»: out of the full screen to the chat's own page; absent while the design has no chat yet. */
+  /** «Только чат»: out of the design to the chat's own page; absent while the design has no chat yet. */
   onToChat?: () => void;
 }
 
@@ -298,10 +382,19 @@ export const SiteChat = ({
   onHide,
   onMode,
   more,
+  own,
+  folded = false,
+  onFolded,
   onOpenSite,
   onToChat,
 }: ISiteChatProps) => {
-  const shown = mode === 'chat' || mode === 'float';
+  const shown = (mode === 'chat' && !folded) || mode === 'float';
+  const [name, setName] = useState<string | null>(null);
+  const saveName = () => {
+    const next = name?.trim();
+    setName(null);
+    if (next && next !== title) own?.onRename(next);
+  };
   // The feed and its field are there while the chat is open and while it fades away, not under the folded island: one
   // field takes the words at a time, and a hidden one would take the files dropped on the page.
   const body = usePresentFlag(shown, CHAT_EXIT_MS);
@@ -323,7 +416,29 @@ export const SiteChat = ({
     <>
       <aside className="hx-site__chat" aria-hidden={!shown} ref={asideRef}>
         <div className="hx-site__chat-head" onPointerDown={moveBy}>
-          {heading ?? <span className="hx-site__chat-title">{title}</span>}
+          {name !== null ? (
+            <input
+              className="hx-item__rename hx-site__chat-rename"
+              type="text"
+              autoComplete="off"
+              aria-label={t('next.chatRow.renameLabel')}
+              autoFocus
+              value={name}
+              onFocus={(event) => event.currentTarget.select()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onChange={(event) => setName(event.target.value)}
+              onBlur={saveName}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') saveName();
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setName(null);
+                }
+              }}
+            />
+          ) : (
+            (heading ?? <span className="hx-site__chat-title">{title}</span>)
+          )}
           <span className="hx-spacer" />
           <button
             type="button"
@@ -333,33 +448,14 @@ export const SiteChat = ({
           >
             <Icon name="app-window" />
           </button>
-          {onToChat && (
-            <button
-              type="button"
-              className="hx-head-btn hx-tipped hx-site__to-chat"
-              aria-label={t('next.site.toChat')}
-              onClick={onToChat}
-            >
-              <Icon name="message-square" />
-              <span className="hx-tip" data-pos="below" data-align="end">
-                {t('next.site.toChat')}
-              </span>
-            </button>
-          )}
-          <ChatPlacement mode={mode} onMode={place} />
-          {more.length > 0 && <ChatMore items={more} />}
-          <ChatTerminalButton />
-          <button
-            type="button"
-            className="hx-head-btn hx-tipped hx-site__chat-x"
-            aria-label={t('next.site.hideChat')}
-            onClick={onHide}
-          >
-            <Icon name="x" />
-            <span className="hx-tip" data-pos="below" data-align="end">
-              {t('next.site.hideChatTip')}
-            </span>
-          </button>
+          <ChatMore
+            mode={mode}
+            onMode={place}
+            onOnlyChat={onToChat}
+            onRename={own && !heading ? () => setName(title) : undefined}
+            own={own}
+            items={more}
+          />
         </div>
         <div className="hx-site__conv" data-state={body.state} data-swap={swapping ? 'out' : undefined}>
           {body.mounted && children}
@@ -368,8 +464,13 @@ export const SiteChat = ({
       </aside>
       <div
         className="hx-site__split"
-        aria-hidden="true"
-        onPointerDown={(event) => dragSplit(event, { w: width, dock, onWidth, onClose: onHide })}
+        data-folded={folded}
+        title={t(folded ? 'next.site.splitUnfold' : 'next.site.splitTip')}
+        onPointerDown={(event) => {
+          // A folded chat has no width to pull: its border only takes the double click that brings it back.
+          if (!folded) dragSplit(event, { w: width, dock, onWidth, onClose: onHide });
+        }}
+        onDoubleClick={() => onFolded?.(!folded)}
       >
         <span />
       </div>
@@ -410,6 +511,8 @@ export interface ISiteIslandProps {
   mode: TSiteMode;
   /** The field was dragged to a place, or pulled down to fold. */
   onZone: TDropZone;
+  /** A design's field says its chat and opens it beside the page, whether or not a turn runs. */
+  chatPill?: string;
   /** How many notes go with the words: the folded pill says so. */
   notes: number;
   /**
@@ -530,7 +633,7 @@ export const IslandLast = ({
 };
 
 export const SiteIsland = (props: ISiteIslandProps) => {
-  const { status, mode, holding, space } = props;
+  const { status, mode, holding, space, chatPill } = props;
   // Over a space the field never folds into a pill: the pill covered the space's own tools.
   const min = space ? false : props.min;
   const onMin = space ? noFold : props.onMin;
@@ -590,11 +693,12 @@ export const SiteIsland = (props: ISiteIslandProps) => {
     <div className="hx-island" ref={rootRef}>
       <div
         className="hx-island__status"
-        data-shown={status !== null || spaceLine !== null}
+        data-shown={status !== null || spaceLine !== null || chatPill !== undefined}
         data-done={held?.k === ISLAND_STATUS.done}
+        data-quiet={status === null && spaceLine === null}
       >
         <div className="hx-island__status-in">
-          {!space && props.last}
+          {!space && (status !== null || chatPill === undefined) && props.last}
           {space && spaceLine && (
             <SpaceLineRow
               line={spaceLine}
@@ -610,7 +714,7 @@ export const SiteIsland = (props: ISiteIslandProps) => {
               <Icon name="loader-circle" size="sm" className="hx-island__spin" />
               <Icon name="circle-check" size="sm" className="hx-island__ok" />
             </span>
-            <span className="hx-island__step">{held?.text}</span>
+            <span className="hx-island__step">{held?.text ?? chatPill}</span>
             <span className="hx-spacer" />
             {held?.k === ISLAND_STATUS.run && (
               <button type="button" className="hx-island__act" onClick={props.onStop}>
@@ -630,6 +734,17 @@ export const SiteIsland = (props: ISiteIslandProps) => {
                 onClick={props.onDismiss}
               >
                 <Icon name="x" size="sm" />
+              </button>
+            )}
+            {chatPill !== undefined && (
+              <button
+                type="button"
+                className="hx-island__x hx-island__open"
+                aria-label={t('next.site.chatShow')}
+                title={t('next.site.chatShow')}
+                onClick={props.onExpand}
+              >
+                <Icon name="maximize-2" size="sm" />
               </button>
             )}
           </div>

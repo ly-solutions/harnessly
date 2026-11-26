@@ -243,7 +243,7 @@ const GuestBody = ({
   const view = sharedView(config.view);
   const sharedPage = typeof config.view?.page === 'string' ? config.view.page : null;
   const [tabs, setTabs] = useState<ISiteTab[]>(() => startTabs(config, sharedPage));
-  const [tab, setTab] = useState<string>(() => {
+  const [tab] = useState<string>(() => {
     const at = tabs.findIndex((x) => x.hist[x.hi] === sharedPage);
     return (tabs[Math.max(0, at)] ?? { id: '' }).id;
   });
@@ -311,18 +311,6 @@ const GuestBody = ({
         plainSrc={src}
         error={tabs.length === 0 ? t('next.guest.empty') : null}
         reloadKey={reloadKey}
-        onPickTab={setTab}
-        onCloseTab={(closing) => {
-          const at = tabs.findIndex((x) => x.id === closing);
-          const next = tabs.filter((x) => x.id !== closing);
-          setTabs(next);
-          if (closing === current?.id && next.length > 0) setTab(next[Math.max(0, at - 1)].id);
-        }}
-        onNewTab={(page) => {
-          const added = newTab(page);
-          setTabs((list) => [...list, added]);
-          setTab(added.id);
-        }}
         onNavigate={(page) =>
           updateTab((x) =>
             x.hist[x.hi] === page ? x : { ...x, hist: [...x.hist.slice(0, x.hi + 1), page], hi: x.hi + 1 },
@@ -336,8 +324,6 @@ const GuestBody = ({
         onCopyLink={() => void navigator.clipboard?.writeText(location.href).catch(none)}
         onRetry={() => setReloadKey((n) => n + 1)}
         onOpenDrawer={none}
-        onToggleMax={none}
-        maxed={false}
         stage={commenting ? stage : undefined}
         full={isFull}
         memoryKey={`guest:${config.token}`}

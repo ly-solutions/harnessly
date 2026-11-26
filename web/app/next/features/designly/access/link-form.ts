@@ -86,7 +86,8 @@ export const downloadOf = (kind: TLinkKind): string | null => {
 };
 
 const PHONES = new Set(DEVICES.filter((d) => d.group === DEVICE_GROUP.phones).map((d) => d.id));
-const FIRST_PHONE = DEVICES.find((d) => d.group === DEVICE_GROUP.phones && d.vw !== undefined);
+/** The phone a link opens on where the owner looked at none: the list's first are the smallest. */
+const FIRST_PHONE = DEVICES.find((d) => d.id === 'ip14');
 
 const isPhoneDevice = (device: unknown): boolean => typeof device === 'string' && PHONES.has(device);
 

@@ -53,6 +53,12 @@ vi.mock('@/next/features/designly/versions/versions-api', async (original) => ({
   ...(await original<typeof import('@/next/features/designly/versions/versions-api')>()),
   fetchProjectKit: () => Promise.resolve({ pin: null, update: null }),
 }));
+// The people's threads and the boards' shared settings are read apart from the slot.
+vi.mock('@/next/features/designly/panel/api', async (original) => ({
+  ...(await original<typeof import('@/next/features/designly/panel/api')>()),
+  fetchSiteComments: () => Promise.resolve([]),
+  fetchSiteProps: () => Promise.resolve({}),
+}));
 vi.mock('@/next/features/designly/site-view', () => ({
   default: (props: {
     src: string | null;

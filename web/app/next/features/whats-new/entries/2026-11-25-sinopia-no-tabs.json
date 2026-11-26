@@ -1,0 +1,12 @@
+{
+  "date": "2026-11-25",
+  "icon": "app-window",
+  "ru": {
+    "title": "Макет без вкладок, телефоны как настоящие",
+    "text": "Страницы макета переключаются в названии доски наверху (⌘K). У чата осталось только название и «⋯», двойной щелчок по границе сворачивает его. Новые телефоны и планшеты с рамками, двенадцатью браузерами и складыванием. Правый клик по макету — меню блока, двойной щелчок по тексту — правка руками с сохранением версии."
+  },
+  "en": {
+    "title": "A design without tabs, phones like the real ones",
+    "text": "The pages of a design switch under the board name on top (⌘K). The chat keeps its name and «⋯», a double click on its border folds it. New phones and tablets with cases, twelve browsers and folding. A right click on the page opens the block's menu, a double click on a text edits it by hand and keeps a version."
+  }
+}

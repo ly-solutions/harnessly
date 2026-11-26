@@ -11,7 +11,7 @@ import type { IPicked } from '@/next/features/designly/page-bridge';
 
 const picked: IPicked = {
   id: 1,
-  look: { background: '#112233', radius: 16, opacity: 1 },
+  look: { ...NO_EDIT, background: '#112233', radius: 16, opacity: 1 },
   selector: 'main > h1',
   tag: 'h1',
   text: 'Куда сходить',
@@ -41,7 +41,7 @@ describe('formatAnnotation', () => {
       n: 1,
       picked,
       comment: '',
-      style: { background: '#FFFFFF', radius: 8, opacity: 80 },
+      style: { ...NO_EDIT, background: '#FFFFFF', radius: 8, opacity: 80 },
       url: '/x',
       port: 1,
     });
@@ -55,7 +55,7 @@ describe('formatAnnotation', () => {
       n: 1,
       picked: { ...picked, look: null },
       comment: 'x',
-      style: { background: null, radius: 4, opacity: null },
+      style: { ...NO_EDIT, background: null, radius: 4, opacity: null },
       url: '/x',
       port: 1,
     });

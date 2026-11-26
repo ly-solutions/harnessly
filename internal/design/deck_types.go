@@ -175,6 +175,17 @@ type DeckComment struct {
 	// A 3D scene's pin (View DeckCommentScene3D): the object, the point, the camera and the frame it sits at.
 	// X, Y and Page stay empty.
 	Scene *Scene3DAnchor `json:"scene,omitempty"`
+	// A site board's comment (View DeckCommentSite): Board is the board's path, X the point's percent of the page's
+	// width and Y its CSS pixels from the page's top, Block the data-block it points at ("" a point only). Parent is the thread's first comment for a reply
+	// ("" the first one); Reactions the people (by address, else name) of each emoji; Mentions the people it calls by @;
+	// Agent that it calls @harnessly.
+	Board     string              `json:"board,omitempty"`
+	Parent    string              `json:"parent,omitempty"`
+	Reactions map[string][]string `json:"reactions,omitempty"`
+	Mentions  []DeckPerson        `json:"mentions,omitempty"`
+	Agent     bool                `json:"agent,omitempty"`
+	// ByAgent: the agent wrote it (a reply of `harnessly design comments reply`).
+	ByAgent bool `json:"byAgent,omitempty"`
 }
 
 // DeckGuestResolution is meta/comments/g-<gatewayId>.json: a guest comment (kept by the gateway) marked resolved here.
@@ -361,7 +372,7 @@ const (
 
 // DeckPatchRequest is the body of POST /design/deck/patch. Tpl is the element's data-dc-tpl (preorder index of the
 // template's start tags). text: Was is the element's inner HTML as the page saw it, HTML the new one (b strong i em u
-// s br and text only). style: Style sets (a value) or removes (null) CSS properties of the style attribute. move:
+// s br and text only); Style, when set, goes on the same element in the same write. style: Style sets (a value) or removes (null) CSS properties of the style attribute. move:
 // X and Y in board pixels become `translate` (in cqw of the board's width; in px when Unit is "px", which the board
 // asks for a block inside its own size container). reset: removes translate. For style, move and reset Was is the
 // element's fingerprint as the board gave it (`was` of tk:deck-hover, -select, -drag): its source tag, style attribute

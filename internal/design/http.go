@@ -37,6 +37,9 @@ type API struct {
 	// by) to show a design, on a board ("" for the one it shows): as `open design` does, kept with the chat,
 	// behind with a dot. False when the session is no chat's or the pane cannot be asked. Nil while the core does not run.
 	OpenPane func(session, ref, board string) bool
+	// TellChat puts a comment that calls @harnessly into the chat conv, as a message of the person who wrote
+	// it (not the owner's own words); from names them, about says where it was written. Nil while the core does not run.
+	TellChat func(ctx context.Context, conv, from, about, text string) error
 	// PlatformAPI prefixes the platform's routes.
 	PlatformAPI string
 	// Launch starts an agent conversation (nil while the core does not run).

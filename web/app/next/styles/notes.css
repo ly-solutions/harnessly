@@ -1188,3 +1188,86 @@
   border-radius: 16px;
   background: var(--hx-bg-raised);
 }
+
+/* The type of the picked block: its words, the size, the weight and the colour of the words. */
+.hx-ann__words {
+  box-sizing: border-box;
+  width: calc(100% - 20px);
+  height: 32px;
+  margin: 4px 10px;
+  padding: 0 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: 13px;
+}
+.hx-ann__words:focus {
+  border-color: var(--hx-accent);
+}
+.hx-ann__seg {
+  display: flex;
+  justify-self: end;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--hx-bg-hover);
+}
+.hx-ann__seg button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--hx-fg-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hx-ann__seg button[data-weight='700'] {
+  font-weight: 700;
+}
+.hx-ann__seg button[aria-checked='true'] {
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-sm);
+  color: var(--hx-fg-1);
+}
+.hx-ann__inks {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.hx-ann__line {
+  height: 1px;
+  margin: 4px 12px;
+  background: var(--hx-border);
+}
+.hx-ann__reset {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+}
+.hx-ann__write {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--hx-fg-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hx-ann__write:hover {
+  background: color-mix(in srgb, var(--hx-fg-1) 7%, transparent);
+  color: var(--hx-fg-1);
+}
+.hx-ann__grid {
+  max-height: min(440px, 58vh);
+}

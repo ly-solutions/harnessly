@@ -118,3 +118,37 @@
     display: none;
   }
 }
+
+/* The site's bar: two icons; the chosen part is raised, and says its name where the bar has the room. */
+.hx-modeseg[data-icons='true'] {
+  display: inline-flex;
+}
+.hx-modeseg[data-icons='true'] .hx-modeseg__part {
+  height: 26px;
+  padding: 0 9px;
+  transition:
+    background 220ms ease,
+    color 220ms ease,
+    padding 220ms ease;
+}
+.hx-modeseg[data-icons='true'] .hx-modeseg__part[aria-pressed='true'] {
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-sm);
+}
+.hx-modeseg[data-icons='true'] .hx-modeseg__name {
+  display: none;
+}
+@container (min-width: 900px) {
+  .hx-modeseg[data-icons='true'] .hx-modeseg__part[aria-pressed='true'] {
+    padding: 0 12px 0 10px;
+  }
+  .hx-modeseg[data-icons='true'] .hx-modeseg__part[aria-pressed='true'] .hx-modeseg__name {
+    display: inline;
+  }
+  .hx-modeseg[data-icons='true'] .hx-modeseg__part[aria-pressed='true']:not([data-ask]) > .hx-tip {
+    display: none;
+  }
+}
+.hx-modeseg[data-icons='true'] .hx-modeseg__part:not([data-ask]) > .hx-tip {
+  display: inline-flex;
+}

@@ -3,6 +3,7 @@
 // in «Правки», in the bar «Аннотирование · N» at the foot (.hx-notesbar) that sends them to the agent in one message.
 // The pins, the card and the bar speak the shared language of annotations (ui/notes/notes.tsx).
 import {
+  useContext,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
@@ -19,15 +20,20 @@ import { usePhone } from '@/next/ui/use-media';
 import {
   changedKeys,
   hasEdit,
+  NO_EDIT,
   OPACITY,
   shownValues,
   stepRadius,
+  stepSize,
   SWATCHES,
+  TEXT_SWATCHES,
+  WEIGHTS,
   withValue,
   type IStyleEdit,
   type TStyleKey,
 } from '@/next/features/designly/element-style';
 import { pickedLabel, type IPicked, type IPickedLook } from '@/next/features/designly/page-bridge';
+import { BoardTextContext } from '@/next/features/designly/hand-edit';
 import { DRAFT_ANCHOR, useNoteAnchor } from '@/next/features/designly/note-anchor';
 import { dragNote, keepNotePos, readNotePos } from '@/next/features/designly/note-drag';
 import type { IPoint } from '@/next/features/designly/site-drag';
@@ -129,6 +135,9 @@ export interface INotePopoverProps {
   image?: { machine: MachineId; artifact: string; file: string };
 }
 
+/** The longest words a note tries on a block. */
+const MAX_WORDS = 2000;
+
 /** The colour of a swatch reaches the CSS through a custom property of its own, not through a style attribute. */
 const useSwatchColor = <E extends HTMLElement>(color: string | null) => {
   const ref = useRef<E>(null);
@@ -229,19 +238,89 @@ const NoteProps = ({
           <span className="hx-spacer" />
           <button
             type="button"
-            className="hx-ann__reset"
+            className="hx-ann__reset hx-tipped"
             data-on={changed.length > 0}
             tabIndex={changed.length > 0 && open ? 0 : -1}
+            aria-label={t('next.notes.reset')}
             onClick={() => {
               setSwatches(false);
-              onEdit({ background: null, radius: null, opacity: null });
+              onEdit(NO_EDIT);
             }}
           >
             <Icon name="rotate-ccw" size="sm" />
-            {t('next.notes.reset')}
+            <span className="hx-tip" data-pos="below" data-align="end">
+              {t('next.notes.reset')}
+            </span>
           </button>
         </div>
         <div className="hx-ann__grid">
+          {look.words !== undefined && (
+            <input
+              className="hx-ann__words"
+              data-changed={mark('text')}
+              value={shown.text}
+              maxLength={MAX_WORDS}
+              aria-label={t('next.notes.style.text')}
+              placeholder={t('next.notes.style.text')}
+              onChange={(event) => set('text', event.target.value)}
+            />
+          )}
+          {look.font && picked.text !== '' && (
+            <>
+              <div className="hx-ann__prop" data-changed={mark('size')}>
+                <span className="hx-ann__label">{t('next.notes.style.size')}</span>
+                <span className="hx-ann__step">
+                  <button
+                    type="button"
+                    aria-label={t('next.notes.style.smaller')}
+                    onClick={() => set('size', stepSize(shown.size, -1))}
+                  >
+                    <Icon name="minus" size="sm" />
+                  </button>
+                  <span className="hx-ann__vtext">{shown.size}%</span>
+                  <button
+                    type="button"
+                    aria-label={t('next.notes.style.larger')}
+                    onClick={() => set('size', stepSize(shown.size, 1))}
+                  >
+                    <Icon name="plus" size="sm" />
+                  </button>
+                </span>
+              </div>
+              <div className="hx-ann__prop" data-changed={mark('weight')}>
+                <span className="hx-ann__label">{t('next.notes.style.weight')}</span>
+                <span className="hx-ann__seg" role="radiogroup" aria-label={t('next.notes.style.weight')}>
+                  {WEIGHTS.map((weight) => (
+                    <button
+                      key={weight}
+                      type="button"
+                      role="radio"
+                      data-weight={weight}
+                      aria-checked={weight >= 600 === (shown.weight ?? 400) >= 600}
+                      onClick={() => set('weight', weight)}
+                    >
+                      {t(`next.notes.style.weights.${weight}`)}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="hx-ann__prop" data-changed={mark('color')}>
+                <span className="hx-ann__label">{t('next.notes.style.color')}</span>
+                <span className="hx-ann__inks" role="radiogroup" aria-label={t('next.notes.style.color')}>
+                  {[null, ...TEXT_SWATCHES].map((color) => (
+                    <SwatchButton
+                      key={color ?? 'none'}
+                      color={color}
+                      label={color ?? t('next.notes.style.asTheme')}
+                      on={(color?.toLowerCase() ?? null) === (shown.color?.toLowerCase() ?? null)}
+                      onPick={() => set('color', color)}
+                    />
+                  ))}
+                </span>
+              </div>
+              <div className="hx-ann__line" />
+            </>
+          )}
           <div className="hx-ann__prop" data-changed={mark('background')}>
             <span className="hx-ann__label">{t('next.notes.style.background')}</span>
             <button
@@ -319,6 +398,7 @@ export const NotePopover = ({
   guest,
   image,
 }: INotePopoverProps) => {
+  const editText = useContext(BoardTextContext);
   const ref = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
   const [sending, setSending] = useState(false);
@@ -514,6 +594,27 @@ export const NotePopover = ({
           </button>
         )}
         <span className="hx-spacer" onPointerDown={onGround} onDoubleClick={onGroundDouble} />
+        {/* The words are written by hand on the page itself; the note is left. */}
+        {!guest && editText && draft.picked.text !== '' && (
+          <button
+            type="button"
+            className="hx-ann__write hx-tipped"
+            aria-label={t('next.site.ctx.text')}
+            onClick={() => {
+              const { picked } = draft;
+              leave(() => {
+                onCancel();
+                editText(picked);
+              });
+            }}
+          >
+            <Icon name="pencil" size="sm" />
+            {t('next.site.ctx.text')}
+            <span className="hx-tip" data-pos="below">
+              {t('next.site.ctx.textTip')}
+            </span>
+          </button>
+        )}
         {mic && (
           <button
             type="button"
@@ -656,7 +757,7 @@ const StyleChips = ({ edit }: { edit: IStyleEdit }) => {
     <div className="hx-anns__diffs">
       {keys.map((key) => (
         <span key={key} className="hx-anns__diff">
-          {key === 'background' && <SwatchDot color={edit.background} />}
+          {(key === 'background' || key === 'color') && <SwatchDot color={edit[key]} />}
           {t(`next.notes.styleDiff.${key}`, { value: String(edit[key]) })}
         </span>
       ))}

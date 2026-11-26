@@ -1,103 +1,140 @@
-// What a device adds around the page of an open design: the phone's own interface in a case (the status bar, the browser's
-// bars) and the phone's code. They are drawings of the design's .hx-vp and .hx-phone; the page itself is the frame the
-// site view puts between them. «Все экраны» is site-overview.tsx.
+// What a device adds around the page of an open design: the phone's own interface in a case (the status bar, the bars
+// of its browser, the home indicator), the drawn parts of our cases, and the phone's code. They are drawings of the
+// design's .hx-vp and .hx-phone; the page itself is the frame the site view puts between them. «Все экраны» is
+// site-overview.tsx.
+import { useState } from 'react';
 import Icon from '@/next/ui/icon';
-import { t } from '@/next/i18n';
-import type { IBrowser } from '@/next/features/designly/devices';
+import { locale, t } from '@/next/i18n';
+import { PHONE_OS, type IBrowser, type TPhoneOs } from '@/next/features/designly/devices';
 
 interface IBarsProps {
-  /** The browser's bars; null without them (turned off, or a page from the home screen). */
+  /** The browser's bars; null on a screen without a system. */
   browser: IBrowser | null;
-  /** The status bar on top and the home indicator under the page. */
+  os: TPhoneOs;
+  /** The status bar on top. */
   status: boolean;
   /** The host the browser's address shows. */
   host: string;
+  /** The design's name: a mini app is headed by it. */
+  title: string;
   /** A press on a folded bar unfolds the bars. */
   onUnfold: () => void;
 }
 
-/** Over the page: the status bar and, for a browser with its address on top, that bar. */
-export const PhoneTop = ({ browser, status, host, onUnfold }: IBarsProps) => (
+const StatusBar = ({ os }: { os: TPhoneOs }) => {
+  const [today] = useState(() =>
+    new Intl.DateTimeFormat(locale(), { weekday: 'short', day: 'numeric', month: 'short' }).format(
+      new Date(),
+    ),
+  );
+  return (
+    <div className="hx-sb" aria-hidden="true">
+      <b>9:41</b>
+      {os === PHONE_OS.ipad && <span className="hx-sb__date">{today}</span>}
+      <span className="hx-spacer" />
+      <span className="hx-sb__r">
+        <span className="hx-sb__sig">
+          <i />
+          <i />
+          <i />
+          <i />
+        </span>
+        <Icon name="wifi" size="sm" />
+        <span className="hx-sb__bat" />
+      </span>
+    </div>
+  );
+};
+
+/** One icon of a browser's bar; `tabs` is the counter of its open tabs. */
+const BarIcon = ({ name }: { name: string }) =>
+  name === 'tabs' ? <span className="hx-brt__tabs">3</span> : <Icon name={name} size="sm" />;
+
+const Address = ({ browser, host, below = false }: { browser: IBrowser; host: string; below?: boolean }) => (
+  <span className="hx-burl" data-centred={below || browser.centred === true}>
+    {below || browser.aa ? <small>аА</small> : <Icon name="lock" size="sm" />}
+    <b>{host}</b>
+    {below && <Icon name="rotate-cw" size="sm" />}
+  </span>
+);
+
+/** Over the page: the status bar and, for a browser with its address on top or a mini app, that bar. */
+export const PhoneTop = ({ browser, os, status, host, title, onUnfold }: IBarsProps) => (
   <>
-    {status && (
-      <div className="hx-pbar" aria-hidden="true">
-        <span className="hx-pbar__time">9:41</span>
-        <span className="hx-spacer" />
-        <span className="hx-pbar__sig">
-          <i />
-          <i />
-          <i />
-          <i />
+    {status && <StatusBar os={os} />}
+    {browser?.top === 'tg' && (
+      <div className="hx-brt" data-t="tg" aria-hidden="true" onClick={onUnfold}>
+        <span className="hx-brt__close">{t('next.site.miniClose')}</span>
+        <span className="hx-brt__app">
+          <b>{title}</b>
+          <small>{t('next.site.miniApp')}</small>
         </span>
-        <Icon name="wifi" size="sm" className="hx-pbar__wifi" />
-        <span className="hx-pbar__bat">
-          <i />
-        </span>
+        <Icon name="ellipsis" size="sm" />
       </div>
     )}
-    {browser?.top && (
-      <div className="hx-pchrome" aria-hidden="true" onClick={onUnfold}>
-        <span className="hx-pchrome__url">
-          <Icon name="lock" size="sm" />
-          <span className="hx-pchrome__host">{host}</span>
-        </span>
-        <span className="hx-pchrome__tabs">2</span>
-        <Icon name="ellipsis" size="sm" className="hx-pchrome__menu" />
+    {browser?.top === 'addr' && (
+      <div className="hx-brt" data-t="addr" aria-hidden="true" onClick={onUnfold}>
+        {browser.lead?.map((name) => (
+          <BarIcon key={name} name={name} />
+        ))}
+        <Address browser={browser} host={host} />
+        {browser.trail?.map((name) => (
+          <BarIcon key={name} name={name} />
+        ))}
       </div>
     )}
   </>
 );
 
-const TOOLS = ['chevron-left', 'chevron-right', 'share', 'book-open', 'copy'] as const;
-
-/** Under the page: the browser's bottom bars of its kind, and the home indicator. */
-export const PhoneBottom = ({ browser, status, host, onUnfold }: IBarsProps) => (
+/** Under the page: the browser's bars at the bottom, the glass buttons over the page and the home indicator. */
+export const PhoneBottom = ({ browser, host, onUnfold }: Omit<IBarsProps, 'os' | 'status' | 'title'>) => (
   <>
-    {browser?.id === 'ios26' && (
-      <div className="hx-psafari" aria-hidden="true" onClick={onUnfold}>
-        <span className="hx-psafari__btn">
+    {browser && (browser.addrBelow || browser.icons) && (
+      <div className="hx-brb" data-slim={!browser.addrBelow} aria-hidden="true" onClick={onUnfold}>
+        {browser.addrBelow && <Address browser={browser} host={host} below />}
+        {browser.icons && (
+          <span className="hx-brb__i">
+            {browser.icons.map((name) => (
+              <BarIcon key={name} name={name} />
+            ))}
+          </span>
+        )}
+      </div>
+    )}
+    {browser?.float && (
+      <div className="hx-brf" aria-hidden="true" onClick={onUnfold}>
+        <span className="hx-brf__b">
           <Icon name="chevron-left" size="sm" />
         </span>
-        <span className="hx-psafari__url">{host}</span>
-        <span className="hx-psafari__btn">
+        <span className="hx-brf__u">
+          <span className="hx-brf__fav" />
+          <span className="hx-brf__host">{host}</span>
+        </span>
+        <span className="hx-brf__b">
           <Icon name="ellipsis" size="sm" />
         </span>
       </div>
     )}
-    {browser?.id === 'ios18' && (
-      <div className="hx-ps18" aria-hidden="true" onClick={onUnfold}>
-        <div className="hx-ps18__url">
-          <span className="hx-ps18__aa">аА</span>
-          <span className="hx-ps18__host">{host}</span>
-          <Icon name="rotate-cw" size="sm" />
-        </div>
-        <div className="hx-ps18__tools">
-          {TOOLS.map((name) => (
-            <Icon key={name} name={name} size="sm" />
-          ))}
-        </div>
-      </div>
-    )}
-    {browser?.id === 'sam85' && (
-      <div className="hx-psam" aria-hidden="true" onClick={onUnfold}>
-        <span className="hx-psam__url">
-          <Icon name="house" size="sm" />
-          <span className="hx-psam__host">{host}</span>
-        </span>
-        <span className="hx-psam__side">
-          <span className="hx-psam__tabs">2</span>
-          <Icon name="menu" size="sm" />
-        </span>
-      </div>
-    )}
-    {browser?.bot && (
-      <div className="hx-pbot" aria-hidden="true">
-        {TOOLS.map((name) => (
-          <Icon key={name} name={name} size="sm" />
-        ))}
-      </div>
-    )}
-    {status && <span className="hx-phome" aria-hidden="true" />}
+    <span className="hx-navb" aria-hidden="true">
+      <span />
+    </span>
+  </>
+);
+
+/** The drawn parts of our own cases over the screen: the cut for the camera, a fold's crease, the folding half. */
+export const ScreenParts = () => (
+  <>
+    <span className="hx-fpanel" aria-hidden="true" />
+    <span className="hx-cut" aria-hidden="true" />
+    <span className="hx-crease" aria-hidden="true" />
+  </>
+);
+
+/** The parts of our own cases beside the screen: the «Home» button and the camera of the old ones. */
+export const CaseParts = () => (
+  <>
+    <span className="hx-hbtn" aria-hidden="true" />
+    <span className="hx-pcam" aria-hidden="true" />
   </>
 );
 

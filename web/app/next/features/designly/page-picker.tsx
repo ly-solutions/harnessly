@@ -3,9 +3,15 @@
 // name, the current page lit, the page's actions over the row's end on hover or focus, the arrows moving the
 // highlight and Enter going there. On the phone it is a sheet like the bar's menus. It opens from the pager under the page
 // (above it) and from the address bar (below it); either way it is no taller than the window leaves it.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ISitePage } from '@/next/features/designly/site-view';
-import { pageFileNote, pagesFound, rowAfter, SEARCH_FROM } from '@/next/features/designly/page-pick';
+import {
+  boardGroups,
+  pageFileNote,
+  pagesFound,
+  rowAfter,
+  SEARCH_FROM,
+} from '@/next/features/designly/page-pick';
 import Icon from '@/next/ui/icon';
 import { PHONE_QUERY } from '@/next/ui/use-media';
 import { SheetGrip } from '@/next/ui/sheet';
@@ -24,6 +30,17 @@ interface IPagePickerProps {
   onSave?: (path: string, at: DOMRect) => void;
   /** The download button's words for a page. */
   saveLabel?: (page: ISitePage) => string;
+  /** The list is the bar's board switcher: the chat's boards come first, a new one is asked for at its foot. */
+  boards?: IPickerBoards;
+}
+
+export interface IPickerBoards {
+  /** The boards the agent wrote in this chat: a dot on their rows. */
+  changed: ReadonlySet<string>;
+  /** The boards opened here, besides the ones written. */
+  opened: readonly string[];
+  /** «Новая доска»; absent where the person may not change the design. */
+  onNew?: () => void;
 }
 
 export const PICKER_PLACE = { up: 'up', center: 'center', start: 'start' } as const;
@@ -47,17 +64,23 @@ const PagePicker = ({
   place = PICKER_PLACE.up,
   onSave,
   saveLabel,
+  boards,
 }: IPagePickerProps) => {
   const [query, setQuery] = useState('');
-  const found = pagesFound(pages, query);
-  const [at, setAt] = useState(() =>
-    Math.max(
+  const matched = pagesFound(pages, query);
+  const groups = boards ? boardGroups(matched, boards.changed, boards.opened) : null;
+  // The rows as the arrows walk them: the chat's boards, then the rest.
+  const found = groups ? [...groups.chat, ...groups.rest] : matched;
+  const [at, setAt] = useState(() => {
+    const first = boards ? boardGroups(pages, boards.changed, boards.opened) : null;
+    const list = first ? [...first.chat, ...first.rest] : pages;
+    return Math.max(
       0,
-      pages.findIndex((p) => p.path === path),
-    ),
-  );
+      list.findIndex((p) => p.path === path),
+    );
+  });
   const row = found.length === 0 ? -1 : Math.min(at, found.length - 1);
-  const searchable = pages.length > SEARCH_FROM;
+  const searchable = boards !== undefined || pages.length > SEARCH_FROM;
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
 
@@ -112,6 +135,7 @@ const PagePicker = ({
     <div
       ref={box}
       className={`hx-site-menu ${PLACE_CLASS[place]} hx-pgpick hx-sheet-phone`}
+      data-boards={boards !== undefined || undefined}
       data-state={state}
       role="dialog"
       aria-label={t('next.site.pages')}
@@ -126,8 +150,8 @@ const PagePicker = ({
             ref={input}
             type="text"
             value={query}
-            placeholder={t('next.site.findPage')}
-            aria-label={t('next.site.findPage')}
+            placeholder={t(boards ? 'next.site.findBoard' : 'next.site.findPage')}
+            aria-label={t(boards ? 'next.site.findBoard' : 'next.site.findPage')}
             onChange={(event) => {
               setQuery(event.target.value);
               setAt(0);
@@ -138,44 +162,65 @@ const PagePicker = ({
       <div className="hx-pgpick__list" role="listbox" aria-label={t('next.site.pages')}>
         {found.map((p, i) => {
           const note = pageFileNote(p);
+          const title =
+            groups === null
+              ? null
+              : i === 0 && groups.chat.length > 0
+                ? t('next.site.boardsOfChat')
+                : i === groups.chat.length
+                  ? t('next.site.boardsAll', { n: pages.length })
+                  : null;
           return (
-            <div key={p.path} className="hx-pgpick__item" data-active={i === row}>
-              <button
-                type="button"
-                role="option"
-                tabIndex={-1}
-                className="hx-pgpick__row"
-                aria-selected={p.path === path}
-                data-active={i === row}
-                onMouseMove={() => i !== row && setAt(i)}
-                onClick={() => onGo(p.path)}
-              >
-                <span className="hx-pgpick__ic">
-                  <Icon name="file-text" size="sm" />
-                </span>
-                <span className="hx-pgpick__text">
-                  <span className="hx-pgpick__name">{p.name}</span>
-                  {note !== null && <span className="hx-pgpick__meta">{note}</span>}
-                </span>
-              </button>
-              {onSave && (
-                <span className="hx-pgpick__acts">
-                  <button
-                    type="button"
-                    className="hx-head-btn hx-pgpick__dl"
-                    aria-label={saveLabel?.(p)}
-                    title={saveLabel?.(p)}
-                    onClick={(event) => onSave(p.path, event.currentTarget.getBoundingClientRect())}
-                  >
-                    <Icon name="download" size="sm" />
-                  </button>
-                </span>
-              )}
-            </div>
+            <Fragment key={p.path}>
+              {title !== null && <div className="hx-pgpick__group">{title}</div>}
+              <div className="hx-pgpick__item" data-active={i === row}>
+                <button
+                  type="button"
+                  role="option"
+                  tabIndex={-1}
+                  className="hx-pgpick__row"
+                  aria-selected={p.path === path}
+                  data-active={i === row}
+                  onMouseMove={() => i !== row && setAt(i)}
+                  onClick={() => onGo(p.path)}
+                >
+                  <span className="hx-pgpick__ic">
+                    <Icon name={boards ? 'app-window' : 'file-text'} size="sm" />
+                  </span>
+                  <span className="hx-pgpick__text">
+                    <span className="hx-pgpick__name">{p.name}</span>
+                    {note !== null && !boards && <span className="hx-pgpick__meta">{note}</span>}
+                  </span>
+                  {boards?.changed.has(p.path) && (
+                    <span className="hx-pgpick__dot" title={t('next.site.boardChanged')} />
+                  )}
+                  {boards && p.path === path && <Icon name="check" size="sm" className="hx-pgpick__check" />}
+                </button>
+                {onSave && (
+                  <span className="hx-pgpick__acts">
+                    <button
+                      type="button"
+                      className="hx-head-btn hx-pgpick__dl"
+                      aria-label={saveLabel?.(p)}
+                      title={saveLabel?.(p)}
+                      onClick={(event) => onSave(p.path, event.currentTarget.getBoundingClientRect())}
+                    >
+                      <Icon name="download" size="sm" />
+                    </button>
+                  </span>
+                )}
+              </div>
+            </Fragment>
           );
         })}
         {found.length === 0 && <div className="hx-pgpick__empty">{t('next.site.pagesNone')}</div>}
       </div>
+      {boards?.onNew && (
+        <button type="button" className="hx-pgpick__new" onClick={boards.onNew}>
+          <Icon name="plus" size="sm" />
+          <span>{t('next.site.boardNew')}</span>
+        </button>
+      )}
     </div>
   );
 };

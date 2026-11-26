@@ -565,7 +565,7 @@ func applyDeckPatch(src string, req DeckPatchRequest, w int) (string, error) {
 		return "", patchChanged()
 	}
 	if req.Op == DeckPatchText {
-		return b.patchText(req)
+		return b.patchWords(req)
 	}
 	if req.Was == nil || *req.Was == "" {
 		return "", patchBad(locale.Pick("No fingerprint of the block", "Нет отпечатка блока"))
@@ -580,18 +580,10 @@ func applyDeckPatch(src string, req DeckPatchRequest, w int) (string, error) {
 	set := map[string]*string{}
 	switch req.Op {
 	case DeckPatchStyle:
-		if len(req.Style) == 0 || len(req.Style) > 16 {
-			return "", patchBad(locale.Pick("No style to set", "Нечего менять в стиле"))
+		if err := checkStyle(req.Style); err != nil {
+			return "", err
 		}
-		for p, v := range req.Style {
-			if !cssPropRe.MatchString(p) || p == "translate" {
-				return "", patchBad(locale.Pick("Unknown style property", "Неизвестное свойство стиля"))
-			}
-			if v != nil && (!cssValueRe.MatchString(*v) || strings.Contains(*v, "url(")) {
-				return "", patchBad(locale.Pick("Unusable style value", "Такое значение стиля не подходит"))
-			}
-			set[p] = v
-		}
+		set = req.Style
 	case DeckPatchMove:
 		if req.X == nil || req.Y == nil || !finite(*req.X) || !finite(*req.Y) || math.Abs(*req.X) > 1e5 || math.Abs(*req.Y) > 1e5 {
 			return "", patchBad(locale.Pick("No place to move to", "Непонятно, куда двигать"))
@@ -698,13 +690,56 @@ func deckTranslate(x, y float64, w int) *string {
 	return &s
 }
 
-func (b *dcBoard) patchText(req DeckPatchRequest) (string, error) {
+// checkStyle refuses a style a hand edit may not set on an element.
+func checkStyle(style map[string]*string) error {
+	if len(style) == 0 || len(style) > 16 {
+		return patchBad(locale.Pick("No style to set", "Нечего менять в стиле"))
+	}
+	for p, v := range style {
+		if !cssPropRe.MatchString(p) || p == "translate" {
+			return patchBad(locale.Pick("Unknown style property", "Неизвестное свойство стиля"))
+		}
+		if v != nil && (!cssValueRe.MatchString(*v) || strings.Contains(*v, "url(")) {
+			return patchBad(locale.Pick("Unusable style value", "Такое значение стиля не подходит"))
+		}
+	}
+	return nil
+}
+
+// patchWords is a text edit, with the styles of the same element put on in the same write when the edit set some
+// (a hand edit of a board's text sets its size and colour too): one write, one version of the history.
+func (b *dcBoard) patchWords(req DeckPatchRequest) (string, error) {
+	if len(req.Style) == 0 {
+		next, _, err := b.patchText(req)
+		return next, err
+	}
+	if err := checkStyle(req.Style); err != nil {
+		return "", err
+	}
+	next, tpl, err := b.patchText(req)
+	if err != nil {
+		return "", err
+	}
+	// The element keeps its number: only what is inside it changed, and the numbers go in the order of the start tags.
+	after, ok := parseDcBoard(next)
+	if !ok {
+		return "", patchChanged()
+	}
+	e := after.elem(tpl)
+	if e == nil {
+		return "", patchChanged()
+	}
+	return after.patchStyle(e, req.Style)
+}
+
+// patchText is the element's words replaced; tpl is the number of the element that held them.
+func (b *dcBoard) patchText(req DeckPatchRequest) (string, int, error) {
 	if req.Was == nil || req.HTML == nil {
-		return "", patchBad(locale.Pick("No text", "Нет текста"))
+		return "", 0, patchBad(locale.Pick("No text", "Нет текста"))
 	}
 	next, dynamic := deckCleanHTML(*req.HTML)
 	if dynamic {
-		return "", patchDynamic()
+		return "", 0, patchDynamic()
 	}
 	was := deckCanon(*req.Was)
 	tpl := b.src[b.start:b.end]
@@ -724,11 +759,12 @@ func (b *dcBoard) patchText(req DeckPatchRequest) (string, error) {
 		if !textStatic(target.node) {
 			// The element the page named, holding that text, is not plain text: its words come from the code.
 			if ts, te, tok := b.inner(target); tok && deckCanon(tpl[ts:te]) == was {
-				return "", patchDynamic()
+				return "", 0, patchDynamic()
 			}
 		}
 		s, en, ok = try(target)
 	}
+	at := req.Tpl
 	if !ok {
 		// The numbers moved (the agent wrote the board meanwhile): the one element that holds the text the page saw.
 		found := 0
@@ -739,16 +775,16 @@ func (b *dcBoard) patchText(req DeckPatchRequest) (string, error) {
 			}
 			if fs, fe, fok := try(e); fok {
 				if found == 0 {
-					s, en = fs, fe
+					s, en, at = fs, fe, e.tpl
 				}
 				found++
 			}
 		}
 		if found != 1 {
 			if target != nil && !textStatic(target.node) {
-				return "", patchDynamic()
+				return "", 0, patchDynamic()
 			}
-			return "", patchChanged()
+			return "", 0, patchChanged()
 		}
 	}
 	old := tpl[s:en]
@@ -757,7 +793,7 @@ func (b *dcBoard) patchText(req DeckPatchRequest) (string, error) {
 	if strings.TrimSpace(old) == "" {
 		lead, trail = "", ""
 	}
-	return b.src[:b.abs(s)] + lead + next + trail + b.src[b.abs(en):], nil
+	return b.src[:b.abs(s)] + lead + next + trail + b.src[b.abs(en):], at, nil
 }
 
 func (b *dcBoard) patchStyle(e *dcElem, set map[string]*string) (string, error) {

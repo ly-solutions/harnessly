@@ -8,6 +8,7 @@ const tweak = (over: Partial<ITweak>): ITweak => ({
   section: 'Screen',
   editor: 'string',
   value: null,
+  def: null,
   options: [],
   min: null,
   max: null,

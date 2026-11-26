@@ -469,6 +469,8 @@ test('site: синопия · сайт', async () => {
     cap(page, 'Как это выглядит на телефоне — в один клик');
     await soft(() => glide(page, page.getByRole('button', { name: 'Устройство' }).first()));
     await page.waitForTimeout(1200);
+    await soft(() => glide(page, page.locator('.hx-devshelf__head', { hasText: 'iPhone' })));
+    await page.waitForTimeout(600);
     await soft(() => glide(page, page.getByRole('menuitemradio', { name: /^iPhone 14/ }).first()));
     await page.waitForTimeout(3000);
   });

@@ -41,6 +41,8 @@ export type TParentMessage =
    * that is no longer in the set gets back what it had; the answer is `tk:styled`.
    */
   | { type: 'tk:styles'; items: IStyleItem[] }
+  /** The block at a point of the viewport, picked as a click of the pick takes it (the canvas's menu). */
+  | { type: 'tk:pick-at'; x: number; y: number }
   /**
    * The page stands on a canvas (a design): Space held over it (`tk:space`) and a drag with the middle button (`tk:pan`)
    * are the canvas's, and are told to the parent. The wheel stays the page's: at the end of its scroll nothing moves.
@@ -151,6 +153,11 @@ export interface IStyleItem {
   radius: number | null;
   /** 0 to 1. */
   opacity: number | null;
+  /** The type of the block and the words of a plain one; absent from a parent that does not try them. */
+  size?: number | null;
+  weight?: number | null;
+  color?: string | null;
+  text?: string | null;
 }
 
 /** What a picked block looks like now, read when it is picked. */
@@ -160,6 +167,10 @@ export interface IBlockLook {
   /** Pixels; null when the page gives it in other units. */
   radius: number | null;
   opacity: number;
+  /** The block's type: its size in pixels, weight and colour. */
+  font?: { size: number; weight: number; color: string | null };
+  /** The words of a block that is one run of text; only such a block's words are tried on. */
+  words?: string;
 }
 
 export type TFillReason =
@@ -198,6 +209,11 @@ export const prefixSetCookie = (value: string, tag: string, plain = false): stri
 
 const MAX_STYLE_ITEMS = 64;
 const MAX_RADIUS = 1000;
+const MAX_FONT_SIZE = 1000;
+const MAX_WORDS = 2000;
+/** The words of a block that holds one run of text and nothing else: only those are replaced in place. */
+const onlyWords = (el: any): any =>
+  el.childNodes && el.childNodes.length === 1 && el.childNodes[0].nodeType === 3 ? el.childNodes[0] : null;
 
 /** The set of looks as the parent sent it: every item is checked, one that is not right drops the whole set. */
 export const parseStyleItems = (value: unknown): IStyleItem[] | null => {
@@ -212,7 +228,25 @@ export const parseStyleItems = (value: unknown): IStyleItem[] | null => {
       return null;
     if (radius !== null && !(typeof radius === 'number' && radius >= 0 && radius <= MAX_RADIUS)) return null;
     if (opacity !== null && !(typeof opacity === 'number' && opacity >= 0 && opacity <= 1)) return null;
-    items.push({ id, background, radius, opacity });
+    const more: Partial<IStyleItem> = {};
+    const { size, weight, color, text } = item;
+    if (size !== undefined && size !== null) {
+      if (!(typeof size === 'number' && size > 0 && size <= MAX_FONT_SIZE)) return null;
+      more.size = size;
+    }
+    if (weight !== undefined && weight !== null) {
+      if (!(typeof weight === 'number' && weight >= 100 && weight <= 900)) return null;
+      more.weight = weight;
+    }
+    if (color !== undefined && color !== null) {
+      if (!(typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))) return null;
+      more.color = color;
+    }
+    if (text !== undefined && text !== null) {
+      if (!(typeof text === 'string' && text.length <= MAX_WORDS)) return null;
+      more.text = text;
+    }
+    items.push({ id, background, radius, opacity, ...more });
   }
   return items;
 };
@@ -361,6 +395,10 @@ export const parseParentMessage = (data: unknown): TParentMessage | null => {
       ? { type: 'tk:pick', on: true, keep: true }
       : { type: 'tk:pick', on: message.on };
   if (message.type === 'tk:ping') return { type: 'tk:ping' };
+  if (message.type === 'tk:pick-at')
+    return Number.isFinite(message.x) && Number.isFinite(message.y)
+      ? { type: 'tk:pick-at', x: message.x as number, y: message.y as number }
+      : null;
   if (
     message.type === 'tk:redirect-answer' &&
     typeof message.url === 'string' &&
@@ -1086,10 +1124,25 @@ export const readLook = (el: any, win: any, doc: any): IBlockLook => {
   const style = win.getComputedStyle(el);
   const radius = /^(\d+(?:\.\d+)?)px$/.exec(String(style.borderTopLeftRadius));
   const opacity = Number.parseFloat(String(style.opacity));
+  const size = Number.parseFloat(String(style.fontSize));
+  const weight = Number.parseFloat(String(style.fontWeight));
+  const words = onlyWords(el);
   return {
     background: colorHex(String(style.backgroundColor), doc),
     radius: radius ? Number(radius[1]) : null,
     opacity: Number.isFinite(opacity) ? opacity : 1,
+    ...(Number.isFinite(size)
+      ? {
+          font: {
+            size,
+            weight: Number.isFinite(weight) ? weight : 400,
+            color: colorHex(String(style.color), doc),
+          },
+        }
+      : {}),
+    ...(words && String(words.nodeValue).trim() !== '' && String(words.nodeValue).length <= MAX_WORDS
+      ? { words: String(words.nodeValue).replace(/\s+/g, ' ').trim() }
+      : {}),
   };
 };
 
@@ -1098,7 +1151,12 @@ const LOOK_PROPERTIES = {
   background: ['background-color', 'background-image'],
   radius: ['border-radius'],
   opacity: ['opacity'],
+  size: ['font-size'],
+  weight: ['font-weight'],
+  color: ['color'],
 } as const;
+/** Where the words a block had are kept beside its properties. */
+const KEPT_WORDS = '#words';
 
 export interface IKept {
   [property: string]: { value: string; priority: string };
@@ -1111,8 +1169,24 @@ export const applyLook = (el: any, item: IStyleItem, kept: IKept): void => {
     background: item.background === null ? null : [item.background, 'none'],
     radius: item.radius === null ? null : [`${item.radius}px`],
     opacity: item.opacity === null ? null : [String(item.opacity)],
+    size: item.size === undefined || item.size === null ? null : [`${item.size}px`],
+    weight: item.weight === undefined || item.weight === null ? null : [String(item.weight)],
+    color: item.color === undefined || item.color === null ? null : [item.color],
   };
-  for (const group of ['background', 'radius', 'opacity'] as const) {
+  // The words are put into the one text node the block has, which the page's own code goes on holding.
+  const words = onlyWords(el);
+  if (words) {
+    if (item.text === undefined || item.text === null) {
+      if (KEPT_WORDS in kept) {
+        words.nodeValue = kept[KEPT_WORDS].value;
+        delete kept[KEPT_WORDS];
+      }
+    } else {
+      if (!(KEPT_WORDS in kept)) kept[KEPT_WORDS] = { value: String(words.nodeValue), priority: '' };
+      words.nodeValue = item.text;
+    }
+  }
+  for (const group of ['background', 'radius', 'opacity', 'size', 'weight', 'color'] as const) {
     const wanted = values[group];
     LOOK_PROPERTIES[group].forEach((property, index) => {
       if (wanted === null) {
@@ -1816,6 +1890,22 @@ export const installBridge = (win: any, doc: any, parentOrigin: string, core: an
     },
     true,
   );
+  const pickAt = (x: number, y: number) => {
+    if (typeof doc.elementFromPoint !== 'function') return;
+    let target = doc.elementFromPoint(x, y);
+    // A web component keeps its content in a shadow root: the pick goes down to what is under the point.
+    for (let depth = 0; target?.shadowRoot?.elementFromPoint && depth < 16; depth += 1) {
+      const inner = target.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === target) break;
+      target = inner;
+    }
+    if (!isPage(target)) return;
+    post({
+      ...core.pickedMessage(target, win, doc, core),
+      pick: remember(target),
+      look: readLookSafely(target),
+    });
+  };
   win.addEventListener(
     'keydown',
     (event: any) => {
@@ -2026,6 +2116,7 @@ export const installBridge = (win: any, doc: any, parentOrigin: string, core: an
         keepPicking = message.on && message.keep === true;
         setPicking(message.on, false);
       } else if (message.type === 'tk:styles') setStyles(message.items);
+      else if (message.type === 'tk:pick-at') pickAt(message.x, message.y);
       else if (message.type === 'tk:anchors') setAnchors(message.items);
       else if (isDomMessage(message)) core.handleDomMessage(win, doc, bound, core, domState, message, post);
       else if (message.type === 'tk:act') {

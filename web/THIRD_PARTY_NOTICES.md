@@ -29,6 +29,10 @@ licences are kept in `node_modules/<package>/LICENSE`; `pnpm licenses list --pro
 
 The fonts' licence texts are copied into the built page under `licenses/`, next to the font files.
 
+The cases of phones and tablets in a design (`app/next/styles/vendor-devices.css`) are parts of
+[Devices.css](https://github.com/picturepan2/devices.css) 0.2.0 (MIT, Copyright (c) 2017 Yan Zhu); its licence is
+`app/next/styles/vendor-devices.LICENSE`.
+
 The wake phrase's speech model (Vosk `vosk-model-small-ru-0.22`, Apache-2.0) is not bundled: the runtime fetches it
 from its publisher when the setting is turned on (`internal/voice/realtime/wake.go`).
 

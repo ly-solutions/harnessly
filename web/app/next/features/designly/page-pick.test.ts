@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pageFileNote, pagesFound, rowAfter } from '@/next/features/designly/page-pick';
+import { boardGroups, pageFileNote, pagesFound, rowAfter } from '@/next/features/designly/page-pick';
 
 const pages = [
   { path: 'home.html', name: 'Главная' },
@@ -51,5 +51,14 @@ describe('pageFileNote', () => {
       'mobile/Оплата.dc.html',
     );
     expect(pageFileNote({ path: 'offer.html', name: 'Выдача' })).toBe('offer.html');
+  });
+});
+
+describe('the board switcher (HRN-1764)', () => {
+  const pages = ['a', 'b', 'c', 'd'].map((path) => ({ path, name: path }));
+  it('puts the boards the agent wrote first, the newest first, then the ones opened here', () => {
+    const { chat, rest } = boardGroups(pages, new Set(['b', 'c']), ['a', 'c', 'gone']);
+    expect(chat.map((p) => p.path)).toEqual(['c', 'b', 'a']);
+    expect(rest.map((p) => p.path)).toEqual(['d']);
   });
 });

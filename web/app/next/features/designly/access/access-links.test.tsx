@@ -159,7 +159,7 @@ describe('the links screen', () => {
     await openLinks();
     expect(screen.getByRole('heading', { name: t('next.access.linksTitle') })).toBeTruthy();
     expect(await screen.findByText('Client')).toBeTruthy();
-    expect(screen.getByText('Agency')).toBeTruthy();
+    expect(screen.getAllByText('Agency').length).toBeGreaterThan(0);
     expect(screen.getByText(new RegExp(`^${t('next.access.linkKind.guest')} · `))).toBeTruthy();
     expect(screen.getByText(new RegExp(`^${t('next.access.linkKind.member')} · `))).toBeTruthy();
     expect(screen.getByText('Client').closest('ul')?.textContent).toContain('Agency');

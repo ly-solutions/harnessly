@@ -22,6 +22,10 @@ export interface IPickedLook {
   radius: number | null;
   /** 0 to 1. */
   opacity: number;
+  /** The block's type: its size in pixels, weight and colour. Absent from a bridge that does not read it. */
+  font?: { size: number; weight: number; color: string | null };
+  /** The words of a block that is one run of text; only such a block's words are tried on. */
+  words?: string;
 }
 
 /** What a picture needs of a picked block: the board names it in its source, so one can be written into it. */
@@ -102,6 +106,8 @@ export interface ITweak {
   /** What the board says it is: `enum`, `boolean`, `number`, `string`… */
   editor: string;
   value: TTweakValue | null;
+  /** What the board itself stands at (its default); null when the page did not say (an older library script). */
+  def: TTweakValue | null;
   options: ITweakOption[];
   min: number | null;
   max: number | null;
@@ -188,10 +194,21 @@ const readLook = (raw: unknown): IPickedLook | null => {
   if (!isNum(l.opacity)) return null;
   const background = typeof l.background === 'string' && HEX_COLOR.test(l.background) ? l.background : null;
   const radius = isNum(l.radius) && l.radius >= 0 ? l.radius : null;
+  const f = (l.font ?? null) as Record<string, unknown> | null;
+  const font =
+    f && isNum(f.size) && f.size > 0 && isNum(f.weight)
+      ? {
+          size: f.size,
+          weight: f.weight,
+          color: typeof f.color === 'string' && HEX_COLOR.test(f.color) ? f.color.toLowerCase() : null,
+        }
+      : null;
   return {
     background: background?.toLowerCase() ?? null,
     radius,
     opacity: Math.min(1, Math.max(0, l.opacity)),
+    ...(font ? { font } : {}),
+    ...(typeof l.words === 'string' && l.words !== '' ? { words: l.words.slice(0, 2000) } : {}),
   };
 };
 
@@ -211,6 +228,7 @@ const readTweak = (raw: unknown): ITweak | null => {
     section: clip(c.section, 80),
     editor: clip(c.editor, 24),
     value: tweakValue(c.value),
+    def: tweakValue(c.def),
     options,
     min: orNull(c.min),
     max: orNull(c.max),

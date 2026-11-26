@@ -23,8 +23,10 @@ func Extract(dir string) error {
 	if err := os.CopyFS(dir, src); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "fixtures/shop/project/support.js"), []byte(ownengine.Script), 0600); err != nil {
-		return err
+	for _, shop := range []string{"shop", "shop-comments"} {
+		if err := os.WriteFile(filepath.Join(dir, "fixtures", shop, "project/support.js"), []byte(ownengine.Script), 0600); err != nil {
+			return err
+		}
 	}
 	for _, name := range []string{"blender-lab/mock/blender", "blender-lab/mock/blender_wrap.sh", "blender-lab/mock/install.sh", "orch-long/scripts/crunch.sh", "orch-stop/check.sh"} {
 		if err := os.Chmod(filepath.Join(dir, "fixtures", name), 0700); err != nil {

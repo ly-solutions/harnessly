@@ -1,0 +1,31 @@
+id: design-comment-answered
+title: Комментарий человека к доске Sinopia — агент отвечает в обсуждении и закрывает его
+tags: [design, comments]
+timeout_s: 600
+setup:
+  design: [fixtures/shop-comments]
+covers:
+  - 'cmd/runtime/agent_skills*.go'
+  - 'internal/hlcli/design_site.go'
+  - 'internal/hlcli/design.go'
+  - 'internal/design/site_*.go'
+prompt: Посмотри открытые комментарии к макету Sinopia «shop-comments», поправь то, о чём просят, ответь в обсуждении, что сделано, и отметь его решённым.
+expect:
+  - name: answered in the thread and resolved it
+    check: |
+      python3 -I - <<'PY'
+      import json, os, pathlib
+      d = pathlib.Path(os.environ['TMPDIR']).parent / 'design/shop-comments/meta/comments'
+      items = [json.loads(p.read_text()) for p in d.glob('*.json')]
+      root = [c for c in items if c['id'] == '01JD0000000000000000000000'][0]
+      assert root.get('resolved') is True, root
+      replies = [c for c in items if c.get('parent') == root['id']]
+      assert replies and all(c.get('byAgent') for c in replies), replies
+      PY
+variants:
+  - id: v1
+    kind: short
+    text: "Sinopia «shop-comments»: разбери открытые комментарии, поправь, ответь в обсуждении и закрой его."
+  - id: v2
+    kind: typos
+    text: "глянь коментарии к макету shop-comments в синопии, поправь что просят, ответь в обсуждении и отметь решеным"

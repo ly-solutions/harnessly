@@ -10,7 +10,8 @@ const VIDEO_FRAME = '.hx-video__frame';
 // The design's field: folded into «Спросить агента», open, or the plain composer.
 const COMPOSER = ['.hx-island__mini', '.hx-island textarea', '.hx-composer'] as const;
 const MODE = '.hx-modeseg';
-const PICK = '.hx-browser__tool[aria-label="Выделить"], .hx-browser__tool[aria-label="Pick"]';
+// «Выделить»: in the chat's field while it is on screen, else on the design's bar.
+const PICK = '.hx-pick-tool, .hx-browser__pick';
 const NEXT_SLIDE = '[aria-label="Следующий слайд"], [aria-label="Next slide"]';
 
 const card = (id: string) => `.hx-dl-card[data-id="${id}"]`;
@@ -33,10 +34,7 @@ const LIBRARY_PATH = '/designly';
 const IN = (id: string) => ({ where: new RegExp(`/designly/${id}(?:[/?#]|$)`), back: `/designly/${id}` });
 
 // The pick switch on (the bar's «Выделить» pressed), its card open over a block, a note pinned to a block.
-const PICK_ON = [
-  '.hx-browser__tool[aria-label="Выделить"][aria-pressed="true"]',
-  '.hx-browser__tool[aria-label="Pick"][aria-pressed="true"]',
-];
+const PICK_ON = ['.hx-pick-tool[aria-pressed="true"]', '.hx-browser__pick[aria-pressed="true"]'];
 const NOTE_CARD = '.hx-ann';
 const NOTE_PIN = '.hx-npin';
 // The send button of the design's chat docked beside the page, else the folded field's.
@@ -135,7 +133,7 @@ const site: ITourTrack = {
     { ...ask('relay-site', undefined, SITE_FRAME), needs: { test: found(NOTE_PIN), back: 'pick' } },
     {
       id: 'page',
-      target: ['.hx-strip__tabs', SITE_FRAME],
+      target: ['.hx-browser__url', SITE_FRAME],
       done: signalLike((s) => s.startsWith('site:page:Цены')),
       ...IN('relay-site'),
     },
