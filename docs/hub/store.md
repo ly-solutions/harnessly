@@ -73,6 +73,14 @@ someone with no role in it. A project the hub has no row for (made before access
   runtimes of several people share (`RUNTIME_DESIGN_SHARED_DIR`) is synced by each of them with its own person's
   projects (a lock of its own per runtime): the folder holds what any of the machine's people has a role in.
 
+## Transfer
+
+Contents travel eight at a time: a machine fetches the blobs of up to 64 revisions ahead into its tmp folder
+and then applies the revisions one by one in their order; an upload sends a small group's blobs together and then commits
+them one by one (an owner file has to be first, so commits are never sent at once). Text travels as gzip: a download for
+a caller that asks (`Accept-Encoding: gzip`), an upload with `Content-Encoding: gzip` after the store answered
+`Accept-Encoding: gzip`. A blob's sha names the bytes as they are, and an older machine or hub gets them plain.
+
 ## History, versions and pins
 
 Under a hub the Sinopia library has no git history beside it: a board's versions, the return to one and the version a

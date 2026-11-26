@@ -1,6 +1,6 @@
 // Designly over the machine's library: loads it with the design systems, asks again while a card is drawing (a
 // conversation in its folder works), starts a new project from a brief and waits for the runtime before the field
-// clears — the card comes from the library itself. A pin waits for the machine too.
+// clears, then opens the project with its chat, where the agent is already at work. A pin waits for the machine too.
 import { useTourFill } from '@/next/features/tour/use-tour-fill';
 import { uploadSrc } from '@/next/commands/uploads';
 import { AttachmentSrc } from '@/next/ui/attachment-thumb';
@@ -405,7 +405,7 @@ const DesignlyView = ({ machine, machines = null, initialKind }: IDesignlyViewPr
   const onCreate = async ({ brief, kind, designSystem, deck, video, attachmentIds }: IDesignStart) => {
     const title = titleOf(brief);
     if (choice) rememberChoice(choice);
-    let id: string;
+    let made: { id: string; conv: string };
     try {
       const created = await createDesign(machine, {
         title,
@@ -420,22 +420,24 @@ const DesignlyView = ({ machine, machines = null, initialKind }: IDesignlyViewPr
         ...(video ? { video } : {}),
         ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       });
-      id = created.id;
+      made = created;
       // The chat that draws the new design is the one its page opens on.
       bindDesignConv(designKey(machine, created.id), { id: created.conv, fresh: true });
     } catch (failure) {
       toast(t('next.designly.createFailed'), { tone: 'error', description: (failure as Error).message });
+      // A project whose chat did not start is in the library all the same: it is read again.
+      void load();
       throw failure;
     }
     clearDraft(START_DRAFT);
     uploads.reset();
-    toast(t('next.designly.started', { title }));
-    // A deck and a video are made inside their project; a site or a design system draws on its card here.
-    if (kind === DESIGN_KIND.slides || kind === DESIGN_KIND.video || kind === DESIGN_KIND.scene3d) {
-      goTo({ kind: ROUTE.site, id, edit: true });
-      return;
-    }
-    await load();
+    // Every kind opens at once, with the chat that draws it beside the page. A 3D scene has no page until the agent
+    // has built it (and its screen has no chat): its chat opens, and the agent opens the scene beside it.
+    goTo(
+      kind === DESIGN_KIND.scene3d
+        ? { kind: ROUTE.chat, id: made.conv }
+        : { kind: ROUTE.site, id: made.id, chat: made.conv, machine, edit: true },
+    );
   };
 
   return (

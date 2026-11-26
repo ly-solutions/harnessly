@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ITweak } from '@/next/features/designly/page-bridge';
 import { readSiteComment, threadsOf, type ISiteComment } from '@/next/features/designly/panel/api';
 import { keptValues, toApply } from '@/next/features/designly/panel/use-site-props';
-import { findPages } from '@/next/features/designly/panel/pages-tab';
+import { findPages, litName } from '@/next/features/designly/panel/pages-tab';
 import { stepOption, tweakChanged, tweakKind, TWEAK_KIND } from '@/next/features/designly/tweaks';
 
 const tweak = (over: Partial<ITweak>): ITweak => ({
@@ -83,5 +83,11 @@ describe('the design panel (HRN-1764)', () => {
     ];
     expect(findPages(pages, 'опл тел').map((p) => p.path)).toEqual(['Pay.dc.html']);
     expect(findPages(pages, '')).toHaveLength(2);
+    // The words found are lit in the name, any case.
+    const lit = litName('Оплата по телефону', 'опл тел');
+    expect(
+      lit.filter((n) => typeof n === 'object' && n !== null && 'type' in n && n.type === 'mark'),
+    ).toHaveLength(2);
+    expect(litName('Оплата', '')).toEqual(['Оплата']);
   });
 });

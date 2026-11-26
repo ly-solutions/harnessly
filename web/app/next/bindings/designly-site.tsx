@@ -929,6 +929,10 @@ const DesignlySiteInner = ({
       setAttempt((n) => n + 1);
       setReloadKey((n) => n + 1);
     },
+    toolPane,
+    owner: project?.design.owner?.name ?? null,
+    onPagesChanged: () => setAttempt((n) => n + 1),
+    hrefOf: (page) => designAddress(id, page) ?? '',
   });
   // The versions of the project and of its kit: «Версии» opens the side panel's tab, the kit's band over the view.
   const kitInfo = useProjectKit(machine, id);
@@ -1235,6 +1239,7 @@ const DesignlySiteInner = ({
           }}
         />
       )}
+      {designSide.portal}
       {designSide.wrap(
         <SinopiaStage
           machine={machine}
@@ -1244,7 +1249,6 @@ const DesignlySiteInner = ({
           sinopia={sinopia}
           viewing={viewing}
           band={kitBand}
-          side={designSide.side}
         >
           {kindView()}
         </SinopiaStage>,

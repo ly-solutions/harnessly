@@ -542,7 +542,7 @@
   "next.designly.emptyMine": "The mockups you start will show up here",
   "next.designly.emptyShared": "No mockups from teammates yet",
   "next.designly.createFailed": "Could not start the mockup",
-  "next.designly.started": "Drawing “{title}”…",
+  "next.designly.creating": "Creating the project…",
   "next.sidebar.designly": "{design}",
   "next.site.pages": "Pages of the mockup",
   "next.site.back": "Back",
@@ -1788,5 +1788,7 @@
   "next.pictures.next": "Next picture",
   "next.pictures.strip": "All pictures in order",
   "next.pictures.close": "Close",
-  "next.pictures.carousel": "gallery"
+  "next.pictures.carousel": "gallery",
+  "next.site.boardOpen": "open",
+  "next.site.zoomLocked": "Fit to window keeps the zoom at 100%. Pick a device to change it"
 }

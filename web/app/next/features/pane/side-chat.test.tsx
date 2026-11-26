@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sideDraftOf, useSideChat } from '@/next/bindings/side-chat';
 import { setScheduler } from '@/next/core/store';
-import { quoteBlock, SideChatBody } from '@/next/features/pane/side-chat';
+import { type ISideMessage, quoteBlock, SideChatBody } from '@/next/features/pane/side-chat';
 import { pinLocale } from '@/next/i18n';
 import type { ConvId, MachineId } from '@/next/protocol/v2';
 import { clearDraft } from '@/next/stores/drafts';
@@ -121,5 +121,46 @@ describe('Side chat: words asked about aside', () => {
     cleanup();
     render(<Side conv={OTHER} />);
     expect(field().value).toBe('From the main chat:\n> not mine\n\n');
+  });
+});
+
+/** The side chat with a log given by the test, the field of the binding. */
+const Log = ({ messages }: { messages: ISideMessage[] }) => {
+  const side = useSideChat('m1' as MachineId, CONV);
+  return (
+    <SideChatBody
+      messages={messages}
+      busy={false}
+      field={side.field}
+      onAsk={side.ask}
+      onStop={side.stop}
+      onRetry={side.retry}
+    />
+  );
+};
+const said = (who: 'me' | 'agent') =>
+  document.querySelector(`.hx-sidechat__msg[data-who='${who}']`) as HTMLElement;
+
+describe('Side chat: the answer is drawn as markdown', () => {
+  const md = 'It is **bold** with `npm ci`:\n\n- first\n- second';
+  // The renderer of the chat is loaded on demand; the page has it by the time an answer comes.
+  beforeAll(() => import('@/next/features/chat/markdown'));
+
+  it("draws the agent's bold, inline code and list", async () => {
+    vi.useRealTimers();
+    render(<Log messages={[{ id: 'a1', who: 'agent', text: md, typing: false, cut: null }]} />);
+    const answer = said('agent');
+    await waitFor(() => expect(answer.querySelector('strong')?.textContent).toBe('bold'));
+    expect(answer.querySelector('code')?.textContent).toBe('npm ci');
+    expect([...answer.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['first', 'second']);
+    expect(answer.textContent).not.toContain('**');
+    expect(answer.textContent).not.toContain('`');
+  });
+
+  it('keeps the words of the person as typed', () => {
+    render(<Log messages={[{ id: 'q1', who: 'me', text: md, typing: false, cut: null }]} />);
+    const question = said('me');
+    expect(question.querySelector('strong')).toBeNull();
+    expect(question.textContent).toContain('**bold**');
   });
 });

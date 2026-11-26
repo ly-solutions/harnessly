@@ -55,6 +55,11 @@ const DeviceRow = ({ device, on, onPick }: { device: IDevice; on: boolean; onPic
 const DeviceMenu = ({ state, device, size, zoom, onPick, onSize }: IDeviceMenuProps) => {
   // The shelf of the device on screen is shut too: its row says which one is on.
   const [open, setOpen] = useState<string | null>(null);
+  // «По окну» the page is the window's own size: its zoom is always 100%. The controls say so, and a press
+  // only shakes the lock.
+  const locked = device.id === 'fill';
+  const [shake, setShake] = useState(0);
+  const lockedTip = t('next.site.zoomLocked');
   const apply = (input: HTMLInputElement) => {
     const form = input.closest('.hx-devsize');
     const read = (side: string) =>
@@ -97,21 +102,37 @@ const DeviceMenu = ({ state, device, size, zoom, onPick, onSize }: IDeviceMenuPr
         {side('h', t('next.site.height'))}
         <span />
         <span className="hx-devsize__label">{t('next.site.zoom')}</span>
-        <span className="hx-devscale" role="group" aria-label={t('next.site.zoom')}>
+        <span
+          className="hx-devscale"
+          role="group"
+          aria-label={t('next.site.zoom')}
+          data-locked={locked || undefined}
+          title={locked ? lockedTip : undefined}
+        >
           <button
             type="button"
             aria-label={t('next.site.zoomOut')}
-            aria-disabled={!zoom.canOut}
-            onClick={() => zoom.canOut && zoom.zoomOut()}
+            aria-disabled={locked || !zoom.canOut}
+            onClick={() => (locked ? setShake((n) => n + 1) : zoom.canOut && zoom.zoomOut())}
           >
             <Icon name="minus" size="sm" />
           </button>
-          <span aria-live="polite">{zoom.pct}%</span>
+          <span aria-live="polite" className="hx-devscale__pct">
+            {locked && (
+              <Icon
+                key={shake}
+                name="lock"
+                size="sm"
+                className={shake > 0 ? 'hx-devscale__lock hx-devscale__lock--shake' : 'hx-devscale__lock'}
+              />
+            )}
+            {locked ? 100 : zoom.pct}%
+          </span>
           <button
             type="button"
             aria-label={t('next.site.zoomIn')}
-            aria-disabled={!zoom.canIn}
-            onClick={() => zoom.canIn && zoom.zoomIn()}
+            aria-disabled={locked || !zoom.canIn}
+            onClick={() => (locked ? setShake((n) => n + 1) : zoom.canIn && zoom.zoomIn())}
           >
             <Icon name="plus" size="sm" />
           </button>
@@ -120,13 +141,15 @@ const DeviceMenu = ({ state, device, size, zoom, onPick, onSize }: IDeviceMenuPr
           type="button"
           className="hx-head-btn hx-tipped hx-devsize__fit"
           aria-label={t('next.site.zoomFit')}
-          onClick={zoom.fit}
+          aria-disabled={locked || undefined}
+          onClick={() => (locked ? setShake((n) => n + 1) : zoom.fit())}
         >
           <Icon name="maximize-2" size="sm" />
           <span className="hx-tip" data-align="end">
             {t('next.site.zoomFit')}
           </span>
         </button>
+        {locked && <p className="hx-devsize__hint">{lockedTip}</p>}
       </div>
       <div className="hx-dl-pop__label">{t('next.site.device')}</div>
       {deviceShelves().map(({ shelf, devices }) => {

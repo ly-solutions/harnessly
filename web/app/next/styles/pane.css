@@ -151,8 +151,8 @@ span.hx-tbrowser__wide {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 18px 4px 6px;
-  color: var(--hx-fg-2);
+  padding: 20px 10px 6px;
+  color: var(--hx-fg-3);
   font-size: var(--hx-text-xs);
   font-weight: var(--hx-weight-medium);
   letter-spacing: 0.02em;
@@ -192,8 +192,8 @@ span.hx-tbrowser__wide {
 /* Tiles as the design has them: three across a usual pane, two on a phone. */
 .hx-tl__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(max(132px, calc((100% - 12px) / 3)), 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(max(132px, calc((100% - 8px) / 3)), 1fr));
+  gap: 4px;
 }
 .hx-tl__cell {
   display: contents;
@@ -205,11 +205,11 @@ span.hx-tbrowser__wide {
   gap: 10px;
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: 40px;
   padding: 4px 10px;
-  border: 1px solid var(--hx-border);
+  border: 0;
   border-radius: 10px;
-  background: var(--hx-bg-raised);
+  background: transparent;
   color: var(--hx-fg-1);
   font: inherit;
   font-size: var(--hx-text-sm);
@@ -225,7 +225,6 @@ span.hx-tbrowser__wide {
 .hx-tl__tile:hover,
 .hx-tl__tile[aria-selected='true'] {
   background: var(--hx-bg-hover);
-  border-color: var(--hx-border-strong);
 }
 .hx-tl__tile:active {
   transform: scale(0.985);
@@ -240,22 +239,21 @@ span.hx-tbrowser__wide {
   flex: none;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: var(--hx-bg-active);
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: transparent;
   color: var(--hx-fg-2);
   transition:
     background 160ms ease,
     color 160ms ease;
 }
 .hx-tl__ico .hx-icon {
-  --hx-icon-size: 15px;
+  --hx-icon-size: 16px;
 }
 .hx-tl__tile:hover .hx-tl__ico,
 .hx-tl__tile[aria-selected='true'] .hx-tl__ico {
-  background: var(--hx-accent-soft);
-  color: var(--hx-accent);
+  color: var(--hx-fg-1);
 }
 .hx-tl__text {
   display: flex;
@@ -2198,7 +2196,7 @@ input.hx-tbrowser__url:focus {
 }
 .hx-tl__tile[data-quiet]:hover .hx-tl__ico,
 .hx-tl__tile[data-quiet][aria-selected='true'] .hx-tl__ico {
-  color: var(--hx-accent);
+  color: var(--hx-fg-1);
 }
 .hx-tl__tile[data-used] .hx-tl__ico::after {
   content: '';
@@ -2209,7 +2207,7 @@ input.hx-tbrowser__url:focus {
   height: 6px;
   border-radius: 50%;
   background: var(--hx-accent);
-  box-shadow: 0 0 0 2px var(--hx-bg-raised);
+  box-shadow: 0 0 0 2px var(--tl-surface);
 }
 .hx-tl__tile[data-used]:hover .hx-tl__ico::after,
 .hx-tl__tile[data-used][aria-selected='true'] .hx-tl__ico::after {
@@ -2218,7 +2216,7 @@ input.hx-tbrowser__url:focus {
 
 /* «Сделано в этом чате»: above the tools, a row of pictures and the documents, boards and designs the chat made. It
    opens and closes by height like the screenshots strip. */
-.hx-made {
+.hx-pmade {
   display: grid;
   grid-template-rows: 1fr;
   opacity: 1;
@@ -2227,35 +2225,35 @@ input.hx-tbrowser__url:focus {
     opacity 240ms var(--hx-ease-out);
 }
 /* Mounted collapsed, then opened: the block grows instead of pushing the sections below in one jump. */
-.hx-made[data-state='opening'] {
+.hx-pmade[data-state='opening'] {
   grid-template-rows: 0fr;
   opacity: 0;
 }
-.hx-made[data-state='closing'] {
+.hx-pmade[data-state='closing'] {
   grid-template-rows: 0fr;
   opacity: 0;
   pointer-events: none;
   transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
 }
-.hx-made__clip {
+.hx-pmade__clip {
   min-height: 0;
   overflow: hidden;
 }
-.hx-made__body {
+.hx-pmade__body {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding-top: 4px;
 }
-.hx-made__ttl {
+.hx-pmade__ttl {
   margin: 0;
-  padding: 14px 4px 0;
+  padding: 14px 10px 0;
   color: var(--hx-fg-3);
   font-size: var(--hx-text-xs);
   font-weight: var(--hx-weight-medium);
   letter-spacing: 0.02em;
 }
-.hx-made__list {
+.hx-pmade__list {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -2264,10 +2262,10 @@ input.hx-tbrowser__url:focus {
   list-style: none;
 }
 /* A row has one height whatever it holds (a bar, a title, no host), so a name arriving moves nothing. */
-.hx-made__card {
+.hx-pmade__card {
   height: 40px;
 }
-.hx-made__card {
+.hx-pmade__card {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2286,31 +2284,31 @@ input.hx-tbrowser__url:focus {
     background 160ms ease,
     transform 160ms var(--hx-ease-out);
 }
-.hx-made__card:hover {
+.hx-pmade__card:hover {
   background: var(--hx-bg-hover);
 }
-.hx-made__card:active {
+.hx-pmade__card:active {
   transform: scale(0.985);
   background: var(--hx-bg-active);
 }
-.hx-made__card:focus-visible,
-.hx-made__more:focus-visible {
+.hx-pmade__card:focus-visible,
+.hx-pmade__more:focus-visible {
   outline: 2px solid var(--hx-accent);
   outline-offset: -2px;
 }
-.hx-made__name-sk {
+.hx-pmade__name-sk {
   flex: 1;
   max-width: 55%;
   height: 14px;
 }
-.hx-made__name {
+.hx-pmade__name {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hx-made__about {
+.hx-pmade__about {
   flex: 0 1 38%;
   min-width: 0;
   overflow: hidden;
@@ -2320,19 +2318,19 @@ input.hx-tbrowser__url:focus {
   color: var(--hx-fg-3);
   font-size: var(--hx-text-xs);
 }
-.hx-made__item {
+.hx-pmade__item {
   display: flex;
   flex-direction: column;
 }
-.hx-made__row {
+.hx-pmade__row {
   display: flex;
   align-items: center;
   gap: 2px;
 }
-.hx-made__row .hx-made__card {
+.hx-pmade__row .hx-pmade__card {
   flex: 1;
 }
-.hx-made__toggle {
+.hx-pmade__toggle {
   flex: none;
   display: grid;
   place-items: center;
@@ -2348,19 +2346,19 @@ input.hx-tbrowser__url:focus {
     color 160ms ease,
     background 160ms ease;
 }
-.hx-made__toggle:hover {
+.hx-pmade__toggle:hover {
   color: var(--hx-fg-1);
   background: var(--hx-bg-hover);
 }
-.hx-made__toggle:focus-visible {
+.hx-pmade__toggle:focus-visible {
   outline: 2px solid var(--hx-accent);
   outline-offset: -2px;
 }
-.hx-made__toggle[aria-expanded='true'] .hx-made__chev {
+.hx-pmade__toggle[aria-expanded='true'] .hx-pmade__chev {
   transform: rotate(180deg);
 }
 /* An epic opens into its tasks by height, and closes the same way. */
-.hx-made__fold {
+.hx-pmade__fold {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
@@ -2368,15 +2366,15 @@ input.hx-tbrowser__url:focus {
     grid-template-rows 240ms var(--hx-ease-out),
     opacity 160ms ease;
 }
-.hx-made__item[data-open='true'] .hx-made__fold {
+.hx-pmade__item[data-open='true'] .hx-pmade__fold {
   grid-template-rows: 1fr;
   opacity: 1;
 }
-.hx-made__fold-in {
+.hx-pmade__fold-in {
   min-height: 0;
   overflow: hidden;
 }
-.hx-made__kids {
+.hx-pmade__kids {
   display: flex;
   flex-direction: column;
   margin: 0 0 4px 22px;
@@ -2384,7 +2382,7 @@ input.hx-tbrowser__url:focus {
   border-left: 1px solid var(--hx-border);
   list-style: none;
 }
-.hx-made__kid {
+.hx-pmade__kid {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2402,34 +2400,34 @@ input.hx-tbrowser__url:focus {
   cursor: pointer;
   transition: background 160ms ease;
 }
-.hx-made__kid:hover {
+.hx-pmade__kid:hover {
   background: var(--hx-bg-hover);
 }
-.hx-made__kid:focus-visible {
+.hx-pmade__kid:focus-visible {
   outline: 2px solid var(--hx-accent);
   outline-offset: -2px;
 }
-.hx-made__kid[data-done='true'] .hx-made__kid-name {
+.hx-pmade__kid[data-done='true'] .hx-pmade__kid-name {
   color: var(--hx-fg-3);
 }
-.hx-made__dot {
+.hx-pmade__dot {
   flex: none;
   color: var(--hx-fg-3);
 }
-.hx-made__key {
+.hx-pmade__key {
   flex: none;
   color: var(--hx-fg-3);
   font-size: var(--hx-text-xs);
   font-variant-numeric: tabular-nums;
 }
-.hx-made__kid-name {
+.hx-pmade__kid-name {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hx-made__more {
+.hx-pmade__more {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2446,21 +2444,21 @@ input.hx-tbrowser__url:focus {
     color 160ms ease,
     background 160ms ease;
 }
-.hx-made__more:hover {
+.hx-pmade__more:hover {
   color: var(--hx-fg-1);
   background: var(--hx-bg-hover);
 }
-.hx-made__chev {
+.hx-pmade__chev {
   transition: transform 200ms var(--hx-ease-out);
 }
-.hx-made__more[aria-expanded='true'] .hx-made__chev {
+.hx-pmade__more[aria-expanded='true'] .hx-pmade__chev {
   transform: rotate(180deg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .hx-made {
+  .hx-pmade {
     transition: none;
   }
-  .hx-made__fold {
+  .hx-pmade__fold {
     transition: none;
   }
 }

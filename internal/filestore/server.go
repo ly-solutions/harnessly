@@ -1,6 +1,7 @@
 package filestore
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -234,6 +235,9 @@ func (s *Server) room(h func(http.ResponseWriter, *http.Request, caller)) http.H
 			http.Error(w, "the store takes no requests", http.StatusUnauthorized)
 			return
 		}
+		if acceptsGzip(r) {
+			w.Header().Set("Accept-Encoding", "gzip")
+		}
 		acc, err := s.authorize(r, coll)
 		switch {
 		case errors.Is(err, ErrUnauthorized):
@@ -319,12 +323,20 @@ func (s *Server) getBlob(w http.ResponseWriter, r *http.Request, c caller) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	// A hash names the same bytes forever.
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
-	w.Header().Set("ETag", `"`+sha+`"`)
-	_, _ = io.Copy(w, f)
+	sendBlob(w, r, sha, f)
 }
 
 func (s *Server) putBlob(w http.ResponseWriter, r *http.Request, c caller) {
-	err := c.store.PutBlob(r.Context(), r.PathValue("sha"), http.MaxBytesReader(w, r.Body, MaxFileSize+1024))
+	body, err := blobBody(w, r, MaxFileSize+1024)
+	if err != nil {
+		http.Error(w, "not a gzip body", http.StatusBadRequest)
+		return
+	}
+	err = c.store.PutBlob(r.Context(), r.PathValue("sha"), body)
+	if errors.Is(err, gzip.ErrChecksum) || errors.Is(err, gzip.ErrHeader) {
+		http.Error(w, "not a gzip body", http.StatusBadRequest)
+		return
+	}
 	if errors.Is(err, ErrBadRequest) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

@@ -43,7 +43,8 @@ export interface IPickInput {
 export const pickDesignConv = ({ arrived, bound, list, answered }: IPickInput): TDesignConv => {
   const id = arrived ?? bound?.id ?? null;
   if (id === null) return { k: DESIGN_CONV.none };
-  const fresh = arrived === null && bound?.fresh === true;
+  // A chat made a moment ago is not gone while the list lacks it, also when the address already names it.
+  const fresh = bound?.fresh === true && bound.id === id;
   const gone = answered && list !== null && !fresh && !list.some((c) => c.id === id);
   if (!gone) return { k: DESIGN_CONV.conv, id };
   // A chat the address names explicitly is not swapped for a blank composer: it may be on another machine.

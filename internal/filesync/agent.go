@@ -83,6 +83,9 @@ type Agent struct {
 	scanKnown map[string]known
 	scanSeen  map[string]bool
 
+	// fetched are the contents downloaded ahead of their apply: blob sha → file in tmp (parallel.go). Under mu.
+	fetched map[string]string
+
 	mu    sync.Mutex // one file operation at a time: a download and a scan of the same path must not interleave
 	users map[uint32]string
 	now   func() time.Time
@@ -336,25 +339,35 @@ func (a *Agent) sendBatch(ctx context.Context, batch []*outgoing) {
 			}
 		}
 	}
-	for _, o := range batch {
+	// Groups small enough that a refusal learnt from one commit spares the contents of the groups after it.
+	for len(batch) > 0 {
+		group := batch[:min(len(batch), max(1, 2*transferWorkers))]
+		batch = batch[len(group):]
 		if ctx.Err() != nil {
 			return
 		}
-		var err error
-		switch {
-		case a.groupRefused(o.rel):
-		case missing == nil:
-			err = a.upload(ctx, o.sum, o.blob)
-		case missing[o.sum]:
-			if err = a.hub.PutBlob(ctx, o.sum, o.blob); err == nil {
-				delete(missing, o.sum)
+		var failed map[string]error
+		if missing != nil {
+			failed = a.uploadGroup(ctx, group, missing)
+		}
+		for _, o := range group {
+			if ctx.Err() != nil {
+				return
 			}
-		}
-		if err == nil {
-			err = a.send(ctx, o, 0)
-		}
-		if err != nil {
-			a.log.Warn("scan", "path", o.rel, "err", err)
+			var err error
+			switch {
+			case a.groupRefused(o.rel):
+			case missing == nil:
+				err = a.upload(ctx, o.sum, o.blob)
+			default:
+				err = failed[o.sum]
+			}
+			if err == nil {
+				err = a.send(ctx, o, 0)
+			}
+			if err != nil {
+				a.log.Warn("scan", "path", o.rel, "err", err)
+			}
 		}
 	}
 }
@@ -499,14 +512,18 @@ func (a *Agent) fetch(ctx context.Context, e filestore.Entry) ([]byte, error) {
 	if canon, ok := a.localCopy(e); ok {
 		return canon, nil
 	}
-	var buf bytes.Buffer
-	if err := a.hub.GetBlob(ctx, e.Sha, &limitWriter{w: &buf, n: filestore.MaxFileSize + 1024}); err != nil {
-		return nil, err
+	blob, ok := a.ahead(e.Sha)
+	if !ok {
+		var buf bytes.Buffer
+		if err := a.hub.GetBlob(ctx, e.Sha, &limitWriter{w: &buf, n: filestore.MaxFileSize + 1024}); err != nil {
+			return nil, err
+		}
+		if sha(buf.Bytes()) != e.Sha {
+			return nil, fmt.Errorf("download of %s does not hash to %s", e.Path, e.Sha)
+		}
+		blob = buf.Bytes()
 	}
-	if sha(buf.Bytes()) != e.Sha {
-		return nil, fmt.Errorf("download of %s does not hash to %s", e.Path, e.Sha)
-	}
-	canon, err := a.codec.Open(e.Path, buf.Bytes())
+	canon, err := a.codec.Open(e.Path, blob)
 	if err != nil {
 		return nil, err
 	}
@@ -977,15 +994,17 @@ func (a *Agent) Pull(ctx context.Context, wait time.Duration) (bool, error) {
 	} else if was != ch.Scope {
 		return true, a.rescope(ctx, was, ch.Scope)
 	}
-	for _, e := range ch.Entries {
-		if err := a.Apply(ctx, e); err != nil {
+	if err := a.applyAll(ctx, ch.Entries, func(e filestore.Entry, err error) error {
+		if err != nil {
 			// Keep the cursor before this entry: the next pull tries it again.
 			a.log.Warn("apply", "path", e.Path, "rev", e.Rev, "err", err)
 			if e.Rev-1 > since {
 				_ = a.state.setCursor(e.Rev - 1)
 			}
-			return false, err
 		}
+		return err
+	}); err != nil {
+		return false, err
 	}
 	return ch.More, a.state.setCursor(ch.Rev)
 }
@@ -1010,12 +1029,13 @@ func (a *Agent) rescope(ctx context.Context, was, now string) error {
 			// It moved again while it was read: the next pull starts over.
 			return nil
 		}
-		for _, e := range ch.Entries {
+		_ = a.applyAll(ctx, ch.Entries, func(e filestore.Entry, err error) error {
 			seen[e.Path] = true
-			if err := a.Apply(ctx, e); err != nil {
+			if err != nil {
 				a.log.Warn("apply", "path", e.Path, "rev", e.Rev, "err", err)
 			}
-		}
+			return nil
+		})
 		if !ch.More || ch.Rev <= since {
 			since = ch.Rev
 			break

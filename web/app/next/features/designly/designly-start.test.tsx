@@ -155,4 +155,17 @@ describe('the one field of Designly’s start', () => {
     expect(onCreate).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(input());
   });
+
+  it('shows the button busy while the project is made and sends nothing twice', async () => {
+    let made: () => void = () => undefined;
+    const onCreate = vi.fn(() => new Promise<void>((done) => (made = done)));
+    render(<Home onCreate={onCreate} />);
+    fireEvent.click(send());
+    await waitFor(() => expect(send().getAttribute('aria-busy')).toBe('true'));
+    fireEvent.click(send());
+    fireEvent.keyDown(input() as Element, { key: 'Enter' });
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    made();
+    await waitFor(() => expect(send().getAttribute('aria-busy')).toBeNull());
+  });
 });

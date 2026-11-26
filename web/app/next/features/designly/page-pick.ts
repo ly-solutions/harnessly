@@ -32,17 +32,27 @@ export const rowAfter = (key: string, at: number, count: number): number => {
 };
 
 /**
- * The two parts of the board switcher: the boards of this chat (the ones the agent wrote, the newest first,
- * then the ones opened here) and every other board, in the project's order.
+ * The two parts of the board switcher: the boards of this chat (the ones its agent wrote, the newest first,
+ * and the one on screen) and every other board, in the project's order.
  */
 export const boardGroups = (
   pages: readonly ISitePage[],
   changed: ReadonlySet<string>,
-  opened: readonly string[],
-): { chat: ISitePage[]; rest: ISitePage[] } => {
-  const order = [...new Set([...[...changed].reverse(), ...opened])];
+  current: string | null,
+): { chat: ISitePage[]; rest: ISitePage[]; openOnly: string | null } => {
+  // Only the boards the chat wrote, the newest first; the one on screen joins them (marked «открыта») when it is not
+  // among them. A chat that wrote none has no section: what was merely opened is not the chat's.
   const byPath = new Map(pages.map((p) => [p.path, p]));
-  const chat = order.map((path) => byPath.get(path)).filter((p): p is ISitePage => p !== undefined);
+  const chat = [...changed]
+    .reverse()
+    .map((path) => byPath.get(path))
+    .filter((p): p is ISitePage => p !== undefined);
+  let openOnly: string | null = null;
+  const here = current === null ? undefined : byPath.get(current);
+  if (chat.length > 0 && here && !changed.has(here.path)) {
+    chat.push(here);
+    openOnly = here.path;
+  }
   const inChat = new Set(chat.map((p) => p.path));
-  return { chat, rest: pages.filter((p) => !inChat.has(p.path)) };
+  return { chat, rest: pages.filter((p) => !inChat.has(p.path)), openOnly };
 };

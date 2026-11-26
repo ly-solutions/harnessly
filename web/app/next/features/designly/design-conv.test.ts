@@ -39,6 +39,11 @@ describe('pickDesignConv', () => {
     expect(pickDesignConv({ arrived: null, bound, list, answered: true })).toEqual(conv('tab-made'));
   });
 
+  it('keeps a chat made a moment ago when the address already names it and the list lacks it', () => {
+    const bound = { id: 'tab-made', fresh: true };
+    expect(pickDesignConv({ arrived: 'tab-made', bound, list, answered: true })).toEqual(conv('tab-made'));
+  });
+
   it('lets go of a chat only the machine itself says is gone', () => {
     const bound = { id: 'tab-gone', fresh: false };
     expect(pickDesignConv({ arrived: null, bound, list, answered: false })).toEqual(conv('tab-gone'));

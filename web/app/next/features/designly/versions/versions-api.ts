@@ -81,6 +81,8 @@ export interface IProjectPoint {
   agent: boolean;
   subject: string;
   name?: string;
+  /** Nobody was editing when it came: a copy from another machine, a sync — a point, not somebody's edit. */
+  auto?: boolean;
 }
 
 export interface INamedVersion {
@@ -95,6 +97,8 @@ export interface IProjectHistory {
   points: IProjectPoint[];
   named: INamedVersion[];
   unsaved: boolean;
+  /** When the project was made (its meta/), in ms; absent when it does not say. */
+  createdAt?: number;
 }
 
 export interface IProjectChange {

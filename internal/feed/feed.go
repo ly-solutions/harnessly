@@ -548,6 +548,12 @@ func (f *Feed) OpenTurn() string {
 	return f.b.openID()
 }
 
+// Late: the runtime ended a turn ahead of its transcript (the stop hook came before the agent's last lines, its answer
+// among them), and the transcript has not ended it yet.
+func (f *Feed) Late() bool {
+	return f.rel == nil && f.b != nil && f.b.late != nil
+}
+
 // Turn is a turn's record by its id.
 func (f *Feed) Turn(id string) (wire.Turn, bool) {
 	f.ensure()

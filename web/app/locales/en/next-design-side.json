@@ -65,5 +65,24 @@
   "next.ds.pages.search": "Find a page",
   "next.ds.pages.none": "Nothing found",
   "next.ds.pages.changed": "Changed by the agent of this chat",
-  "next.ds.versions.now": "Now"
+  "next.ds.versions.now": "Now",
+  "next.ds.pages.count": {
+    "one": "{n} page",
+    "other": "{n} pages"
+  },
+  "next.ds.pages.found": "{n} of {all}",
+  "next.ds.pages.new": "New page",
+  "next.ds.pages.newTitle": "New page",
+  "next.ds.pages.more": "Page actions",
+  "next.ds.pages.open": "Open",
+  "next.ds.pages.openTab": "Open in a new tab",
+  "next.ds.pages.rename": "Rename",
+  "next.ds.pages.duplicate": "Duplicate as a variant",
+  "next.ds.pages.remove": "Delete",
+  "next.ds.pages.removeAsk": "Delete «{name}»?",
+  "next.ds.pages.removeYes": "Delete",
+  "next.ds.pages.cancel": "Cancel",
+  "next.ds.pages.failed": "Did not work: {error}",
+  "next.ds.pages.current": "open now",
+  "next.ds.overview.owner": "Owner"
 }

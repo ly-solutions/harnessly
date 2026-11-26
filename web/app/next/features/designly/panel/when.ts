@@ -1,5 +1,5 @@
 // A moment as the design's panel says it: «сегодня, 14:20», «вчера, 18:02», else the date.
-import { t } from '@/next/i18n';
+import { locale, t } from '@/next/i18n';
 
 const DAY_MS = 86_400_000;
 
@@ -8,12 +8,12 @@ const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(
 export const whenOf = (at: number | string, now = Date.now()): string => {
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return '';
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const time = d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
   const days = Math.round((dayStart(new Date(now)) - dayStart(d)) / DAY_MS);
   if (days === 0) return t('next.ds.today', { time });
   if (days === 1) return t('next.ds.yesterday', { time });
   const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(locale(), {
     day: 'numeric',
     month: 'long',
     ...(sameYear ? {} : { year: 'numeric' }),
@@ -46,4 +46,31 @@ export const colorOf = (name: string): string => {
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
+};
+
+/**
+ * Who made a point of the history, as a person reads it. An editor line is one of: a person's edit through
+ * the hub («<address> · hub»), named by their name where it is known, else the address before @; an edit of the
+ * runtime holding the project («<unix user> · <machine>»), which is its owner's; an agent's («<unix user> · чат «…»
+ * (<runtime>)»), «агент · <owner>». Several editors are joined.
+ */
+export const whoOf = (
+  who: string,
+  agent: boolean,
+  owner: string | null,
+  nameOf?: (email: string) => string | null,
+): string => {
+  const agentWord = t('next.ds.overview.agent');
+  if (agent) return owner ? `${agentWord} · ${owner}` : agentWord;
+  const names = who
+    .split(',')
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .map((w) => {
+      const head = w.split(' · ')[0];
+      if (head.includes('@')) return nameOf?.(head.toLowerCase()) || head.split('@')[0];
+      if (w.includes(' · ')) return owner || head;
+      return w;
+    });
+  return [...new Set(names)].join(', ');
 };

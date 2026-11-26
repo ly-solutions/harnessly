@@ -19,7 +19,14 @@ import { isShareable } from '@/next/features/filedoc/api';
 import { FileShareButton } from '@/next/features/filedoc/file-share';
 import ToolPane, { TOOLS_TAB, type IPaneTab } from '@/next/features/pane/tool-pane';
 import ToolsLauncher, { type ITool, type IToolGroup } from '@/next/features/pane/tools-launcher';
-import { DesignToolsContext } from '@/next/features/designly/panel/design-side';
+import {
+  LAYOUT_TAB,
+  clearLayoutAsk,
+  setLayoutFronted,
+  setLayoutSlot,
+  setPaneShows,
+  useLayoutEntry,
+} from '@/next/features/designly/panel/layout-tab';
 import MadeBlock from '@/next/features/pane/made-block';
 import { ConsentAsks } from '@/next/features/app-consent/consent-ask';
 import { heldTools, quietTools, toolOfRequest } from '@/next/features/pane/tools-order';
@@ -698,8 +705,32 @@ const PaneBody = (props: IPaneBodyProps) => {
     pinnedShown.current = pinned.document;
     if (active === '' || active === TOOLS_TAB) setActive(PINNED_APP_TAB);
   }, [pinned, active, setActive]);
+  // «Макет» of the design open beside the chat: a tab next to the tools while the design offers it; its
+  // content is the design's own, drawn into the place this tab gives.
+  const layout = useLayoutEntry(conv.id);
+  const onLayout = layout !== null && !legacyTab && !tab && active === LAYOUT_TAB;
+  const layoutAsk = layout?.ask ?? null;
+  // While a design is shown beside the chat the panel opens on «Макет», once for each showing: a tab the person picks
+  // after that stands, through any redraw and any closing and opening of the panel.
+  const layoutFresh = layout !== null && !layout.fronted;
+  useEffect(() => {
+    if (!layoutFresh) return;
+    setLayoutFronted(conv.id);
+    if (active === '' || active === TOOLS_TAB) setActive(LAYOUT_TAB);
+  }, [layoutFresh, active, conv.id, setActive]);
+  useEffect(() => {
+    if (!layoutAsk) return;
+    clearLayoutAsk(conv.id);
+    setActive(layoutAsk.tab === 'layout' ? LAYOUT_TAB : TOOLS_TAB);
+  }, [layoutAsk, conv.id, setActive]);
   // A kept Legacy tab in front waits for Legacy's pane to come, rather than the tools showing for a moment.
-  const launcher = !legacyTab && !tab && !onPinned && !(isLegacyTab(active) && !legacy.on);
+  const launcher = !legacyTab && !tab && !onPinned && !onLayout && !(isLegacyTab(active) && !legacy.on);
+  const shows = onLayout ? 'layout' : launcher ? 'tools' : 'other';
+  const offered = layout !== null;
+  useEffect(() => {
+    if (offered) setPaneShows(conv.id, shows);
+  }, [conv.id, shows, offered]);
+  useEffect(() => () => setPaneShows(conv.id, 'shut'), [conv.id]);
 
   const made = useChatMade(conv, launcher);
 
@@ -1109,6 +1140,9 @@ const PaneBody = (props: IPaneBodyProps) => {
               },
             ]
           : []),
+        ...(layout
+          ? [{ id: LAYOUT_TAB, icon: 'presentation', name: t('next.ds.layout'), pinned: true }]
+          : []),
         ...tabs.map((x) => ({
           ...tabInfo(
             x,
@@ -1122,7 +1156,7 @@ const PaneBody = (props: IPaneBodyProps) => {
         })),
         ...legacy.tabs.map((x) => ({ ...x, from: liftedFromLegacy(conv.id, x.kind, x.target) ?? undefined })),
       ]}
-      tab={legacyTab?.id ?? tab?.id ?? (onPinned ? PINNED_APP_TAB : TOOLS_TAB)}
+      tab={legacyTab?.id ?? tab?.id ?? (onLayout ? LAYOUT_TAB : onPinned ? PINNED_APP_TAB : TOOLS_TAB)}
       ownBar={tab?.kind === 'browser' || tab?.kind === 'agent-browser' || tab?.kind === 'designly'}
       maxed={props.maxed}
       onPick={(id) => {
@@ -1151,6 +1185,15 @@ const PaneBody = (props: IPaneBodyProps) => {
       {tab?.kind === 'task' && <ChatTaskTab key={tab.id} target={tab.target} onOpen={props.onOpenTask} />}
       {onPinned && <PinnedAppTab machine={conv.machineId} conversation={conv.id} pinned={pinned} />}
       {launcher && launcherNode}
+      {onLayout && (
+        <div
+          className="hx-ds-pane"
+          ref={(el) => {
+            setLayoutSlot(conv.id, el);
+            return () => setLayoutSlot(conv.id, null);
+          }}
+        />
+      )}
       {tab?.kind === 'side' && (
         <SideChat
           messages={side.messages}
@@ -1169,19 +1212,17 @@ const PaneBody = (props: IPaneBodyProps) => {
         <MachineTab key={tab.id} machineId={conv.machineId} machineName={machineName} />
       )}
       {tab?.kind === 'designly' && (
-        <DesignToolsContext value={launcherNode}>
-          <DesignlyPane
-            key={tab.id}
-            machine={conv.machineId}
-            conv={conv.id}
-            design={tab.design}
-            page={tab.page ?? null}
-            pageAt={tab.pageAt ?? 0}
-            onOpen={(design) =>
-              setTabs((list) => list.map((x) => (x.id === tab.id ? { ...tab, design, page: null } : x)))
-            }
-          />
-        </DesignToolsContext>
+        <DesignlyPane
+          key={tab.id}
+          machine={conv.machineId}
+          conv={conv.id}
+          design={tab.design}
+          page={tab.page ?? null}
+          pageAt={tab.pageAt ?? 0}
+          onOpen={(design) =>
+            setTabs((list) => list.map((x) => (x.id === tab.id ? { ...tab, design, page: null } : x)))
+          }
+        />
       )}
       {tab?.kind === 'app' && (
         <AppTab

@@ -12,9 +12,13 @@ import {
   type IProjectHistory,
   type IProjectPoint,
 } from '@/next/features/designly/versions/versions-api';
-import { whenOf } from '@/next/features/designly/panel/when';
+import { whenOf, whoOf } from '@/next/features/designly/panel/when';
 
 export interface IVersionsTabProps {
+  /** The project's owner: the person behind this machine's own edits. */
+  owner: string | null;
+  /** A person's name by their address, where it is known. */
+  nameOf?: (email: string) => string | null;
   machine: MachineId;
   id: string;
   origin: string | null;
@@ -27,6 +31,8 @@ export interface IVersionsTabProps {
 }
 
 const VersionsTab = ({
+  owner,
+  nameOf,
   machine,
   id,
   origin,
@@ -107,7 +113,7 @@ const VersionsTab = ({
               <div className="hx-ds-ver__main">
                 <div className="hx-ds-ver__t">{p.name ?? p.subject}</div>
                 <div className="hx-ds__muted">
-                  {whenOf(p.at)} · {p.who}
+                  {whenOf(p.at)} · {whoOf(p.who, p.agent, owner, nameOf)}
                 </div>
               </div>
               {current ? (

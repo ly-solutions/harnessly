@@ -56,9 +56,16 @@ describe('pageFileNote', () => {
 
 describe('the board switcher (HRN-1764)', () => {
   const pages = ['a', 'b', 'c', 'd'].map((path) => ({ path, name: path }));
-  it('puts the boards the agent wrote first, the newest first, then the ones opened here', () => {
-    const { chat, rest } = boardGroups(pages, new Set(['b', 'c']), ['a', 'c', 'gone']);
+  it('puts the boards the agent wrote first, the newest first, and the one on screen after them', () => {
+    const { chat, rest, openOnly } = boardGroups(pages, new Set(['b', 'c', 'gone']), 'a');
     expect(chat.map((p) => p.path)).toEqual(['c', 'b', 'a']);
+    expect(openOnly).toBe('a');
     expect(rest.map((p) => p.path)).toEqual(['d']);
+  });
+  it('has no section of the chat when the chat wrote nothing, whatever is open', () => {
+    const { chat, rest, openOnly } = boardGroups(pages, new Set(), 'a');
+    expect(chat).toEqual([]);
+    expect(openOnly).toBeNull();
+    expect(rest).toHaveLength(4);
   });
 });

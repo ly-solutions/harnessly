@@ -125,7 +125,10 @@ func Open(o Options) (*Link, error) {
 	}
 	hc := o.HTTP
 	if hc == nil {
-		hc = &http.Client{Timeout: 5 * time.Minute}
+		// Contents travel several at a time: over HTTP/1.1 the connections are kept for the next ones.
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		t.MaxIdleConnsPerHost = 16
+		hc = &http.Client{Timeout: 5 * time.Minute, Transport: t}
 	}
 	name := o.Name
 	if name == "" {

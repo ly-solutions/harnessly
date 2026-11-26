@@ -122,3 +122,49 @@ func TestSameStateSeesEveryField(t *testing.T) {
 		t.Fatal("a moved deadline is not seen")
 	}
 }
+
+// The stop hook can come before the agent's answer is on its transcript. The chat is at rest then, but its transcript
+// is read at LookLate until the answer is there: at LookResting the finished turn stood up to 15 s without it.
+func TestTheAnswerAfterTheStopHookIsReadAtOnce(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	r.agentTakes()
+	r.send("m1", "hello there", wire.ModeQueue)
+	r.tick(time.Second)
+	r.hook("prompt-submit")
+	r.idle()
+	r.hook("stop") // ahead of the answer's line
+	c := r.rt.actor(convID).c
+	if got := c.lookEvery(); got != LookLate {
+		t.Fatalf("a turn the hook ended before its answer is read every %v, want %v", got, LookLate)
+	}
+
+	r.say("Готово.")
+	r.turnEnd()
+	r.tick(LookLate)
+	snap := r.snap()
+	last := snap.Turns[len(snap.Turns)-1]
+	if last.AnswerEntryID == nil {
+		t.Fatalf("the answer is not on the turn %v after the hook", LookLate)
+	}
+	if got := c.lookEvery(); got != LookResting {
+		t.Fatalf("once the transcript ended the turn the chat is read every %v, want %v", got, LookResting)
+	}
+}
+
+// A transcript that never ends the turn is read fast only for LateWatch: the chat then rests as any.
+func TestALateTurnIsWatchedForAWhileOnly(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	r.agentTakes()
+	r.send("m1", "hello there", wire.ModeQueue)
+	r.tick(time.Second)
+	r.hook("prompt-submit")
+	r.idle()
+	r.hook("stop")
+	c := r.rt.actor(convID).c
+	r.clock.Sleep(LateWatch)
+	if got := c.lookEvery(); got != LookResting {
+		t.Fatalf("%v after the hook the chat is read every %v, want %v", LateWatch, got, LookResting)
+	}
+}

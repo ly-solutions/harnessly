@@ -40,6 +40,9 @@ type ProjectPoint struct {
 	Subject string `json:"subject"`
 	// Name is the version's name when the person named this point.
 	Name string `json:"name,omitempty"`
+	// Auto: nobody was editing when the change came (no editor line) — a copy from another machine, a sync, a file put
+	// in place by a tool. It is a point of the history, not somebody's edit («Изменён»).
+	Auto bool `json:"auto,omitempty"`
 }
 
 // ProjectVersions is the project's history for the "Версии" panel.
@@ -48,6 +51,9 @@ type ProjectVersions struct {
 	Named  []NamedVersion `json:"named"`
 	// Unsaved: the project has changes the history has not taken yet.
 	Unsaved bool `json:"unsaved"`
+	// CreatedAt is when the project was made, in ms, as its meta/ says (not this machine's first snapshot of it,
+	// which is when the copy came here); 0 when the meta does not say.
+	CreatedAt int64 `json:"createdAt,omitempty"`
 }
 
 func (l *Library) namedFile(project string) (string, error) {
@@ -121,8 +127,11 @@ func (l *Library) ProjectHistory(project string, limit float64) (ProjectVersions
 		names[n.ID] = n.Name
 	}
 	out := ProjectVersions{Points: []ProjectPoint{}, Named: named, Unsaved: h.unsaved}
+	if m := l.ReadModel(project); m != nil {
+		out.CreatedAt = parseCreated(m.Meta.CreatedAt)
+	}
 	for _, e := range h.entries {
-		out.Points = append(out.Points, ProjectPoint{ID: e.ID, At: e.At, Who: WhoOf(e), Agent: isAgentEditor(e.Editors), Subject: e.Subject, Name: names[e.ID]})
+		out.Points = append(out.Points, ProjectPoint{ID: e.ID, At: e.At, Who: WhoOf(e), Agent: isAgentEditor(e.Editors), Subject: e.Subject, Name: names[e.ID], Auto: len(e.Editors) == 0})
 	}
 	sort.SliceStable(out.Named, func(i, j int) bool { return out.Named[i].At > out.Named[j].At })
 	return out, nil

@@ -77,3 +77,28 @@ it.each([false, true])('keeps screenshot selection open with pane open=%s', (pan
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
   window.localStorage.removeItem('hx.widgets.asked');
 });
+
+// the column opened over the chat holds in that room only. Once it has room it follows the room, and when the
+// room goes again (the sidebar opens, the window narrows) it steps aside rather than stand over the feed's text.
+it('steps aside when it loses its room, unless opened in that room', () => {
+  room.pane = false;
+  room.room = false;
+  const { rerender, unmount } = render(<Chat />);
+  const toggle = () => screen.getByRole('button', { name: 'Widgets' });
+  expect(toggle().getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(toggle());
+  expect(toggle().getAttribute('aria-expanded')).toBe('true');
+  room.room = true;
+  rerender(<Chat />);
+  expect(toggle().getAttribute('aria-expanded')).toBe('true');
+  room.room = false;
+  rerender(<Chat />);
+  expect(toggle().getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(toggle());
+  expect(toggle().getAttribute('aria-expanded')).toBe('true');
+  // A page opened without room does not stand over the chat for an ask made before it.
+  unmount();
+  render(<Chat />);
+  expect(toggle().getAttribute('aria-expanded')).toBe('false');
+  window.localStorage.removeItem('hx.widgets.asked');
+});

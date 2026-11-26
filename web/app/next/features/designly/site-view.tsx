@@ -587,8 +587,6 @@ const SiteView = ({
 
   const current = tabs.find((x) => x.id === tab) ?? tabs[0];
   const pagePath = current?.hist[current.hi] ?? null;
-  // The pages opened here, the latest first: the switcher's «В этом чате».
-  const opened = [...new Set(tabs.flatMap((x) => [...x.hist].reverse()))];
   // «Назад» is only for a link of the prototype followed while looking: the pages the links were followed from.
   const [trail, setTrail] = useState<readonly string[]>([]);
   if (!looking && trail.length > 0) setTrail([]);
@@ -1761,7 +1759,6 @@ const SiteView = ({
                   place={PICKER_PLACE.start}
                   boards={{
                     changed: chatBoards ?? NO_BOARDS,
-                    opened,
                     onNew:
                       onNewBoard &&
                       (() => {

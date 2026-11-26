@@ -1,7 +1,7 @@
 // Designly's start (the design's .hx-dl): «Что нарисуем?» with the one field on top, what to make under it, and the
 // library below — the machine's designs as cards with their pictures. A tile switches the kind in place: the field,
 // its text and its files stay, «Настройки» offers what the kind has. Scrolled, the field goes up and the library's row
-// sticks. A card opens the design; a brief sent starts a project and its agent, and its card draws while it works.
+// sticks. A card opens the design; a brief sent starts a project and its agent, and the design opens with that chat.
 import { TOUR_ORDER } from '@/next/features/tour/tracks';
 import { startTour, tourFactGroup } from '@/next/stores/tour';
 import { registerLibraryControl } from '@/next/stores/library-view';
@@ -421,6 +421,8 @@ const Hero = ({
           limits={limits}
           maxText={maxText}
           inputRef={inputRef}
+          sending={sending}
+          sendLabel={sending ? t('next.designly.creating') : undefined}
         />
       </div>
       {isDeck && deck.styled && deck.style && <DeckFound style={deck.style} />}

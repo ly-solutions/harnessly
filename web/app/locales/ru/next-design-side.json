@@ -69,5 +69,26 @@
   "next.ds.pages.search": "Найти страницу",
   "next.ds.pages.none": "Ничего не нашлось",
   "next.ds.pages.changed": "Менял агент в этом чате",
-  "next.ds.versions.now": "Сейчас"
+  "next.ds.versions.now": "Сейчас",
+  "next.ds.pages.count": {
+    "one": "{n} страница",
+    "few": "{n} страницы",
+    "many": "{n} страниц",
+    "other": "{n} страницы"
+  },
+  "next.ds.pages.found": "{n} из {all}",
+  "next.ds.pages.new": "Новая страница",
+  "next.ds.pages.newTitle": "Новая страница",
+  "next.ds.pages.more": "Действия со страницей",
+  "next.ds.pages.open": "Открыть",
+  "next.ds.pages.openTab": "Открыть в новой вкладке",
+  "next.ds.pages.rename": "Переименовать",
+  "next.ds.pages.duplicate": "Дублировать как вариант",
+  "next.ds.pages.remove": "Удалить",
+  "next.ds.pages.removeAsk": "Удалить «{name}»?",
+  "next.ds.pages.removeYes": "Удалить",
+  "next.ds.pages.cancel": "Отмена",
+  "next.ds.pages.failed": "Не получилось: {error}",
+  "next.ds.pages.current": "открыта сейчас",
+  "next.ds.overview.owner": "Владелец"
 }

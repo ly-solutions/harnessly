@@ -207,6 +207,8 @@ export interface IComposerProps {
   ready?: boolean;
   /** What the send button says where it is not a message (a review's «Спросить агента»). */
   sendLabel?: string;
+  /** The host is sending what the field holds (a design being made): the send button spins and nothing goes twice. */
+  sending?: boolean;
 }
 
 /** The recording bar's exit, as long as hx-recbar-out in composer.css. */
@@ -432,7 +434,7 @@ const Composer = (props: IComposerProps) => {
     (props.notes?.length ?? 0) > 0 ||
     (props.noteGroups ?? []).some((group) => group.notes.length > 0) ||
     attachments.some((file) => file.status !== 'error');
-  const canSend = hasContent && !tooLong && !failedFile;
+  const canSend = hasContent && !tooLong && !failedFile && !props.sending;
   const working = mode === 'working';
 
   // What goes out joins the prompts of the field's history.
@@ -894,7 +896,8 @@ const Composer = (props: IComposerProps) => {
                     : (props.sendLabel ?? t('next.composer.send'))
                 }
                 keys={['↵']}
-                disabled={!canSend}
+                busy={props.sending}
+                disabled={!canSend && !props.sending}
                 onClick={() => submit('now')}
               />
             )}

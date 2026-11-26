@@ -36,6 +36,8 @@ type Client struct {
 	http  *http.Client
 	// noBatch: the store has no batch look at the blobs (an older one), so each is asked for on its own.
 	noBatch atomic.Bool
+	// takesGzip: the store said it takes compressed contents (an `Accept-Encoding: gzip` on an answer of its).
+	takesGzip atomic.Bool
 }
 
 // NewClient makes a client of a collection. hc nil is a plain client with a timeout long enough for a long poll.
@@ -50,7 +52,7 @@ func NewClient(base, collection string, token Token, hc *http.Client) *Client {
 func (c *Client) Collection() string { return c.coll }
 
 // do calls an endpoint of the collection: path is relative to it ("/commit"). A 401 asks for a fresh token once.
-func (c *Client) do(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, method, path string, body []byte, headers ...[2]string) (*http.Response, error) {
 	for attempt := 0; ; attempt++ {
 		var rd io.Reader
 		if body != nil {
@@ -67,9 +69,15 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (*htt
 			}
 			req.Header.Set("Authorization", "Bearer "+tok)
 		}
+		for _, h := range headers {
+			req.Header.Set(h[0], h[1])
+		}
 		resp, err := c.http.Do(req)
 		if err != nil {
 			return nil, err
+		}
+		if resp.Header.Get("Accept-Encoding") == "gzip" {
+			c.takesGzip.Store(true)
 		}
 		if resp.StatusCode != http.StatusUnauthorized {
 			return resp, nil
@@ -163,6 +171,22 @@ func (c *Client) missingBatch(ctx context.Context, shas []string, missing map[st
 
 // PutBlob uploads contents under their sha256.
 func (c *Client) PutBlob(ctx context.Context, sha string, data []byte) error {
+	if c.takesGzip.Load() {
+		if packed, ok := filestore.Gzip(data); ok {
+			resp, err := c.do(ctx, http.MethodPut, "/blobs/"+sha, packed, [2]string{"Content-Encoding", "gzip"})
+			if err != nil {
+				return err
+			}
+			resp.Body.Close()
+			switch resp.StatusCode {
+			case http.StatusNoContent:
+				return nil
+			case http.StatusBadRequest, http.StatusUnsupportedMediaType:
+				// An older replica of the store reads the bytes as they come: send them as they are from here on.
+				c.takesGzip.Store(false)
+			}
+		}
+	}
 	resp, err := c.do(ctx, http.MethodPut, "/blobs/"+sha, data)
 	if err != nil {
 		return err

@@ -1,10 +1,18 @@
 // Everything the design's side panel needs, put together once for the design's screen: the tab the toolbar
 // opens, the board's settings taken from the page and kept for everybody, the people's threads and their layer over
 // the page, the history for «Обзор» and «Версии». designly-site.tsx passes what it knows and puts the parts in place.
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { ConvId, MachineId } from '@/next/protocol/v2';
 import type { ITweak, TTweakValue } from '@/next/features/designly/page-bridge';
 import type { IDesignComments, IDesignPanel, TDesignTab } from '@/next/features/designly/design-panel';
+import {
+  askLayout,
+  offerLayout,
+  setLayoutPart,
+  useLayoutEntry,
+  type TLayoutPart,
+} from '@/next/features/designly/panel/layout-tab';
 import type { ITweaksPort } from '@/next/features/designly/site-view';
 import type { IProjectAccess, IGuestLink } from '@/next/features/designly/access/api';
 import { roleLabel } from '@/next/features/designly/access/labels';
@@ -13,14 +21,14 @@ import { useHistory } from '@/next/features/designly/versions/versions-panel';
 import { goTo, ROUTE, routePath } from '@/next/routes/routes';
 import { useMe } from '@/next/stores/me';
 import { t } from '@/next/i18n';
-import DesignSide, { useDesignTools } from '@/next/features/designly/panel/design-side';
+import LayoutBody from '@/next/features/designly/panel/design-side';
 import SettingsTab from '@/next/features/designly/panel/settings-tab';
 import OverviewTab, {
   type IOverviewLink,
   type IOverviewPerson,
 } from '@/next/features/designly/panel/overview-tab';
 import CommentsTab from '@/next/features/designly/panel/comments-tab';
-import PagesTab, { type IPanelPage } from '@/next/features/designly/panel/pages-tab';
+import PagesTab, { type IPageActions, type IPanelPage } from '@/next/features/designly/panel/pages-tab';
 import VersionsTab from '@/next/features/designly/panel/versions-tab';
 import CommentsLayer, {
   CommentsLayerInfo,
@@ -29,6 +37,8 @@ import CommentsLayer, {
 import { SiteCommentsContext, useSiteComments } from '@/next/features/designly/panel/use-site-comments';
 import { useSiteProps } from '@/next/features/designly/panel/use-site-props';
 import { whenOf } from '@/next/features/designly/panel/when';
+import { changeSitePages } from '@/next/features/designly/panel/api';
+import { toast } from '@/next/features/designly/sdk/toast';
 
 export interface IDesignSideOptions {
   machine: MachineId;
@@ -52,6 +62,14 @@ export interface IDesignSideOptions {
   onPage: (path: string) => void;
   onShare?: () => void;
   onRestored: () => void;
+  /** The chat's tools panel beside the design; null where the design itself stands in that panel. */
+  toolPane: { open: boolean; onToggle: () => void } | null;
+  /** The person who made the project, for «Создан» and the edits made on this machine. */
+  owner: string | null;
+  /** The pages were made, renamed or removed: the project is read again. */
+  onPagesChanged?: () => void;
+  /** A page's own address, for «Открыть в новой вкладке». */
+  hrefOf?: (path: string) => string;
 }
 
 const peopleOf = (access: IProjectAccess | null): { people: IOverviewPerson[]; mention: IMentionable[] } => {
@@ -101,11 +119,36 @@ const linksOf = (address: string | null, guests: readonly IGuestLink[]): IOvervi
 };
 
 export const useDesignSide = (o: IDesignSideOptions) => {
-  const [tab, setTab] = useState<TDesignTab | null>(null);
-  const tools = useDesignTools();
+  // «Макет» is a tab of the chat's tools panel: the design offers it while it is open beside the chat.
+  const conv = o.chat;
+  useEffect(() => (conv ? offerLayout(conv) : undefined), [conv]);
+  const entry = useLayoutEntry(conv);
+  const paneOpen = o.toolPane ? o.toolPane.open : entry !== null && entry.shows !== 'shut';
+  const tab: TDesignTab | null =
+    entry === null || !paneOpen
+      ? null
+      : entry.shows === 'layout'
+        ? entry.part
+        : entry.shows === 'tools'
+          ? 'tools'
+          : null;
   const panel: IDesignPanel = {
     tab,
-    open: (next) => setTab((cur) => (cur === next ? null : next)),
+    open: (next) => {
+      if (conv === null) return;
+      // The panel's own button opens and closes it on the tab it had: «Макет» first while the design is shown.
+      if (next === 'tools' && o.toolPane) {
+        o.toolPane.onToggle();
+        return;
+      }
+      if (next === tab) {
+        if (o.toolPane?.open) o.toolPane.onToggle();
+        return;
+      }
+      if (o.toolPane && !o.toolPane.open) o.toolPane.onToggle();
+      if (next === 'tools') askLayout(conv, 'tools');
+      else askLayout(conv, 'layout', next);
+    },
   };
 
   // The board's settings: the page's offer, the way to send it a change.
@@ -129,7 +172,7 @@ export const useDesignSide = (o: IDesignSideOptions) => {
     on: comments.placing,
     toggle: () => comments.setPlacing(!comments.placing),
   };
-  const history = useHistory(o.machine, o.id, tab !== null && tab !== 'tools');
+  const history = useHistory(o.machine, o.id, entry?.slot != null);
   const guests = useGuestLinks(o.access?.canManage ? o.id : null);
   const me = useMe();
   const myName = me.k === 'ready' ? (me.me.name ?? me.me.email ?? '') : '';
@@ -139,10 +182,53 @@ export const useDesignSide = (o: IDesignSideOptions) => {
     url.searchParams.set('comment', thread);
     return url.toString();
   };
+  // The owner is the gateway's (who shares the project), not the name a copy of it carries on a machine.
+  const owner =
+    o.access?.ownerName || (o.access?.owner ? o.access.owner.split('@')[0] : '') || o.owner || null;
+  const nameOf = (email: string): string | null => (o.access?.owner?.toLowerCase() === email ? owner : null);
   const openThreads = comments.threads.filter((th) => !th.root.resolved).length;
   const boardName = (path: string) => o.pages.find((p) => p.path === path)?.name ?? path;
 
-  const render = (at: Exclude<TDesignTab, 'tools'>): ReactNode => {
+  // What «Страницы» does with the pages, for whoever may edit: the machine does it, the project is read again.
+  const pageActions: IPageActions | undefined = o.mayEdit
+    ? {
+        create: async () => {
+          const file = await changeSitePages(o.machine, o.id, {
+            action: 'create',
+            title: t('next.ds.pages.newTitle'),
+          });
+          o.onPagesChanged?.();
+          if (file) o.onPage(file);
+        },
+        duplicate: async (page) => {
+          const file = await changeSitePages(o.machine, o.id, { action: 'duplicate', page });
+          o.onPagesChanged?.();
+          if (file) o.onPage(file);
+        },
+        rename: async (page, title) => {
+          await changeSitePages(o.machine, o.id, { action: 'rename', page, title });
+          o.onPagesChanged?.();
+        },
+        remove: async (page) => {
+          if (page === o.board) {
+            const at = o.pages.findIndex((p) => p.path === page);
+            const next = o.pages[at + 1] ?? o.pages[at - 1];
+            if (next) o.onPage(next.path);
+          }
+          await changeSitePages(o.machine, o.id, { action: 'remove', page });
+          o.onPagesChanged?.();
+        },
+        failed: (error) =>
+          toast(
+            t('next.ds.pages.failed', { error: error instanceof Error ? error.message : String(error) }),
+            {
+              tone: 'error',
+            },
+          ),
+      }
+    : undefined;
+
+  const render = (at: TLayoutPart): ReactNode => {
     switch (at) {
       case 'info':
         return (
@@ -151,6 +237,8 @@ export const useDesignSide = (o: IDesignSideOptions) => {
             pages={o.pages.length}
             current={o.board ? boardName(o.board) : null}
             history={history.history}
+            owner={owner}
+            nameOf={nameOf}
             kit={
               o.kit
                 ? {
@@ -188,7 +276,16 @@ export const useDesignSide = (o: IDesignSideOptions) => {
           />
         );
       case 'pages':
-        return <PagesTab pages={o.pages} current={o.board} changed={o.changed} onPick={o.onPage} />;
+        return (
+          <PagesTab
+            pages={o.pages}
+            current={o.board}
+            changed={o.changed}
+            onPick={o.onPage}
+            hrefOf={o.hrefOf}
+            actions={pageActions}
+          />
+        );
       case 'versions':
         return (
           <VersionsTab
@@ -198,6 +295,8 @@ export const useDesignSide = (o: IDesignSideOptions) => {
             page={o.board}
             mayEdit={o.mayEdit}
             history={history.history}
+            owner={owner}
+            nameOf={nameOf}
             error={history.error}
             reload={history.reload}
             onRestored={o.onRestored}
@@ -206,12 +305,11 @@ export const useDesignSide = (o: IDesignSideOptions) => {
     }
   };
 
-  const side = (
-    <DesignSide
-      tab={tab}
-      onTab={setTab}
-      onClose={() => setTab(null)}
-      tools={tools}
+  const part: TLayoutPart = entry?.part ?? 'info';
+  const layoutBody = (
+    <LayoutBody
+      part={part}
+      onPart={(next) => conv && setLayoutPart(conv, next)}
       badges={{ comments: openThreads }}
       render={render}
     />
@@ -222,5 +320,7 @@ export const useDesignSide = (o: IDesignSideOptions) => {
       <CommentsLayerInfo value={layerInfo}>{node}</CommentsLayerInfo>
     </SiteCommentsContext>
   );
-  return { panel, tweaksPort, side, commentsLayer: CommentsLayer, commentMode, wrap };
+  // The content goes into the place the panel gives it, keeping the design's state and contexts.
+  const portal = entry?.slot ? createPortal(wrap(layoutBody), entry.slot) : null;
+  return { panel, tweaksPort, portal, commentsLayer: CommentsLayer, commentMode, wrap };
 };

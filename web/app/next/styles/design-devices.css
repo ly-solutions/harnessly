@@ -1123,7 +1123,57 @@
 }
 .hx-devscale button[aria-disabled='true'] {
   opacity: 0.35;
-  pointer-events: none;
+  cursor: not-allowed;
+}
+.hx-devscale button[aria-disabled='true']:hover {
+  background: none;
+  color: var(--hx-fg-2);
+}
+/* «По окну»: the zoom is held at 100% — quiet, a lock beside the value, a shake when pressed. */
+.hx-devscale[data-locked] {
+  cursor: not-allowed;
+}
+.hx-devscale[data-locked] .hx-devscale__pct {
+  color: var(--hx-fg-3);
+}
+.hx-devscale__pct {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.hx-devscale__lock {
+  width: 12px;
+  height: 12px;
+  color: var(--hx-fg-3);
+}
+.hx-devscale__lock--shake {
+  animation: hx-lock-shake 320ms ease;
+}
+@keyframes hx-lock-shake {
+  20%,
+  60% {
+    transform: translateX(-2px);
+  }
+  40%,
+  80% {
+    transform: translateX(2px);
+  }
+}
+.hx-devsize__fit[aria-disabled='true'] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.hx-devsize__hint {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  color: var(--hx-fg-2);
+  font-size: 11px;
+  line-height: 1.35;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-devscale__lock--shake {
+    animation: none;
+  }
 }
 .hx-devscale span {
   color: var(--hx-fg-1);

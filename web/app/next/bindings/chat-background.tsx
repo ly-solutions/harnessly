@@ -108,19 +108,22 @@ export const useChatBackground = (
   const islandHas = tasks.length > 0 || recap !== null || (shots?.length ?? 0) > 0 || codesMounted;
   const notesHas = dropsMounted || folder.pending;
   const has = islandHas || notesHas;
-  // An open pane leaves no room beside the chat: the column the person had opened steps aside when the pane opens and
-  // comes back as asked when it shuts; the button opens it over the pane again. This runs in render, once per change.
-  const [paneWas, setPaneWas] = useState(pane);
-  const [aside, setAside] = useState(false);
-  if (pane !== paneWas) {
-    setPaneWas(pane);
-    setAside(pane);
+  // The person's ask holds in the room it was made in. When the column loses its room beside the chat (the pane opens,
+  // the sidebar opens, the window narrows), it steps aside instead of standing over the feed's text, and comes back as
+  // asked when the room returns; the button opens it over the chat again. A page that opens without room
+  // starts aside too: what was asked in another room is no ask here. This runs in render, once per change.
+  const roomy = room && !pane;
+  const [roomyWas, setRoomyWas] = useState(roomy);
+  const [aside, setAside] = useState(!roomy);
+  if (roomy !== roomyWas) {
+    setRoomyWas(roomy);
+    setAside(!roomy);
   }
   const override = aside ? null : (asked?.shown ?? null);
   // On its own the column is open when it has room and the pane is shut, and whenever a command waits for a code.
   // A drop does not open it by itself where there is no room beside the chat or the pane is open: the column would stand
   // over the feed's text. There the header's button says it (and a notice still reaches the notification centre).
-  const auto = (room && !pane) || codes.length > 0;
+  const auto = roomy || codes.length > 0;
   const shown = has && (override ?? auto);
   // A chat with nothing for the column takes it away with its slide and fade (data-shown), not from one frame to the next.
   const hasMounted = usePresentFlag(has, SIDE_EXIT_MS).mounted;
@@ -139,7 +142,7 @@ export const useChatBackground = (
   const toggle = () => {
     const next = !open;
     setAside(false);
-    setAsked(next === (has ? auto : room && !pane) ? null : { shown: next });
+    setAsked(next === (has ? auto : roomy) ? null : { shown: next });
   };
 
   const onStop = (task: BackgroundTask) => {

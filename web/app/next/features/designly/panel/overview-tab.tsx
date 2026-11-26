@@ -8,7 +8,7 @@ import type { ConvId } from '@/next/protocol/v2';
 import type { IProjectHistory } from '@/next/features/designly/versions/versions-api';
 import { copyText } from '@/next/features/designly/access/copy-link';
 import { toast } from '@/next/features/designly/sdk/toast';
-import { whenOf } from '@/next/features/designly/panel/when';
+import { whenOf, whoOf } from '@/next/features/designly/panel/when';
 import Avatar from '@/next/features/designly/panel/avatar';
 
 export interface IOverviewPerson {
@@ -29,6 +29,11 @@ export interface IOverviewTabProps {
   /** The page on screen, by its name. */
   current: string | null;
   history: IProjectHistory | null;
+  /** The project's owner (the gateway's, else the project's own record): also the person behind the edits of the
+   *  machine that holds it. */
+  owner: string | null;
+  /** A person's name by their address, where it is known. */
+  nameOf?: (email: string) => string | null;
   /** The design system the project is drawn with; null when none. */
   kit: { name: string; href: string | null; onOpen?: () => void } | null;
   /** The chats that changed the project: started from it, then the others that wrote its files. */
@@ -70,9 +75,10 @@ const copy = (url: string) =>
   );
 
 const OverviewTab = (p: IOverviewTabProps) => {
-  const points = p.history?.points ?? [];
-  const newest = points[0] ?? null;
-  const oldest = points.length > 0 ? points[points.length - 1] : null;
+  // «Изменён» is the newest edit somebody made: a copy or a sync that came with nobody editing is not one.
+  const newest = (p.history?.points ?? []).find((x) => !x.auto) ?? null;
+  // «Создан» is when the project was made, as its meta says — not when the copy came to this machine.
+  const created = p.history?.createdAt ?? null;
   return (
     <div className="hx-ds__pane">
       <div className="hx-ds-ov__t">{p.title}</div>
@@ -80,34 +86,29 @@ const OverviewTab = (p: IOverviewTabProps) => {
         {plural(p.pages, 'next.ds.overview.pages')}
         {p.current !== null && ` · ${t('next.ds.overview.current', { page: p.current })}`}
       </div>
-      {oldest && (
-        <Row label={t('next.ds.overview.created')}>
-          {whenOf(oldest.at)} · {oldest.who}
-        </Row>
-      )}
+      {p.owner && <Row label={t('next.ds.overview.owner')}>{p.owner}</Row>}
+      {created !== null && created > 0 && <Row label={t('next.ds.overview.created')}>{whenOf(created)}</Row>}
       {newest && (
         <Row label={t('next.ds.overview.changed')}>
-          {whenOf(newest.at)} · {newest.agent ? t('next.ds.overview.agent') : newest.who}
+          {whenOf(newest.at)} · {whoOf(newest.who, newest.agent, p.owner, p.nameOf)}
         </Row>
       )}
-      <div className="hx-ds-row">
-        <span className="hx-ds-row__label">{t('next.ds.overview.kit')}</span>
-        {p.kit ? (
-          p.kit.href ? (
+      {p.kit && (
+        <div className="hx-ds-row">
+          <span className="hx-ds-row__label">{t('next.ds.overview.kit')}</span>
+          {p.kit.href ? (
             <a className="hx-ds-link" href={p.kit.href} target="_blank" rel="noreferrer">
-              {p.kit.name}
+              <span>{p.kit.name}</span>
               <Icon name="external-link" size="sm" />
             </a>
           ) : (
             <button type="button" className="hx-ds-link" onClick={p.kit.onOpen}>
-              {p.kit.name}
+              <span>{p.kit.name}</span>
               <Icon name="external-link" size="sm" />
             </button>
-          )
-        ) : (
-          <b className="hx-ds-row__value">{t('next.ds.overview.noKit')}</b>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {p.chats.length > 0 && (
         <>

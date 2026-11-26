@@ -37,8 +37,6 @@ interface IPagePickerProps {
 export interface IPickerBoards {
   /** The boards the agent wrote in this chat: a dot on their rows. */
   changed: ReadonlySet<string>;
-  /** The boards opened here, besides the ones written. */
-  opened: readonly string[];
   /** «Новая доска»; absent where the person may not change the design. */
   onNew?: () => void;
 }
@@ -68,11 +66,11 @@ const PagePicker = ({
 }: IPagePickerProps) => {
   const [query, setQuery] = useState('');
   const matched = pagesFound(pages, query);
-  const groups = boards ? boardGroups(matched, boards.changed, boards.opened) : null;
+  const groups = boards ? boardGroups(matched, boards.changed, path) : null;
   // The rows as the arrows walk them: the chat's boards, then the rest.
   const found = groups ? [...groups.chat, ...groups.rest] : matched;
   const [at, setAt] = useState(() => {
-    const first = boards ? boardGroups(pages, boards.changed, boards.opened) : null;
+    const first = boards ? boardGroups(pages, boards.changed, path) : null;
     const list = first ? [...first.chat, ...first.rest] : pages;
     return Math.max(
       0,
@@ -83,6 +81,14 @@ const PagePicker = ({
   const searchable = boards !== undefined || pages.length > SEARCH_FROM;
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  // A fade at the list's foot while there is more of it below.
+  const list = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  const measure = () => {
+    const el = list.current;
+    if (el) setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+  };
+  useLayoutEffect(measure);
 
   // The room from the list's anchored edge to the window's: it scrolls inside that, never past the window.
   useLayoutEffect(() => {
@@ -159,7 +165,14 @@ const PagePicker = ({
           />
         </label>
       )}
-      <div className="hx-pgpick__list" role="listbox" aria-label={t('next.site.pages')}>
+      <div
+        ref={list}
+        className="hx-pgpick__list"
+        role="listbox"
+        aria-label={t('next.site.pages')}
+        data-more={more || undefined}
+        onScroll={measure}
+      >
         {found.map((p, i) => {
           const note = pageFileNote(p);
           const title =
@@ -181,20 +194,21 @@ const PagePicker = ({
                   className="hx-pgpick__row"
                   aria-selected={p.path === path}
                   data-active={i === row}
+                  title={p.name}
                   onMouseMove={() => i !== row && setAt(i)}
                   onClick={() => onGo(p.path)}
                 >
-                  <span className="hx-pgpick__ic">
-                    <Icon name={boards ? 'app-window' : 'file-text'} size="sm" />
-                  </span>
+                  <Icon name={boards ? 'app-window' : 'file-text'} size="sm" className="hx-pgpick__ic" />
                   <span className="hx-pgpick__text">
                     <span className="hx-pgpick__name">{p.name}</span>
                     {note !== null && !boards && <span className="hx-pgpick__meta">{note}</span>}
                   </span>
+                  {groups?.openOnly === p.path && (
+                    <span className="hx-pgpick__tag">{t('next.site.boardOpen')}</span>
+                  )}
                   {boards?.changed.has(p.path) && (
                     <span className="hx-pgpick__dot" title={t('next.site.boardChanged')} />
                   )}
-                  {boards && p.path === path && <Icon name="check" size="sm" className="hx-pgpick__check" />}
                 </button>
                 {onSave && (
                   <span className="hx-pgpick__acts">

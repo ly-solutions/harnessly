@@ -22,27 +22,27 @@ describe('MadeBlock', () => {
   it('draws nothing before the chat has said, not even a skeleton that would move the tools', () => {
     const { container } = render(<MadeBlock cards={null} onOpen={vi.fn()} />);
     act(() => void vi.advanceTimersByTime(2000));
-    expect(container.querySelector('.hx-made')).toBeNull();
+    expect(container.querySelector('.hx-pmade')).toBeNull();
     expect(container.querySelectorAll('.hx-sk')).toHaveLength(0);
   });
 
   it('comes in collapsed and opens a couple of frames later, so the height grows', () => {
     const { container } = render(<MadeBlock cards={CARDS} onOpen={vi.fn()} />);
-    expect(container.querySelector('.hx-made')?.getAttribute('data-state')).toBe('opening');
+    expect(container.querySelector('.hx-pmade')?.getAttribute('data-state')).toBe('opening');
     act(() => void vi.advanceTimersByTime(100));
-    expect(container.querySelector('.hx-made')?.getAttribute('data-state')).toBe('open');
+    expect(container.querySelector('.hx-pmade')?.getAttribute('data-state')).toBe('open');
   });
 
   it('is not there when nothing was made', () => {
     const { container } = render(<MadeBlock cards={[]} onOpen={vi.fn()} />);
     act(() => void vi.advanceTimersByTime(400));
-    expect(container.querySelector('.hx-made')).toBeNull();
+    expect(container.querySelector('.hx-pmade')).toBeNull();
   });
 
   it('shows the cards in order, and says which card was pressed', () => {
     const onOpen = vi.fn();
     const { container } = render(<MadeBlock cards={CARDS} onOpen={onOpen} />);
-    const names = [...container.querySelectorAll('.hx-made__name')].map((x) => x.textContent);
+    const names = [...container.querySelectorAll('.hx-pmade__name')].map((x) => x.textContent);
     expect(names).toEqual(['Spec', 'Landing']);
     fireEvent.click(screen.getByRole('button', { name: /Landing/ }));
     expect(onOpen).toHaveBeenCalledWith(CARDS[1]);
@@ -55,11 +55,11 @@ describe('MadeBlock', () => {
       title: `Doc ${i}`,
     }));
     const { container } = render(<MadeBlock cards={many} onOpen={vi.fn()} />);
-    expect(container.querySelectorAll('.hx-made__card')).toHaveLength(MADE_VISIBLE);
+    expect(container.querySelectorAll('.hx-pmade__card')).toHaveLength(MADE_VISIBLE);
     fireEvent.click(screen.getByRole('button', { name: /3 more/ }));
-    expect(container.querySelectorAll('.hx-made__card')).toHaveLength(MADE_VISIBLE + 3);
+    expect(container.querySelectorAll('.hx-pmade__card')).toHaveLength(MADE_VISIBLE + 3);
     fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
-    expect(container.querySelectorAll('.hx-made__card')).toHaveLength(MADE_VISIBLE);
+    expect(container.querySelectorAll('.hx-pmade__card')).toHaveLength(MADE_VISIBLE);
   });
 
   it('does not fold for the sake of one row', () => {
@@ -68,27 +68,27 @@ describe('MadeBlock', () => {
       id: `doc:https://d/a/${i}`,
     }));
     const { container } = render(<MadeBlock cards={few} onOpen={vi.fn()} />);
-    expect(container.querySelectorAll('.hx-made__card')).toHaveLength(MADE_VISIBLE + 1);
-    expect(container.querySelector('.hx-made__more')).toBeNull();
+    expect(container.querySelectorAll('.hx-pmade__card')).toHaveLength(MADE_VISIBLE + 1);
+    expect(container.querySelector('.hx-pmade__more')).toBeNull();
   });
 
   it('leaves with an exit when what it shows goes', () => {
     const { container, rerender } = render(<MadeBlock cards={CARDS} onOpen={vi.fn()} />);
     act(() => void vi.advanceTimersByTime(100));
-    expect(container.querySelector('.hx-made')?.getAttribute('data-state')).toBe('open');
+    expect(container.querySelector('.hx-pmade')?.getAttribute('data-state')).toBe('open');
     rerender(<MadeBlock cards={[]} onOpen={vi.fn()} />);
-    expect(container.querySelector('.hx-made')?.getAttribute('data-state')).toBe('closing');
+    expect(container.querySelector('.hx-pmade')?.getAttribute('data-state')).toBe('closing');
     act(() => void vi.advanceTimersByTime(400));
-    expect(container.querySelector('.hx-made')).toBeNull();
+    expect(container.querySelector('.hx-pmade')).toBeNull();
   });
 
   it('stands a bar in for a name that is still being read, and the name once it is', () => {
     const wait: IMadeCard[] = [{ ...CARDS[0], title: 'Document', pending: true }];
     const { container, rerender } = render(<MadeBlock cards={wait} onOpen={vi.fn()} />);
-    expect(container.querySelectorAll('.hx-made__name-sk')).toHaveLength(1);
+    expect(container.querySelectorAll('.hx-pmade__name-sk')).toHaveLength(1);
     expect(screen.queryByText('Document')).toBeNull();
     rerender(<MadeBlock cards={[{ ...wait[0], title: 'Spec', pending: false }]} onOpen={vi.fn()} />);
-    expect(container.querySelectorAll('.hx-made__name-sk')).toHaveLength(0);
+    expect(container.querySelectorAll('.hx-pmade__name-sk')).toHaveLength(0);
     expect(screen.getByText('Spec')).toBeTruthy();
   });
 
@@ -106,12 +106,12 @@ describe('MadeBlock', () => {
       ],
     };
     const { container } = render(<MadeBlock cards={[epic]} onOpen={onOpen} />);
-    const toggle = container.querySelector('.hx-made__toggle') as HTMLElement;
+    const toggle = container.querySelector('.hx-pmade__toggle') as HTMLElement;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(container.querySelector('.hx-made__fold')?.hasAttribute('inert')).toBe(true);
+    expect(container.querySelector('.hx-pmade__fold')?.hasAttribute('inert')).toBe(true);
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelector('.hx-made__fold')?.hasAttribute('inert')).toBe(false);
+    expect(container.querySelector('.hx-pmade__fold')?.hasAttribute('inert')).toBe(false);
     fireEvent.click(screen.getByText('Second'));
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 'task:https://t/issue/E-3' }));
   });

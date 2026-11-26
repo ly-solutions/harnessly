@@ -157,16 +157,16 @@
   align-items: center;
   gap: 8px;
   flex: none;
-  height: 34px;
+  height: 32px;
   padding: 0 10px;
+  border: 1px solid var(--hx-border);
   border-radius: var(--hx-radius-sm);
-  background: var(--hx-bg-hover);
-  color: var(--hx-fg-3);
-  transition: background 200ms ease;
+  background: var(--hx-bg-app);
+  color: var(--hx-fg-2);
+  transition: border-color 160ms ease;
 }
 .hx-pgpick__search:focus-within {
-  background: var(--hx-bg-active);
-  color: var(--hx-fg-2);
+  border-color: var(--hx-border-strong);
 }
 .hx-pgpick__search input {
   flex: 1;
@@ -191,6 +191,10 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
+/* More of the list below: its foot fades, so the cut reads as «прокрутите». */
+.hx-pgpick__list[data-more] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
 .hx-pgpick__item {
   position: relative;
   flex: none;
@@ -198,71 +202,63 @@
 .hx-pgpick__row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 38px;
-  padding: 7px 10px 7px 8px;
+  height: 32px;
+  padding: 0 10px 0 8px;
   border: 0;
-  border-radius: var(--hx-radius-sm);
+  border-radius: 6px;
   background: none;
   color: var(--hx-fg-1);
   font: inherit;
   font-size: var(--hx-text-sm);
   text-align: left;
   cursor: pointer;
-  transition: background 160ms ease;
-}
-.hx-pgpick__row[aria-selected='true'] {
-  background: var(--hx-accent-soft);
+  transition: background 120ms ease;
 }
 .hx-pgpick__row[data-active='true'] {
   background: var(--hx-bg-hover);
 }
-.hx-pgpick__row[aria-selected='true'][data-active='true'] {
-  background: var(--hx-accent-soft);
+.hx-pgpick__row[aria-selected='true'] {
+  background: var(--hx-bg-active);
+}
+.hx-pgpick__row:focus-visible {
+  outline: 2px solid var(--hx-focus);
+  outline-offset: -2px;
 }
 .hx-pgpick__ic {
-  display: grid;
-  place-items: center;
   flex: none;
-  align-self: flex-start;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: var(--hx-bg-hover);
+  width: 14px;
+  height: 14px;
   color: var(--hx-fg-3);
-}
-.hx-pgpick__row[aria-selected='true'] .hx-pgpick__ic {
-  background: var(--hx-accent-soft);
-  color: var(--hx-accent);
 }
 .hx-pgpick__text {
   display: flex;
   flex: 1;
-  flex-direction: column;
-  justify-content: center;
-  gap: 1px;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
-  min-height: 24px;
 }
 .hx-pgpick__name {
-  display: -webkit-box;
+  min-width: 0;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow-wrap: anywhere;
-  line-height: 1.35;
-  font-weight: var(--hx-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .hx-pgpick__meta {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--hx-fg-3);
   font-size: var(--hx-text-xs);
-  line-height: 1.35;
 }
-/* The page's actions: over the row's end, behind a fade of the panel, seen only on hover or keyboard focus. */
+/* The row keeps room for its actions while they show, so they never stand over the name. */
+.hx-pgpick__item:has(> .hx-pgpick__acts):hover > .hx-pgpick__row,
+.hx-pgpick__item:has(> .hx-pgpick__acts:focus-within) > .hx-pgpick__row {
+  padding-right: 40px;
+}
 .hx-pgpick__acts {
   position: absolute;
   top: 0;
@@ -271,21 +267,10 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 4px 0 28px;
-  border-radius: 0 var(--hx-radius-sm) var(--hx-radius-sm) 0;
-  /* The row's own tint over the panel, so the fade meets the row and not a patch of another shade. */
-  background:
-    linear-gradient(to right, transparent, var(--hx-pgpick-tint, transparent) 24px),
-    linear-gradient(to right, transparent, var(--hx-bg-raised) 24px);
+  padding: 0 3px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 160ms ease;
-}
-.hx-pgpick__item[data-active='true'] {
-  --hx-pgpick-tint: var(--hx-bg-hover);
-}
-.hx-pgpick__item:has(> [aria-selected='true']) {
-  --hx-pgpick-tint: var(--hx-accent-soft);
+  transition: opacity 120ms ease;
 }
 .hx-pgpick__item:hover > .hx-pgpick__acts,
 .hx-pgpick__acts:focus-within {
@@ -293,8 +278,8 @@
   pointer-events: auto;
 }
 .hx-pgpick__dl {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
 }
 .hx-pgpick__dl:hover {
   background: var(--hx-bg-active);
@@ -304,6 +289,9 @@
   .hx-pgpick__item[data-active='true'] > .hx-pgpick__acts {
     opacity: 1;
     pointer-events: auto;
+  }
+  .hx-pgpick__item[data-active='true']:has(> .hx-pgpick__acts) > .hx-pgpick__row {
+    padding-right: 40px;
   }
 }
 .hx-pgpick__empty {
@@ -322,10 +310,10 @@
     padding-top: 22px;
   }
   .hx-pgpick__row {
-    min-height: 48px;
+    height: 40px;
   }
   .hx-pgpick__search {
-    height: 42px;
+    height: 38px;
   }
 }
 

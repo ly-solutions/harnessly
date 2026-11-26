@@ -47,6 +47,11 @@ const (
 	// first message wait up to a second more for nothing. A look is two tmux calls (pane info, capture) off the actor and
 	// never two at once (observe), and only the few conversations that are starting look this often.
 	LookStarting = 250 * time.Millisecond
+	// LookLate is how often a chat whose turn its stop hook ended before the transcript had the agent's last lines is
+	// read: the answer is written a moment after the hook, and the pace of a chat at rest (LookResting) kept it off the
+	// page for up to 15 s. LateWatch is how long after the hook it is read that often.
+	LookLate  = 250 * time.Millisecond
+	LateWatch = 30 * time.Second
 	// BootSettle is how long a freshly started agent's screen must stand unchanged, its input box drawn, before it
 	// counts as ready for the first message. Kept at 1.5 s on purpose: Claude 2.1.317 on a loaded machine was
 	// seen not showing keys typed up to two seconds after its box was drawn, and a lost first Enter costs more (a retry
@@ -95,6 +100,9 @@ func (c *conv) lookEvery() time.Duration {
 	case wire.StateStarting:
 		return LookStarting
 	case wire.StateIdle, wire.StateReady:
+		if c.lateUntil.After(c.d.Clock.Now()) && c.fd != nil && c.fd.Late() {
+			return LookLate
+		}
 		if c.resting() {
 			return LookResting
 		}
@@ -136,6 +144,8 @@ type conv struct {
 	// promptHash is the prompt the prompt-submit hook being applied names, "" outside one or when it named none.
 	promptHash string
 	fd         *feed.Feed
+	// lateUntil is how long the transcript is read at LookLate for the last lines of a turn its hook ended (endTurn).
+	lateUntil time.Time
 	// transcriptFindAt bounds searches for an agent session while its recorded transcript path is gone.
 	transcriptFindAt time.Time
 	// fdUses and fdUsedAt are the feed's reads as last seen and when they last grew (releaseQuietFeed).
@@ -687,6 +697,9 @@ func (c *conv) endTurn(id string, st wire.TurnStatus, failure *wire.TurnFailure,
 	}
 	if id != "" {
 		if t, ok := c.fd.EndTurn(id, st, failure, at); ok {
+			if c.fd.Late() {
+				c.lateUntil = now.Add(LateWatch)
+			}
 			if ev, ok := wire.TurnEndEv(t); ok {
 				c.emit(ev)
 			}

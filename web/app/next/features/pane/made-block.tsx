@@ -1,4 +1,4 @@
-// «Сделано в этом чате» (.hx-made): above the tools, what the chat made, opened or changed: documents, boards and designs,
+// «Сделано в этом чате» (.hx-pmade): above the tools, what the chat made, opened or changed: documents, boards and designs,
 // newest first, one quiet line each. The first few show, the rest sit behind «ещё N» so the tools stay on the screen.
 // The pictures the agent looked at are the Gallery's. Until the chat has said what there is nothing shows (no skeleton:
 // it would push the tools down and then pull them back); with nothing made the block is not there at all, and it
@@ -45,19 +45,19 @@ export interface IMadeBlockProps {
 }
 
 const Kids = ({ kids, onOpen }: { kids: readonly IMadeKid[]; onOpen: (id: string) => void }) => (
-  <ul className="hx-made__kids">
+  <ul className="hx-pmade__kids">
     {kids.map((x) => (
       <li key={x.id}>
         <button
           type="button"
-          className="hx-made__kid"
+          className="hx-pmade__kid"
           data-done={x.done ? 'true' : undefined}
           onClick={() => onOpen(x.id)}
         >
-          <Icon name={x.done ? 'circle-check' : 'circle'} size="sm" className="hx-made__dot" />
-          <span className="hx-made__key">{x.key}</span>
-          <span className="hx-made__kid-name">{x.title}</span>
-          {x.state && <span className="hx-made__about">{x.state}</span>}
+          <Icon name={x.done ? 'circle-check' : 'circle'} size="sm" className="hx-pmade__dot" />
+          <span className="hx-pmade__key">{x.key}</span>
+          <span className="hx-pmade__kid-name">{x.title}</span>
+          {x.state && <span className="hx-pmade__about">{x.state}</span>}
         </button>
       </li>
     ))}
@@ -69,34 +69,34 @@ const Card = ({ card, onOpen }: { card: IMadeCard; onOpen: IMadeBlockProps['onOp
   const [open, setOpen] = useState(false);
   const kids = card.kids;
   return (
-    <li className="hx-made__item" data-open={open ? 'true' : undefined}>
-      <div className="hx-made__row">
-        <button type="button" className="hx-made__card" title={card.title} onClick={() => onOpen(card)}>
+    <li className="hx-pmade__item" data-open={open ? 'true' : undefined}>
+      <div className="hx-pmade__row">
+        <button type="button" className="hx-pmade__card" title={card.title} onClick={() => onOpen(card)}>
           <span className="hx-tl__ico">
             <Icon name={card.icon} />
           </span>
           {card.pending ? (
-            <Skeleton className="hx-made__name-sk" />
+            <Skeleton className="hx-pmade__name-sk" />
           ) : (
-            <span className="hx-made__name">{card.title}</span>
+            <span className="hx-pmade__name">{card.title}</span>
           )}
-          {card.about && <span className="hx-made__about">{card.about}</span>}
+          {card.about && <span className="hx-pmade__about">{card.about}</span>}
         </button>
         {kids && kids.length > 0 && (
           <button
             type="button"
-            className="hx-made__toggle"
+            className="hx-pmade__toggle"
             aria-expanded={open}
             aria-label={card.title}
             onClick={() => setOpen((v) => !v)}
           >
-            <Icon name="chevron-down" size="sm" className="hx-made__chev" />
+            <Icon name="chevron-down" size="sm" className="hx-pmade__chev" />
           </button>
         )}
       </div>
       {kids && kids.length > 0 && (
-        <div className="hx-made__fold" inert={!open}>
-          <div className="hx-made__fold-in">
+        <div className="hx-pmade__fold" inert={!open}>
+          <div className="hx-pmade__fold-in">
             <Kids kids={kids} onOpen={(id) => onOpen({ ...card, id })} />
           </div>
         </div>
@@ -111,7 +111,7 @@ const Content = ({ cards, onOpen }: { cards: readonly IMadeCard[]; onOpen: IMade
   const fold = cards.length > MADE_VISIBLE + 1;
   const shown = fold && !all ? cards.slice(0, MADE_VISIBLE) : cards;
   return (
-    <ul className="hx-made__list">
+    <ul className="hx-pmade__list">
       {shown.map((x) => (
         <Card key={x.id} card={x} onOpen={onOpen} />
       ))}
@@ -119,12 +119,12 @@ const Content = ({ cards, onOpen }: { cards: readonly IMadeCard[]; onOpen: IMade
         <li>
           <button
             type="button"
-            className="hx-made__more"
+            className="hx-pmade__more"
             aria-expanded={all}
             onClick={() => setAll((v) => !v)}
           >
             {all ? t('next.made.less') : t('next.made.more', { n: cards.length - MADE_VISIBLE })}
-            <Icon name="chevron-down" size="sm" className="hx-made__chev" />
+            <Icon name="chevron-down" size="sm" className="hx-pmade__chev" />
           </button>
         </li>
       )}
@@ -154,10 +154,10 @@ const Section = ({
     };
   }, []);
   return (
-    <section className="hx-made" data-state={entered ? state : 'opening'} aria-label={t('next.made.title')}>
-      <div className="hx-made__clip">
-        <div className="hx-made__body">
-          <h3 className="hx-made__ttl">{t('next.made.title')}</h3>
+    <section className="hx-pmade" data-state={entered ? state : 'opening'} aria-label={t('next.made.title')}>
+      <div className="hx-pmade__clip">
+        <div className="hx-pmade__body">
+          <h3 className="hx-pmade__ttl">{t('next.made.title')}</h3>
           <Content cards={cards} onOpen={onOpen} />
         </div>
       </div>

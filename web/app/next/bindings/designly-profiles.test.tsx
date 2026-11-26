@@ -5,7 +5,8 @@ import type { ComponentProps } from 'react';
 import type DesignlyHome from '@/next/features/designly/designly-home';
 import type { MachineId } from '@/next/protocol/v2';
 
-const { create, agents } = vi.hoisted(() => ({
+const { create, goTo, agents } = vi.hoisted(() => ({
+  goTo: vi.fn(),
   create: vi.fn(async () => ({ id: 'design-1', conv: 'tab-1', title: 'Test' })),
   agents: [
     {
@@ -40,7 +41,7 @@ vi.mock('@/next/stores/connection', () => ({
 vi.mock('@/next/stores/conversations', () => ({ useConversationList: () => [] }));
 vi.mock('@/next/bindings/use-voice', () => ({ useVoice: () => ({ recording: false }) }));
 vi.mock('@/next/bindings/use-uploads', () => ({ useUploads: () => ({ reset: () => undefined }) }));
-vi.mock('@/next/routes/routes', () => ({ ROUTE: { site: 'site' }, goTo: () => undefined }));
+vi.mock('@/next/routes/routes', () => ({ ROUTE: { site: 'site', chat: 'chat' }, goTo }));
 vi.mock('@/next/features/app-catalog/api', () => ({
   loadKinds: async () => [],
   loadKindDocs: async () => [],
@@ -59,7 +60,7 @@ vi.mock('@/next/features/designly/api', async (original) => ({
 }));
 // Exercise the real binding and selection hook; replace only the presentation of the create form.
 vi.mock('@/next/features/designly/designly-home', () => ({
-  DESIGN_KIND: { site: 'site', slides: 'slides', ds: 'ds', video: 'video' },
+  DESIGN_KIND: { site: 'site', slides: 'slides', ds: 'ds', video: 'video', scene3d: 'scene3d' },
   default: ({ compose }: ComponentProps<typeof DesignlyHome>) => (
     <div>
       {compose?.picker?.agents.map((a) => (
@@ -78,20 +79,25 @@ vi.mock('@/next/features/designly/designly-home', () => ({
           {a.profile ?? a.provider}
         </button>
       ))}
-      <button
-        onClick={() =>
-          compose?.onCreate({
-            brief: 'Test',
-            kind: 'site',
-            designSystem: null,
-            deck: null,
-            video: null,
-            attachmentIds: [],
-          })
-        }
-      >
-        Create
-      </button>
+      {['site', 'slides', 'video', 'scene3d', 'ds'].map((kind) => (
+        <button
+          key={kind}
+          onClick={() =>
+            void compose
+              ?.onCreate({
+                brief: 'Test',
+                kind: kind as 'site',
+                designSystem: null,
+                deck: null,
+                video: null,
+                attachmentIds: [],
+              })
+              .catch(() => undefined)
+          }
+        >
+          {`Create ${kind}`}
+        </button>
+      ))}
     </div>
   ),
 }));
@@ -99,6 +105,7 @@ import DesignlyView from './designly';
 beforeEach(() => {
   localStorage.clear();
   create.mockClear();
+  goTo.mockClear();
 });
 afterEach(cleanup);
 it.each(['glm', 'kimi', 'gpt-compatible'])(
@@ -106,7 +113,7 @@ it.each(['glm', 'kimi', 'gpt-compatible'])(
   async (profile) => {
     render(<DesignlyView machine={'m-profile' as MachineId} />);
     fireEvent.click(screen.getByRole('button', { name: profile }));
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create site' }));
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith(
         'm-profile',
@@ -115,3 +122,32 @@ it.each(['glm', 'kimi', 'gpt-compatible'])(
     );
   },
 );
+it.each(['site', 'slides', 'video', 'ds'])(
+  'opens a new %s with the chat that draws it at once',
+  async (kind) => {
+    render(<DesignlyView machine={'m-profile' as MachineId} />);
+    fireEvent.click(screen.getByRole('button', { name: `Create ${kind}` }));
+    await waitFor(() =>
+      expect(goTo).toHaveBeenCalledWith({
+        kind: 'site',
+        id: 'design-1',
+        chat: 'tab-1',
+        machine: 'm-profile',
+        edit: true,
+      }),
+    );
+  },
+);
+it('opens the chat of a new 3D scene, which has no page until it is built', async () => {
+  render(<DesignlyView machine={'m-profile' as MachineId} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Create scene3d' }));
+  await waitFor(() => expect(goTo).toHaveBeenCalledWith({ kind: 'chat', id: 'tab-1' }));
+});
+it('stays on the start when the design was not made', async () => {
+  create.mockRejectedValueOnce(new Error('no room'));
+  render(<DesignlyView machine={'m-profile' as MachineId} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Create site' }));
+  await waitFor(() => expect(create).toHaveBeenCalled());
+  await new Promise((done) => setTimeout(done, 0));
+  expect(goTo).not.toHaveBeenCalled();
+});

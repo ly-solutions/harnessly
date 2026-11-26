@@ -34,32 +34,29 @@
   width: min(360px, calc(100cqw - 24px));
 }
 .hx-pgpick__group {
-  padding: 8px 10px 4px;
-  color: var(--hx-fg-3);
+  padding: 8px 8px 4px;
+  color: var(--hx-fg-2);
   font-size: var(--hx-text-xs);
+  font-weight: var(--hx-weight-medium);
 }
 .hx-pgpick__dot {
   flex: none;
   width: 6px;
   height: 6px;
-  margin-left: auto;
   border-radius: 50%;
   background: var(--hx-accent);
 }
-.hx-pgpick__check {
+.hx-pgpick__tag {
   flex: none;
-  margin-left: auto;
-  color: var(--hx-fg-2);
-}
-.hx-pgpick__dot + .hx-pgpick__check {
-  margin-left: 0;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
 }
 .hx-pgpick__new {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 9px;
-  height: 34px;
+  gap: 8px;
+  height: 32px;
   margin-top: 4px;
   padding: 0 10px;
   border: 0;
@@ -358,4 +355,43 @@
 /* The bar's buttons keep their size in a narrow pane: the board switcher gives the room. */
 .hx-browser__bar > :not(.hx-browser__addr) {
   flex: none;
+}
+
+/* One density for Sinopia's menus in the chat: rows of 32px, icons small and quiet without a plate, one
+   selection in the theme's tokens (no accent fill, no accent icon), keyboard focus seen. */
+.hx-site-menu {
+  padding: 4px;
+  border-radius: 12px;
+}
+.hx-site-menu .hx-option,
+.hx-site-menu .hx-devopt,
+.hx-site-menu .hx-more__item {
+  min-height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-inline: 8px;
+  gap: 8px;
+  border-radius: 6px;
+}
+.hx-site-menu .hx-option:focus-visible {
+  outline: 2px solid var(--hx-focus);
+  outline-offset: -2px;
+}
+.hx-site-menu .hx-option[aria-checked='true'] {
+  background: var(--hx-bg-active);
+}
+.hx-site-menu .hx-more__item > .hx-icon,
+.hx-site-menu .hx-more__item[aria-checked='true'] > .hx-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--hx-fg-3);
+}
+.hx-site-menu .hx-option__check,
+.hx-site-menu .hx-devopt__check,
+.hx-site-menu .hx-more__check {
+  color: var(--hx-fg-2);
+}
+.hx-site-menu .hx-devopt__size,
+.hx-site-menu .hx-more__kbd {
+  color: var(--hx-fg-2);
 }

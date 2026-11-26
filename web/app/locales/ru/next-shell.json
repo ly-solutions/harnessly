@@ -582,7 +582,7 @@
   "next.designly.emptyMine": "Здесь будут макеты, которые вы начнёте",
   "next.designly.emptyShared": "Макетов коллег пока нет",
   "next.designly.createFailed": "Не получилось начать макет",
-  "next.designly.started": "Рисую «{title}»…",
+  "next.designly.creating": "Создаю проект…",
   "next.sidebar.designly": "{design}",
   "next.site.pages": "Страницы макета",
   "next.site.back": "Назад",
@@ -1852,5 +1852,7 @@
   "next.pictures.next": "Следующая картинка",
   "next.pictures.strip": "Все картинки по порядку",
   "next.pictures.close": "Закрыть",
-  "next.pictures.carousel": "галерея"
+  "next.pictures.carousel": "галерея",
+  "next.site.boardOpen": "открыта",
+  "next.site.zoomLocked": "По окну масштаб всегда 100%. Выберите устройство, чтобы менять"
 }

@@ -26,6 +26,7 @@ func designSiteRoutes(d deps) []gate.JSONRoute {
 		designRoute(sitePath("/comments"), a.SiteComments),
 		designRoute(sitePath("/comments/agent"), a.SiteCommentAgent),
 		designRoute(sitePath("/props"), a.SiteProps),
+		designRoute(sitePath("/pages"), a.SitePages),
 		designRoute(siteCLIPath("/comments"), a.CLISiteComments),
 		designRoute(siteCLIPath("/props"), a.CLISiteProps),
 	}

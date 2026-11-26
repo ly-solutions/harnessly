@@ -1680,8 +1680,12 @@ test('10. a new design opens with its chat; an edit picked on its page goes to t
     `<!doctype html><title>main</title>${settings}<h1 id="hero">Coffee for everyone</h1><p>Menu</p><div style="height:2400px"></div>`,
   );
 
-  await page.locator('.hx-dl__input').fill('Coffee shop landing');
+  await page.locator('.hx-dl__composer textarea').fill('Coffee shop landing');
   await page.locator('.hx-dl__composer .hx-round[data-variant="accent"]').click();
+  // Sent: the design opens at once with the chat that draws it, the brief already said there.
+  await expect(page).toHaveURL(/\/designly\/[^/?]+\?.*chat=/, { timeout: 20_000 });
+  await expect(page.locator('.hx-site__chat')).toContainText('Coffee shop landing', { timeout: 60_000 });
+  await page.goto(page.url().replace(/\/designly\/.*$/, '/designly'));
   const card = page.locator('.hx-dl-card').first();
   await expect(card).toBeVisible({ timeout: 20_000 });
   // The runtime wrote who made the project: its card carries the owner's avatar, it is in «All» and «Mine», and not

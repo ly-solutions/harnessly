@@ -178,3 +178,18 @@ export const putSiteProps = async (
   board: string,
   values: Record<string, TTweakValue>,
 ) => readProps(await runtimeJson(m, site('/props'), jsonInit('PUT', { artifact, board, values })));
+
+/** What «Макет» → «Страницы» does with a page (internal/design/site_pages.go): the same commands as the agents'
+ *  `design page create/rename/remove`, a duplicate being a variant of the page. A page is named by its file. */
+export type TPageAction =
+  | { action: 'create'; title: string }
+  | { action: 'duplicate'; page: string }
+  | { action: 'rename'; page: string; title: string }
+  | { action: 'remove'; page: string };
+
+/** Does it; the answer is the page's file. */
+export const changeSitePages = async (m: MachineId, artifact: string, act: TPageAction): Promise<string> => {
+  const answer = await runtimeJson<unknown>(m, site('/pages'), postJson({ artifact, ...act }));
+  const page = isRecord(answer) && isRecord(answer.page) ? answer.page : null;
+  return page !== null && typeof page.file === 'string' ? page.file : '';
+};
