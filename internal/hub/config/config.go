@@ -470,8 +470,10 @@ type DesignAccessConfig struct {
 	// (HUB_DESIGN_DEFAULT_TEAM_LEVEL, none by default). none makes every new project personal until its owner shares it.
 	TeamLevel string
 	// ClosedUnrecorded: a project the hub has no row for is closed to everyone but its machine's person, and its files
-	// reach no other machine (HUB_DESIGN_UNRECORDED=closed; open by default).
+	// reach no other machine (HUB_DESIGN_UNRECORDED=closed|open). UnrecordedSet: the variable said which; unset, the
+	// database's own default holds: closed for an installation that started so, open for an older one.
 	ClosedUnrecorded bool
+	UnrecordedSet    bool
 	// Register gives every project folder of the store's libraries that has no row an owner and the team level, at start:
 	// "" (off), dry-run (the report only) or apply (HUB_DESIGN_REGISTER).
 	Register string
@@ -1579,9 +1581,11 @@ func (c *Config) loadDesignAccess(get func(string) string, bad func(string, ...a
 		bad("HUB_DESIGN_DEFAULT_TEAM_LEVEL must be none, view, comment or edit")
 	}
 	switch v := strings.ToLower(strings.TrimSpace(get("HUB_DESIGN_UNRECORDED"))); v {
-	case "", "open":
+	case "":
+	case "open":
+		d.UnrecordedSet = true
 	case "closed":
-		d.ClosedUnrecorded = true
+		d.ClosedUnrecorded, d.UnrecordedSet = true, true
 	default:
 		bad("HUB_DESIGN_UNRECORDED must be open or closed")
 	}

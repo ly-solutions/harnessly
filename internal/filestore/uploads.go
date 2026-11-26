@@ -249,7 +249,11 @@ func (s *Server) uploadOpen(w http.ResponseWriter, r *http.Request, c caller) {
 		return
 	}
 	ctx := r.Context()
-	if ok, err := c.store.HasBlob(ctx, req.Sha); err != nil {
+	ok, err := c.store.HasBlob(ctx, req.Sha)
+	if err == nil && ok {
+		ok, err = c.holds(ctx, req.Sha)
+	}
+	if err != nil {
 		slog.Error("upload: has blob", "err", err)
 		http.Error(w, "cannot read", http.StatusInternalServerError)
 		return
@@ -261,7 +265,7 @@ func (s *Server) uploadOpen(w http.ResponseWriter, r *http.Request, c caller) {
 	c.store.sweepUploads(ctx, now.UnixMilli())
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
-	u, created, err := c.store.meta.UploadOpen(ctx, Upload{ID: hex.EncodeToString(id), Member: c.member, Sha: req.Sha,
+	u, created, err := c.store.meta.UploadOpen(ctx, Upload{ID: hex.EncodeToString(id), Member: c.acc.holder(), Sha: req.Sha,
 		Size: req.Size, PartSize: s.partSizeFor(req.Size), Created: now.UnixMilli(), Expires: now.Add(UploadTTL).UnixMilli()},
 		OpenLimits{Room: MaxOpenUploads, Member: MaxOpenUploadsPerMember}, now.UnixMilli())
 	switch {
@@ -309,7 +313,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request, c caller) *Uploa
 		return nil
 	}
 	// Another member's upload is not this caller's to add to or to finish.
-	if u == nil || u.Member != c.member {
+	if u == nil || u.Member != c.acc.holder() {
 		http.Error(w, "no such upload", http.StatusNotFound)
 		return nil
 	}
@@ -467,6 +471,10 @@ func (s *Server) uploadComplete(w http.ResponseWriter, r *http.Request, c caller
 		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTTL-5*time.Minute)
 		defer cancel()
 		err := c.store.blobs.UploadFinish(fctx, c.room, u)
+		if err == nil {
+			// The parts hashed to u.Sha (above): the caller has the contents.
+			err = c.prove(fctx, u.Sha)
+		}
 		to, msg, expires := UploadDone, "", s.clock().Add(doneTTL)
 		if err != nil {
 			slog.Error("upload: finish", "room", c.room, "err", err)

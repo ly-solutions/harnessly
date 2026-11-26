@@ -42,6 +42,13 @@ type fakeDesign struct {
 	recorded []string
 	metas    []string
 	closed   bool
+	shelves  map[string][]string // machine → names of its people's layout files
+}
+
+func (d *fakeDesign) ShelfKeys(_ context.Context, m store.Machine) ([]string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.shelves[m.ID], nil
 }
 
 func (d *fakeDesign) ClosedUnrecorded() bool {
@@ -244,5 +251,19 @@ func TestProjectOfIsCaseFolded(t *testing.T) {
 	}
 	if _, ok := projectOf(".folders/abc.json"); ok {
 		t.Fatal("a shelf counted as a project")
+	}
+}
+
+// GitHub #188: a path that is neither a shelf nor in a project folder belongs to no one: no layer of the store (its path
+// rule or the design filter, which refuses it too) lets a machine write it.
+func TestAPathOfNoOneIsRefused(t *testing.T) {
+	ctx := context.Background()
+	machines := fakeMachines{"a": {ID: "a", Name: "vm-a", SpaceID: "sp1"}}
+	_, client := designStore(t, machines, &fakeDesign{view: map[string]map[string]Grant{}})
+	a := client("a")
+	for _, p := range []string{"top.json", ".hidden/x.json"} {
+		if _, err := a.Put(ctx, p, []byte(`{}`), "t"); err == nil {
+			t.Fatalf("%s was taken", p)
+		}
 	}
 }

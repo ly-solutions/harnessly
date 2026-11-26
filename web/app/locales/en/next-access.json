@@ -262,7 +262,7 @@
   "next.access.away.silentStoreOff.title": "The machine with the project does not answer",
   "next.access.away.silentStoreOff.lead": "This installation keeps projects only on the machines they were made on, and that machine does not answer now. The live project needs that machine and opens here by itself once it answers. The owner has not left a snapshot of it.",
   "next.access.away.absentStoreOff.title": "This machine does not have the project",
-  "next.access.away.absentStoreOff.lead": "This installation has no shared store, so a project opens only from the machine it was made on. If someone sent you this link, the project is on their machine: ask them to share it with you.",
+  "next.access.away.absentStoreOff.lead": "The shared store is off on this hub, so a project opens only from the machine it was made on, and only for someone who has access to it. Sharing alone may not be enough: for links to open from the hub, an administrator turns the shared store on (HUB_STORE).",
   "next.access.away.machineDenied.title": "No access to the machine with the project",
   "next.access.away.machineDenied.lead": "The project is on a machine you may not open. Ask its owner to share the project with you.",
   "next.access.snapshot.title": "Private snapshot",

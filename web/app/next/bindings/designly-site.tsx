@@ -390,6 +390,8 @@ const DesignlySiteInner = ({
       },
       { store: SNAPSHOT_WAIT_MS, machine: MACHINE_PATIENCE_MS },
       card,
+      // Only a design on its own address can take the key into it; a pane has none.
+      own ? (found) => !abort.signal.aborted && goTo({ ...own, card: found }, { replace: true }) : undefined,
     );
     // The reads end with another project, machine or attempt (start) or with the page (stop), not with a poll.
     // onMissing is the host's; a new one each render must not load the library again.
@@ -478,7 +480,7 @@ const DesignlySiteInner = ({
 
   const current = tabs.find((x) => x.id === tab) ?? tabs[0];
   const path = current?.hist[current.hi] ?? null;
-  const shareUrl = designAddress(id, path ?? own?.page ?? null);
+  const shareUrl = designAddress(id, path ?? own?.page ?? null, card);
   const port = project?.port ?? null;
 
   const slotKey = `${port}|${reloadKey}|${reopen}`;
@@ -932,7 +934,7 @@ const DesignlySiteInner = ({
     toolPane,
     owner: project?.design.owner?.name ?? null,
     onPagesChanged: () => setAttempt((n) => n + 1),
-    hrefOf: (page) => designAddress(id, page) ?? '',
+    hrefOf: (page) => designAddress(id, page, card) ?? '',
   });
   // The versions of the project and of its kit: «Версии» opens the side panel's tab, the kit's band over the view.
   const kitInfo = useProjectKit(machine, id);

@@ -142,6 +142,6 @@ var DataKinds = []DataKind{
 		Keep: "no term", OwnerDeletes: "deleting an entry deletes it and its grants; the audit stays"},
 	{Name: "passes to machines and sites", Owner: OwnerHub, Tables: []string{"entry_tickets"},
 		Keep: "a minute to trade, twelve hours as the note that the person opened the machine, then swept by time", OwnerDeletes: "nothing: a pass names a person and goes by time"},
-	{Name: "the installation", Owner: OwnerHub, Tables: []string{"schema_migrations", "rollout_switches", "job_leases"},
+	{Name: "the installation", Owner: OwnerHub, Tables: []string{"schema_migrations", "rollout_switches", "job_leases", "instance_defaults"},
 		Keep: "no term", OwnerDeletes: "nothing: they describe the hub itself"},
 }

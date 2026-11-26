@@ -30,9 +30,11 @@ rows, and every machine of the space gets the snapshot again after a change. The
 its person has a role in and takes its writes only to those they may edit.
 
 A project the store holds but the hub has no row for (made before the hub kept access, or on a machine that never
-reported it) is open to everyone of the space by default. `HUB_DESIGN_UNRECORDED=closed` turns that around: the store
-gives such a project to no other machine, and the runtime leaves it only to the machine's own person (unless its owner
-file names someone else). A new folder may still be written, so a machine can start a project before the hub records it.
+reported it) is closed on a new installation: the store gives it to no other machine, and the runtime leaves it only to
+the machine's own person (unless its owner file names someone else). A new folder may still be written, so a machine can
+start a project before the hub records it. An installation that had accounts before this default keeps such projects
+open to everyone of the space until `HUB_DESIGN_UNRECORDED=closed` says otherwise; `open` or `closed` in the variable
+always wins over what the installation started with.
 
 ## Personal projects by default
 
@@ -79,7 +81,11 @@ before), but every guest read answers the last line of the table.
 Making a link: a live link is made even when the project is not in the store yet (it opens as soon as the machine's
 sync has put the project there); a pinned link needs the project in the store, since it pins one of its revisions, and
 answers `409 not_published` otherwise. The owner's own checks (may a link be made, the apps' check, a static snapshot's
-capture) still ask the machine when it is on; a guest never does.
+capture) still ask the machine when it is on; a guest never does. So a runtime that fails `harnessly doctor share`
+(gVisor and other sandboxes, SHR-204) does not stop a link while the store is on (GitHub #187): the runtime itself
+still serves no guest path, and the guest reads the store's copy. Only without a store, where the machine would serve
+the guest, does such a runtime answer `409 share_unsafe_runtime` with what to run instead. A static snapshot is the
+exception: it is captured on the machine, so an unsafe runtime refuses it either way.
 
 A file of a link pinned to a store revision never changes, so the guest's browser keeps it for good
 (`Cache-Control: private, max-age=31536000, immutable`); the guest page's own assets are hashed and kept the same way.
@@ -135,6 +141,8 @@ level, a team grant and the space level stay inside their space.
 - A revocation closes it at once, and the library's long poll wakes on a grant or a revocation in any space.
 - An invitation link of another space leads the person into their own workspace (or a machine of their own) and opens
   the card after they accept.
+- The page's address and the address «Поделиться» copies carry the card key (`?card=`), so a link names the holder's
+  copy even when several spaces shared a project of the same slug (GitHub #186).
 
 ## A machine of a closed cluster
 
@@ -190,7 +198,7 @@ each project with what moved, each pair with its machine or why not. The agents 
 | `HUB_DESIGN_SHARE_DOCS` | off | `on`: a document's guest link (`/d/<token>`, needs documents and their access on) opens on the share host and its aliases too, under the address it was handed out at. The page sets its own sandbox and the hub's session is not on those origins. Needs `HUB_DESIGN_SHARE_URL` |
 | `HUB_DESIGN_PLATFORM_API` | hub | Platform prefix of the runtimes, default `/api/platform` |
 | `HUB_DESIGN_DEFAULT_TEAM_LEVEL` | `none` | Team level of a newly recorded project: `none`, `view`, `comment` or `edit` |
-| `HUB_DESIGN_UNRECORDED` | `open` | `closed`: a stored project the hub has no row for goes to no other machine and only to its machine's person |
+| `HUB_DESIGN_UNRECORDED` | `closed` on a new installation, `open` on an older one | `closed`: a stored project the hub has no row for goes to no other machine and only to its machine's person |
 | `HUB_DESIGN_REGISTER` | off | `dry-run` or `apply`: at start, give every stored project without a row an owner and report personal vs team. Needs `HUB_STORE` |
 | `HUB_DESIGN_IMPORT_GATEWAY` | hub | `dry-run` or `apply`: the move from the gateway at start; with `HUB_DESIGN_IMPORT_GATEWAY_URL` (its Postgres), `_SPACE`, `_TEAMS`, `_MACHINES`, `_DEFAULT_MACHINE` |
 | `AGENT_RUNTIME_PLATFORM_API` | machine | Where the agent reaches the runtime's platform API (default `<runtime>/api/platform`) |

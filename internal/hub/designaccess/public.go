@@ -286,11 +286,17 @@ func unsafeRuntime() *Error {
 }
 
 // shareGate asks the machine whether a link may be made before the hub makes one that is not pinned (a pinned one asks
-// through pin). Only the refusal of an unsafe runtime stops it here: a machine that does not answer gets its link as
-// before, and serves nothing to a guest until its probe passes, since every guest read is refused there too.
+// through pin). With the store a guest reads only the store and never the runtime's files, so a runtime that
+// fails the share probe (gVisor, SHR-204) does not stop a link (GitHub #187): the runtime still serves no guest path
+// itself, and a project the store has nothing of yet answers its guest «not published» until it arrives. Without the
+// store the machine serves the guest, and its refusal stops the link. A machine that does not answer gets its link as
+// before.
 func (s *Service) shareGate(ctx context.Context, m store.Machine, project string) error {
 	res, err := s.fetch(ctx, m.ID, hubproto.DesignPublicTokenRequest{Project: project, Pin: true}, []string{"__share"}, nil)
 	if errors.Is(err, gUnsafeRuntime) {
+		if s.view != nil {
+			return nil
+		}
 		return unsafeRuntime()
 	}
 	if err == nil {

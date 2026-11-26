@@ -178,7 +178,7 @@ var SpaceCascade = []SpaceCascadeStep{
 
 // keptOnSpaceDelete lists the tables a space's deletion leaves alone, each with why.
 var keptOnSpaceDelete = map[string]string{
-	"schema_migrations": "installation", "currency_rates": "installation", "prices": "installation",
+	"schema_migrations": "installation", "instance_defaults": "installation", "currency_rates": "installation", "prices": "installation",
 	"job_leases":      "installation: which replica does a background job",
 	"auth_challenges": "installation", "auth_events": "installation: the record of the deletion itself is here",
 	"users": "person", "identities": "person", "passkeys": "person", "person_settings": "person", "api_tokens": "person", "notice_items": "person", "notice_settings": "person",

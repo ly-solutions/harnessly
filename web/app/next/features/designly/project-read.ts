@@ -93,6 +93,8 @@ export const readProject = (
   waits: IProjectReadWaits,
   /** The copy of a shared project another machine holds (a card key): the machine's own project of the same slug is not it. */
   card?: string,
+  /** The address names no card and the project is only a copy shared from outside, one of that id: its key. */
+  found?: (card: string) => void,
 ): Promise<void> =>
   new Promise((resolve) => {
     let machine: TSide = SIDE.pending;
@@ -100,6 +102,8 @@ export const readProject = (
     let storeAsked = false;
     let machineError: string | null = null;
     let patient = true;
+    // The key of the one copy of this id shared with the person, for an address that names none.
+    let sharedKey: string | undefined;
     const put = (state: TProjectRead) => {
       show(state);
       resolve();
@@ -110,6 +114,13 @@ export const readProject = (
       if (machine === SIDE.pending && patient) return;
       if (machine === SIDE.denied) {
         put({ k: PROJECT_READ.away, why: AWAY.machineDenied, machineError });
+        return;
+      }
+      // A link carries no card key: with no project of the person's own by this id, the one shared copy is what it
+      // means. The page takes the key into its address and reads again; two such copies are not guessed between.
+      if (found && sharedKey) {
+        found(sharedKey);
+        resolve();
         return;
       }
       const machineSaid = machine === SIDE.absent ? 'absent' : 'silent';
@@ -127,6 +138,10 @@ export const readProject = (
             return;
           }
           const design = copy.designs.find((d) => d.id === id && d.cardKey === card);
+          if (!design && card === undefined) {
+            const shared = copy.designs.filter((d) => d.id === id && d.cardKey && d.accessSource);
+            sharedKey = shared.length === 1 ? shared[0].cardKey : undefined;
+          }
           store = design ? SIDE.has : SIDE.absent;
           // The machine's project, once shown, is never replaced by the copy.
           if (design && machine !== SIDE.has) put({ k: PROJECT_READ.open, from: PROJECT_FROM.store, design });

@@ -435,6 +435,14 @@ func New(o Options) (*Hub, error) {
 			return err
 		}
 	}
+	closedUnrecorded := cfg.DesignAccess.ClosedUnrecorded
+	if !cfg.DesignAccess.UnrecordedSet {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if closedUnrecorded, err = db.S().DesignUnrecordedClosed(ctx); err != nil {
+			return nil, fmt.Errorf("design access defaults: %w", err)
+		}
+	}
 	h.Design = designaccess.New(designaccess.Deps{
 		DB: db, Reg: h.Registry, Log: log, Now: o.Now, HubURL: cfg.PublicURL, ShareURL: cfg.DesignShareURL, StaticGuests: cfg.DesignSnapshotLinks,
 		ShareAliases: cfg.DesignShareAliases, PlatformAPI: cfg.DesignPlatformAPI, Transport: func(id string) http.RoundTripper { return px.Transport(id) },
@@ -442,7 +450,7 @@ func New(o Options) (*Hub, error) {
 		Bell: func(ctx context.Context, machineID, to, key, title, text, link string) {
 			h.Notices.Ring(ctx, machineID, to, key, title, text, link)
 		}, Shared: !cfg.Store.Off, Kits: kitAccess(cfg, db, o),
-		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: cfg.DesignAccess.ClosedUnrecorded,
+		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: closedUnrecorded,
 		Opens: (&machaccess.Checker{Config: cfg, DB: db, Authz: h.Spaces.Authz, IsAdmin: h.Auth.IsInstanceAdmin, Log: log,
 			Switches: h.Switches, Now: o.Now}).Opens,
 		HomeOn: func(ctx context.Context, email, machineID string) bool {

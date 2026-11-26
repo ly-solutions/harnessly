@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS files (
 );
 CREATE INDEX IF NOT EXISTS files_rev ON files(rev);
 CREATE INDEX IF NOT EXISTS history_path ON history(path, rev);
+CREATE INDEX IF NOT EXISTS history_sha ON history(sha);
+CREATE TABLE IF NOT EXISTS blob_proofs (
+  holder TEXT NOT NULL,
+  sha    TEXT NOT NULL,
+  at     BIGINT NOT NULL,
+  PRIMARY KEY (holder, sha)
+);
 CREATE TABLE IF NOT EXISTS members (
   name      TEXT PRIMARY KEY,
   recipient TEXT NOT NULL,
@@ -513,6 +520,41 @@ func (s *sqlRoom) Prune(ctx context.Context, keep int, before int64) (int64, err
 		return err
 	})
 	return n, err
+}
+
+func (s *sqlRoom) PathsOf(ctx context.Context, sha string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, s.q(`SELECT DISTINCT path FROM history WHERE sha = ?`), sha)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *sqlRoom) Prove(ctx context.Context, holder, sha string, now, stale int64) error {
+	if _, err := s.db.ExecContext(ctx, s.q(`DELETE FROM blob_proofs WHERE holder = ? AND at < ?`), holder, stale); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO blob_proofs (holder, sha, at) VALUES (?, ?, ?)
+		ON CONFLICT (holder, sha) DO UPDATE SET at = excluded.at`), holder, sha, now)
+	return err
+}
+
+func (s *sqlRoom) Proven(ctx context.Context, holder, sha string, since int64) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx, s.q(`SELECT 1 FROM blob_proofs WHERE holder = ? AND sha = ? AND at >= ?`), holder, sha, since).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (s *sqlRoom) ReferencedShas(ctx context.Context) (map[string]struct{}, error) {
