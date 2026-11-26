@@ -75,6 +75,13 @@ func (v designView) RecordMeta(ctx context.Context, m store.Machine, rec filesto
 	return err
 }
 
+func (v designView) ShelfKeys(ctx context.Context, m store.Machine) ([]string, error) {
+	if v.d == nil {
+		return nil, nil
+	}
+	return v.d.ShelfKeys(ctx, m)
+}
+
 func (v designView) ClosedUnrecorded() bool { return v.d != nil && v.d.ClosedUnrecorded() }
 
 // kitAccess is the access model for UI kits, when resource access is on.

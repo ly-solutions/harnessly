@@ -47,7 +47,7 @@ func (s *Store) resumeAccess(r *http.Request) (filestore.Access, error) {
 		}
 	}
 	own := m.ID + "/"
-	return filestore.Access{Member: memberName(m), Room: room,
+	return filestore.Access{Member: memberName(m), Holder: m.ID, Room: room,
 		Writes: func(p string) bool { return strings.HasPrefix(p, own) }}, nil
 }
 

@@ -32,6 +32,12 @@ type RoomMeta interface {
 	// stored at that moment, since the garbage collector deletes under the same lock (see DeleteUnreferenced).
 	Apply(ctx context.Context, req CommitRequest, machine string, now int64, verify func(context.Context) error) (e *Entry, conflict bool, err error)
 	Changes(ctx context.Context, since int64, limit int) (Changes, error)
+	// PathsOf are the paths a revision of which has the contents with this sha256.
+	PathsOf(ctx context.Context, sha string) ([]string, error)
+	// Prove records that a holder sent the contents (and forgets what it proved before stale); Proven tells whether it
+	// did since then (proofs.go).
+	Prove(ctx context.Context, holder, sha string, now, stale int64) error
+	Proven(ctx context.Context, holder, sha string, since int64) (bool, error)
 	History(ctx context.Context, path string, limit int) ([]Entry, error)
 	// HistoryUnder is the revisions of every path under prefix ("" for the whole room), newest first.
 	HistoryUnder(ctx context.Context, prefix string, limit int) ([]Entry, error)

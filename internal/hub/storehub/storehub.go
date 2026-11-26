@@ -59,6 +59,8 @@ type Design interface {
 	// ClosedUnrecorded: a project the hub has no row for reaches no machine (HUB_DESIGN_UNRECORDED=closed, GitHub #83);
 	// false keeps it open, as before.
 	ClosedUnrecorded() bool
+	// ShelfKeys are the names (.folders/<name>.json) of the layout files of the people the machine is for.
+	ShelfKeys(ctx context.Context, m store.Machine) ([]string, error)
 }
 
 // viewCache is how long a machine's view of the library is kept before it is read again.
@@ -382,7 +384,7 @@ func (s *Store) authorize(r *http.Request, coll string) (filestore.Access, error
 	if err != nil {
 		return filestore.Access{}, err
 	}
-	acc := filestore.Access{Member: memberName(m), Room: s.Room(m.SpaceID, coll)}
+	acc := filestore.Access{Member: memberName(m), Holder: m.ID, Room: s.Room(m.SpaceID, coll)}
 	if coll == filestore.KindProfile {
 		room, err := s.ProfileRoom(r.Context(), m.CreatedBy)
 		if err != nil {
@@ -603,7 +605,8 @@ func (s *Store) appsFilter(ctx context.Context, m store.Machine, acc *filestore.
 
 // filter limits a machine to the design projects its person has a role in: the files of another person's
 // project never reach a machine that has nothing to do with it, and a write to a project the person may not edit is
-// refused. Paths outside a project folder (the shelves under .folders) and projects the hub has no row for are open;
+// refused. A person's shelf (.folders/) reaches only the machines it concerns (shelves.go). Any other path outside a
+// project folder is refused, not open (GitHub #188). Projects the hub has no row for are open;
 // with closed unrecorded projects (GitHub #83) the files of a project without a row reach no machine, but a machine may
 // still write into its folder: that is how a new project starts, its owner file records it.
 func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Access) error {
@@ -611,12 +614,21 @@ func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Acce
 	if err != nil {
 		return err
 	}
+	shelf, shelfScope, err := s.shelves(ctx, m, acc.Room)
+	if err != nil {
+		return err
+	}
 	closed := s.design.ClosedUnrecorded()
-	acc.Scope = scope
+	acc.Scope = scope + shelfScope
 	acc.Sees = func(p string) bool {
+		if inShelves(p) {
+			return shelf(p, false)
+		}
 		id, ok := projectOf(p)
 		if !ok {
-			return true
+			// Closed by construction (GitHub #188): a path that is neither a shelf nor in a project folder has no owner
+			// whose rule could let it through, so it reaches no machine and takes no write.
+			return false
 		}
 		g, known := view[id]
 		if !known {
@@ -628,9 +640,14 @@ func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Acce
 		if foreignFolder(p) {
 			return false
 		}
+		if inShelves(p) {
+			return shelf(p, true)
+		}
 		id, ok := projectOf(p)
 		if !ok {
-			return true
+			// Closed by construction (GitHub #188): a path that is neither a shelf nor in a project folder has no owner
+			// whose rule could let it through, so it reaches no machine and takes no write.
+			return false
 		}
 		g, known := view[id]
 		if !known {
@@ -740,6 +757,12 @@ func (s *Store) forgetViews(string) {
 	s.mu.Lock()
 	s.views = map[string]cachedView{}
 	s.mu.Unlock()
+}
+
+// inShelves: the path is under .folders/, in any letter case.
+func inShelves(p string) bool {
+	dir, _, _ := strings.Cut(p, "/")
+	return strings.EqualFold(dir, filestore.FoldersDir)
 }
 
 // projectOf is the project folder a library path is in; false for a path at the top (the shelves).

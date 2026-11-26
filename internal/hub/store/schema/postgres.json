@@ -4638,6 +4638,23 @@
         "stream"
       ]
     },
+    "instance_defaults": {
+      "columns": [
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "value",
+          "type": "text",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "name"
+      ]
+    },
     "invite_team": {
       "columns": [
         {

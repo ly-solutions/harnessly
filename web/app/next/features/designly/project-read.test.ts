@@ -36,6 +36,52 @@ const run = (machine: () => Promise<IDesignLibrary>, store: () => Promise<IStore
   return { shown, storeRead };
 };
 
+describe('readProject of a link with no card key (HRN-1779)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const shared = (...keys: string[]): IStoreLibrary => ({
+    designs: keys.map((cardKey) => ({ id: 'p1', cardKey, accessSource: 'person' }) as unknown as IDesign),
+    layout: { folders: [], placed: {}, systems: {} },
+  });
+  const keyless = (machine: () => Promise<IDesignLibrary>, store: IStoreLibrary) => {
+    const shown: TProjectRead[] = [];
+    const found = vi.fn();
+    void readProject(
+      'p1',
+      { machine, store: () => after(100, store) },
+      (state) => shown.push(state),
+      WAITS,
+      undefined,
+      found,
+    );
+    return { shown, found };
+  };
+
+  it('takes the one shared copy once the machine says it has not got the project', async () => {
+    const { shown, found } = keyless(() => after(4000, library('other')), shared('k1'));
+    await vi.advanceTimersByTimeAsync(3500);
+    expect(found).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(found).toHaveBeenCalledWith('k1');
+    expect(shown).toEqual([]);
+  });
+
+  it('leaves the machine’s own project of the same id alone', async () => {
+    const { shown, found } = keyless(() => after(4000, library('p1')), shared('k1'));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(found).not.toHaveBeenCalled();
+    expect(shown[0]).toMatchObject({ from: PROJECT_FROM.machine });
+  });
+
+  it('does not guess between two shared copies', async () => {
+    const { shown, found } = keyless(() => after(100, library('other')), shared('k1', 'k2'));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(found).not.toHaveBeenCalled();
+    expect(shown[0]).toMatchObject({ k: PROJECT_READ.away });
+  });
+});
+
 describe('readProject (HRN-1308)', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

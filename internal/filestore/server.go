@@ -34,6 +34,9 @@ var (
 type Access struct {
 	Member string
 	Room   string
+	// Holder, when set, is the caller's identity no other caller shares (a member's name may be shared by two): the
+	// contents it has sent and its uploads are kept under it (proofs.go).
+	Holder string
 	// Sees, when set, is which paths of the room the caller may read: the others are left out of its changes and
 	// answer 404 (a machine gets only the design projects its people have a role in). Nil: the whole room.
 	Sees func(path string) bool
@@ -275,7 +278,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func (s *Server) headBlob(w http.ResponseWriter, r *http.Request, c caller) {
-	ok, err := c.store.HasBlob(r.Context(), r.PathValue("sha"))
+	sha := r.PathValue("sha")
+	ok, err := c.store.HasBlob(r.Context(), sha)
+	if err == nil && ok {
+		ok, err = c.holds(r.Context(), sha)
+	}
 	switch {
 	case err != nil:
 		slog.Error("head blob", "err", err)
@@ -296,6 +303,9 @@ func (s *Server) missingBlobs(w http.ResponseWriter, r *http.Request, c caller) 
 		return
 	}
 	missing, err := c.store.MissingBlobs(r.Context(), req.Shas)
+	if err == nil {
+		missing, err = c.andNotHeld(r.Context(), req.Shas, missing)
+	}
 	switch {
 	case errors.Is(err, ErrBadRequest):
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -309,6 +319,16 @@ func (s *Server) missingBlobs(w http.ResponseWriter, r *http.Request, c caller) 
 
 func (s *Server) getBlob(w http.ResponseWriter, r *http.Request, c caller) {
 	sha := r.PathValue("sha")
+	held, err := c.holds(r.Context(), sha)
+	if err != nil {
+		slog.Error("get blob", "err", err)
+		http.Error(w, "cannot read", http.StatusInternalServerError)
+		return
+	}
+	if !held {
+		http.NotFound(w, r)
+		return
+	}
 	f, err := c.store.OpenBlob(r.Context(), sha)
 	if errors.Is(err, os.ErrNotExist) {
 		http.NotFound(w, r)
@@ -332,7 +352,15 @@ func (s *Server) putBlob(w http.ResponseWriter, r *http.Request, c caller) {
 		http.Error(w, "not a gzip body", http.StatusBadRequest)
 		return
 	}
-	err = c.store.PutBlob(r.Context(), r.PathValue("sha"), body)
+	sha := r.PathValue("sha")
+	sent := newChecked(body)
+	err = c.store.PutBlob(r.Context(), sha, sent)
+	if err == nil {
+		err = sent.is(sha)
+	}
+	if err == nil {
+		err = c.prove(r.Context(), sha)
+	}
 	if errors.Is(err, gzip.ErrChecksum) || errors.Is(err, gzip.ErrHeader) {
 		http.Error(w, "not a gzip body", http.StatusBadRequest)
 		return
@@ -367,6 +395,19 @@ func (s *Server) commit(w http.ResponseWriter, r *http.Request, c caller) {
 	if c.acc.Admits != nil {
 		if err := c.acc.Admits(req); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+	// Contents the caller may not have are, to it, contents the room does not hold: it sends them (428).
+	if !req.Deleted && ValidSha(req.Sha) {
+		held, err := c.holds(r.Context(), req.Sha)
+		if err != nil {
+			slog.Error("commit", "path", req.Path, "err", err)
+			http.Error(w, "cannot commit", http.StatusInternalServerError)
+			return
+		}
+		if !held {
+			http.Error(w, ErrNoBlob.Error(), http.StatusPreconditionRequired)
 			return
 		}
 	}

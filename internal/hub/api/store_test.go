@@ -123,7 +123,8 @@ func eventually(t *testing.T, within time.Duration, root, rel, want string) {
 // with the first one off, the second goes on editing, and the first catches up when it is back; a write made on a
 // stale copy is kept, not lost; a machine of another space sees none of it.
 func TestStoreSyncsTheLibraryOfASpaceAcrossMachines(t *testing.T) {
-	s := hubtest.New(t)
+	// Folders with no owner file: open to the space, as an installation older than the closed default keeps them.
+	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_UNRECORDED", "open"))
 	owner := s.SignIn("owner@example.com")
 	space, _ := owner.NewSpace("Acme")
 	other, _ := owner.NewSpace("Beta")

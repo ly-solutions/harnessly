@@ -22,6 +22,11 @@ Every space has its own collections; a machine reaches only the ones of the spac
 | `apps` | the files of a space's apps: their storage areas under `storage/` (docs/apps.md); a machine sees only its own person's user and chat areas; the team's apps (`team/`), the guest links (`guests/<person>/`) and their packages (`bundles/`) |
 | `projects`, `systems`, `videos`, `decks` | the records of a library's entities: one small JSON file `<project id>.json` per project (`projects`: a site or anything not named below), design system, video or deck, `{id, title, kind, preview, kit, machine, at}`. They follow the access of the project they name: a person's machine sees and writes only the records of projects open to them. With the switch `hub-design-owner` the hub also takes each committed record into the project's row (`design_projects`: title, kind, preview, kit, working-copy machine) unless the hub has a newer edit of its own. The files of the entity stay in `design`. The runtime keeps the same records in its own store, with or without a hub (see «Who owns a design entity») |
 
+A shelf (`.folders/<person>.json`) names a person's projects and folders, so it is not shared with the space: it
+reaches the machines of that person and the machines whose access names them, by person or team. A shared machine that
+does not name them keeps a shelf only while the latest revision is its own. A machine open to the whole space has its
+maker's shelf and the ones it wrote.
+
 `design` takes only the files of a library (no executables, no tool configuration). The others take any relative path.
 A collection is a room of the store named `<collection>-<space id>`.
 
@@ -72,6 +77,11 @@ someone with no role in it. A project the hub has no row for (made before access
 - One runtime of a machine syncs a folder at a time (`<folder>/.store-sync.lock`); the others wait. A library the
   runtimes of several people share (`RUNTIME_DESIGN_SHARED_DIR`) is synced by each of them with its own person's
   projects (a lock of its own per runtime): the folder holds what any of the machine's people has a role in.
+
+A hash is not a right. A machine that sees only some paths of a room gets contents, or names them in a
+commit, only when a revision of a path it sees has them, or after it has sent those contents itself within a day. To
+anyone else the store answers as if it did not hold them (`404`, listed as missing, `428` on a commit), so knowing a
+hash from a log or from access since revoked neither reads a file nor copies it into another project.
 
 ## Transfer
 

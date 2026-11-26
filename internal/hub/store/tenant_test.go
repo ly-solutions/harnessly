@@ -10,7 +10,7 @@ import (
 // a line here that says why it needs none.
 var noSpace = map[string]string{
 	// The installation itself.
-	"schema_migrations": "installation", "rollout_switches": "installation", "currency_rates": "installation", "prices": "installation", "llm_import_runs": "installation: a one-time move of the old gateway data",
+	"schema_migrations": "installation", "instance_defaults": "installation", "rollout_switches": "installation", "currency_rates": "installation", "prices": "installation", "llm_import_runs": "installation: a one-time move of the old gateway data",
 	"eval_arms": "installation: the catalog of the evaluation", "eval_tasks": "installation: the catalog of the evaluation", "eval_suites": "installation: the catalog of the evaluation",
 	"auth_challenges": "installation", "auth_events": "installation", "ingest_cursors": "installation", "job_leases": "installation",
 	// A person, in whatever space they are.
