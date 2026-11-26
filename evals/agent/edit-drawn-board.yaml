@@ -1,0 +1,29 @@
+id: edit-drawn-board
+title: Рисунок поверх доски — агент читает фигуры и блоки под ними и правит ту доску
+tags: [design]
+timeout_s: 420
+setup:
+  design: [fixtures/shop]
+covers:
+  - 'internal/design/texts/guide*.md'
+  - 'internal/design/guide.go'
+  - 'internal/design/site_*.go'
+prompt: |
+  <annotation kind="drawing" url="/shop/project/Каталог.dc.html" target="port:4100">
+  board: Каталог.dc.html · device: По окну 1280×720 · zoom: 100% · scroll: 0, 0
+  coordinates: CSS pixels of the page from its top-left (the document, not the screen)
+  shape 1: rect, red, box x=30 y=70 w=420 h=80
+    - main > div > div:nth-of-type(2) — «Футболка · 1 490 ₽» · template: Каталог.dc.html:19
+  shape 2: arrow, red, box x=420 y=40 w=80 h=60, from (500, 40) to (440, 95) — it points at the blocks at its tip
+    - main > div > div:nth-of-type(2) — «Футболка · 1 490 ₽» · template: Каталог.dc.html:19
+  shape 3: label, red, box x=500 y=29 w=150 h=22, text «зачеркнуть, скидка 990 ₽» — the blocks listed are the nearest
+    - main > div > div:nth-of-type(2) — «Футболка · 1 490 ₽» · template: Каталог.dc.html:19
+  pictures: drawing-board.png, drawing-marks.png (the board's visible part with the marks over it; the marks alone on a clear ground)
+  </annotation>
+expect:
+  - name: edited the marked card on that board
+    file: {glob: 'design:shop/project/Каталог.dc.html', contains: '990'}
+  - name: did not ask which board or what was drawn
+    text_not: '(?i)(какую|какой|which) (доску|board|файл|file|блок|block)'
+  - name: made no copy of the board
+    file: {glob: 'design:shop/project/*вариант*', absent: true}

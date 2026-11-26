@@ -88,5 +88,7 @@
   "next.keys.cmd.global.chat6": "Open chat 6 of the list",
   "next.keys.cmd.global.chat7": "Open chat 7 of the list",
   "next.keys.cmd.global.chat8": "Open chat 8 of the list",
-  "next.keys.cmd.global.chat9": "Open chat 9 of the list"
+  "next.keys.cmd.global.chat9": "Open chat 9 of the list",
+  "next.keys.cmd.site.area": "Select an area of the page",
+  "next.keys.cmd.site.draw": "Draw over the page"
 }

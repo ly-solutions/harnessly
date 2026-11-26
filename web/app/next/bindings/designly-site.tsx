@@ -1149,6 +1149,7 @@ const DesignlySiteInner = ({
       kit={appChip}
       devtools={viewing ? undefined : { machine, slot: slotOrigin, artifact: id }}
       images={!viewing && mayEdit && project ? { machine, artifact: id } : undefined}
+      drawDesign={project ? { machine, artifact: id } : undefined}
       downloads={
         project
           ? {

@@ -1593,11 +1593,13 @@ export const useRightPane = (
 
   // What the agent asked its pane to show, and what the runtime asked on seeing it work (a design it edits, a document
   // it publishes): each goes to its tab, in front or, while the person is busy in another tab, behind it with a dot;
-  // the pane comes out for it with its motion. On the phone the pane is a sheet over the chat: it is not thrown over
-  // what the person reads, the tabs wait under its button.
+  // the pane comes out for it with its motion. Beside a design or an app's space it stays shut: the person is busy with
+  // that screen. On the phone the pane is a sheet over the chat: it is not thrown over what the person reads, the tabs
+  // wait under its button.
   const phone = usePhone();
   /** `asked`: the person asked for it themselves (a view's button), so it comes in front whatever tab they are in.
-   *  `quiet`: what the runtime asked by itself: its tab goes behind with a dot, the pane does not come out. */
+   *  `quiet`: what the runtime asked by itself, or the agent while the person is on another screen: its tab
+   *  goes behind with a dot, the pane does not come out. */
   const applyRequests = (
     requests: readonly IPaneRequest[],
     asked = false,
@@ -1628,7 +1630,7 @@ export const useRightPane = (
           if (id && !effect.background) front = id;
         }
       } else if (effect?.k === 'terminal') revealAgentTerminal?.();
-      else if (effect?.k === 'side') {
+      else if (effect?.k === 'side' && !still) {
         if (docked) dockSide();
         else openFloat();
       }
@@ -1645,7 +1647,8 @@ export const useRightPane = (
     if (show && !phone) setOpen(true);
   };
   // A plain function: the hook below calls the newest one from its own effect event. What the agent asked with `open`
-  // comes in front; what the runtime asked by itself goes behind and leaves the pane as it is (requestsOf).
+  // comes in front; what the runtime asked by itself, and anything asked while the person is on another screen with the
+  // pane shut, goes behind and leaves the pane as it is (requestsOf).
   // What a subchat's pane was asked comes here too: its tab says whose it is, by the intent's `from`, oldest
   // first so the newest ask of a thing decides.
   const [, bumpMarks] = useState(0);
@@ -1670,7 +1673,7 @@ export const useRightPane = (
         else requestFilePlace(command.target, command.place);
       }
     markIntents(intents);
-    const { asked, quiet } = requestsOf(intents);
+    const { asked, quiet } = requestsOf(intents, besideDesign && !open);
     applyRequests([...quiet, ...asked], false, new Set(quiet));
   };
   // The designs the chat's agent works on: with the person's words asking to edit one, it opens full screen.

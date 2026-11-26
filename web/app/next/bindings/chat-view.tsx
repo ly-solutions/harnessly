@@ -64,6 +64,8 @@ import { convOfRef, parsePeer, PeerActions, type IPeerActions } from '@/next/fea
 import { AskSource, type IAskSource } from '@/next/features/asks/parse';
 import { AppViewHost, type IAppViewHost } from '@/next/features/app-views/host';
 import PostedCards from '@/next/features/app-views/posted';
+import { RoutineResultCard, RoutineStartCard } from '@/next/features/app-views/routines-app/cards';
+import { useIsRunChat } from '@/next/features/app-views/routines-app/store';
 import { RewindActions, type IRewindActions } from '@/next/features/chat/rewind';
 import {
   DelegatedChats,
@@ -404,6 +406,17 @@ const ChatView = ({
   // The apps' cards in this feed work beside this chat.
   const appViewHost = useMemo<IAppViewHost>(() => ({ machine, conversation: conv }), [machine, conv]);
 
+  // A chat the hub started for a routine's run: the routines app's cards stand at its head and, once it reported, its end.
+  const runChat = useIsRunChat(conv);
+  const feedLead = runChat ? (
+    <>
+      {lead}
+      <RoutineStartCard machine={machine} chat={conv} />
+    </>
+  ) : (
+    lead
+  );
+
   const metGoal = record?.goal?.status === 'met' ? record.goal : null;
   const goalReached =
     metGoal === null
@@ -431,7 +444,7 @@ const ChatView = ({
                                 <WorkflowRuns value={workflowRuns}>
                                   <Feed
                                     items={items}
-                                    lead={lead}
+                                    lead={feedLead}
                                     placeKey={conv}
                                     onCopyChatLink={() => copyLink(chatUrl(conv))}
                                     onReloadChat={() => hub.reloadConversation(machine, conv)}
@@ -466,6 +479,7 @@ const ChatView = ({
                                     terminalFailure={
                                       <>
                                         <PostedCards />
+                                        {runChat && <RoutineResultCard machine={machine} chat={conv} />}
                                         <TerminalFailureCard
                                           failure={record?.terminalFailure ?? null}
                                           onChooseTarget={

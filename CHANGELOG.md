@@ -43,6 +43,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Beside a design or an app's space the agent's `open` no longer brings the shut right pane out over the screen the
+  person is on: the tab waits behind with a dot.
 - An agent asked to write to a teammate's agent looks in `harnessly peers`: the harnessly MCP server's
   instructions now say that a chat of another person or machine is listed by `harnessly peers` and written to with
   `harnessly peers send`, and that Claude Code's ListAgents sees only this machine. Before, the agent checked ListAgents,

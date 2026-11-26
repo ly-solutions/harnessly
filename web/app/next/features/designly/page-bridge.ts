@@ -23,9 +23,7 @@ export interface IPickedLook {
   /** 0 to 1. */
   opacity: number;
   /** The block's type: its size in pixels, weight and colour. Absent from a bridge that does not read it. */
-  font?: { size: number; weight: number; color: string | null };
-  /** The words of a block that is one run of text; only such a block's words are tried on. */
-  words?: string;
+  font?: { size: number; weight: number; color: string | null; italic?: boolean; line?: string };
 }
 
 /** What a picture needs of a picked block: the board names it in its source, so one can be written into it. */
@@ -136,6 +134,8 @@ export type TBridgeMessage =
   /** The frame the board asks for (its `$preview`), told after a link opened it (page-link.ts); 0 × 0: it fills the window. */
   | { k: 'frame'; w: number; h: number }
   | { k: 'picked'; picked: IPicked }
+  /** The blocks inside a rectangle of the page, for a drawing or an area (`tk:elements-in`). */
+  | { k: 'elements'; req: number; items: IPicked[] }
   | { k: 'pick-off' }
   /** The page applied the looks sent to it; `gone` are the numbers of blocks it no longer has. */
   | { k: 'styled'; gone: number[] }
@@ -187,6 +187,7 @@ const orNull = (v: unknown) => (isNum(v) ? v : null);
 
 const MAX_BLOCK_ID = 1_000_000;
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const DECORATION = /^(?:none|underline|line-through|underline line-through)$/;
 
 const readLook = (raw: unknown): IPickedLook | null => {
   if (!raw || typeof raw !== 'object') return null;
@@ -201,6 +202,8 @@ const readLook = (raw: unknown): IPickedLook | null => {
           size: f.size,
           weight: f.weight,
           color: typeof f.color === 'string' && HEX_COLOR.test(f.color) ? f.color.toLowerCase() : null,
+          italic: f.italic === true,
+          line: typeof f.line === 'string' && DECORATION.test(f.line) ? f.line : 'none',
         }
       : null;
   return {
@@ -208,7 +211,6 @@ const readLook = (raw: unknown): IPickedLook | null => {
     radius,
     opacity: Math.min(1, Math.max(0, l.opacity)),
     ...(font ? { font } : {}),
-    ...(typeof l.words === 'string' && l.words !== '' ? { words: l.words.slice(0, 2000) } : {}),
   };
 };
 
@@ -332,6 +334,16 @@ export const readBridgeMessage = (data: unknown): TBridgeMessage | null => {
   if (m.type === 'tk:anchored') {
     const report = readAnchored(m);
     return report ? { k: 'anchored', report } : null;
+  }
+  if (m.type === 'tk:elements') {
+    if (!isNum(m.req) || !Array.isArray(m.items)) return null;
+    const items: IPicked[] = [];
+    for (const item of m.items.slice(0, 12)) {
+      if (!item || typeof item !== 'object') continue;
+      const read = readBridgeMessage({ ...(item as Record<string, unknown>), type: 'tk:picked' });
+      if (read?.k === 'picked') items.push(read.picked);
+    }
+    return { k: 'elements', req: m.req, items };
   }
   if (m.type !== 'tk:picked' || typeof m.selector !== 'string' || typeof m.tag !== 'string') return null;
   const r = (m.rect ?? {}) as Record<string, unknown>;

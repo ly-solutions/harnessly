@@ -85,6 +85,7 @@ import {
 import { pageOffer } from '@/next/features/app-views/page-tools';
 import { askConfirm } from '@/next/features/app-views/confirm';
 import { confirmText, consentText, runConnection } from '@/next/features/app-views/connections';
+import { routinesHandler } from '@/next/features/app-views/routines';
 import { hostKeys } from '@/next/features/app-views/host-keys';
 import { isBlankDocument, watchLoads } from '@/next/features/app-views/frame-loads';
 import { isSpaceApp } from '@/next/features/app-views/service-health';
@@ -872,6 +873,7 @@ const AppFrame = ({
             askConfirm(app.name, q.kind === 'consent' ? consentText(q.card, t) : confirmText(q.change, t)),
         });
       },
+      routines: routinesHandler(machine),
       terminalRead: async (params) => {
         const sid = await need();
         return callTerminalRead(machine, sid, params);

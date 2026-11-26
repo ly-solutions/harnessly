@@ -124,7 +124,7 @@ const DesignlyGallery = () => {
   }, [dark]);
   const draft: INoteDraft = {
     picked: { ...PICKED, look: hasLook ? PICKED.look : null },
-    at: { x: 40, y: 56, right: false },
+    at: { x: 40, y: 56, top: 20, right: false },
     text,
     style,
   };
@@ -150,7 +150,7 @@ const DesignlyGallery = () => {
           text={text}
           onText={setText}
           mic={{ recording: false, onToggle: () => {} }}
-          needsText={false}
+          batch={false}
           onOk={() => {}}
           onCancel={() => {}}
           onDelete={() => {}}

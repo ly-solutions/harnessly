@@ -74,6 +74,10 @@ export const METHOD_PERMISSION = {
   'harnessly/keys.hints': '',
   'harnessly/slot.done': '',
   'harnessly/slot.greet': '',
+  'harnessly/routines.forChat': 'routines.read',
+  'harnessly/routines.get': 'routines.read',
+  'harnessly/routines.runs': 'routines.read',
+  'harnessly/routines.setEnabled': 'routines.write',
   'harnessly/sinopia.document': 'sinopia.read',
   'harnessly/sinopia.selection': 'sinopia.read',
   'harnessly/sinopia.node': 'sinopia.read',
@@ -127,6 +131,8 @@ export const APP_PERMISSIONS = [
   'connections.read',
   'connections.act',
   'agents.run',
+  'routines.read',
+  'routines.write',
   'users.read',
 ] as const;
 
@@ -170,6 +176,8 @@ export const PERMISSION_CLASS = {
   'connections.read': 'high',
   'connections.act': 'critical',
   'agents.run': 'high',
+  'routines.read': 'medium',
+  'routines.write': 'medium',
   'users.read': 'medium',
 } as const satisfies Record<string, 'critical' | 'high' | 'medium' | 'low'>;
 
@@ -238,6 +246,16 @@ export type TContributionKind = (typeof CONTRIBUTION_KINDS)[number];
 /** The host's own apps (internal/apps/builtin): they run in the page, through the same bridge and rights. */
 export const BUILTIN_APPS = [
   {
+    id: 'harnessly.routines',
+    name: 'Регулярные задачи',
+    version: '1.0.0',
+    targets: ['chat', 'side'],
+    permissions: ['routines.read', 'routines.write'],
+    points: [],
+    aliases: [],
+    views: [{ id: 'start', title: 'Запуск задачи', icon: '', targets: ['chat'], size: '' }, { id: 'result', title: 'Итог запуска', icon: '', targets: ['chat'], size: '' }, { id: 'results', title: 'Результаты', icon: 'files', targets: ['side'], size: 'm' }, { id: 'sources', title: 'Источники', icon: 'link', targets: ['side'], size: 's' }, { id: 'runs', title: 'Запуски', icon: 'history', targets: ['side'], size: 'm' }, { id: 'next', title: 'Следующие запуски', icon: 'clock', targets: ['side'], size: 's' }, { id: 'memory', title: 'Память', icon: 'book-open', targets: ['side'], size: 's' }],
+  },
+  {
     id: 'harnessly.sinopia',
     name: 'Sinopia',
     version: '1.0.0',
@@ -245,5 +263,6 @@ export const BUILTIN_APPS = [
     permissions: ['chat.prompt', 'tools.page', 'context.publish'],
     points: ['sinopia.kind', 'sinopia.panel', 'sinopia.selection', 'sinopia.check', 'sinopia.export', 'sinopia.import'],
     aliases: ['sinopia.<kind>', 'sinopia.*'],
+    views: [],
   },
 ] as const;

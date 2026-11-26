@@ -9,6 +9,7 @@ import {
   type IPaneIntent,
   type TIntentCommand,
 } from '@/next/features/pane/intents';
+import { placeRequest, type IPaneTabs } from '@/next/features/pane/pane-tabs';
 
 const NOW = 1_760_000_000_000;
 
@@ -205,5 +206,26 @@ describe('requestsOf', () => {
       { k: 'design', target: 'landing', reload: false },
       { k: 'legacy', kind: 'artifacts', target: '/agents/docs/plan', reload: true },
     ]);
+  });
+
+  // The person looks at a design with the pane shut beside it: a screenshot the agent opens must not take their room.
+  it('while the person is on another screen, what the agent asked waits behind like the runtime’s own', () => {
+    const got = requestsOf(
+      [intent('a', open('files', '/tmp/shots/l4.png')), intent('b', { kind: 'show' })],
+      true,
+    );
+    expect(got.asked).toEqual([]);
+    expect(got.quiet).toEqual([
+      { k: 'files', target: '/tmp/shots/l4.png', reload: false },
+      { k: 'show', reload: false },
+    ]);
+    const kept: IPaneTabs = { tabs: [{ id: 'mine', kind: 'plan' }], active: 'mine', unread: [] };
+    const placed = placeRequest(kept, got.quiet[0], {
+      busy: true,
+      cwd: '/home/me/work',
+      nextId: () => 'shot',
+    });
+    expect(placed.next.active).toBe('mine');
+    expect(placed.next.unread).toEqual(['shot']);
   });
 });

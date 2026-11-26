@@ -636,3 +636,15 @@
 .hx-icon[data-i='gallery-horizontal'] {
   --hx-i: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 %3E%3Cpath d=%22M2 3v18%22 /%3E%3Crect width=%2212%22 height=%2218%22 x=%226%22 y=%223%22 rx=%222%22 /%3E%3Cpath d=%22M22 3v18%22 /%3E%3C/svg%3E');
 }
+.hx-icon[data-i='highlighter'] {
+  --hx-i: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 %3E%3Cpath d=%22m9 11-6 6v3h9l3-3%22 /%3E%3Cpath d=%22m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4%22 /%3E%3C/svg%3E');
+}
+.hx-icon[data-i='redo-2'] {
+  --hx-i: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 %3E%3Cpath d=%22m15 14 5-5-5-5%22 /%3E%3Cpath d=%22M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13%22 /%3E%3C/svg%3E');
+}
+.hx-icon[data-i='square-dashed'] {
+  --hx-i: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 %3E%3Cpath d=%22M5 3a2 2 0 0 0-2 2%22 /%3E%3Cpath d=%22M19 3a2 2 0 0 1 2 2%22 /%3E%3Cpath d=%22M21 19a2 2 0 0 1-2 2%22 /%3E%3Cpath d=%22M5 21a2 2 0 0 1-2-2%22 /%3E%3Cpath d=%22M9 3h1%22 /%3E%3Cpath d=%22M9 21h1%22 /%3E%3Cpath d=%22M14 3h1%22 /%3E%3Cpath d=%22M14 21h1%22 /%3E%3Cpath d=%22M3 9v1%22 /%3E%3Cpath d=%22M21 9v1%22 /%3E%3Cpath d=%22M3 14v1%22 /%3E%3Cpath d=%22M21 14v1%22 /%3E%3C/svg%3E');
+}
+.hx-icon[data-i='message-circle'] {
+  --hx-i: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%221.75%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 %3E%3Cpath d=%22M7.9 20A9 9 0 1 0 4 16.1L2 22Z%22 /%3E%3C/svg%3E');
+}

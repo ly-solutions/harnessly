@@ -47,9 +47,10 @@ The host's own kinds, then the points the builtin apps declare.
 
 Apps of the host's own: they run in the host's page and reach the host through the same bridge, with rights from the same list. Their points take contributions from any app.
 
-| App | Rights | Points | Aliases |
-| --- | --- | --- | --- |
-| `harnessly.sinopia` (Sinopia) | `chat.prompt`, `tools.page`, `context.publish` | `sinopia.kind`, `sinopia.panel`, `sinopia.selection`, `sinopia.check`, `sinopia.export`, `sinopia.import` | `sinopia.<kind>`, `sinopia.*` |
+| App | Rights | Points | Aliases | Views |
+| --- | --- | --- | --- | --- |
+| `harnessly.routines` (Регулярные задачи) | `routines.read`, `routines.write` | `` | `` | `start (chat)`, `result (chat)`, `results (side)`, `sources (side)`, `runs (side)`, `next (side)`, `memory (side)` |
+| `harnessly.sinopia` (Sinopia) | `chat.prompt`, `tools.page`, `context.publish` | `sinopia.kind`, `sinopia.panel`, `sinopia.selection`, `sinopia.check`, `sinopia.export`, `sinopia.import` | `sinopia.<kind>`, `sinopia.*` | `` |
 
 ## Permissions
 
@@ -95,6 +96,8 @@ Every right has a class of risk. The class forbids nothing: it orders the instal
 | `connections.read` | high | Read data from the person's connected services (Settings → Connections: mail, tasks, calendars, APIs) through hl.connections: tools the service marks read-only and GET requests, for each connection the manifest's `connections` names and the person agreed to for this app. | `harnessly/connections.api`, `harnessly/connections.call`, `harnessly/connections.list`, `harnessly/connections.request`, `harnessly/connections.tools` |
 | `connections.act` | critical | Act through the person's connected services: send, create, change, delete (hl.connections.call and api that change something). Only for a connection the manifest names with `access: all` and the person agreed to that far; every action waits for the person's yes in the page. | — |
 | `agents.run` | high | Start a task in a new chat under the app's chat, within the app's budget of the day (manifest `budget.runsPerDay`, 3 by default, 20 at most). | `harnessly/agents.run` |
+| `routines.read` | medium | Read the person's routines (recurring tasks the hub runs) and their runs: the task, its schedule, each run's outcome, summary, artifacts, sources and the memory it keeps (hl.routines.forChat, get, runs). | `harnessly/routines.forChat`, `harnessly/routines.get`, `harnessly/routines.runs` |
+| `routines.write` | medium | Turn the person's routines on and off (hl.routines.setEnabled). Nothing else of a routine changes. | `harnessly/routines.setEnabled` |
 | `users.read` | medium | Read the people of the space. Refused for now: not supported yet. | — |
 
 ## Bridge methods
@@ -173,6 +176,10 @@ Every right has a class of risk. The class forbids nothing: it orders the instal
 | `harnessly/keys.hints` | — | `hl.keys.hints(commands)` | The keys the person has for the host's commands, as the host writes them: {hints: {command: label or null}}. |
 | `harnessly/slot.done` | — | `hl.slot.done()` | A slot view (an onboarding step) says it is finished. |
 | `harnessly/slot.greet` | — | `hl.slot.greet({title, sub})` | A view of the start page (the home slot) puts its own greeting in place of the host's question over the field: title up to 120 characters, sub up to 240; an empty title gives the host's back. |
+| `harnessly/routines.forChat` | `routines.read` | `hl.routines.forChat(chatId)` | The routine whose run this chat is: {routine, run, runs} — the routine with its schedule and next starts, this run, and its last runs newest first; {routine: null} for a chat that is no run of a routine. |
+| `harnessly/routines.get` | `routines.read` | `hl.routines.get(id)` | One routine of the person: {routine} with its schedule (cron, words), next starts, last runs, counts and memory (state). |
+| `harnessly/routines.runs` | `routines.read` | `hl.routines.runs(id, {limit})` | A routine's runs, newest first: {runs: [{id, status, outcome, conversationId, createdAt, finishedAt, result: {summary, artifacts, sources, …}}]}; limit 20 by default, 100 at most. |
+| `harnessly/routines.setEnabled` | `routines.write` | `hl.routines.setEnabled(id, on)` | Turn a routine on or off: {routine}. |
 | `harnessly/sinopia.document` | `sinopia.read` | `hl.sinopia.document()` | The document the view is shown in. |
 | `harnessly/sinopia.selection` | `sinopia.read` | `hl.sinopia.selection()` | What the person selected. |
 | `harnessly/sinopia.node` | `sinopia.read` | `hl.sinopia.node(id)` | One node of the document. |

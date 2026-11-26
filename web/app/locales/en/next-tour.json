@@ -23,8 +23,6 @@
   "next.tour.site.edit.text": "The chat with the agent docks to the left of the mockup: whatever it changes shows at once.",
   "next.tour.site.device.title": "See it on iPhone 14",
   "next.tour.site.device.text": "The device button puts the mockup in a phone's size.",
-  "next.tour.site.ask.title": "Send it to the agent",
-  "next.tour.site.ask.text": "The note on the heading is in the chat field on the left. Send it — the agent changes the mockup. The lesson picked a fast model.",
   "next.tour.site.outro": "You went through the site: a live mockup, an edit by the agent, pages and the phone. The demo stays in your library — experiment.",
   "next.tour.slides.name": "Sinopia · slides",
   "next.tour.slides.lesson": "Slides lesson",
@@ -174,7 +172,6 @@
   "next.tour.site.heading.title": "Click the heading",
   "next.tour.site.heading.text": "The big heading is ringed on the mockup. A click opens a note for it.",
   "next.tour.site.note.title": "Write what to change",
-  "next.tour.site.note.text": "The note is already filled in — change it if you like and press the arrow: the note goes into the message to the agent.",
-  "next.tour.site.note.needs": "Pick a block first: the note is written for it.",
-  "next.tour.site.ask.needs": "Pick the heading and write a note for it first — without one the agent has nothing to change."
+  "next.tour.site.note.text": "The note is already in the field: change it if you like and press the arrow. It goes to the agent, which changes the mockup. The lesson picks a fast model.",
+  "next.tour.site.note.needs": "Pick a block first: the note is written for it."
 }

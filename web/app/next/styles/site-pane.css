@@ -150,6 +150,8 @@
   /* The room the window leaves from the list's anchored edge (page-picker.tsx measures it). */
   max-height: min(520px, var(--hx-pgpick-room, calc(100dvh - 140px)));
   padding: 6px;
+  /* Only the list scrolls, under the search: nothing of it passes behind the field. */
+  overflow: hidden;
   outline: none;
 }
 .hx-pgpick__search {
@@ -181,6 +183,11 @@
 }
 .hx-pgpick__search input::placeholder {
   color: var(--hx-fg-3);
+}
+.hx-pgpick__search + .hx-pgpick__list {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hx-border);
 }
 .hx-pgpick__list {
   display: flex;
@@ -223,8 +230,8 @@
   background: var(--hx-bg-active);
 }
 .hx-pgpick__row:focus-visible {
-  outline: 2px solid var(--hx-focus);
-  outline-offset: -2px;
+  outline: none;
+  background: var(--hx-bg-hover);
 }
 .hx-pgpick__ic {
   flex: none;

@@ -290,6 +290,7 @@ const Viewer = ({
   });
   return (
     <SiteView
+      drawDesign={{ machine: 'gallery' as never, artifact: 'gallery' }}
       title="Досье отеля — хакатон Островка"
       pages={pages}
       tabs={[tab]}

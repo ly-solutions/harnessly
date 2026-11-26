@@ -54,9 +54,9 @@
   }
 }
 
-/* harnessly — аннотации: карточка с комментарием и свойствами элемента, пометки в документе, плашка «N аннотаций» в поле ввода */
+/* harnessly — аннотации: карточка с комментарием и прямыми правками элемента, пометки в документе, плашка «N аннотаций» в поле ввода */
 
-/* ── Карточка: стеклянная, поле крупное, свойства раскрываются вставкой, внизу «Отменить», 🗑, 🎤 и ↑ ── */
+/* ── Карточка: стеклянная, поле крупное, под ним строка прямых правок, «⋯» раскрывает вставку, внизу «Отменить», 🗑, 🎤 и ↑ ── */
 .hx-note.hx-ann {
   width: 344px;
   padding: 0;
@@ -71,39 +71,21 @@
     inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
   text-align: left;
 }
+/* The body scrolls only where the board leaves the card less room than it needs (note-place.ts). */
+.hx-ann__body {
+  border-radius: inherit;
+}
+.hx-note.hx-ann[data-scroll='true'] .hx-ann__body {
+  max-height: calc(var(--nmax) - 2px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 .hx-ann__row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 14px 4px 10px;
-}
-.hx-ann__tune {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--hx-fg-1) 7%, transparent);
-  color: var(--hx-fg-2);
-  cursor: pointer;
-  transition:
-    background 180ms ease,
-    color 180ms ease,
-    transform 240ms var(--hx-ease-out);
-}
-.hx-ann__tune:hover {
-  background: color-mix(in srgb, var(--hx-fg-1) 11%, transparent);
-  color: var(--hx-fg-1);
-}
-.hx-ann__tune:active {
-  transform: scale(0.94);
-}
-.hx-ann__tune[aria-pressed='true'] {
-  background: var(--hx-accent-soft);
-  color: var(--hx-accent);
+  padding: 10px 14px 4px;
 }
 .hx-ann__row > .hx-ann__n {
   flex: none;
@@ -200,6 +182,16 @@
   opacity: 0.6;
   cursor: progress;
 }
+.hx-ann__ok[data-save] {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  padding: 0 15px;
+  border-radius: var(--hx-radius-full);
+  font: inherit;
+  font-size: 13px;
+  font-weight: var(--hx-weight-medium);
+}
 /* The card is moved by its own ground: the line of the field and the foot between the buttons. */
 .hx-site > .hx-note.hx-ann :is(.hx-ann__row, .hx-ann__foot, .hx-ann__foot > .hx-spacer) {
   cursor: grab;
@@ -209,18 +201,69 @@
   :is(.hx-ann__row, .hx-ann__foot, .hx-ann__foot > .hx-spacer) {
   cursor: grabbing;
 }
-.hx-ann__tag {
+/* The hand's row: the type, the inks and «⋯», one line under the field. */
+.hx-ann__tools {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin: 2px 8px 0;
+  padding: 5px 0 1px;
+  border-top: 1px solid color-mix(in srgb, var(--hx-fg-1) 7%, transparent);
+}
+.hx-ann__tool {
+  display: inline-flex;
   flex: none;
-  padding: 2px 7px;
-  border-radius: 7px;
+  align-items: center;
+  justify-content: center;
+  min-width: 25px;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.hx-ann__tool:hover,
+.hx-ann__tool[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--hx-fg-1) 8%, transparent);
+}
+.hx-ann__tool[aria-pressed='true'] {
   background: var(--hx-accent-soft);
   color: var(--hx-accent);
-  font-family: var(--hx-font-mono);
-  font-size: 12px;
-  line-height: 16px;
+}
+.hx-ann__tool[data-mark='italic'] i {
+  font-family: Georgia, serif;
+}
+.hx-ann__tool small {
+  font-size: 9px;
+}
+.hx-ann__sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: color-mix(in srgb, var(--hx-fg-1) 12%, transparent);
+}
+.hx-ann__inks {
+  display: inline-flex;
+  flex: none;
+  gap: 5px;
+  padding: 0 3px;
+}
+.hx-ann__inks .hx-ann__swb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
 }
 
-/* Свойства: раскрываются по высоте, без прыжка */
+/* «⋯»: раскрывается по высоте, без прыжка */
 .hx-ann__props {
   display: grid;
   grid-template-rows: 0fr;
@@ -229,7 +272,7 @@
     grid-template-rows 340ms var(--hx-ease-out),
     opacity 220ms ease;
 }
-.hx-ann[data-tune='true'] .hx-ann__props {
+.hx-ann[data-more='true'] .hx-ann__props {
   grid-template-rows: 1fr;
   opacity: 1;
 }
@@ -237,67 +280,21 @@
   min-height: 0;
   overflow: hidden;
   margin: 0 8px;
-  border-radius: 16px;
+  border-radius: 14px;
   background: color-mix(in srgb, var(--hx-fg-1) 4%, transparent);
 }
-.hx-ann[data-tune='true'] .hx-ann__props-in {
+.hx-ann[data-more='true'] .hx-ann__props-in {
   margin-top: 6px;
 }
-.hx-ann__el {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 6px 0 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--hx-fg-1) 7%, transparent);
-}
-.hx-ann__target {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--hx-fg-3);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hx-ann__reset {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--hx-radius-full);
-  background: none;
-  color: var(--hx-fg-2);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  transition:
-    opacity 200ms ease,
-    background 160ms ease;
-}
-.hx-ann__reset:hover {
-  background: color-mix(in srgb, var(--hx-fg-1) 7%, transparent);
-  color: var(--hx-fg-1);
-}
-.hx-ann__reset[data-on='false'] {
-  opacity: 0;
-  pointer-events: none;
-}
 .hx-ann__grid {
-  max-height: min(320px, 46vh);
-  padding: 4px 0 6px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
+  padding: 4px 0;
 }
 .hx-ann__prop {
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 108px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  min-height: 42px;
+  min-height: 40px;
   padding: 0 8px 0 12px;
 }
 .hx-ann__label {
@@ -322,10 +319,7 @@
 }
 
 /* Общий вид полей справа */
-.hx-ann__field,
-.hx-ann__val,
-.hx-ann__step,
-.hx-ann__seg {
+.hx-ann__step {
   justify-self: end;
   height: 32px;
   border: 1px solid color-mix(in srgb, var(--hx-fg-1) 10%, transparent);
@@ -334,37 +328,6 @@
   color: var(--hx-fg-1);
   font: inherit;
   font-size: 13px;
-}
-.hx-ann__field {
-  width: 100%;
-  max-width: 188px;
-  padding: 0 11px;
-  outline: 0;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-}
-.hx-ann__field:focus {
-  border-color: var(--hx-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hx-accent) 18%, transparent);
-}
-.hx-ann__val {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 188px;
-  padding: 0 11px 0 7px;
-  cursor: pointer;
-  transition: border-color 160ms ease;
-}
-.hx-ann__val .hx-ann__vtext {
-  font-family: inherit;
-  font-size: 13px;
-}
-.hx-ann__val:hover,
-.hx-ann__val[aria-expanded='true'] {
-  border-color: color-mix(in srgb, var(--hx-fg-1) 22%, transparent);
 }
 .hx-ann__vtext {
   min-width: 0;
@@ -392,25 +355,12 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 4px 12px 10px;
-  animation: hx-ann-sws 260ms var(--hx-ease-out) backwards;
+  gap: 5px;
 }
-@keyframes hx-ann-sws {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-.hx-ann__sws[data-state='closing'] {
-  animation: hx-ann-sws-out 160ms var(--hx-ease-out) forwards;
-  pointer-events: none;
-}
-@keyframes hx-ann-sws-out {
-  to {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
+.hx-ann__sws .hx-ann__swb {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
 }
 /* The block is gone from the page: the look cannot be shown on it */
 .hx-ann__hint {
@@ -518,33 +468,6 @@
   min-width: 46px;
   text-align: center;
 }
-.hx-ann__seg {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-}
-.hx-ann__seg button {
-  height: 26px;
-  padding: 0 8px;
-  font-variant-numeric: tabular-nums;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--hx-fg-2);
-  font: inherit;
-  font-size: 12px;
-  font-weight: var(--fw);
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    color 160ms ease;
-}
-.hx-ann__seg button[aria-checked='true'] {
-  background: var(--hx-bg-raised);
-  color: var(--hx-fg-1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-}
-
 .hx-ann__mic[data-rec='true'] {
   color: var(--hx-danger);
   animation: hx-ann-rec 1s ease-in-out infinite;
@@ -958,16 +881,13 @@
   }
 }
 
-/* Телефон: карточка во всю ширину, свойства — колонкой покороче */
+/* Телефон: карточка во всю ширину, подписи в «⋯» — колонкой покороче */
 @media (max-width: 600px) {
   .hx-note.hx-ann {
     width: min(344px, calc(100vw - 24px));
   }
   .hx-ann__prop {
     grid-template-columns: 100px minmax(0, 1fr);
-  }
-  .hx-ann__sws {
-    padding-left: 12px;
   }
   .hx-annel .hx-note.hx-ann {
     left: -8px;
@@ -1095,7 +1015,7 @@
   translate: var(--x) var(--y);
   border: 1.5px solid var(--hx-accent);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--hx-accent) 12%, transparent);
+  background: color-mix(in srgb, var(--hx-accent) 5%, transparent);
   clip-path: inset(var(--ct, -6px) var(--cr, -6px) var(--cb, -6px) var(--cl, -6px));
   opacity: 0;
   pointer-events: none;
@@ -1187,87 +1107,4 @@
   padding: 12px;
   border-radius: 16px;
   background: var(--hx-bg-raised);
-}
-
-/* The type of the picked block: its words, the size, the weight and the colour of the words. */
-.hx-ann__words {
-  box-sizing: border-box;
-  width: calc(100% - 20px);
-  height: 32px;
-  margin: 4px 10px;
-  padding: 0 10px;
-  border: 1px solid var(--hx-border);
-  border-radius: 8px;
-  outline: none;
-  background: var(--hx-bg-hover);
-  color: var(--hx-fg-1);
-  font: inherit;
-  font-size: 13px;
-}
-.hx-ann__words:focus {
-  border-color: var(--hx-accent);
-}
-.hx-ann__seg {
-  display: flex;
-  justify-self: end;
-  padding: 3px;
-  border-radius: 9px;
-  background: var(--hx-bg-hover);
-}
-.hx-ann__seg button {
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--hx-fg-3);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.hx-ann__seg button[data-weight='700'] {
-  font-weight: 700;
-}
-.hx-ann__seg button[aria-checked='true'] {
-  background: var(--hx-bg-raised);
-  box-shadow: var(--hx-shadow-sm);
-  color: var(--hx-fg-1);
-}
-.hx-ann__inks {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.hx-ann__line {
-  height: 1px;
-  margin: 4px 12px;
-  background: var(--hx-border);
-}
-.hx-ann__reset {
-  width: 28px;
-  justify-content: center;
-  padding: 0;
-}
-.hx-ann__write {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--hx-fg-2);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.hx-ann__write:hover {
-  background: color-mix(in srgb, var(--hx-fg-1) 7%, transparent);
-  color: var(--hx-fg-1);
-}
-.hx-ann__grid {
-  max-height: min(440px, 58vh);
 }

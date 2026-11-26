@@ -152,6 +152,45 @@ func (s *Service) MachineCall(ctx context.Context, owner, email, machine string,
 			return nil, err
 		}
 		return map[string]any{"runs": runs}, nil
+	case "chat":
+		return s.routineOfChat(ctx, owner, strings.TrimSpace(call.ID), call.Limit)
 	}
-	return nil, httpx.New(http.StatusBadRequest, "invalid_request", "op: list, get, create, update, run, delete или runs")
+	return nil, httpx.New(http.StatusBadRequest, "invalid_request", "op: list, get, create, update, run, delete, runs или chat")
+}
+
+// routineOfChat is the routine whose run a conversation is (op chat): the routine as the list shows it, the
+// run, and its last runs newest first, for the routines app in that chat. A chat that is no run of the owner's
+// routine answers {routine: null}: the app then shows nothing, and the page cannot tell a stranger's run from none.
+func (s *Service) routineOfChat(ctx context.Context, owner, conversation string, limit int) (any, error) {
+	none := map[string]any{"routine": nil}
+	if conversation == "" || len(conversation) > 200 {
+		return none, nil
+	}
+	run, err := scanRun(s.db.QueryRow(ctx, `SELECT `+prefixCols("r.", runCols)+` FROM automation_runs r JOIN automation_rules ar ON ar.id = r.rule_id
+		WHERE r.conversation_id = ? AND ar.owner_id = ? ORDER BY r.created_at DESC LIMIT 1`, conversation, owner))
+	if err == store.ErrNotFound {
+		return none, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	views, err := s.routineViews(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range views {
+		if v.ID != run.RuleID {
+			continue
+		}
+		if limit <= 0 || limit > 100 {
+			limit = 20
+		}
+		runs, err := s.runs(ctx, owner, v.ID, limit)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"routine": v, "run": run, "runs": runs}, nil
+	}
+	// A trigger's run, not a routine's.
+	return none, nil
 }

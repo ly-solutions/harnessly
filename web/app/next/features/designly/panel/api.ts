@@ -6,6 +6,7 @@ import { postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { readOrSnapshot } from '@/next/features/designly/snapshot-read';
 import type { TTweakValue } from '@/next/features/designly/page-bridge';
 import type { MachineId } from '@/next/protocol/v2';
+import type { IShape } from '@/next/features/designly/draw/types';
 
 type TPath = `/${string}`;
 const site = (path: string): TPath => platformPath(`/design/site${path}` as TPath);
@@ -49,6 +50,8 @@ export interface ISiteComment {
   mentions: IPerson[];
   agent: boolean;
   reactions: IReaction[];
+  /** What the person drew over the board with the thread's first comment; null none. */
+  drawing: IShape[] | null;
 }
 
 /** A thread: its first comment and the replies under it, oldest first. */
@@ -89,7 +92,32 @@ export const readSiteComment = (v: unknown): ISiteComment | null => {
           names: Array.isArray(r.names) ? r.names.map(str) : [],
         }))
       : [],
+    drawing: readDrawing(v.drawing),
   };
+};
+
+const SHAPE_KINDS = new Set<string>(['pen', 'marker', 'arrow', 'rect', 'label']);
+
+/** A comment's drawing as the runtime keeps it (internal/design/site_drawing.go). */
+const readDrawing = (v: unknown): IShape[] | null => {
+  if (!isRecord(v) || !Array.isArray(v.shapes)) return null;
+  const out: IShape[] = [];
+  v.shapes.forEach((s, i) => {
+    if (!isRecord(s) || !SHAPE_KINDS.has(str(s.kind)) || !Array.isArray(s.pts)) return;
+    const pts = s.pts
+      .filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite))
+      .map(([x, y]) => [x, y] as const);
+    if (pts.length === 0) return;
+    out.push({
+      id: `c${i}`,
+      kind: str(s.kind) as IShape['kind'],
+      color: /^#[0-9a-f]{6}$/i.test(str(s.color)) ? str(s.color) : '#e5484d',
+      w: num(s.w) || 3,
+      pts,
+      ...(typeof s.text === 'string' ? { text: s.text } : {}),
+    });
+  });
+  return out.length > 0 ? out : null;
 };
 
 /** The comments put together into threads, the newest thread first; a reply whose thread is gone is dropped. */
@@ -123,6 +151,8 @@ export interface ICommentDraft {
   parent: string;
   mentions: IPerson[];
   agent: boolean;
+  /** The shapes drawn with it (a thread's first comment). */
+  drawing?: readonly IShape[];
 }
 
 const must = (v: ISiteComment | null): ISiteComment => {
@@ -130,8 +160,25 @@ const must = (v: ISiteComment | null): ISiteComment => {
   return v;
 };
 
-export const addSiteComment = async (m: MachineId, artifact: string, draft: ICommentDraft) =>
-  must(readSiteComment(await runtimeJson(m, site('/comments'), postJson({ artifact, ...draft }))));
+export const addSiteComment = async (m: MachineId, artifact: string, draft: ICommentDraft) => {
+  const { drawing, ...rest } = draft;
+  const shapes = drawing?.map((sh) => ({
+    kind: sh.kind,
+    color: sh.color,
+    w: sh.w,
+    pts: sh.pts,
+    text: sh.text,
+  }));
+  return must(
+    readSiteComment(
+      await runtimeJson(
+        m,
+        site('/comments'),
+        postJson({ artifact, ...rest, ...(shapes && shapes.length > 0 ? { drawing: { shapes } } : {}) }),
+      ),
+    ),
+  );
+};
 
 export const resolveSiteComment = async (m: MachineId, artifact: string, id: string, resolved: boolean) =>
   must(

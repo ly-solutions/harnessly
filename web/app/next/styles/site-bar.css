@@ -30,8 +30,10 @@
 }
 
 /* The switcher's list: 360 wide under the address, the chat's boards first. */
+/* As wide as the board's field it opens from: the names are seldom cut. */
 .hx-pgpick[data-boards] {
-  width: min(360px, calc(100cqw - 24px));
+  width: clamp(360px, 100%, 720px);
+  max-width: calc(100vw - 16px);
 }
 .hx-pgpick__group {
   padding: 8px 8px 4px;
@@ -253,105 +255,6 @@
   white-space: nowrap;
 }
 
-/* The bar of a text edited by hand: a strip over the page, which moves down for it. */
-.hx-textstrip {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 8;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 52px;
-  pointer-events: none;
-}
-.hx-textbar {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  max-width: calc(100% - 16px);
-  height: 36px;
-  padding: 0 4px;
-  border: 1px solid var(--hx-border-strong);
-  border-radius: 11px;
-  background: var(--hx-bg-raised);
-  box-shadow: var(--hx-shadow-overlay);
-  pointer-events: auto;
-  animation: hx-bar-in 160ms var(--hx-ease-out) backwards;
-}
-.hx-textbar__btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--hx-fg-1);
-  font: inherit;
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.hx-textbar__btn:hover {
-  background: var(--hx-bg-hover);
-}
-.hx-textbar__btn small {
-  font-size: 9px;
-}
-.hx-textbar__btn i {
-  font-family: Georgia, serif;
-}
-.hx-textbar__sep {
-  width: 1px;
-  height: 18px;
-  margin: 0 3px;
-  background: var(--hx-border);
-}
-.hx-textbar__ink {
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border: 1.5px solid var(--hx-border-strong);
-  border-radius: 50%;
-  background: #16171a;
-}
-.hx-textbar__ink[data-ink='accent'] {
-  background: #7b6cf0;
-}
-.hx-textbar__ink[data-ink='red'] {
-  background: #e5484d;
-}
-.hx-textbar__ink[data-ink='grey'] {
-  background: #8a8f98;
-}
-.hx-textbar__done {
-  height: 28px;
-  margin-left: 4px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 7px;
-  background: var(--hx-accent);
-  color: #fff;
-  font: inherit;
-  font-size: var(--hx-text-xs);
-  font-weight: var(--hx-weight-semibold);
-  cursor: pointer;
-}
-.hx-vparea {
-  transition: padding-top 220ms var(--hx-ease-out);
-}
-.hx-site[data-handing='true'] .hx-vparea {
-  padding-top: 56px;
-}
-.hx-site[data-handing='true'] .hx-vparea[data-dev='fill'] {
-  box-sizing: border-box;
-}
 /* The bar's buttons keep their size in a narrow pane: the board switcher gives the room. */
 .hx-browser__bar > :not(.hx-browser__addr) {
   flex: none;
@@ -373,9 +276,10 @@
   gap: 8px;
   border-radius: 6px;
 }
-.hx-site-menu .hx-option:focus-visible {
-  outline: 2px solid var(--hx-focus);
-  outline-offset: -2px;
+/* A lit item (the arrows, the keyboard) is the hover's ground, never a ring: a menu opened by the mouse lights none. */
+.hx-site-menu :is(.hx-option, .hx-more__item, .hx-pgpick__row, .hx-devopt, [role='menuitem']):focus-visible {
+  outline: none;
+  background: var(--hx-bg-hover);
 }
 .hx-site-menu .hx-option[aria-checked='true'] {
   background: var(--hx-bg-active);
@@ -394,4 +298,23 @@
 .hx-site-menu .hx-devopt__size,
 .hx-site-menu .hx-more__kbd {
   color: var(--hx-fg-2);
+}
+
+/* «Обновить макет» left of the board's field: never squeezed out, its icon turns while the board loads. */
+.hx-browser__reload {
+  flex: none;
+}
+.hx-browser__reload[aria-busy='true'] .hx-icon {
+  animation: hx-reload-turn 900ms linear infinite;
+}
+@keyframes hx-reload-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-browser__reload[aria-busy='true'] .hx-icon {
+    animation: none;
+    opacity: 0.6;
+  }
 }

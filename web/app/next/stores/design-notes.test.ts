@@ -25,7 +25,7 @@ const note = (id: string): IDesignNote => ({
   },
   page: '/d/x/home.html',
   text: 'выше',
-  at: { x: 1, y: 2, right: false },
+  at: { x: 1, y: 2, top: 1, right: false },
   style: NO_EDIT,
   port: 5555,
 });

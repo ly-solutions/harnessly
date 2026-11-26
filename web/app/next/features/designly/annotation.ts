@@ -1,7 +1,8 @@
 // A note on a design's page as the agent reads it: the `<annotation>` block its system prompt describes (the same
 // block the Legacy pane writes), and the same block read back into a chip for the log. Whatever the page supplied is
 // one line each and cannot close the block, so the page's words cannot forge a line or an instruction.
-import { styleLine, type IStyleEdit } from '@/next/features/designly/element-style';
+import { hasEdit, NO_EDIT, styleLine, type IStyleEdit } from '@/next/features/designly/element-style';
+import type { IHandWritten } from '@/next/features/designly/hand-edit';
 import type { IPicked } from '@/next/features/designly/page-bridge';
 
 const MAX_HTML = 1000;
@@ -27,13 +28,66 @@ export interface IAnnotationInput {
   comment: string;
   /** The look the person tried on the block; it is already on the page, the agent puts it into the source. */
   style: IStyleEdit;
+  /** What the person changed by hand and the source already has. */
+  saved?: readonly string[];
   /** The page's path on the library server. */
   url: string;
   /** The library server's port on the machine. */
   port: number;
 }
 
-export const formatAnnotation = ({ n, picked, comment, style, url, port }: IAnnotationInput): string => {
+/** A board's words as a person reads them: without their tags. */
+const plainWords = (html: string) =>
+  oneLine(
+    html
+      .replace(/<br>/g, ' ')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&'),
+  );
+
+/** What a closed card leaves for the agent. */
+export interface INoteLeft {
+  text: string;
+  /** The look still only tried on the page. */
+  style: IStyleEdit;
+  /** The hand's changes the source already has. */
+  saved: readonly string[];
+}
+
+/**
+ * What a card leaves once the hand's changes are written (or not): null where the source has them and there are no
+ * words, so the agent has nothing to be told. A refused write leaves the look to the agent.
+ */
+export const noteLeft = async (
+  text: string,
+  written: Promise<IHandWritten> | null,
+  style: IStyleEdit,
+  look: IPicked['look'],
+): Promise<INoteLeft | null> => {
+  const done = written ? await written : null;
+  const left = done?.ok ? NO_EDIT : style;
+  if (!text && !hasEdit(left)) return null;
+  const saved = done?.ok
+    ? [
+        done.words ? `text: «${plainWords(done.words.now)}» (was «${plainWords(done.words.was)}»)` : '',
+        styleLine(style, look),
+      ].filter(Boolean)
+    : [];
+  return { text, style: left, saved };
+};
+
+export const formatAnnotation = ({
+  n,
+  picked,
+  comment,
+  style,
+  saved = [],
+  url,
+  port,
+}: IAnnotationInput): string => {
   const attributes = [
     ['n', String(n)],
     ['url', oneLine(url)],
@@ -53,6 +107,9 @@ export const formatAnnotation = ({ n, picked, comment, style, url, port }: IAnno
     ...(name ? [keepInside(`component: ${name}`)] : []),
     ...(html ? [`html: ${html}`] : []),
     // The words tried are the person's and the page's: one line that cannot close the block.
+    ...(saved.length > 0
+      ? [keepInside(`changed by hand (already saved in the source, keep it): ${oneLine(saved.join('; '))}`)]
+      : []),
     ...(look
       ? [keepInside(`style (already tried on the page, change the source to match): ${oneLine(look)}`)]
       : []),

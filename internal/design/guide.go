@@ -22,7 +22,7 @@ var textFiles embed.FS
 
 const (
 	GuideFile    = "CLAUDE.md"
-	guideVersion = 15
+	guideVersion = 16
 )
 
 // text is an embedded text with the deployment's words put in. A text has an English file (guide.md) and a Russian one

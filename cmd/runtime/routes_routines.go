@@ -20,6 +20,7 @@ import (
 // ask here, the machine's agent signs the call and the hub acts for the machine's owner.
 //
 //	GET    <p>/routines              the routines with their last runs and next starts
+//	GET    <p>/routines?chat=<conv>  the routine whose run the chat is, the run and the routine's last runs
 //	POST   <p>/routines              make one {name, promptTemplate, trigger, routine, model, …}
 //	GET    <p>/routines/{id}         one routine
 //	PATCH  <p>/routines/{id}         change it (enabled, routine, state: "" clears the memory, …)
@@ -43,6 +44,9 @@ func routinesCall(r *http.Request) (hubproto.RoutinesCall, bool) {
 	id, tail := m[1], m[2]
 	c := hubproto.RoutinesCall{ID: id}
 	switch {
+	case id == "" && r.Method == http.MethodGet && r.URL.Query().Get("chat") != "":
+		c.Op, c.ID = "chat", r.URL.Query().Get("chat")
+		c.Limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
 	case id == "" && r.Method == http.MethodGet:
 		c.Op = "list"
 	case id == "" && r.Method == http.MethodPost:

@@ -44,6 +44,11 @@ export type TParentMessage =
   /** The block at a point of the viewport, picked as a click of the pick takes it (the canvas's menu). */
   | { type: 'tk:pick-at'; x: number; y: number }
   /**
+   * The blocks inside a rectangle of the viewport (a drawing or an area over the page): the answer is one
+   * `tk:elements {req, items}` with each block as `tk:picked` describes it, the innermost ones first, a dozen at most.
+   */
+  | { type: 'tk:elements-in'; req: number; x: number; y: number; w: number; h: number }
+  /**
    * The page stands on a canvas (a design): Space held over it (`tk:space`) and a drag with the middle button (`tk:pan`)
    * are the canvas's, and are told to the parent. The wheel stays the page's: at the end of its scroll nothing moves.
    */
@@ -153,11 +158,14 @@ export interface IStyleItem {
   radius: number | null;
   /** 0 to 1. */
   opacity: number | null;
-  /** The type of the block and the words of a plain one; absent from a parent that does not try them. */
+  /** The type of the block; absent from a parent that does not try it. */
   size?: number | null;
   weight?: number | null;
   color?: string | null;
-  text?: string | null;
+  /** `font-style`. */
+  slant?: string | null;
+  /** `text-decoration-line`. */
+  line?: string | null;
 }
 
 /** What a picked block looks like now, read when it is picked. */
@@ -167,10 +175,8 @@ export interface IBlockLook {
   /** Pixels; null when the page gives it in other units. */
   radius: number | null;
   opacity: number;
-  /** The block's type: its size in pixels, weight and colour. */
-  font?: { size: number; weight: number; color: string | null };
-  /** The words of a block that is one run of text; only such a block's words are tried on. */
-  words?: string;
+  /** The block's type: its size in pixels, weight, colour, slant and the lines on its words. */
+  font?: { size: number; weight: number; color: string | null; italic: boolean; line: string };
 }
 
 export type TFillReason =
@@ -210,10 +216,6 @@ export const prefixSetCookie = (value: string, tag: string, plain = false): stri
 const MAX_STYLE_ITEMS = 64;
 const MAX_RADIUS = 1000;
 const MAX_FONT_SIZE = 1000;
-const MAX_WORDS = 2000;
-/** The words of a block that holds one run of text and nothing else: only those are replaced in place. */
-const onlyWords = (el: any): any =>
-  el.childNodes && el.childNodes.length === 1 && el.childNodes[0].nodeType === 3 ? el.childNodes[0] : null;
 
 /** The set of looks as the parent sent it: every item is checked, one that is not right drops the whole set. */
 export const parseStyleItems = (value: unknown): IStyleItem[] | null => {
@@ -229,7 +231,7 @@ export const parseStyleItems = (value: unknown): IStyleItem[] | null => {
     if (radius !== null && !(typeof radius === 'number' && radius >= 0 && radius <= MAX_RADIUS)) return null;
     if (opacity !== null && !(typeof opacity === 'number' && opacity >= 0 && opacity <= 1)) return null;
     const more: Partial<IStyleItem> = {};
-    const { size, weight, color, text } = item;
+    const { size, weight, color, slant, line } = item;
     if (size !== undefined && size !== null) {
       if (!(typeof size === 'number' && size > 0 && size <= MAX_FONT_SIZE)) return null;
       more.size = size;
@@ -242,9 +244,16 @@ export const parseStyleItems = (value: unknown): IStyleItem[] | null => {
       if (!(typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))) return null;
       more.color = color;
     }
-    if (text !== undefined && text !== null) {
-      if (!(typeof text === 'string' && text.length <= MAX_WORDS)) return null;
-      more.text = text;
+    if (slant !== undefined && slant !== null) {
+      if (!(slant === 'italic' || slant === 'normal')) return null;
+      more.slant = slant;
+    }
+    if (line !== undefined && line !== null) {
+      if (!(
+        typeof line === 'string' && /^(?:none|underline|line-through|underline line-through)$/.test(line)
+      ))
+        return null;
+      more.line = line;
     }
     items.push({ id, background, radius, opacity, ...more });
   }
@@ -395,6 +404,23 @@ export const parseParentMessage = (data: unknown): TParentMessage | null => {
       ? { type: 'tk:pick', on: true, keep: true }
       : { type: 'tk:pick', on: message.on };
   if (message.type === 'tk:ping') return { type: 'tk:ping' };
+  if (message.type === 'tk:elements-in')
+    return [message.req, message.x, message.y, message.w, message.h].every(
+      (v) => typeof v === 'number' && Number.isFinite(v),
+    ) &&
+      (message.w as number) >= 0 &&
+      (message.h as number) >= 0 &&
+      (message.w as number) <= 100_000 &&
+      (message.h as number) <= 100_000
+      ? {
+          type: 'tk:elements-in',
+          req: message.req as number,
+          x: message.x as number,
+          y: message.y as number,
+          w: message.w as number,
+          h: message.h as number,
+        }
+      : null;
   if (message.type === 'tk:pick-at')
     return Number.isFinite(message.x) && Number.isFinite(message.y)
       ? { type: 'tk:pick-at', x: message.x as number, y: message.y as number }
@@ -1078,6 +1104,28 @@ export const hlBindings = (el: any): Record<string, string> | null => {
   return n > 0 ? out : null;
 };
 
+/**
+ * The block a pick means: a bare piece of a board's text (a bold word, a colored span: HRN-1770) is its whole line,
+ * the element the hand edits. A page that is not a board (no `data-dc-tpl`) is picked as it is.
+ */
+export const wholeBlock = (el: any): any => {
+  /** Bold, italic and their kin without attributes; a span only as the hand makes it: colour and size alone. */
+  const piece = (node: any) => {
+    const tag = String(node.tagName).toLowerCase();
+    if (!/^(?:b|strong|i|em|u|s|br|span)$/.test(tag)) return false;
+    const names = Array.from<any>(node.attributes)
+      .map((a) => a.name)
+      .filter((name) => name !== 'data-dc-tpl');
+    if (tag !== 'span') return names.length === 0;
+    const styles = Array.from<any>(node.style ?? []);
+    return names.join() === 'style' && styles.every((p) => p === 'color' || p === 'font-size');
+  };
+  let at = el;
+  // A piece the hand has just made has no number yet; a page with no numbered block above is not a board.
+  while (at && piece(at) && at.parentElement?.closest?.('[data-dc-tpl]')) at = at.parentElement;
+  return at;
+};
+
 export const pickedMessage = (el: any, win: any, doc: any, core: any) => {
   const box = el.getBoundingClientRect();
   const found = core.findComponent(el, win);
@@ -1126,7 +1174,8 @@ export const readLook = (el: any, win: any, doc: any): IBlockLook => {
   const opacity = Number.parseFloat(String(style.opacity));
   const size = Number.parseFloat(String(style.fontSize));
   const weight = Number.parseFloat(String(style.fontWeight));
-  const words = onlyWords(el);
+  const lines = String(style.textDecorationLine ?? '');
+  const line = ['underline', 'line-through'].filter((one) => lines.includes(one)).join(' ');
   return {
     background: colorHex(String(style.backgroundColor), doc),
     radius: radius ? Number(radius[1]) : null,
@@ -1137,11 +1186,10 @@ export const readLook = (el: any, win: any, doc: any): IBlockLook => {
             size,
             weight: Number.isFinite(weight) ? weight : 400,
             color: colorHex(String(style.color), doc),
+            italic: String(style.fontStyle) === 'italic',
+            line: line || 'none',
           },
         }
-      : {}),
-    ...(words && String(words.nodeValue).trim() !== '' && String(words.nodeValue).length <= MAX_WORDS
-      ? { words: String(words.nodeValue).replace(/\s+/g, ' ').trim() }
       : {}),
   };
 };
@@ -1154,9 +1202,9 @@ const LOOK_PROPERTIES = {
   size: ['font-size'],
   weight: ['font-weight'],
   color: ['color'],
+  slant: ['font-style'],
+  line: ['text-decoration-line'],
 } as const;
-/** Where the words a block had are kept beside its properties. */
-const KEPT_WORDS = '#words';
 
 export interface IKept {
   [property: string]: { value: string; priority: string };
@@ -1172,21 +1220,10 @@ export const applyLook = (el: any, item: IStyleItem, kept: IKept): void => {
     size: item.size === undefined || item.size === null ? null : [`${item.size}px`],
     weight: item.weight === undefined || item.weight === null ? null : [String(item.weight)],
     color: item.color === undefined || item.color === null ? null : [item.color],
+    slant: item.slant ? [item.slant] : null,
+    line: item.line ? [item.line] : null,
   };
-  // The words are put into the one text node the block has, which the page's own code goes on holding.
-  const words = onlyWords(el);
-  if (words) {
-    if (item.text === undefined || item.text === null) {
-      if (KEPT_WORDS in kept) {
-        words.nodeValue = kept[KEPT_WORDS].value;
-        delete kept[KEPT_WORDS];
-      }
-    } else {
-      if (!(KEPT_WORDS in kept)) kept[KEPT_WORDS] = { value: String(words.nodeValue), priority: '' };
-      words.nodeValue = item.text;
-    }
-  }
-  for (const group of ['background', 'radius', 'opacity', 'size', 'weight', 'color'] as const) {
+  for (const group of Object.keys(LOOK_PROPERTIES) as (keyof typeof LOOK_PROPERTIES)[]) {
     const wanted = values[group];
     LOOK_PROPERTIES[group].forEach((property, index) => {
       if (wanted === null) {
@@ -1879,7 +1916,7 @@ export const installBridge = (win: any, doc: any, parentOrigin: string, core: an
     (event: any) => {
       if (!picking || ownUi(event)) return;
       swallow(event);
-      const target = deepTarget(event);
+      const target = core.wholeBlock(deepTarget(event));
       if (!isPage(target)) return;
       post({
         ...core.pickedMessage(target, win, doc, core),
@@ -1899,12 +1936,62 @@ export const installBridge = (win: any, doc: any, parentOrigin: string, core: an
       if (!inner || inner === target) break;
       target = inner;
     }
+    target = core.wholeBlock(target);
     if (!isPage(target)) return;
     post({
       ...core.pickedMessage(target, win, doc, core),
       pick: remember(target),
       look: readLookSafely(target),
     });
+  };
+  // The blocks under a rectangle: a grid of points over it, each point's innermost page block once; a block that holds
+  // the whole rectangle stands for it when nothing smaller is inside (a drawing over one card names that card).
+  const elementsIn = (req: number, x: number, y: number, w: number, h: number) => {
+    const found: any[] = [];
+    const seen = new Set<any>();
+    if (typeof doc.elementFromPoint === 'function') {
+      const cols = Math.max(1, Math.min(9, Math.round(w / 40) + 1));
+      const rows = Math.max(1, Math.min(9, Math.round(h / 40) + 1));
+      for (let r = 0; r < rows; r += 1)
+        for (let c = 0; c < cols; c += 1) {
+          const px = x + (cols === 1 ? w / 2 : (w * c) / (cols - 1));
+          const py = y + (rows === 1 ? h / 2 : (h * r) / (rows - 1));
+          let target = doc.elementFromPoint(px, py);
+          for (let depth = 0; target?.shadowRoot?.elementFromPoint && depth < 16; depth += 1) {
+            const inner = target.shadowRoot.elementFromPoint(px, py);
+            if (!inner || inner === target) break;
+            target = inner;
+          }
+          if (!isPage(target) || seen.has(target)) continue;
+          seen.add(target);
+          found.push(target);
+        }
+    }
+    // A block whose child is in the list says less than the child: the innermost ones first, the one the rectangle
+    // covers most of first among them (a ring drawn round a button names the button, not the field it grazes).
+    const overlap = (el: any) => {
+      const r = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+      if (!r) return 0;
+      const ix = Math.max(0, Math.min(x + w, r.right) - Math.max(x, r.left));
+      const iy = Math.max(0, Math.min(y + h, r.bottom) - Math.max(y, r.top));
+      const area = Math.max(1, r.width * r.height);
+      return (ix * iy) / area;
+    };
+    const byOverlap = (list: any[]) =>
+      list
+        .map((el) => ({ el, k: overlap(el) }))
+        .sort((p, q) => q.k - p.k)
+        .map((v) => v.el);
+    const inner = byOverlap(found.filter((el) => !found.some((other) => other !== el && el.contains(other))));
+    const rest = byOverlap(found.filter((el) => !inner.includes(el)));
+    const items = [...inner, ...rest].slice(0, 12).map((el) => {
+      try {
+        return { ...core.pickedMessage(el, win, doc, core), pick: remember(el) };
+      } catch {
+        return null;
+      }
+    });
+    post({ type: 'tk:elements', req, items: items.filter(Boolean) });
   };
   win.addEventListener(
     'keydown',
@@ -2117,6 +2204,8 @@ export const installBridge = (win: any, doc: any, parentOrigin: string, core: an
         setPicking(message.on, false);
       } else if (message.type === 'tk:styles') setStyles(message.items);
       else if (message.type === 'tk:pick-at') pickAt(message.x, message.y);
+      else if (message.type === 'tk:elements-in')
+        elementsIn(message.req, message.x, message.y, message.w, message.h);
       else if (message.type === 'tk:anchors') setAnchors(message.items);
       else if (isDomMessage(message)) core.handleDomMessage(win, doc, bound, core, domState, message, post);
       else if (message.type === 'tk:act') {
@@ -2146,8 +2235,11 @@ export const installBridge = (win: any, doc: any, parentOrigin: string, core: an
             text: `The page got in the way of the action: ${String(error?.message ?? error).slice(0, 200)}`,
           });
         }
-      } else if (message.type === 'tk:scroll-sync') syncScroll = message.on;
-      else if (message.type === 'tk:touch') setTouch(message.on);
+      } else if (message.type === 'tk:scroll-sync') {
+        syncScroll = message.on;
+        // Where the document stands now: a layer laid over the page (a drawing) starts from it.
+        if (syncScroll) post({ type: 'tk:doc-scroll', y: Number(win.scrollY) || 0 });
+      } else if (message.type === 'tk:touch') setTouch(message.on);
       else if (message.type === 'tk:scroll-to') win.scrollTo({ top: message.y, behavior: 'instant' });
       else if (message.type === 'tk:canvas') {
         canvas = message.on;

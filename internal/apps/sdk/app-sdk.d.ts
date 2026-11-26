@@ -146,6 +146,56 @@ export interface ApiAnswer {
   body: unknown;
 }
 
+/** Something a routine's run made or read: a document, a file, a chart, a merge request, a link. */
+export interface RoutineArtifact {
+  kind: string;
+  title: string;
+  url?: string;
+  meta?: string;
+}
+
+/** One run of a routine. `conversationId` is its chat: `hl.pane.open('chat:' + id)` opens it. */
+export interface RoutineRun {
+  id: string;
+  ruleId: string;
+  /** `schedule:…` by the schedule, `manual:…` by hand. */
+  fingerprint: string;
+  /** queued, dispatched, done, failed… */
+  status: string;
+  outcome?: 'ok' | 'quiet' | 'failed';
+  conversationId?: string;
+  summary?: string;
+  error?: string;
+  createdAt: string;
+  finishedAt?: string;
+  result?: {
+    summary?: string;
+    body?: string;
+    artifacts?: RoutineArtifact[];
+    /** Where the agent read from. */
+    sources?: RoutineArtifact[];
+    error?: string;
+    manual?: boolean;
+  };
+}
+
+/** A routine of the person: a task the hub runs on a schedule. */
+export interface RoutineInfo {
+  id: string;
+  name: string;
+  enabled: boolean;
+  pausedReason?: string;
+  /** The memory the runs keep for the next one. */
+  state?: string;
+  model: string;
+  trigger: { schedule?: { cron: string; tz?: string } };
+  /** `words` is the schedule as the person said it. */
+  routine: { words?: string; once?: boolean; until?: string; chatId?: string };
+  /** The next starts, RFC 3339. */
+  next: string[];
+  stats: { runs: number; ok: number; quiet: number; failed: number };
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
@@ -531,6 +581,19 @@ export interface Harnessly {
      * as far as the manifest asks by default. `{granted: false}` when they say no. Call it from a click, not on load.
      */
     request(conn: string, options?: { access?: ConnectionAccess }): Promise<{ granted: boolean; access: ConnectionAccess | null }>;
+  };
+  /**
+   * The person's routines, the recurring tasks the hub runs (`routines.read`; `setEnabled` needs `routines.write`).
+   * `hl.has('routines.read')` says whether the app may read them here.
+   */
+  routines: {
+    /** The routine whose run this chat (or `chatId`) is, the run and the routine's last runs; `routine` null for any other chat. */
+    forChat(chatId?: string): Promise<{ routine: RoutineInfo | null; run?: RoutineRun; runs?: RoutineRun[] }>;
+    get(id: string): Promise<RoutineInfo>;
+    /** Newest first; 20 by default, 100 at most. */
+    runs(id: string, options?: { limit?: number }): Promise<RoutineRun[]>;
+    /** Turn a routine on or off. */
+    setEnabled(id: string, enabled: boolean): Promise<RoutineInfo>;
   };
   /** `app:<id>[/<view>]`, or `chat:<id>` to open a conversation from `agents.list` (needs `agents.read` as well). */
   pane: { open(target: string): Promise<void> };

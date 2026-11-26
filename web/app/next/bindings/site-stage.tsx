@@ -66,7 +66,15 @@ import {
   showSpaceLine,
   useSpaceLine,
 } from '@/next/features/space-field/line';
-import { formatAnnotation, withAnnotations } from '@/next/features/designly/annotation';
+import { tourSignal } from '@/next/stores/tour';
+import {
+  formatAnnotation,
+  noteLeft,
+  withAnnotations,
+  type INoteLeft,
+} from '@/next/features/designly/annotation';
+import { areaMessage } from '@/next/features/designly/note-area';
+import type { IHandWritten } from '@/next/features/designly/hand-edit';
 import {
   DECK_CTX_ID,
   deckContextQuote,
@@ -75,18 +83,21 @@ import {
 } from '@/next/features/designly/deck/chat-context';
 import { anchorItems } from '@/next/features/designly/note-anchor';
 import { itemsOf, NO_EDIT } from '@/next/features/designly/element-style';
+import type { IPicked } from '@/next/features/designly/page-bridge';
 import {
   NotePins,
+  NOTE_OK,
   NotePopover,
   noteChip,
   NotesBar,
   NOTE_OUT_MS,
   type INote,
+  type INoteDraft,
   type INotePopoverProps,
 } from '@/next/features/designly/site-notes';
 import { usePageDraft } from '@/next/features/designly/page-drafts';
 import { boardFileOf, useBoardVeils } from '@/next/features/designly/image-gen/canvas';
-import type { Conversation, ConvId, MachineId, Now } from '@/next/protocol/v2';
+import type { Conversation, ConvId, MachineId, Now, AttachmentRef } from '@/next/protocol/v2';
 import { goTo, ROUTE, type TRoute } from '@/next/routes/routes';
 import { useConnection } from '@/next/stores/connection';
 import { useFeed, useNow } from '@/next/stores/conversation';
@@ -707,6 +718,7 @@ export const useSiteStage = ({
           picked: note.picked,
           comment: note.text,
           style: note.style,
+          saved: note.saved,
           url: note.page,
           port: port ?? 0,
         }),
@@ -757,6 +769,45 @@ export const useSiteStage = ({
     if (!sendFirst(words, [])) return;
     clearDraft(designDraft);
     afterSend();
+  };
+
+  /** A card's message goes to the agent at once; false where there is no chat to take it yet. */
+  const sendNow = (words: string, attachments: AttachmentRef[] = []): boolean => {
+    if (convId)
+      sendMessage(machine, { conversationId: convId, text: words, attachments, mode: sendModeNow(convId) });
+    else if (creating || !sendFirst(words, attachments)) return false;
+    setSawRun(false);
+    if (space) clearSpaceLine();
+    tourSignal('site:note');
+    return true;
+  };
+  const sendNote = (picked: IPicked, left: INoteLeft) =>
+    sendNow(
+      formatAnnotation({
+        n: 1,
+        picked,
+        comment: left.text,
+        style: left.style,
+        saved: left.saved,
+        url: pageUrl,
+        port: port ?? 0,
+      }),
+    );
+  /** The card of an area or a drawing: where it cannot be sent it opens again with what it had. */
+  const sendArea = async (draft: INoteDraft, words: string, written: Promise<IHandWritten> | null) => {
+    if (!draft.area) return;
+    try {
+      const message = await areaMessage(
+        draft.area,
+        { words, written, style: draft.style, look: draft.picked.look },
+        { url: pageUrl, port: port ?? 0 },
+      );
+      if (message && !sendNow(message.text, message.attachments))
+        throw new Error(t('next.newChat.connecting'));
+    } catch (failure) {
+      toast(t('next.notes.sendFailed'), { tone: 'error', description: (failure as Error).message });
+      setNoteDraft({ ...draft, text: words });
+    }
   };
 
   const removeNote = (id: string) => setNotes((list) => list.filter((n) => n.id !== id));
@@ -1001,9 +1052,9 @@ export const useSiteStage = ({
     // The browser bar's «Выделить» and the field's button are one switch; null until the page has its bridge.
     picking: bridged ? picking || mode === 'notes' : null,
     onPick,
-    onPicked: (picked, at) => {
+    onPicked: (picked, at, area) => {
       setPicking(false);
-      setNoteDraft({ picked, at, text: '', style: NO_EDIT });
+      setNoteDraft({ picked, at, text: '', style: NO_EDIT, ...(area ? { area } : {}) });
     },
     onPickEnd: () => setPicking(false),
     onBridge: setBridged,
@@ -1033,29 +1084,35 @@ export const useSiteStage = ({
             draft={shown}
             hidden={card.state === PRESENCE.closing}
             onTextChange={(text) => setNoteDraft({ ...shown, text })}
-            needsText={mode === 'notes'}
+            batch={mode === 'notes' || shown.id !== undefined}
             gone={shown.picked.id !== null && goneBlocks.includes(shown.picked.id)}
             onStyle={(style) => setNoteDraft({ ...shown, style })}
-            onOk={(words) => {
-              if (shown.id) {
-                setNotes((list) =>
-                  list.map((n) => (n.id === shown.id ? { ...n, text: words, style: shown.style } : n)),
-                );
-              } else {
+            onOk={(words, written, how) => {
+              setNoteDraft(null);
+              if (shown.area) {
+                void sendArea(shown, words, written);
+                return;
+              }
+              void noteLeft(words, written, shown.style, shown.picked.look).then((left) => {
+                const { id } = shown;
+                if (id) {
+                  setNotes((list) =>
+                    left
+                      ? list.map((n) =>
+                          n.id === id ? { ...n, ...left, saved: [...(n.saved ?? []), ...left.saved] } : n,
+                        )
+                      : list.filter((n) => n.id !== id),
+                  );
+                  return;
+                }
+                if (!left) return;
+                setMin(false);
+                if (how === NOTE_OK.send && mode !== 'notes' && sendNote(shown.picked, left)) return;
                 setNotes((list) => [
                   ...list,
-                  {
-                    id: `n${++noteSeq}`,
-                    picked: shown.picked,
-                    page: pageUrl,
-                    text: words,
-                    at: shown.at,
-                    style: shown.style,
-                  },
+                  { id: `n${++noteSeq}`, picked: shown.picked, page: pageUrl, at: shown.at, ...left },
                 ]);
-              }
-              setNoteDraft(null);
-              setMin(false);
+              });
             }}
             onCancel={() => setNoteDraft(null)}
             onDelete={() => {

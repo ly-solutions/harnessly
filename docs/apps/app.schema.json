@@ -184,6 +184,14 @@
           {
             "const": "agents.run",
             "description": "Start a task in a new chat under the app's chat, within the app's budget of the day (manifest `budget.runsPerDay`, 3 by default, 20 at most)."
+          },
+          {
+            "const": "routines.read",
+            "description": "Read the person's routines (recurring tasks the hub runs) and their runs: the task, its schedule, each run's outcome, summary, artifacts, sources and the memory it keeps (hl.routines.forChat, get, runs)."
+          },
+          {
+            "const": "routines.write",
+            "description": "Turn the person's routines on and off (hl.routines.setEnabled). Nothing else of a routine changes."
           }
         ]
       },

@@ -178,7 +178,7 @@ const LayoutPaneGallery = () => {
   if (query.picker === '1')
     return (
       <div style={{ padding: 24, containerType: 'inline-size' }}>
-        <div style={{ position: 'relative', width: 360, height: 8 }}>
+        <div style={{ position: 'relative', width: Number(query.w) || 360, height: 8 }}>
           <PagePicker
             pages={MANY}
             path="a.dc.html"

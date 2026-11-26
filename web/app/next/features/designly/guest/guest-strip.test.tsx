@@ -20,7 +20,7 @@ const note: INote = {
   },
   page: 'a.html',
   text: 'Ann: too big',
-  at: { x: 0, y: 0, right: false },
+  at: { x: 0, y: 0, top: 0, right: false },
   style: NO_EDIT,
 };
 

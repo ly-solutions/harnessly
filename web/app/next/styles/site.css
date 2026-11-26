@@ -2545,23 +2545,19 @@
   margin-left: auto;
 }
 
-/* The edit card over the site or the pane: it opens at its block as the canvas is zoomed now and follows
-   the zoom (--zs/--zcx/--zcy of the section), is moved by its row's ground (--mx/--my once moved), and always stays 8 px
-   inside the view whatever its height (--nh) — it can never be left over the controls. */
+/* The edit card over the site or the pane: it stands under or over its block, inside the board (--px/--py,
+   features/designly/note-place.ts), follows the zoom, and is moved by its row's ground (--mx/--my once moved), always
+   8 px inside the view whatever its height (--nh). */
 .hx-site > .hx-note.hx-ann {
   --nw: 344px;
   z-index: 12;
   width: var(--nw);
   translate: none;
-  left: clamp(8px, calc(var(--zs, 1) * var(--nx) + var(--zcx, 0px)), calc(100% - var(--nw) - 8px));
-  top: clamp(8px, calc(var(--zs, 1) * var(--ny) + var(--zcy, 0px) + 12px), calc(100% - var(--nh, 0px) - 8px));
+  left: var(--px, 8px);
+  top: var(--py, 8px);
 }
-.hx-site > .hx-note.hx-ann[data-side='end'] {
-  left: clamp(
-    8px,
-    calc(var(--zs, 1) * var(--nx) + var(--zcx, 0px) - var(--nw)),
-    calc(100% - var(--nw) - 8px)
-  );
+.hx-site > .hx-note.hx-ann[data-above='true'] {
+  transform-origin: 0 100%;
 }
 .hx-site[data-zsmooth='true'] > .hx-note.hx-ann {
   transition:

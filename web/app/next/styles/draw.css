@@ -1,0 +1,205 @@
+/* Drawing over a Sinopia board and picking an area of it: the pick button with its tools, the layer over the
+   page, the palette over the bar. */
+
+/* The pick button and its chevron: one control, two parts. */
+.hx-pick-split {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+.hx-pick-split__chev {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 28px;
+  margin-left: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--hx-fg-3);
+  cursor: pointer;
+}
+.hx-pick-split__chev:hover,
+.hx-pick-split__chev[aria-expanded='true'] {
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+}
+.hx-pick-split__chev .hx-icon {
+  width: 12px;
+  height: 12px;
+}
+.hx-pick-split__chev:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* It opens back from the button's right edge: the bar's tools stand at the right, a menu past it would scroll the bar. */
+.hx-pick-split__menu {
+  top: calc(100% + 6px);
+  right: 0;
+  width: 240px;
+  transform-origin: calc(100% - 16px) 0;
+}
+.hx-pick-split__menu .hx-option[aria-checked='true'] {
+  background: var(--hx-bg-active);
+}
+
+/* The layer: the page's viewport, over the frame; it takes the pointer only while a tool is on. */
+.hx-draw-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  outline: none;
+  pointer-events: none;
+  touch-action: none;
+}
+.hx-draw-layer[data-mode] {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.hx-draw-layer[data-tool='label'] {
+  cursor: text;
+}
+.hx-draw-layer[data-tool='eraser'] {
+  cursor: cell;
+}
+.hx-draw-layer__svg,
+.hx-cm-drawing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.hx-draw-area {
+  fill: rgb(229 72 77 / 0.08);
+  stroke: #e5484d;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+.hx-draw-label {
+  position: absolute;
+  width: 200px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--hx-border-strong);
+  border-radius: 6px;
+  outline: none;
+  background: var(--hx-bg-raised);
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: 13px;
+  box-shadow: var(--hx-shadow-md);
+}
+
+/* The palette: a small strip over the top of the page, the menus' look. */
+.hx-draw-strip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  z-index: 9;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.hx-draw-pal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--hx-border-strong);
+  border-radius: 12px;
+  background: var(--hx-bg-raised);
+  box-shadow: var(--hx-shadow-overlay, 0 8px 24px rgb(0 0 0 / 0.2));
+  pointer-events: auto;
+  animation: hx-dl-pop-in 200ms var(--hx-ease-out) backwards;
+}
+.hx-draw-pal__group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.hx-draw-pal__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--hx-border);
+}
+.hx-draw-pal__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--hx-fg-2);
+  cursor: pointer;
+}
+.hx-draw-pal__btn:hover {
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+}
+.hx-draw-pal__btn[aria-checked='true'] {
+  background: var(--hx-bg-active);
+  color: var(--hx-fg-1);
+}
+.hx-draw-pal__btn[aria-disabled='true'] {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.hx-draw-pal__btn:focus-visible,
+.hx-draw-pal__color:focus-visible {
+  outline: none;
+  background: var(--hx-bg-hover);
+}
+.hx-draw-pal__color {
+  width: 22px;
+  height: 22px;
+  margin: 0 1px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background-clip: content-box;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+}
+.hx-draw-pal__color[aria-checked='true'] {
+  border-color: var(--hx-fg-1);
+}
+.hx-draw-pal__color[data-c='red'] {
+  background-color: #e5484d;
+}
+.hx-draw-pal__color[data-c='orange'] {
+  background-color: #f5a524;
+}
+.hx-draw-pal__color[data-c='green'] {
+  background-color: #30a46c;
+}
+.hx-draw-pal__color[data-c='blue'] {
+  background-color: #3e63dd;
+}
+.hx-draw-pal__color[data-c='black'] {
+  background-color: #1c2024;
+}
+.hx-draw-pal__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.hx-draw-pal__btn[data-w='1'] .hx-draw-pal__dot {
+  width: 9px;
+  height: 9px;
+}
+.hx-draw-pal__done {
+  margin-left: 4px;
+}

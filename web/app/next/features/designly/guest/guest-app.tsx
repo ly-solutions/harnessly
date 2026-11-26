@@ -79,7 +79,7 @@ const noteOf = (c: IGuestComment): INote | null => {
     },
     page: c.board,
     text: c.name ? `${c.name}: ${c.text}` : c.text,
-    at: { x: 0, y: 0, right: false },
+    at: { x: 0, y: 0, top: 0, right: false },
     style: NO_EDIT,
   };
 };
@@ -93,7 +93,7 @@ interface ICommentStage {
 
 interface IHeld {
   picked: IPicked;
-  at: { x: number; y: number; right: boolean };
+  at: { x: number; y: number; top: number; right: boolean };
 }
 
 const useCommentStage = (
@@ -190,7 +190,7 @@ const useCommentStage = (
             text={shown.text}
             onText={(text) => setDraft({ ...shown, text })}
             mic={null}
-            needsText
+            batch={false}
             onOk={none}
             onCancel={() => setDraft(null)}
             onDelete={() => setDraft(null)}

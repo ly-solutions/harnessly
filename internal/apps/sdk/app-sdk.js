@@ -62,6 +62,9 @@ const HAS_ALIAS = {
   'openLink': 'ui/open-link',
   'publish': 'harnessly/context.publish',
   'events.on': 'harnessly/events.subscribe',
+  // The rights of hl.routines, by their own names: hl.has('routines.read').
+  'routines.read': 'harnessly/routines.get',
+  'routines.write': 'harnessly/routines.setEnabled',
 };
 const TIMEOUT_MS = 30_000;
 
@@ -665,6 +668,14 @@ export async function connect(options = {}) {
       request('harnessly/connections.api', { connection, method, path, query, body }).then(parseBody),
     request: (connection, { access } = {}) =>
       request('harnessly/connections.request', { connection, access }).then((r) => ({ granted: r.granted === true, access: r.access || null })),
+  };
+  // The person's routines, the recurring tasks the hub runs (routines.read; setEnabled needs routines.write): the
+  // routine whose run a chat is ({routine: null} for any other chat), one routine, its runs, and on or off.
+  hl.routines = {
+    forChat: (chatId) => request('harnessly/routines.forChat', { chat: chatId ?? hl.context.chat?.id ?? '' }),
+    get: (id) => request('harnessly/routines.get', { id }).then((r) => r.routine),
+    runs: (id, { limit } = {}) => request('harnessly/routines.runs', limit === undefined ? { id } : { id, limit }).then((r) => r.runs),
+    setEnabled: (id, enabled) => request('harnessly/routines.setEnabled', { id, enabled: enabled === true }).then((r) => r.routine),
   };
   hl.pane = { open: (target) => request('harnessly/pane.open', { target }) };
   // A view that draws its own bar (chrome none) shows the host's actions there: share, the right pane, the host's menu.

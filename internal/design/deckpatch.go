@@ -251,8 +251,49 @@ var deckRawText = map[string]bool{"script": true, "style": true, "textarea": tru
 // deckInline are the tags a hand-edited text may hold.
 var deckInline = map[string]bool{"b": true, "strong": true, "i": true, "em": true, "u": true, "s": true, "br": true}
 
-// textStatic: an element whose content is text and b strong i em u s br without attributes, with no {{ }}: the deck
-// edits only those in place.
+// deckPieceDecl is a declaration a coloured or resized piece of a hand-edited text keeps, as the board's
+// script reads it (client.js deckPieceCss).
+var deckPieceDecl = regexp.MustCompile(`(?i)^\s*(color|font-size)\s*:\s*(#[0-9a-f]{3,8}|[a-z]{3,30}|(?:rgba?|hsla?|var)\([^()"';<>]{1,80}\)|[0-9]{1,3}(?:\.[0-9]{1,3})?(?:px|em|rem|%))\s*$`)
+
+// deckPieceCSS is what such a piece keeps of a style attribute; "" where it keeps nothing.
+func deckPieceCSS(style string) string {
+	var kept []string
+	for _, part := range strings.Split(style, ";") {
+		if m := deckPieceDecl.FindStringSubmatch(part); m != nil {
+			kept = append(kept, strings.ToLower(m[1])+": "+m[2])
+		}
+	}
+	return strings.Join(kept, "; ")
+}
+
+// deckPiece: a span of a text with a style of colour and size and nothing else, as the hand makes it.
+func deckPiece(n *html.Node) bool {
+	if n.Data != "span" {
+		return false
+	}
+	styled := false
+	for _, a := range n.Attr {
+		if a.Key == deckTagMark {
+			continue
+		}
+		if a.Key != "style" {
+			return false
+		}
+		for _, part := range strings.Split(a.Val, ";") {
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			if deckPieceDecl.FindStringSubmatch(part) == nil {
+				return false
+			}
+			styled = true
+		}
+	}
+	return styled
+}
+
+// textStatic: an element whose content is text, b strong i em u s br without attributes and spans of colour and size,
+// with no {{ }}: the deck edits only those in place.
 func textStatic(n *html.Node) bool {
 	if deckRawText[n.Data] && n.Namespace == "" {
 		return false
@@ -264,11 +305,12 @@ func textStatic(n *html.Node) bool {
 				return false
 			}
 		case html.ElementNode:
-			if c.Namespace != "" || !deckInline[c.Data] {
+			piece := c.Namespace == "" && deckPiece(c)
+			if c.Namespace != "" || (!deckInline[c.Data] && !piece) {
 				return false
 			}
 			for _, a := range c.Attr {
-				if a.Key != deckTagMark {
+				if a.Key != deckTagMark && !(piece && a.Key == "style") {
 					return false
 				}
 			}
@@ -396,11 +438,13 @@ var deckSpaceRun = regexp.MustCompile(`[\t\n\f\r ]+`)
 
 func collapseSpace(s string) string { return deckSpaceRun.ReplaceAllString(s, " ") }
 
-// deckCleanHTML is the new text as written into the board: b strong i em u s br without attributes and escaped words;
-// trailing line breaks an editable block leaves are dropped. dynamic: it would read as {{ }}.
+// deckCleanHTML is the new text as written into the board: b strong i em u s br without attributes, spans of colour and
+// size, and escaped words; trailing line breaks an editable block leaves are dropped. dynamic: it would read as {{ }}.
 func deckCleanHTML(s string) (out string, dynamic bool) {
 	z := html.NewTokenizerFragment(strings.NewReader(s), "div")
 	var b, words strings.Builder
+	// The spans open so far: whether each is written.
+	var spans []bool
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {
@@ -412,8 +456,33 @@ func deckCleanHTML(s string) (out string, dynamic bool) {
 			words.WriteString(t)
 			b.WriteString(strings.ReplaceAll(html.EscapeString(t), "\xc2\xa0", "&nbsp;"))
 		case html.StartTagToken, html.SelfClosingTagToken, html.EndTagToken:
-			name, _ := z.TagName()
+			name, more := z.TagName()
 			n := string(name)
+			if n == "span" {
+				switch {
+				case tt == html.StartTagToken:
+					style := ""
+					for more {
+						var key, val []byte
+						key, val, more = z.TagAttr()
+						if string(key) == "style" {
+							style = deckPieceCSS(string(val))
+						}
+					}
+					spans = append(spans, style != "")
+					if style != "" {
+						words.WriteString(" ")
+						b.WriteString(`<span style="` + html.EscapeString(style) + `">`)
+					}
+				case tt == html.EndTagToken && len(spans) > 0:
+					if spans[len(spans)-1] {
+						words.WriteString(" ")
+						b.WriteString("</span>")
+					}
+					spans = spans[:len(spans)-1]
+				}
+				continue
+			}
 			if !deckInline[n] {
 				continue
 			}
@@ -425,6 +494,11 @@ func deckCleanHTML(s string) (out string, dynamic bool) {
 			} else {
 				b.WriteString("<" + n + ">")
 			}
+		}
+	}
+	for i := len(spans) - 1; i >= 0; i-- {
+		if spans[i] {
+			b.WriteString("</span>")
 		}
 	}
 	out = b.String()

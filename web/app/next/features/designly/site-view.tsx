@@ -131,18 +131,28 @@ import {
   type IPendingTake,
 } from '@/next/features/designly/page-link';
 import ModeButton from '@/next/features/designly/mode-button';
+import PickSplit from '@/next/features/designly/draw/pick-split';
+import { useDrawTool } from '@/next/features/designly/draw/use-draw-tool';
+import { PICK_TOOL } from '@/next/features/designly/draw/types';
+import DrawLayer from '@/next/features/designly/draw/draw-layer';
 import CanvasMenu, { type ICanvasMenuItem } from '@/next/features/designly/canvas-menu';
-import TextBar from '@/next/features/designly/text-bar';
 import {
-  BoardTextContext,
+  BoardHandContext,
   HAND_REFUSAL,
+  patchOf,
   readHandMessage,
   saveHandEdit,
+  type IBoardHand,
   type IBoardMenu,
+  type IHandSignal,
+  type IHandState,
+  type IHandWritten,
   type ITextSave,
-  type ITextState,
+  type THandMessage,
 } from '@/next/features/designly/hand-edit';
 import { DESIGN_TAB, type IDesignComments, type IDesignPanel } from '@/next/features/designly/design-panel';
+import type { INoteAt } from '@/next/features/designly/site-notes';
+import { areaPicked, AreaCardContext, type INoteArea } from '@/next/features/designly/note-area';
 import '@/next/styles/designly.css';
 import '@/next/styles/vendor-devices.css';
 import '@/next/styles/site.css';
@@ -153,6 +163,8 @@ import '@/next/styles/design-devices.css';
 
 /** A board that loaded but did not say it is drawn (a failed script) leaves the loader after this long, ms. */
 const DRAW_WAIT_MS = 8000;
+/** How long the board is waited for to give back the words of a block let go of. */
+const HAND_REPLY_MS = 1500;
 /** The phone a link to a phone's page (a narrow `$preview`) shows it in. */
 const LINK_PHONE = 'ip14';
 const POP_MS = 200;
@@ -294,6 +306,8 @@ export interface ISiteViewProps {
   mode?: ISiteMode;
   /** Set where the person may change the design: the pictures of its boards get «Изменить» / «Сгенерировать» on them. */
   images?: { machine: MachineId; artifact: string };
+  /** The design an area or a drawing is sent about: its machine and id, whether it is edited or looked at. */
+  drawDesign?: { machine: MachineId; artifact: string };
   /** The page alone over the view's whole box: no bar, no device, no zoom (a guest's full screen). */
   full?: boolean;
   /**
@@ -358,7 +372,7 @@ export interface ISiteStage {
   /** A finger held on a block picks it too (a guest on a phone), without turning picking on. */
   hold?: boolean;
   /** `at` is the block's bottom-left corner in the section's pixels, where its note opens. */
-  onPicked: (picked: IPicked, at: { x: number; y: number; right: boolean }) => void;
+  onPicked: (picked: IPicked, at: INoteAt, area?: INoteArea) => void;
   /** The settings the board offers now (its `tk:tweaks`), as the page said them. */
   onControls?: (controls: ITweak[]) => void;
   /** The page ended the pick itself: Esc in it, or it went to another address. */
@@ -518,6 +532,7 @@ const SiteView = ({
   guest,
   mode,
   images,
+  drawDesign,
   downloads,
   full = false,
   tweaksPort,
@@ -568,7 +583,9 @@ const SiteView = ({
   // The person's hand on the board (hand-edit.ts): the menu of a right click and a text edited in place.
   const [boardMenu, setBoardMenu] = useState<(IBoardMenu & { at: IPoint; board: boolean }) | null>(null);
   const menuShown = usePresence(boardMenu, POP_MS);
-  const [texted, setTexted] = useState<{ key: string; state: ITextState } | null>(null);
+  // The block the note's card holds on the board, and what the person did there that the card answers.
+  const [held, setHeld] = useState<{ key: string; state: IHandState | null } | null>(null);
+  const [handSignal, setHandSignal] = useState<IHandSignal | null>(null);
   // DevTools under the page, and the settings the board offers in a panel over it.
   const [dev, setDev] = useState(false);
   const [devTab, setDevTab] = useState<TDevTab>(DEV_TAB.console);
@@ -920,8 +937,9 @@ const SiteView = ({
     const slot = slotOf();
     slot?.frame.contentWindow?.postMessage({ type: 'tk:touch', on: latestTouch.current }, slot.origin);
   };
-  // The board takes the right click for the design's menu, and a double click edits a text where the person may.
-  // The hand edit writes a board of the project's root only (the patch route takes no other).
+  // The board takes the right click for the design's menu; where the person may, the note's card holds the picked
+  // block there and a double click on a text picks it. The hand edit writes a board of the project's root only (the
+  // patch route takes no other).
   const textOn =
     images !== undefined && guest === undefined && pagePath !== null && /^[^/]+\.dc\.html$/.test(pagePath);
   const menuOn = guest === undefined && !full;
@@ -944,30 +962,110 @@ const SiteView = ({
     const slot = frameOf();
     slot?.frame.contentWindow?.postMessage(message, slot.origin);
   };
-  /** An edit made by hand goes into the board's source, as a version of its own. */
-  const saveText = (save: ITextSave) => {
-    if (!images || latestPagePath.current === null) return;
-    void saveHandEdit(images.machine, images.artifact, latestPagePath.current, save).then(
-      (refusal) => {
-        if (refusal === null) {
-          toast(t('next.site.text.saved'));
-          return;
-        }
-        toast(t(refusal === HAND_REFUSAL.dynamic ? 'next.site.text.dynamic' : 'next.site.text.changed'), {
-          tone: 'error',
-        });
-        // The page shows words the source does not have: it is loaded again.
-        latestReload.current(false);
-      },
-      (failure: Error) => {
-        toast(t('next.site.text.failed'), { tone: 'error', description: failure.message });
-        latestReload.current(false);
-      },
-    );
+  const holding = useRef(false);
+  /** Where a double click asked for the caret, until the card holds the block. */
+  const caretAt = useRef<{ x: number; y: number } | null>(null);
+  /** The area whose first block is being picked for its card. */
+  const areaAt = useRef<INoteArea | null>(null);
+  /** Who waits for the words of the block let go of. */
+  const handReply = useRef<((save: ITextSave) => void) | null>(null);
+  const holdBlock = ({ rect, selector }: IPicked) => {
+    const caret = caretAt.current;
+    caretAt.current = null;
+    holding.current = true;
+    if (caret) frameOf()?.frame.focus();
+    postBoard({ type: 'tk:hand', rect, selector, caret });
   };
-  const latestSaveText = useRef(saveText);
+  const dropBlock = () => {
+    if (!holding.current) return;
+    holding.current = false;
+    setHeld(null);
+    postBoard({ type: 'tk:hand-end', save: false });
+  };
+  /** What was changed by hand goes into the board's source, as a version of its own. */
+  const commitBlock = async (style: Record<string, string> | null): Promise<IHandWritten> => {
+    const file = latestPagePath.current;
+    holding.current = false;
+    setHeld(null);
+    const answered = new Promise<ITextSave | null>((resolve) => {
+      const timer = window.setTimeout(() => resolve(null), HAND_REPLY_MS);
+      handReply.current = (save) => {
+        window.clearTimeout(timer);
+        resolve(save);
+      };
+    });
+    postBoard({ type: 'tk:hand-end', save: true, style });
+    const save = await answered;
+    handReply.current = null;
+    const failed: IHandWritten = { ok: false, words: null };
+    if (!images || file === null || !save) {
+      toast(t('next.site.text.failed'), { tone: 'error' });
+      latestReload.current(false);
+      return failed;
+    }
+    const words = save.html === null ? null : { was: save.was, now: save.html };
+    const patch = patchOf(save, style);
+    if (!patch) return { ok: true, words };
+    try {
+      const refusal = await saveHandEdit(images.machine, images.artifact, file, patch);
+      if (refusal === null) {
+        toast(t('next.site.text.saved'));
+        return { ok: true, words };
+      }
+      toast(t(refusal === HAND_REFUSAL.dynamic ? 'next.site.text.dynamic' : 'next.site.text.changed'), {
+        tone: 'error',
+      });
+    } catch (failure) {
+      toast(t('next.site.text.failed'), { tone: 'error', description: (failure as Error).message });
+    }
+    // The page shows what the source does not have: it is loaded again.
+    latestReload.current(false);
+    return failed;
+  };
+  /** Where a note's card opens for a box of the page: its corners kept as they are at the canvas's fit. */
+  const noteAt = (frame: HTMLIFrameElement, rect: IPicked['rect']): INoteAt => {
+    const box = frame.getBoundingClientRect();
+    const home = sectionRef.current?.getBoundingClientRect();
+    const k = frame.offsetWidth > 0 ? box.width / frame.offsetWidth : 1;
+    const x = box.left - (home?.left ?? 0) + rect.x * k;
+    const top = box.top - (home?.top ?? 0) + rect.y * k;
+    const at = latestCanvas.current.toFit({ x, y: top + rect.height * k });
+    return {
+      x: at.x,
+      y: at.y,
+      top: latestCanvas.current.toFit({ x, y: top }).y,
+      right: x > (home?.width ?? 0) / 2,
+    };
+  };
+  /** The card of an area or a drawing (note-area.ts): over its first block, picked anew, else over the area itself. */
+  const openAreaCard = (area: INoteArea) => {
+    const slot = frameOf();
+    if (!slot) return;
+    const first = area.blocks[0];
+    if (!first) {
+      latestStage.current?.onPicked(areaPicked(area.rect), noteAt(slot.frame, area.rect), area);
+      return;
+    }
+    areaAt.current = area;
+    const { x, y, width, height } = first.rect;
+    postBoard({ type: 'tk:pick-at', x: x + width / 2, y: y + height / 2 });
+  };
+  const onHandMessage = (hand: Exclude<THandMessage, { k: 'menu' }>) => {
+    if (hand.k === 'state') {
+      if (holding.current) setHeld({ key: `${src}#${reloadKey}`, state: hand.state });
+    } else if (hand.k === 'save') handReply.current?.(hand.save);
+    else if (hand.k === 'pick') {
+      caretAt.current = { x: hand.x, y: hand.y };
+      postBoard({ type: 'tk:pick-at', x: hand.x, y: hand.y });
+    } else if (hand.k === 'dynamic') toast(t('next.site.text.dynamic'), { tone: 'error' });
+    else if (holding.current) {
+      const kind = hand.k === 'away' ? hand.k : hand.key;
+      setHandSignal((have) => ({ n: (have?.n ?? 0) + 1, kind }));
+    }
+  };
+  const latestHandMessage = useRef(onHandMessage);
   useEffect(() => {
-    latestSaveText.current = saveText;
+    latestHandMessage.current = onHandMessage;
   });
   /** The page is on a canvas: its script tells Space and the middle button's drag (a board's says no hello). */
   const onCanvas = () => {
@@ -1083,11 +1181,7 @@ const SiteView = ({
             },
             board: true,
           });
-        } else if (!latestHand.current.textOn) return;
-        else if (hand.k === 'text-state')
-          setTexted(hand.state && { key: `${src}#${reloadKey}`, state: hand.state });
-        else if (hand.k === 'text-save') latestSaveText.current(hand.save);
-        else toast(t('next.site.text.dynamic'), { tone: 'error' });
+        } else if (latestHand.current.textOn) latestHandMessage.current(hand);
         return;
       }
       const go = readPageGo(event.data);
@@ -1220,16 +1314,9 @@ const SiteView = ({
       } else if (message.k === 'pick-off') now.onPickEnd();
       // `doc-scroll` is only told to the screens of «Все экраны» (site-overview.tsx), never by this frame.
       else if (message.k === 'picked') {
-        const box = frame.getBoundingClientRect();
-        const home = sectionRef.current?.getBoundingClientRect();
-        const k = frame.offsetWidth > 0 ? box.width / frame.offsetWidth : 1;
-        const { rect } = message.picked;
-        const x = box.left - (home?.left ?? 0) + rect.x * k;
-        const y = box.top - (home?.top ?? 0) + (rect.y + rect.height) * k;
-        const width = home?.width ?? 0;
-        // The card keeps the corner as it is at the canvas's fit and follows the zoom from there (its CSS clamps it in).
-        const at = latestCanvas.current.toFit({ x, y });
-        now.onPicked(message.picked, { x: at.x, y: at.y, right: x > width / 2 });
+        const area = areaAt.current;
+        areaAt.current = null;
+        now.onPicked(message.picked, noteAt(frame, message.picked.rect), area ?? undefined);
       }
     };
     window.addEventListener('message', onMessage);
@@ -1336,12 +1423,25 @@ const SiteView = ({
   // reload is not wanted here). The tips of the buttons say the shortcuts as they are now.
   const canPick = keys && stage !== undefined && stage.picking !== null;
   const canDev = keys && devtools !== undefined;
+  // The pick button's tools: a block, an area, a drawing; the layer, the palette and the card are theirs.
+  const drawTool = useDrawTool({
+    conv: stage?.conv ?? null,
+    machine: (drawDesign ?? images)?.machine ?? null,
+    artifact: (drawDesign ?? images)?.artifact ?? null,
+    board: pagePath,
+    device: t(`next.site.devices.${device.id}`),
+    zoom: canvas.pct,
+    pickOn: stage?.picking === true,
+    togglePick: () => latestPick.current(),
+  });
   useKeys(
     KEY_SCOPE.site,
     {
       'site.boards': keys && pages.length > 0 ? () => pop.toggle(POP.pages) : undefined,
       'site.comment': looking && comments ? () => comments.toggle() : undefined,
-      'site.pick': canPick ? () => latestPick.current() : undefined,
+      'site.pick': canPick ? () => drawTool.key(PICK_TOOL.block) : undefined,
+      'site.area': canPick && !guest ? () => drawTool.key(PICK_TOOL.area) : undefined,
+      'site.draw': canPick && !guest ? () => drawTool.key(PICK_TOOL.draw) : undefined,
       'site.devtools': canDev ? () => setDev((on) => !on) : undefined,
       'site.inspect': canDev ? () => latestInspect.current() : undefined,
       'site.stopInspect': () => {
@@ -1620,18 +1720,21 @@ const SiteView = ({
     stage?.folded === true ||
     stage?.mode === 'notes' ||
     (stage?.mode === 'island' && stage.min);
-  // The text edited by hand is the page's on screen; looking at the design, there is none.
-  const text = texted?.key === frameKey && !looking ? texted.state : null;
-  // Picking blocks for notes and writing on the page are two uses of a click: the pick ends the edit.
-  const picking = stage?.picking === true;
-  const handing = text !== null;
-  const endText = useEffectEvent(() => postBoard({ type: 'tk:text-done' }));
-  useEffect(() => {
-    if (picking && handing) endText();
-  }, [picking, handing]);
-  /** «Править текст» of a note's card: the board starts the edit on the middle of the picked block. */
-  const editTextAt = ({ rect }: IPicked) =>
-    postBoard({ type: 'tk:text-at', x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+  // The note's card changes the block by hand where the design is edited and the board takes it.
+  const boardHand: IBoardHand | null =
+    textOn && !looking
+      ? {
+          state: held?.key === frameKey ? held.state : null,
+          signal: handSignal,
+          caretAsked: () => caretAt.current !== null,
+          hold: holdBlock,
+          drop: dropBlock,
+          command: (cmd) => postBoard({ type: 'tk:hand-cmd', cmd }),
+          wrap: (prop, value) => postBoard({ type: 'tk:hand-wrap', prop, value }),
+          revert: () => postBoard({ type: 'tk:hand-revert' }),
+          commit: commitBlock,
+        }
+      : null;
   const closeBoardMenu = useCallback(() => setBoardMenu(null), []);
   const menuParts = (): ICanvasMenuItem[][] => {
     const on = menuShown.value;
@@ -1641,9 +1744,6 @@ const SiteView = ({
       on.board && on.label !== '' && stage && !looking
         ? [
             item('change', 'square-mouse-pointer', t('next.site.ctx.change'), 'V'),
-            ...(on.editable && textOn
-              ? [item('text', 'pencil', t('next.site.ctx.text'), t('next.site.ctx.twice'))]
-              : []),
             item('ask', 'sparkles', t('next.site.ctx.ask')),
           ]
         : [];
@@ -1669,7 +1769,6 @@ const SiteView = ({
     const point = { x: on.x, y: on.y };
     // «Изменить» and «Спросить агента» open the note's card on the block: the card is where the agent is asked.
     if (id === 'change' || id === 'ask') postBoard({ type: 'tk:pick-at', ...point });
-    else if (id === 'text') postBoard({ type: 'tk:text-at', ...point });
     else if (id === 'tweaks') {
       if (!settings.on) settings.toggle();
     } else if (id === 'devtools') setDev(true);
@@ -1688,597 +1787,639 @@ const SiteView = ({
   const termSlot = useContext(ChatTerminalSlotContext);
 
   return (
-    <section
-      className="hx-site"
-      ref={sectionRef}
-      data-mode={paneMode}
-      data-variant={pane ? 'pane' : 'site'}
-      data-dock={phone ? 'left' : (stage?.dock ?? 'left')}
-      data-min={stage?.min ?? false}
-      data-folded={given?.folded ?? false}
-      data-away={away}
-      data-phone={compact}
-      data-run={stage?.run ?? 'idle'}
-      data-pick={pick}
-      data-full={full}
-      data-dev={dev}
-      data-sview={stage ? stage.sview && stage.mode === 'chat' : false}
-      data-handing={handing}
-    >
-      {given?.chat}
-      {!pane && termSlot && <div className="hx-site__term" ref={termSlot} />}
-      <div className="hx-site__view">
-        <div className="hx-browser">
-          {phone && barMenu && <SheetScrim phoneOnly state={pop.state} onClose={pop.close} />}
-          <div className="hx-browser__bar" ref={anchorsRef} data-compact={compact}>
-            {/* A narrow window shows the design over the chat: the way back to it. */}
-            {!pane && !compact && stage && !guest && (
-              <button
-                type="button"
-                className="hx-tochat hx-site__back"
-                aria-label={t('next.site.toChat')}
-                onClick={() => stage.onSview(false)}
-              >
-                <Icon name="message-square" size="sm" />
-                <span>{t('next.pane.chat')}</span>
-              </button>
-            )}
-            {canBack && (
-              <button
-                type="button"
-                className="hx-head-btn hx-tipped hx-browser__back"
-                aria-label={t('next.site.backTo', { name: pageName(backTo) })}
-                onClick={goBack}
-              >
-                <Icon name="arrow-left" />
-                <span className="hx-tip" data-pos="below" data-align="start">
-                  {t('next.site.backTo', { name: pageName(backTo) })}
-                </span>
-              </button>
-            )}
-            {mode && !compact && <ModeButton mode={{ ...mode, versions: undefined }} icons />}
-            <div className="hx-browser__addr">
-              <button
-                type="button"
-                className="hx-browser__url"
-                aria-haspopup="dialog"
-                aria-expanded={pop.pop === POP.pages}
-                aria-disabled={pages.length === 0}
-                onClick={() => pages.length > 0 && pop.toggle(POP.pages)}
-              >
-                <span className="hx-browser__page-name">{addrName}</span>
-                {title !== addrName && <span className="hx-browser__path">{title}</span>}
-                {pages.length > 0 && <Icon name="chevrons-up-down" size="sm" className="hx-browser__chev" />}
-                <span className="hx-browser__load" data-on={loading} />
-              </button>
-              {pop.shownPop === POP.pages && (
-                <PagePicker
-                  pages={pages}
-                  path={pagePath}
-                  state={pop.state}
-                  place={PICKER_PLACE.start}
-                  boards={{
-                    changed: chatBoards ?? NO_BOARDS,
-                    onNew:
-                      onNewBoard &&
-                      (() => {
-                        pop.close();
-                        onNewBoard();
-                      }),
-                  }}
-                  onGo={(to) => {
-                    pop.close();
-                    onNavigate(to);
-                  }}
-                  onClose={pop.close}
-                  onSave={
-                    downloads
-                      ? (to, at) => {
-                          // The list leaves; the page's downloads open where its button was.
-                          pop.close();
-                          setPageSaving({ path: to, x: at.right, y: at.bottom, open: true });
-                        }
-                      : undefined
-                  }
-                  saveLabel={(p) => t('next.download.pageOf', { name: p.name })}
-                />
-              )}
-            </div>
-            {compact && stage && stage.mode === 'chat' && (
-              <button
-                type="button"
-                className="hx-head-btn hx-site__swap"
-                aria-label={t('next.site.siteFull')}
-                onClick={() => stage.onMode('island', sectionSize())}
-              >
-                <Icon name="maximize-2" />
-              </button>
-            )}
-            {/* «Выделить» is on the bar only while no field has it: the chat folded, the field in its pill. */}
-            {stage && !compact && selectOnBar && (
-              <button
-                type="button"
-                className="hx-head-btn hx-tipped hx-browser__pick"
-                aria-pressed={stage.picking ?? false}
-                aria-disabled={stage.picking === null}
-                aria-label={guest?.pickLabel ?? t('next.site.pick')}
-                onClick={() => stage.picking !== null && togglePick()}
-              >
-                <Icon name="square-mouse-pointer" />
-                <span className="hx-tip" data-pos="below">
-                  {guest?.pickTip ?? t('next.site.pickTip')}
-                  {keys && <kbd>{guest ? 'C' : (pickKey ?? 'V')}</kbd>}
-                </span>
-              </button>
-            )}
-            {guest?.full && (
-              <button
-                type="button"
-                className="hx-browser__tool hx-tipped"
-                aria-label={guest.full.label}
-                onClick={guest.full.onOpen}
-              >
-                <Icon name="maximize-2" size="sm" />
-                <span className="hx-browser__tool-label">{guest.full.label}</span>
-                <span className="hx-tip" data-pos="below">
-                  {guest.full.tip}
-                  <kbd>F</kbd>
-                </span>
-              </button>
-            )}
-            <div className="hx-browser__anchor">
-              <button
-                type="button"
-                className="hx-browser__dev hx-tipped"
-                aria-expanded={pop.pop === POP.device}
-                aria-label={t('next.site.device')}
-                onClick={() => pop.toggle(POP.device)}
-              >
-                <Icon name={device.icon} size="sm" />
-                <span className="hx-browser__dev-size">
-                  {overview ? t('next.site.devices.overview') : sizeText}
-                </span>
-                <span className="hx-tip" data-pos="below">
-                  {t('next.site.deviceTip')}
-                </span>
-              </button>
-              {pop.shownPop === POP.device && (
-                <DeviceMenu
-                  state={pop.state}
-                  device={device}
-                  size={vp && !overview ? { w: vp.vw, h: vp.vh } : null}
-                  zoom={canvas}
-                  onPick={(id) => {
-                    pop.close();
-                    pickDevice(id);
-                  }}
-                  onSize={(next) => {
-                    setDeviceId('fill');
-                    setRot(false);
-                    setSize(next);
-                  }}
-                />
-              )}
-            </div>
-            {looking && !guest && comments && (
-              <button
-                type="button"
-                className="hx-head-btn hx-tipped hx-browser__comment"
-                aria-pressed={comments.on}
-                aria-label={t('next.site.comment')}
-                onClick={comments.toggle}
-              >
-                <Icon name="message-square-plus" />
-                <span className="hx-tip" data-pos="below">
-                  {t('next.site.comment')}
-                  <kbd>C</kbd>
-                </span>
-              </button>
-            )}
-            {/* Beside a phone the settings are on its pill. */}
-            {!compact && !phonePillOn && (
-              <button
-                type="button"
-                className="hx-head-btn hx-tipped hx-browser__opt"
-                aria-pressed={settings.on}
-                aria-disabled={settings.disabled}
-                aria-label={t('next.site.tweaks.title')}
-                onClick={settings.toggle}
-              >
-                <Icon name="sliders-horizontal" />
-                <span className="hx-tip" data-pos="below">
-                  {settings.disabled ? t('next.site.tweaksNone') : t('next.site.tweaks.title')}
-                </span>
-              </button>
-            )}
-            {downloads && pageSaving && (
-              <ProjectDownloadMenu
-                items={pageDownloads({ ...downloads, board: pageSaving.path }, pageSaving.path, 'page')}
-                open={pageSaving.open}
-                onOpenChange={(open) => setPageSaving((now) => now && { ...now, open })}
-                anchor={{ getBoundingClientRect: () => new DOMRect(pageSaving.x, pageSaving.y, 0, 0) }}
-              />
-            )}
-            {kit}
-            {(pane || access) && !phone && (
-              <button
-                type="button"
-                className="hx-head-btn hx-tipped hx-browser__share"
-                aria-label={access?.label ?? t('next.pane.designShare')}
-                onClick={access ? access.onOpen : pane?.onShare}
-              >
-                <Icon name="share" />
-                <span className="hx-tip" data-pos="below" data-align="end">
-                  {access?.label ?? t('next.pane.designShare')}
-                </span>
-              </button>
-            )}
-            <div className="hx-browser__anchor">
-              <button
-                type="button"
-                className="hx-head-btn hx-tipped"
-                aria-expanded={pop.pop === POP.more || pop.pop === POP.phone}
-                aria-label={t('next.site.more')}
-                onClick={() => pop.toggle(pop.pop === POP.phone ? POP.phone : POP.more)}
-              >
-                <Icon name="ellipsis" />
-                <span className="hx-tip" data-pos="below" data-align="end">
-                  {t('next.site.more')}
-                </span>
-              </button>
-              {pop.shownPop === POP.more && (
-                <div
-                  className="hx-site-menu hx-site-menu--end hx-more hx-sheet-phone"
-                  data-state={pop.state}
-                  role="menu"
+    <AreaCardContext.Provider value={openAreaCard}>
+      <section
+        className="hx-site"
+        ref={sectionRef}
+        data-mode={paneMode}
+        data-variant={pane ? 'pane' : 'site'}
+        data-dock={phone ? 'left' : (stage?.dock ?? 'left')}
+        data-min={stage?.min ?? false}
+        data-folded={given?.folded ?? false}
+        data-away={away}
+        data-phone={compact}
+        data-run={stage?.run ?? 'idle'}
+        data-pick={pick}
+        data-full={full}
+        data-dev={dev}
+        data-sview={stage ? stage.sview && stage.mode === 'chat' : false}
+      >
+        {given?.chat}
+        {!pane && termSlot && <div className="hx-site__term" ref={termSlot} />}
+        <div className="hx-site__view">
+          <div className="hx-browser">
+            {phone && barMenu && <SheetScrim phoneOnly state={pop.state} onClose={pop.close} />}
+            <div className="hx-browser__bar" ref={anchorsRef} data-compact={compact}>
+              {/* A narrow window shows the design over the chat: the way back to it. */}
+              {!pane && !compact && stage && !guest && (
+                <button
+                  type="button"
+                  className="hx-tochat hx-site__back"
+                  aria-label={t('next.site.toChat')}
+                  onClick={() => stage.onSview(false)}
                 >
-                  <SheetGrip />
-                  {paneChat && (
-                    <div className="hx-more__chat">
-                      <span className="hx-more__label">{t('next.site.paneChat')}</span>
-                      <PaneChatModes
-                        mode={paneChat.mode}
-                        onMode={(mode) => paneChat.onMode(mode, sectionSize())}
-                      />
-                    </div>
-                  )}
-                  {moreItems.map((item) => (
-                    <Fragment key={item.id}>
-                      {item.sep && <div className="hx-more__sep" />}
-                      <button
-                        type="button"
-                        role={item.on === undefined ? 'menuitem' : 'menuitemcheckbox'}
-                        className="hx-option hx-more__item"
-                        aria-checked={item.on}
-                        aria-expanded={item.sub ? savingOpen : undefined}
-                        aria-disabled={item.disabled}
-                        onClick={() => !item.disabled && item.pick()}
-                      >
-                        <Icon name={item.icon} size="sm" />
-                        <span className="hx-more__label">{item.label}</span>
-                        {keys && <kbd className="hx-more__kbd">{item.kbd}</kbd>}
-                        {item.on !== undefined && <Icon name="check" size="sm" className="hx-more__check" />}
-                        {item.sub && <Icon name="chevron-down" size="sm" className="hx-more__chev" />}
-                      </button>
-                      {item.sub && savingOpen && (
-                        <div className="hx-more__sub">
-                          {item.sub.map((row) => (
-                            <button
-                              key={row.id}
-                              type="button"
-                              role="menuitem"
-                              className="hx-option hx-more__item"
-                              aria-disabled={row.disabled}
-                              title={row.hint}
-                              onClick={() => !row.disabled && closing(row.pick)()}
-                            >
-                              <Icon name={row.icon} size="sm" />
-                              <span className="hx-more__label">{row.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </Fragment>
-                  ))}
-                </div>
+                  <Icon name="message-square" size="sm" />
+                  <span>{t('next.pane.chat')}</span>
+                </button>
               )}
-              {pop.shownPop === POP.phone && qr && (
-                <PhonePopover modules={qr} state={pop.state} onCopy={onCopyLink} />
+              {canBack && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped hx-browser__back"
+                  aria-label={t('next.site.backTo', { name: pageName(backTo) })}
+                  onClick={goBack}
+                >
+                  <Icon name="arrow-left" />
+                  <span className="hx-tip" data-pos="below" data-align="start">
+                    {t('next.site.backTo', { name: pageName(backTo) })}
+                  </span>
+                </button>
+              )}
+              {mode && !compact && <ModeButton mode={{ ...mode, versions: undefined }} icons />}
+              {/* «Обновить макет» (HRN-1764): the board loads again, its settings and place kept as a reload keeps them;
+                the icon turns while it loads. It stays on a narrow bar, the board's field gives the room; a phone has it in «⋯». */}
+              {!compact && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped hx-browser__reload"
+                  aria-label={t('next.site.reloadBoard')}
+                  aria-busy={loading}
+                  onClick={() => onReload(false)}
+                >
+                  <Icon name="rotate-cw" />
+                  <span className="hx-tip" data-pos="below" data-align="start">
+                    {t('next.site.reloadBoard')}
+                  </span>
+                </button>
+              )}
+              <div className="hx-browser__addr">
+                <button
+                  type="button"
+                  className="hx-browser__url"
+                  aria-haspopup="dialog"
+                  aria-expanded={pop.pop === POP.pages}
+                  aria-disabled={pages.length === 0}
+                  onClick={() => pages.length > 0 && pop.toggle(POP.pages)}
+                >
+                  <span className="hx-browser__page-name">{addrName}</span>
+                  {title !== addrName && <span className="hx-browser__path">{title}</span>}
+                  {pages.length > 0 && (
+                    <Icon name="chevrons-up-down" size="sm" className="hx-browser__chev" />
+                  )}
+                  <span className="hx-browser__load" data-on={loading} />
+                </button>
+                {pop.shownPop === POP.pages && (
+                  <PagePicker
+                    pages={pages}
+                    path={pagePath}
+                    state={pop.state}
+                    place={PICKER_PLACE.start}
+                    boards={{
+                      changed: chatBoards ?? NO_BOARDS,
+                      onNew:
+                        onNewBoard &&
+                        (() => {
+                          pop.close();
+                          onNewBoard();
+                        }),
+                    }}
+                    onGo={(to) => {
+                      pop.close();
+                      onNavigate(to);
+                    }}
+                    onClose={pop.close}
+                    onSave={
+                      downloads
+                        ? (to, at) => {
+                            // The list leaves; the page's downloads open where its button was.
+                            pop.close();
+                            setPageSaving({ path: to, x: at.right, y: at.bottom, open: true });
+                          }
+                        : undefined
+                    }
+                    saveLabel={(p) => t('next.download.pageOf', { name: p.name })}
+                  />
+                )}
+              </div>
+              {compact && stage && stage.mode === 'chat' && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-site__swap"
+                  aria-label={t('next.site.siteFull')}
+                  onClick={() => stage.onMode('island', sectionSize())}
+                >
+                  <Icon name="maximize-2" />
+                </button>
+              )}
+              {/* «Выделить» is on the bar only while no field has it: the chat folded, the field in its pill. */}
+              {stage &&
+                !compact &&
+                selectOnBar &&
+                (guest ? (
+                  <button
+                    type="button"
+                    className="hx-head-btn hx-tipped hx-browser__pick"
+                    aria-pressed={stage.picking ?? false}
+                    aria-disabled={stage.picking === null}
+                    aria-label={guest.pickLabel ?? t('next.site.pick')}
+                    onClick={() => stage.picking !== null && togglePick()}
+                  >
+                    <Icon name="square-mouse-pointer" />
+                    <span className="hx-tip" data-pos="below">
+                      {guest.pickTip ?? t('next.site.pickTip')}
+                      {keys && <kbd>C</kbd>}
+                    </span>
+                  </button>
+                ) : (
+                  <PickSplit
+                    tool={drawTool.tool}
+                    on={drawTool.on}
+                    disabled={stage.picking === null}
+                    blockTip={t('next.site.pickTip')}
+                    keys={keys}
+                    blockKey={pickKey ?? 'V'}
+                    onToggle={drawTool.toggle}
+                    onTool={drawTool.choose}
+                  />
+                ))}
+              {guest?.full && (
+                <button
+                  type="button"
+                  className="hx-browser__tool hx-tipped"
+                  aria-label={guest.full.label}
+                  onClick={guest.full.onOpen}
+                >
+                  <Icon name="maximize-2" size="sm" />
+                  <span className="hx-browser__tool-label">{guest.full.label}</span>
+                  <span className="hx-tip" data-pos="below">
+                    {guest.full.tip}
+                    <kbd>F</kbd>
+                  </span>
+                </button>
+              )}
+              <div className="hx-browser__anchor">
+                <button
+                  type="button"
+                  className="hx-browser__dev hx-tipped"
+                  aria-expanded={pop.pop === POP.device}
+                  aria-label={t('next.site.device')}
+                  onClick={() => pop.toggle(POP.device)}
+                >
+                  <Icon name={device.icon} size="sm" />
+                  <span className="hx-browser__dev-size">
+                    {overview ? t('next.site.devices.overview') : sizeText}
+                  </span>
+                  <span className="hx-tip" data-pos="below">
+                    {t('next.site.deviceTip')}
+                  </span>
+                </button>
+                {pop.shownPop === POP.device && (
+                  <DeviceMenu
+                    state={pop.state}
+                    device={device}
+                    size={vp && !overview ? { w: vp.vw, h: vp.vh } : null}
+                    zoom={canvas}
+                    onPick={(id) => {
+                      pop.close();
+                      pickDevice(id);
+                    }}
+                    onSize={(next) => {
+                      setDeviceId('fill');
+                      setRot(false);
+                      setSize(next);
+                    }}
+                  />
+                )}
+              </div>
+              {looking && !guest && comments && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped hx-browser__comment"
+                  aria-pressed={comments.on}
+                  aria-label={t('next.site.comment')}
+                  onClick={comments.toggle}
+                >
+                  <Icon name="message-square-plus" />
+                  <span className="hx-tip" data-pos="below">
+                    {t('next.site.comment')}
+                    <kbd>C</kbd>
+                  </span>
+                </button>
+              )}
+              {/* Beside a phone the settings are on its pill. */}
+              {!compact && !phonePillOn && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped hx-browser__opt"
+                  aria-pressed={settings.on}
+                  aria-disabled={settings.disabled}
+                  aria-label={t('next.site.tweaks.title')}
+                  onClick={settings.toggle}
+                >
+                  <Icon name="sliders-horizontal" />
+                  <span className="hx-tip" data-pos="below">
+                    {settings.disabled ? t('next.site.tweaksNone') : t('next.site.tweaks.title')}
+                  </span>
+                </button>
+              )}
+              {downloads && pageSaving && (
+                <ProjectDownloadMenu
+                  items={pageDownloads({ ...downloads, board: pageSaving.path }, pageSaving.path, 'page')}
+                  open={pageSaving.open}
+                  onOpenChange={(open) => setPageSaving((now) => now && { ...now, open })}
+                  anchor={{ getBoundingClientRect: () => new DOMRect(pageSaving.x, pageSaving.y, 0, 0) }}
+                />
+              )}
+              {kit}
+              {(pane || access) && !phone && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped hx-browser__share"
+                  aria-label={access?.label ?? t('next.pane.designShare')}
+                  onClick={access ? access.onOpen : pane?.onShare}
+                >
+                  <Icon name="share" />
+                  <span className="hx-tip" data-pos="below" data-align="end">
+                    {access?.label ?? t('next.pane.designShare')}
+                  </span>
+                </button>
+              )}
+              <div className="hx-browser__anchor">
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped"
+                  aria-expanded={pop.pop === POP.more || pop.pop === POP.phone}
+                  aria-label={t('next.site.more')}
+                  onClick={() => pop.toggle(pop.pop === POP.phone ? POP.phone : POP.more)}
+                >
+                  <Icon name="ellipsis" />
+                  <span className="hx-tip" data-pos="below" data-align="end">
+                    {t('next.site.more')}
+                  </span>
+                </button>
+                {pop.shownPop === POP.more && (
+                  <div
+                    className="hx-site-menu hx-site-menu--end hx-more hx-sheet-phone"
+                    data-state={pop.state}
+                    role="menu"
+                  >
+                    <SheetGrip />
+                    {paneChat && (
+                      <div className="hx-more__chat">
+                        <span className="hx-more__label">{t('next.site.paneChat')}</span>
+                        <PaneChatModes
+                          mode={paneChat.mode}
+                          onMode={(mode) => paneChat.onMode(mode, sectionSize())}
+                        />
+                      </div>
+                    )}
+                    {moreItems.map((item) => (
+                      <Fragment key={item.id}>
+                        {item.sep && <div className="hx-more__sep" />}
+                        <button
+                          type="button"
+                          role={item.on === undefined ? 'menuitem' : 'menuitemcheckbox'}
+                          className="hx-option hx-more__item"
+                          aria-checked={item.on}
+                          aria-expanded={item.sub ? savingOpen : undefined}
+                          aria-disabled={item.disabled}
+                          onClick={() => !item.disabled && item.pick()}
+                        >
+                          <Icon name={item.icon} size="sm" />
+                          <span className="hx-more__label">{item.label}</span>
+                          {keys && <kbd className="hx-more__kbd">{item.kbd}</kbd>}
+                          {item.on !== undefined && (
+                            <Icon name="check" size="sm" className="hx-more__check" />
+                          )}
+                          {item.sub && <Icon name="chevron-down" size="sm" className="hx-more__chev" />}
+                        </button>
+                        {item.sub && savingOpen && (
+                          <div className="hx-more__sub">
+                            {item.sub.map((row) => (
+                              <button
+                                key={row.id}
+                                type="button"
+                                role="menuitem"
+                                className="hx-option hx-more__item"
+                                aria-disabled={row.disabled}
+                                title={row.hint}
+                                onClick={() => !row.disabled && closing(row.pick)()}
+                              >
+                                <Icon name={row.icon} size="sm" />
+                                <span className="hx-more__label">{row.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </Fragment>
+                    ))}
+                  </div>
+                )}
+                {pop.shownPop === POP.phone && qr && (
+                  <PhonePopover modules={qr} state={pop.state} onCopy={onCopyLink} />
+                )}
+              </div>
+              {!compact && !guest && (designPanel || toolPane) && (
+                <button
+                  type="button"
+                  className="hx-head-btn hx-tipped hx-browser__panel"
+                  aria-pressed={designPanel ? designPanel.tab !== null : toolPane?.open}
+                  aria-label={t('next.header.pane')}
+                  onClick={() => (designPanel ? designPanel.open(DESIGN_TAB.tools) : toolPane?.onToggle())}
+                >
+                  <Icon name="panel-right" />
+                  <span className="hx-tip" data-pos="below" data-align="end">
+                    {t('next.site.panelTip')}
+                  </span>
+                </button>
               )}
             </div>
-            {!compact && !guest && (designPanel || toolPane) && (
-              <button
-                type="button"
-                className="hx-head-btn hx-tipped hx-browser__panel"
-                aria-pressed={designPanel ? designPanel.tab !== null : toolPane?.open}
-                aria-label={t('next.header.pane')}
-                onClick={() => (designPanel ? designPanel.open(DESIGN_TAB.tools) : toolPane?.onToggle())}
-              >
-                <Icon name="panel-right" />
-                <span className="hx-tip" data-pos="below" data-align="end">
-                  {t('next.site.panelTip')}
-                </span>
-              </button>
-            )}
-          </div>
 
-          <div className="hx-browser__page" data-kind="page">
-            {text && (
-              <div className="hx-textstrip">
-                <TextBar text={text} post={postBoard} />
-              </div>
-            )}
-            <div
-              ref={areaRef}
-              onContextMenu={(event) => {
-                // The canvas round the page: the page's menu without a block.
-                if (
-                  !menuOn ||
-                  (event.target as Element).closest('input, textarea, .hx-vpzoom, .hx-phonepill')
-                )
-                  return;
-                event.preventDefault();
-                const home = sectionRef.current?.getBoundingClientRect();
-                const at = { x: event.clientX - (home?.left ?? 0), y: event.clientY - (home?.top ?? 0) };
-                setBoardMenu({ x: 0, y: 0, label: '', editable: false, at, board: false });
-              }}
-              className="hx-vparea"
-              data-dev={vp?.kind ?? VP_KIND.fill}
-              data-rot={vp?.rot ?? false}
-            >
-              {overview && (
-                <Overview
-                  cards={cards}
-                  room={ovwRoom}
-                  src={loadedFor === frameKey ? plainSrc : null}
-                  guest={guest !== undefined}
-                  groups={ovwGroups.groups}
-                  onGroup={ovwGroups.toggle}
-                  onSpace={canvas.fromPage.space}
-                  onPan={canvas.fromPage.pan}
-                  onPick={pickDevice}
-                />
-              )}
-              {failed && (
-                <LoadFailed
-                  size={LOAD_FAILED_SIZE.page}
-                  title={failure.title}
-                  reason={failure.reason}
-                  onRetry={onRetry}
-                />
-              )}
-              {!failed && (
-                <div className="hx-vpbox">
-                  <div className="hx-vpscale">
-                    <div
-                      className={
-                        skin?.k === 'css'
-                          ? `device ${skin.css.cls} ${skin.css.color} hx-dev`
-                          : skin?.k === 'own'
-                            ? 'hx-dv'
-                            : 'hx-bare'
-                      }
-                      data-kind={skin?.k === 'own' ? skin.case : (device.case ?? 'none')}
-                      data-framed={skin?.k === 'own' ? skin.framed : skin !== null}
-                      data-fold={folding ?? undefined}
-                      data-hinge={device.fold?.hinge}
-                      data-turn={turned ? (rot ? 'land' : 'port') : undefined}
-                      data-wake={wake ?? undefined}
-                    >
-                      <div className="device-frame">
-                        <div className="device-screen hx-screen">
-                          <div
-                            className="hx-vp"
-                            data-ui={phoneBrowser?.id ?? 'none'}
-                            data-os={phoneUi ? device.os : 'none'}
-                            data-kind={skin?.k === 'own' ? skin.case : (device.case ?? 'none')}
-                            data-status={phoneStatus}
-                            data-bars={phoneBrowser ? bars : BARS.full}
-                          >
-                            {phoneUi && device.os && (
-                              <PhoneTop
-                                browser={phoneBrowser}
-                                os={device.os}
-                                status={phoneStatus}
-                                host={host}
-                                title={title}
-                                onUnfold={unfoldBars}
-                              />
-                            )}
-                            <div className="hx-site__frame">
-                              <Swap
-                                ready={!loading}
-                                mounted={src !== null}
-                                className="hx-site__fswap"
-                                contentClassName="hx-site__held"
-                                skeleton={
-                                  heldSrc !== null ? (
-                                    <SiteHeld src={heldSrc} title={page?.name ?? title} />
-                                  ) : (
-                                    <SiteLoader stage={loadStage} />
-                                  )
-                                }
-                              >
-                                {src !== null && (
-                                  <BoardFrames
-                                    key={frameScope ?? frameKey}
-                                    nextFrame={nextFrame}
-                                    capacity={frameScope ? PROTOTYPE_FRAME_CAPACITY : 1}
-                                    frameRef={frameRef}
-                                    src={src}
-                                    title={page?.name ?? title}
-                                    ready={() => {
-                                      loadedKey.current = frameKey;
-                                      setLoadedFor(frameKey);
-                                      ping();
-                                      hostTweaks();
-                                      anchorStore.set(null);
-                                      sendAnchors();
-                                      onCanvas();
-                                      sendTouch();
-                                      sendImages();
-                                      sendHand();
-                                      arm(latestStage.current?.pick === true);
-                                      sendStyles();
-                                    }}
-                                  />
-                                )}
-                              </Swap>
-                              {CommentsLayerSlot && src !== null && (
-                                <CommentsLayerSlot
-                                  frame={frameRef}
-                                  origin={guest ? GUEST_ORIGIN : frameOrigin(src)}
+            <div className="hx-browser__page" data-kind="page">
+              {drawTool.palette && <div className="hx-draw-strip">{drawTool.palette}</div>}
+              <div
+                ref={areaRef}
+                onContextMenu={(event) => {
+                  // The canvas round the page: the page's menu without a block.
+                  if (
+                    !menuOn ||
+                    (event.target as Element).closest('input, textarea, .hx-vpzoom, .hx-phonepill')
+                  )
+                    return;
+                  event.preventDefault();
+                  const home = sectionRef.current?.getBoundingClientRect();
+                  const at = { x: event.clientX - (home?.left ?? 0), y: event.clientY - (home?.top ?? 0) };
+                  setBoardMenu({ x: 0, y: 0, label: '', at, board: false });
+                }}
+                className="hx-vparea"
+                data-dev={vp?.kind ?? VP_KIND.fill}
+                data-rot={vp?.rot ?? false}
+              >
+                {overview && (
+                  <Overview
+                    cards={cards}
+                    room={ovwRoom}
+                    src={loadedFor === frameKey ? plainSrc : null}
+                    guest={guest !== undefined}
+                    groups={ovwGroups.groups}
+                    onGroup={ovwGroups.toggle}
+                    onSpace={canvas.fromPage.space}
+                    onPan={canvas.fromPage.pan}
+                    onPick={pickDevice}
+                  />
+                )}
+                {failed && (
+                  <LoadFailed
+                    size={LOAD_FAILED_SIZE.page}
+                    title={failure.title}
+                    reason={failure.reason}
+                    onRetry={onRetry}
+                  />
+                )}
+                {!failed && (
+                  <div className="hx-vpbox">
+                    <div className="hx-vpscale">
+                      <div
+                        className={
+                          skin?.k === 'css'
+                            ? `device ${skin.css.cls} ${skin.css.color} hx-dev`
+                            : skin?.k === 'own'
+                              ? 'hx-dv'
+                              : 'hx-bare'
+                        }
+                        data-kind={skin?.k === 'own' ? skin.case : (device.case ?? 'none')}
+                        data-framed={skin?.k === 'own' ? skin.framed : skin !== null}
+                        data-fold={folding ?? undefined}
+                        data-hinge={device.fold?.hinge}
+                        data-turn={turned ? (rot ? 'land' : 'port') : undefined}
+                        data-wake={wake ?? undefined}
+                      >
+                        <div className="device-frame">
+                          <div className="device-screen hx-screen">
+                            <div
+                              className="hx-vp"
+                              data-ui={phoneBrowser?.id ?? 'none'}
+                              data-os={phoneUi ? device.os : 'none'}
+                              data-kind={skin?.k === 'own' ? skin.case : (device.case ?? 'none')}
+                              data-status={phoneStatus}
+                              data-bars={phoneBrowser ? bars : BARS.full}
+                            >
+                              {phoneUi && device.os && (
+                                <PhoneTop
+                                  browser={phoneBrowser}
+                                  os={device.os}
+                                  status={phoneStatus}
+                                  host={host}
+                                  title={title}
+                                  onUnfold={unfoldBars}
                                 />
                               )}
-                              {(stage || tourFrame) && (
-                                <AnchorContext.Provider value={anchorStore}>
-                                  <div className="hx-site__pins">
-                                    {stage?.pins}
-                                    {tourFrame && <TourAnchor />}
-                                  </div>
-                                </AnchorContext.Provider>
+                              <div className="hx-site__frame">
+                                <Swap
+                                  ready={!loading}
+                                  mounted={src !== null}
+                                  className="hx-site__fswap"
+                                  contentClassName="hx-site__held"
+                                  skeleton={
+                                    heldSrc !== null ? (
+                                      <SiteHeld src={heldSrc} title={page?.name ?? title} />
+                                    ) : (
+                                      <SiteLoader stage={loadStage} />
+                                    )
+                                  }
+                                >
+                                  {src !== null && (
+                                    <BoardFrames
+                                      key={frameScope ?? frameKey}
+                                      nextFrame={nextFrame}
+                                      capacity={frameScope ? PROTOTYPE_FRAME_CAPACITY : 1}
+                                      frameRef={frameRef}
+                                      src={src}
+                                      title={page?.name ?? title}
+                                      ready={() => {
+                                        loadedKey.current = frameKey;
+                                        setLoadedFor(frameKey);
+                                        ping();
+                                        hostTweaks();
+                                        anchorStore.set(null);
+                                        sendAnchors();
+                                        onCanvas();
+                                        sendTouch();
+                                        sendImages();
+                                        sendHand();
+                                        arm(latestStage.current?.pick === true);
+                                        sendStyles();
+                                      }}
+                                    />
+                                  )}
+                                </Swap>
+                                {CommentsLayerSlot && src !== null && (
+                                  <CommentsLayerSlot
+                                    frame={frameRef}
+                                    origin={guest ? GUEST_ORIGIN : frameOrigin(src)}
+                                  />
+                                )}
+                                {src !== null &&
+                                  !guest &&
+                                  drawTool.layerShown &&
+                                  frameOrigin(src) !== null && (
+                                    <DrawLayer
+                                      frame={frameRef}
+                                      origin={frameOrigin(src) ?? ''}
+                                      {...drawTool.layerProps}
+                                    />
+                                  )}
+                                {(stage || tourFrame) && (
+                                  <AnchorContext.Provider value={anchorStore}>
+                                    <div className="hx-site__pins">
+                                      {stage?.pins}
+                                      {tourFrame && <TourAnchor />}
+                                    </div>
+                                  </AnchorContext.Provider>
+                                )}
+                              </div>
+                              {phoneUi && (
+                                <PhoneBottom browser={phoneBrowser} host={host} onUnfold={unfoldBars} />
                               )}
                             </div>
-                            {phoneUi && (
-                              <PhoneBottom browser={phoneBrowser} host={host} onUnfold={unfoldBars} />
-                            )}
+                            {skin?.k === 'own' && <ScreenParts />}
                           </div>
-                          {skin?.k === 'own' && <ScreenParts />}
                         </div>
+                        {skin?.k === 'css' && (
+                          <>
+                            <div className="device-stripe" />
+                            <div className="device-header" />
+                            <div className="device-sensors" />
+                            <div className="device-btns" />
+                            <div className="device-power" />
+                            <div className="device-home" />
+                          </>
+                        )}
+                        {skin?.k === 'own' && <CaseParts />}
                       </div>
-                      {skin?.k === 'css' && (
-                        <>
-                          <div className="device-stripe" />
-                          <div className="device-header" />
-                          <div className="device-sensors" />
-                          <div className="device-btns" />
-                          <div className="device-power" />
-                          <div className="device-home" />
-                        </>
-                      )}
-                      {skin?.k === 'own' && <CaseParts />}
                     </div>
+                    {(['e', 's', 'se'] as const).map((edge) => (
+                      <span
+                        key={edge}
+                        className="hx-vpgrab"
+                        data-edge={edge}
+                        aria-hidden="true"
+                        onPointerDown={(event) => gripViewport(event, edge)}
+                      />
+                    ))}
                   </div>
-                  {(['e', 's', 'se'] as const).map((edge) => (
-                    <span
-                      key={edge}
-                      className="hx-vpgrab"
-                      data-edge={edge}
-                      aria-hidden="true"
-                      onPointerDown={(event) => gripViewport(event, edge)}
-                    />
-                  ))}
-                </div>
+                )}
+                {!failed && <div className="hx-vpshield" aria-hidden="true" />}
+              </div>
+              {dockShown && !failed && (
+                <PaneDock
+                  pages={pages}
+                  path={pagePath}
+                  onGo={onNavigate}
+                  tweaks={{ on: tweaksOpen, disabled: noTweaks && !tweaksOpen, onToggle: toggleTweaks }}
+                  zoom={canvas}
+                />
               )}
-              {!failed && <div className="hx-vpshield" aria-hidden="true" />}
+              {!pane && !phone && !failed && <ZoomPill zoom={canvas} />}
+              {!phone && (
+                <PhonePill
+                  active={phonePillOn}
+                  rot={{ on: rot, onToggle: turn }}
+                  frame={
+                    device.case !== undefined && device.case !== 'bare'
+                      ? { on: phoneView.frame, onToggle: () => setPhoneView({ frame: !phoneView.frame }) }
+                      : null
+                  }
+                  status={{
+                    on: phoneView.status,
+                    onToggle: () => setPhoneView({ status: !phoneView.status }),
+                  }}
+                  fold={
+                    device.fold
+                      ? {
+                          on: folded,
+                          tip: t(folded ? 'next.site.unfold' : `next.site.foldTo.${device.fold.hinge}`),
+                          onToggle: fold,
+                        }
+                      : null
+                  }
+                  browser={{
+                    id: phoneBrowser?.id ?? BROWSER_NONE,
+                    native: device.os ? NATIVE_BROWSER[device.os] : BROWSER_NONE,
+                    onPick: (id) => {
+                      setBrowserId(id);
+                      setChrome(true);
+                      unfoldBars();
+                    },
+                  }}
+                  touch={{ on: phoneView.touch, onToggle: () => setPhoneView({ touch: !phoneView.touch }) }}
+                  settings={{ on: settings.on, disabled: settings.disabled, onToggle: settings.toggle }}
+                  watch={`${device.id}|${rot}|${foldedNow}|${phoneView.frame}`}
+                />
+              )}
             </div>
-            {dockShown && !failed && (
-              <PaneDock
-                pages={pages}
-                path={pagePath}
-                onGo={onNavigate}
-                tweaks={{ on: tweaksOpen, disabled: noTweaks && !tweaksOpen, onToggle: toggleTweaks }}
-                zoom={canvas}
+            {!tweaksPort && tweaksPanel.mounted && tweaks && (
+              <SiteTweaks
+                controls={tweaks}
+                state={tweaksPanel.state}
+                pos={tweaksPos}
+                onChange={sendTweak}
+                onClose={() => setTweaksOpen(false)}
+                onGrab={(event) => dragTweaks(event, tweaksPos, setTweaksPos)}
               />
             )}
-            {!pane && !phone && !failed && <ZoomPill zoom={canvas} />}
-            {!phone && (
-              <PhonePill
-                active={phonePillOn}
-                rot={{ on: rot, onToggle: turn }}
-                frame={
-                  device.case !== undefined && device.case !== 'bare'
-                    ? { on: phoneView.frame, onToggle: () => setPhoneView({ frame: !phoneView.frame }) }
-                    : null
-                }
-                status={{ on: phoneView.status, onToggle: () => setPhoneView({ status: !phoneView.status }) }}
-                fold={
-                  device.fold
-                    ? {
-                        on: folded,
-                        tip: t(folded ? 'next.site.unfold' : `next.site.foldTo.${device.fold.hinge}`),
-                        onToggle: fold,
-                      }
-                    : null
-                }
-                browser={{
-                  id: phoneBrowser?.id ?? BROWSER_NONE,
-                  native: device.os ? NATIVE_BROWSER[device.os] : BROWSER_NONE,
-                  onPick: (id) => {
-                    setBrowserId(id);
-                    setChrome(true);
-                    unfoldBars();
-                  },
+            {devtools && (
+              <SiteDevtools
+                machine={devtools.machine}
+                slot={devtools.slot}
+                artifact={devtools.artifact}
+                board={pagePath ?? ''}
+                open={dev}
+                tab={devTab}
+                onTab={setDevTab}
+                dom={dom}
+                inspect={{ on: dom.inspect, disabled: inspectDisabled, onToggle: toggleInspect }}
+                throttle={{
+                  mounted: pop.shownPop === POP.throttle,
+                  state: pop.state,
+                  onToggle: () => pop.toggle(POP.throttle),
+                  onClose: pop.close,
                 }}
-                touch={{ on: phoneView.touch, onToggle: () => setPhoneView({ touch: !phoneView.touch }) }}
-                settings={{ on: settings.on, disabled: settings.disabled, onToggle: settings.toggle }}
-                watch={`${device.id}|${rot}|${foldedNow}|${phoneView.frame}`}
+                onSend={stage && ((words) => stage.onAttach(words))}
+                onClose={toggleDev}
+                onGrab={(event) =>
+                  dragDevtools(event, { h: devH, onHeight: setDevH, onClose: () => setDev(false) })
+                }
               />
             )}
           </div>
-          {!tweaksPort && tweaksPanel.mounted && tweaks && (
-            <SiteTweaks
-              controls={tweaks}
-              state={tweaksPanel.state}
-              pos={tweaksPos}
-              onChange={sendTweak}
-              onClose={() => setTweaksOpen(false)}
-              onGrab={(event) => dragTweaks(event, tweaksPos, setTweaksPos)}
-            />
-          )}
-          {devtools && (
-            <SiteDevtools
-              machine={devtools.machine}
-              slot={devtools.slot}
-              artifact={devtools.artifact}
-              board={pagePath ?? ''}
-              open={dev}
-              tab={devTab}
-              onTab={setDevTab}
-              dom={dom}
-              inspect={{ on: dom.inspect, disabled: inspectDisabled, onToggle: toggleInspect }}
-              throttle={{
-                mounted: pop.shownPop === POP.throttle,
-                state: pop.state,
-                onToggle: () => pop.toggle(POP.throttle),
-                onClose: pop.close,
-              }}
-              onSend={stage && ((words) => stage.onAttach(words))}
-              onClose={toggleDev}
-              onGrab={(event) =>
-                dragDevtools(event, { h: devH, onHeight: setDevH, onClose: () => setDev(false) })
-              }
-            />
-          )}
         </div>
-      </div>
-      {stage?.island}
-      <BoardTextContext.Provider value={textOn && !looking ? editTextAt : null}>
-        {stage?.overlay}
-      </BoardTextContext.Provider>
-      {menuShown.value !== null && (
-        <CanvasMenu
-          key={`${menuShown.value.at.x},${menuShown.value.at.y}`}
-          x={menuShown.value.at.x}
-          y={menuShown.value.at.y}
-          state={menuShown.state}
-          label={looking ? '' : menuShown.value.label}
-          parts={menuParts()}
-          onPick={pickFromMenu}
-          onClose={closeBoardMenu}
-        />
-      )}
-      {images !== undefined && (
-        <ImageActions
-          machine={images.machine}
-          artifact={images.artifact}
-          address={{ file: imageOpen?.act.file ?? '' }}
-          open={imagesOn ? imageOpen : null}
-          write={fileWriter(images.machine, images.artifact, imageOpen?.act.file ?? '')}
-          onClose={() => setImageOpen(null)}
-        />
-      )}
-    </section>
+        {stage?.island}
+        <BoardHandContext.Provider value={boardHand}>{stage?.overlay}</BoardHandContext.Provider>
+        {menuShown.value !== null && (
+          <CanvasMenu
+            key={`${menuShown.value.at.x},${menuShown.value.at.y}`}
+            x={menuShown.value.at.x}
+            y={menuShown.value.at.y}
+            state={menuShown.state}
+            label={looking ? '' : menuShown.value.label}
+            parts={menuParts()}
+            onPick={pickFromMenu}
+            onClose={closeBoardMenu}
+          />
+        )}
+        {images !== undefined && (
+          <ImageActions
+            machine={images.machine}
+            artifact={images.artifact}
+            address={{ file: imageOpen?.act.file ?? '' }}
+            open={imagesOn ? imageOpen : null}
+            write={fileWriter(images.machine, images.artifact, imageOpen?.act.file ?? '')}
+            onClose={() => setImageOpen(null)}
+          />
+        )}
+      </section>
+    </AreaCardContext.Provider>
   );
 };
 

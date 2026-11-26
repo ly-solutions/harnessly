@@ -104,9 +104,28 @@ Under `<DesignPlatformAPI>/automations`, besides the rules' own:
   ok).
 
 From a machine: `POST /agent/routines`, signed with the machine's key under `harnessly-agent-routines-v1`, body
-`{op: list|get|create|update|run|delete|runs, id, body, limit}`; the routines are those of the machine's owner, named
-by id or name. The runtime carries it for the page and the command: `<platform>/routines[/{id}[/run|/runs]]` (a page
-session) and `/api/cli/routines…` (the CLI token).
+`{op: list|get|create|update|run|delete|runs|chat, id, body, limit}`; the routines are those of the machine's owner,
+named by id or name; `chat` takes a conversation as `id` and answers the routine whose run it is, the run and the
+routine's last runs (`{routine: null}` for any other chat). The runtime carries it for the page and the command:
+`<platform>/routines[/{id}[/run|/runs]]` and `<platform>/routines?chat=<conversation>` (a page session) and
+`/api/cli/routines…` (the CLI token).
+
+## The run's chat: the app «Регулярные задачи»
+
+A run's chat is a chat like any other, and the builtin app `harnessly.routines` (`internal/apps/builtin/routines`,
+its code in `web/app/next/features/app-views/routines-app`) works in it through the SDK: it reads with
+`hl.routines.forChat` (right `routines.read`) and turns the routine off or on with `hl.routines.setEnabled`
+(`routines.write`). Only a chat with the hub's mark (`from.app: routines`) is asked about; in any other chat the app
+shows nothing.
+
+- **Cards in the feed** (views `start`, `result`). The feed puts them there itself from what the hub says of the chat:
+  the start card at its head (the task, its schedule, by schedule or by hand, when; «Все запуски», «Выключить»), the
+  result card at its end once the run reported (how it went, the summary, artifacts, sources, the next run). Neither
+  `hl.chat.card` (it lives in one browser) nor a tool result (the report is a request of the agent's shell, not a tool
+  of the app's server) would put a card there without the person, and both would depend on who looks.
+- **Widgets of the right column** (views `results`, `sources`, `runs`, `next`, `memory`), above the person's own:
+  the artifacts of all runs, the sources, the last runs (a click opens that run's chat, this one is marked), the next
+  starts and the memory.
 
 ## The command and the tools
 

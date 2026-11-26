@@ -233,6 +233,9 @@ export interface IHostAction {
   danger?: boolean;
 }
 
+/** What hl.routines asks the host (harnessly/routines.<op>). */
+export type TRoutinesOp = 'forChat' | 'get' | 'runs' | 'setEnabled';
+
 export interface IBridgeHandlers {
   tool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   storage?: (
@@ -342,6 +345,11 @@ export interface IBridgeHandlers {
     op: 'list' | 'tools' | 'call' | 'api' | 'request',
     params: Record<string, unknown>,
   ) => Promise<unknown>;
+  /**
+   * The person's routines (hl.routines, routines.read; setEnabled needs routines.write): the runtime asks the hub for the
+   * machine's owner, as the routines screen does (routines.ts).
+   */
+  routines?: (op: TRoutinesOp, params: Record<string, unknown>) => Promise<unknown>;
   /** The view's page tools, the whole list each time (tools.page). */
   pageTools?: (tools: readonly IPageTool[]) => void;
   /** The view's answer to a call of its tool. */
@@ -881,6 +889,12 @@ export class AppBridge {
     );
   }
 
+  /** hl.has: whether the app may call a method (its wire name) or holds a right (its name) here. */
+  has(name: string): boolean {
+    if (Object.hasOwn(METHOD_PERMISSION, name)) return this.callable().includes(name);
+    return Object.hasOwn(PERMISSION_CLASS, name) && this.holds(name);
+  }
+
   /** The methods this view may call here, for hl.has: those of no right and those whose right the app holds. */
   private callable(): string[] {
     return Object.entries(METHOD_PERMISSION)
@@ -1387,6 +1401,25 @@ export class AppBridge {
       case 'harnessly/context.publish':
         this.need('publish')(p.data ?? null);
         return {};
+      case 'harnessly/routines.forChat':
+        return this.need('routines')('forChat', { chat: str('chat', 200) });
+      case 'harnessly/routines.get':
+        return this.need('routines')('get', { id: str('id', 200) });
+      case 'harnessly/routines.runs': {
+        if (
+          p.limit !== undefined &&
+          (typeof p.limit !== 'number' || !Number.isInteger(p.limit) || p.limit < 1)
+        )
+          throw new BridgeError('invalid_params', 'limit is a whole number above 0');
+        return this.need('routines')('runs', {
+          id: str('id', 200),
+          limit: Math.min(typeof p.limit === 'number' ? p.limit : 20, 100),
+        });
+      }
+      case 'harnessly/routines.setEnabled':
+        if (typeof p.enabled !== 'boolean')
+          throw new BridgeError('invalid_params', 'enabled is true or false');
+        return this.need('routines')('setEnabled', { id: str('id', 200), enabled: p.enabled });
       default: {
         // harnessly/sinopia.<method>: the bridge has checked the right; the params are the runtime's to read.
         const name = method.slice('harnessly/sinopia.'.length);

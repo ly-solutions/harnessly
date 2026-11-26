@@ -16,6 +16,7 @@ import { useSiteCommentsContext } from '@/next/features/designly/panel/use-site-
 import Avatar from '@/next/features/designly/panel/avatar';
 import { authorOf } from '@/next/features/designly/panel/comments-tab';
 import { whenOf } from '@/next/features/designly/panel/when';
+import { ShapesGroup } from '@/next/features/designly/draw/render';
 import { copyText } from '@/next/features/designly/access/copy-link';
 import { toast } from '@/next/features/designly/sdk/toast';
 import '@/next/styles/site-comments.css';
@@ -549,6 +550,12 @@ const Layer = ({
           {t('next.ds.comments.place')}
           <kbd>Esc</kbd>
         </div>
+      )}
+      {/* The drawing of the open thread stands where it was drawn on the page (HRN-1772). */}
+      {opened?.root.drawing && (
+        <svg className="hx-cm-drawing" aria-hidden="true">
+          <ShapesGroup shapes={opened.root.drawing} sx={0} sy={scroll} />
+        </svg>
       )}
       {threads.map((th) => {
         const at = placeOf(th.root.x, th.root.y);

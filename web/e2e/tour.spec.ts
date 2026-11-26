@@ -320,12 +320,8 @@ test('site lesson counts the real actions', async ({ page }) => {
   await expect(title(page)).toHaveText('Напишите, что поменять', { timeout: 10_000 });
   await expect(page.locator('.hx-ann .hx-ann__input')).toHaveValue('Сделай заголовок короче и ярче');
   await snap(page, 'note');
+  // The card's arrow sends the note to the agent at once: the lesson goes on.
   await page.locator('.hx-ann .hx-ann__ok').click();
-
-  await expect(title(page)).toHaveText('Отправьте агенту', { timeout: 10_000 });
-  await expect(page.locator('.hx-npin')).toHaveCount(1);
-  await snap(page, 'ask');
-  await card(page).getByRole('button', { name: 'Пропустить' }).click();
 
   await expect(title(page)).toHaveText('Откройте страницу «Цены»');
   // Away from the design the lesson waits in a corner and leads back.

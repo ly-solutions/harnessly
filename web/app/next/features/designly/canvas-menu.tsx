@@ -31,14 +31,33 @@ const CanvasMenu = ({ x, y, state, label, parts, onPick, onClose }: ICanvasMenuP
   // It stays inside the section: near the right or the bottom edge it opens back from the point.
   useLayoutEffect(() => {
     const el = ref.current;
+    // The menu holds the keys, no item is lit: a mouse opened it. The first arrow lights one.
+    el?.focus({ preventScroll: true });
     const home = el?.offsetParent;
     if (!el || !home) return;
     const left = Math.max(8, Math.min(x, home.clientWidth - el.offsetWidth - 8));
     const top = Math.max(8, Math.min(y, home.clientHeight - el.offsetHeight - 8));
     el.style.setProperty('--cx', `${left}px`);
     el.style.setProperty('--cy', `${top}px`);
-    el.querySelector('button')?.focus({ preventScroll: true });
   }, [x, y]);
+  const onArrows = (event: React.KeyboardEvent) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+    if (items.length === 0) return;
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (at + 1) % items.length
+            : at <= 0
+              ? items.length - 1
+              : at - 1;
+    items[next].focus({ preventScroll: true });
+  };
   useEffect(() => {
     const onDown = (event: PointerEvent) => {
       if (!ref.current?.contains(event.target as Node)) onClose();
@@ -65,7 +84,9 @@ const CanvasMenu = ({ x, y, state, label, parts, onPick, onClose }: ICanvasMenuP
       className="hx-site-menu hx-canvasmenu"
       data-state={state}
       role="menu"
+      tabIndex={-1}
       aria-label={label || t('next.site.canvasMenu')}
+      onKeyDown={onArrows}
       onContextMenu={(event) => event.preventDefault()}
     >
       {label && <div className="hx-dl-pop__label hx-canvasmenu__name">{label}</div>}
@@ -79,6 +100,7 @@ const CanvasMenu = ({ x, y, state, label, parts, onPick, onClose }: ICanvasMenuP
                 key={item.id}
                 type="button"
                 role="menuitem"
+                tabIndex={-1}
                 className="hx-option hx-more__item"
                 onClick={() => {
                   onClose();

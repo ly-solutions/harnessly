@@ -16,8 +16,9 @@ const RoutinesDomain = "harnessly-agent-routines-v1"
 // RoutinesPath is where the hub answers it.
 const RoutinesPath = "/agent/routines"
 
-// RoutinesCall is one call: op is list, get, create, update, run, delete or runs; id names the routine for all but
-// list and create; body is the rule (create, update) as the hub's automations API takes it.
+// RoutinesCall is one call: op is list, get, create, update, run, delete, runs or chat; id names the routine for all but
+// list and create, and for chat a conversation (the routine whose run it is); body is the rule (create, update) as the
+// hub's automations API takes it.
 type RoutinesCall struct {
 	Op    string          `json:"op"`
 	ID    string          `json:"id,omitempty"`

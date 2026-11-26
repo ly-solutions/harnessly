@@ -186,6 +186,8 @@ type DeckComment struct {
 	Agent     bool                `json:"agent,omitempty"`
 	// ByAgent: the agent wrote it (a reply of `harnessly design comments reply`).
 	ByAgent bool `json:"byAgent,omitempty"`
+	// Drawing is what the person drew over the board with the thread's first comment, in the page's pixels.
+	Drawing *SiteDrawing `json:"drawing,omitempty"`
 }
 
 // DeckGuestResolution is meta/comments/g-<gatewayId>.json: a guest comment (kept by the gateway) marked resolved here.

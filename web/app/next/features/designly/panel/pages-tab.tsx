@@ -188,7 +188,6 @@ const PagesTab = ({ pages, current, changed, onPick, hrefOf, actions }: IPagesTa
                   type="button"
                   className="hx-ds-pli__go"
                   aria-current={on}
-                  title={p.name}
                   onClick={() => onPick(p.path)}
                 >
                   <span className="hx-ds-pli__num">{number.get(p.path)}</span>

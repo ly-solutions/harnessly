@@ -7,6 +7,13 @@ people work here. Every subfolder is a Sinopia Design project: `<id>/project/` w
 section of {{host}} (projects → boards) and in the "Sinopia Design" tab of the right pane: the page reloads by itself
 when any file of the project changes. A comment from the pane arrives as an `<annotation>` block: `template:` is the
 board file and the line with the element's text, `element:` and `html:` say what is picked, `comment:` says what to change.
+A drawing or an area the person put over the page arrives as `<annotation kind="drawing">` or `kind="area"`:
+`board:` is the board file, the device, its viewport and the zoom; every `shape N:` (pen, marker, arrow, rect, label)
+has its colour and its box in the page's CSS pixels (from the document's top-left, not the screen), and the lines under
+it are the blocks it covers — an arrow's are the blocks at its tip, a label's the nearest — with `template:` file:line;
+`area:` and `blocks inside:` are the area pulled. The attached pictures show the board's visible part with the marks over
+it and the marks alone: look at them to see what was drawn. Change the blocks named, as the shapes and `comment:` say
+(a crossed-out word, an arrow to move something, a frame round what to redo); there may be no `comment:` at all.
 
 ## The shared folder: claim a board before you edit it
 

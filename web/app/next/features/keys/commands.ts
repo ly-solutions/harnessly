@@ -95,6 +95,8 @@ export const KEY_COMMANDS = [
   cmd('site', 'devtools', 'Mod+Alt+KeyI'),
   cmd('site', 'inspect', 'Mod+Shift+KeyC'),
   cmd('site', 'pick', 'KeyV'),
+  cmd('site', 'area', 'KeyR'),
+  cmd('site', 'draw', 'KeyD'),
   cmd('site', 'boards', 'Mod+KeyK'),
   cmd('site', 'comment', 'KeyC'),
   cmd('site', 'terminal', 'Ctrl+Backquote'),

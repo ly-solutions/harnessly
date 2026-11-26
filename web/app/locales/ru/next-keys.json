@@ -88,5 +88,7 @@
   "next.keys.cmd.global.chat6": "Открыть чат №6 в списке",
   "next.keys.cmd.global.chat7": "Открыть чат №7 в списке",
   "next.keys.cmd.global.chat8": "Открыть чат №8 в списке",
-  "next.keys.cmd.global.chat9": "Открыть чат №9 в списке"
+  "next.keys.cmd.global.chat9": "Открыть чат №9 в списке",
+  "next.keys.cmd.site.area": "Выделить область страницы",
+  "next.keys.cmd.site.draw": "Рисовать поверх страницы"
 }

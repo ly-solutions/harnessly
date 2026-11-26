@@ -15,6 +15,7 @@ import {
   type TAppKeyScope,
 } from '@/next/features/app-views/bridge';
 import { BUILTIN_APPS } from '@/next/features/app-views/surface.gen';
+import type { IRoutineInfo, IRoutineOfChat, IRoutineRun } from '@/next/features/app-views/routines';
 
 export type TBuiltinApp = (typeof BUILTIN_APPS)[number]['id'];
 
@@ -45,6 +46,15 @@ export interface IBuiltinHl {
     on: (scope: TAppKeyScope, handlers: () => TAppKeyHandlers) => () => void;
     press: (chord: string, typing?: boolean) => Promise<boolean>;
     hints: (commands: readonly string[]) => Promise<Record<string, string | null>>;
+  };
+  /** Whether the app may call a method (`harnessly/routines.get`) or holds a right (`routines.read`) here. */
+  has: (name: string) => boolean;
+  /** The person's routines (routines.read; setEnabled needs routines.write), as hl.routines of the SDK. */
+  routines: {
+    forChat: (chatId: string) => Promise<IRoutineOfChat>;
+    get: (id: string) => Promise<IRoutineInfo>;
+    runs: (id: string, options?: { limit?: number }) => Promise<IRoutineRun[]>;
+    setEnabled: (id: string, enabled: boolean) => Promise<IRoutineInfo>;
   };
   /** Tools of the page (tools.page): the whole list is told to the host on every change. */
   tools: { register: (tool: IBuiltinTool) => { unregister: () => void } };
@@ -196,6 +206,21 @@ export const connectBuiltin = (id: TBuiltinApp, opts: IBuiltinOptions): IBuiltin
           { hints?: Record<string, string | null> } | undefined;
         return got?.hints ?? {};
       },
+    },
+    has: (name) => bridge.has(name),
+    routines: {
+      forChat: async (chatId) =>
+        (await call('harnessly/routines.forChat', { chat: chatId })) as IRoutineOfChat,
+      get: async (id) =>
+        ((await call('harnessly/routines.get', { id })) as { routine: IRoutineInfo }).routine,
+      runs: async (id, { limit } = {}) =>
+        (
+          (await call('harnessly/routines.runs', limit === undefined ? { id } : { id, limit })) as {
+            runs: IRoutineRun[];
+          }
+        ).runs,
+      setEnabled: async (id, enabled) =>
+        ((await call('harnessly/routines.setEnabled', { id, enabled })) as { routine: IRoutineInfo }).routine,
     },
     tools: { register },
     modelContext: {

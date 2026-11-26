@@ -1,4 +1,5 @@
-// The person's edits on the page of a design: a note opens at the block they picked (the card .hx-note.hx-ann), a pin
+// The person's edits on the page of a design: a note opens at the block they picked (the card .hx-note.hx-ann: the words
+// for the agent and the hand's own changes of the block, note-tools.tsx), a pin
 // with its number stays on the block, the notes ride over the island's field as a strip «N annotations» with a list, or,
 // in «Правки», in the bar «Аннотирование · N» at the foot (.hx-notesbar) that sends them to the agent in one message.
 // The pins, the card and the bar speak the shared language of annotations (ui/notes/notes.tsx).
@@ -17,23 +18,12 @@ import { NoteBar, NoteDot } from '@/next/ui/notes/notes';
 import Icon from '@/next/ui/icon';
 import Sheet from '@/next/ui/sheet';
 import { usePhone } from '@/next/ui/use-media';
-import {
-  changedKeys,
-  hasEdit,
-  NO_EDIT,
-  OPACITY,
-  shownValues,
-  stepRadius,
-  stepSize,
-  SWATCHES,
-  TEXT_SWATCHES,
-  WEIGHTS,
-  withValue,
-  type IStyleEdit,
-  type TStyleKey,
-} from '@/next/features/designly/element-style';
-import { pickedLabel, type IPicked, type IPickedLook } from '@/next/features/designly/page-bridge';
-import { BoardTextContext } from '@/next/features/designly/hand-edit';
+import { changedKeys, hasEdit, toCss, type IStyleEdit } from '@/next/features/designly/element-style';
+import { pickedLabel, type IPicked } from '@/next/features/designly/page-bridge';
+import { BoardHandContext, HAND_KEY, type IHandWritten } from '@/next/features/designly/hand-edit';
+import NoteTools, { SwatchDot } from '@/next/features/designly/note-tools';
+import { useCardPlace, type IPlaceAt } from '@/next/features/designly/note-place';
+import type { INoteArea } from '@/next/features/designly/note-area';
 import { DRAFT_ANCHOR, useNoteAnchor } from '@/next/features/designly/note-anchor';
 import { dragNote, keepNotePos, readNotePos } from '@/next/features/designly/note-drag';
 import type { IPoint } from '@/next/features/designly/site-drag';
@@ -47,15 +37,12 @@ export const NOTE_OUT_MS = 180;
 const LIST_OUT_MS = 200;
 const PIN_OUT_MS = 200;
 const LASSO_OUT_MS = 160;
-const SWATCHES_OUT_MS = 160;
+/** A press on these leaves the card as it is: the canvas's zoom, and what pops up out of the card or the page. */
+const KEEPS_CARD = '.hx-vpzoom, [role="dialog"], [role="menu"], [role="listbox"], [data-sonner-toaster]';
 
-/** Where a note opens: the block's bottom-left corner in the section's pixels with the canvas at its fit (the card
- *  follows the canvas's zoom through --zs/--zcx/--zcy), and the side it opens to. */
-export interface INoteAt {
-  x: number;
-  y: number;
-  right: boolean;
-}
+/** Where a note opens: the block's corners in the section's pixels with the canvas at its fit, and the side it opens to
+ *  (note-place.ts). */
+export type INoteAt = IPlaceAt;
 
 export interface INote {
   id: string;
@@ -67,14 +54,19 @@ export interface INote {
   at: INoteAt;
   /** The look tried on the block; the page wears it while the note is there. */
   style: IStyleEdit;
+  /** What the person changed by hand and the source already has, for the agent to keep. */
+  saved?: readonly string[];
 }
 
 /** A note as a numbered chip of the field (ui/notes/note-chips.tsx): the block it is on; its card says the page, the
  *  block and the look tried on it, and holds the words to change. */
 export const noteChip = (note: INote): INoteChip => {
-  const diffs = changedKeys(note.style).map((key) =>
-    t(`next.notes.styleDiff.${key}`, { value: String(note.style[key]) }),
-  );
+  const diffs = [
+    ...changedKeys(note.style).map((key) =>
+      t(`next.notes.styleDiff.${key}`, { value: String(note.style[key]) }),
+    ),
+    ...(note.saved ?? []),
+  ];
   return {
     id: note.id,
     name: pickedLabel(note.picked),
@@ -96,6 +88,8 @@ export interface INoteDraft {
   text: string;
   /** The look on the block as the card has it now. */
   style: IStyleEdit;
+  /** The card stands over an area or a drawing, not a block alone (note-area.ts). */
+  area?: INoteArea;
 }
 
 /** The microphone of the card: dictation puts the words into the card's field. */
@@ -113,15 +107,20 @@ export interface INoteGuest {
   submit: (text: string) => Promise<boolean>;
 }
 
+/** How the card's words leave it: sent to the agent at once, or kept with the message (a press away). */
+export const NOTE_OK = { send: 'send', keep: 'keep' } as const;
+export type TNoteOk = (typeof NOTE_OK)[keyof typeof NOTE_OK];
+
 export interface INotePopoverProps {
   n: number;
   draft: INoteDraft;
   text: string;
   onText: (text: string) => void;
   mic: INoteMic | null;
-  /** «Правки» want words; the island takes a bare block too. */
-  needsText: boolean;
-  onOk: (text: string) => void;
+  /** The card's words go into the message to be sent with others («Правки», a note being changed), not at once. */
+  batch: boolean;
+  /** The card is done: the words for the agent, and the write of the hand's changes into the source where there is one. */
+  onOk: (text: string, written: Promise<IHandWritten> | null, how: TNoteOk) => void;
   onCancel: () => void;
   /** The trash: a new card is dropped, a note is taken back. */
   onDelete: () => void;
@@ -135,260 +134,13 @@ export interface INotePopoverProps {
   image?: { machine: MachineId; artifact: string; file: string };
 }
 
-/** The longest words a note tries on a block. */
-const MAX_WORDS = 2000;
-
-/** The colour of a swatch reaches the CSS through a custom property of its own, not through a style attribute. */
-const useSwatchColor = <E extends HTMLElement>(color: string | null) => {
-  const ref = useRef<E>(null);
-  useLayoutEffect(() => {
-    if (color) ref.current?.style.setProperty('--sw', color);
-  }, [color]);
-  return ref;
-};
-
-/** The chip of the colour on the row; crossed out when there is none. */
-const SwatchDot = ({ color }: { color: string | null }) => {
-  const ref = useSwatchColor<HTMLElement>(color);
-  return <i ref={ref} className="hx-ann__sw" data-none={color === null} />;
-};
-
-const SwatchButton = ({
-  color,
-  label,
-  on,
-  onPick,
-}: {
-  color: string | null;
-  label: string;
-  on: boolean;
-  onPick: () => void;
-}) => {
-  const ref = useSwatchColor<HTMLButtonElement>(color);
-  return (
-    <button
-      ref={ref}
-      type="button"
-      className="hx-ann__swb"
-      role="radio"
-      aria-checked={on}
-      aria-label={label}
-      data-none={color === null}
-      onClick={onPick}
-    />
-  );
-};
-
-/** The opacity slider: the share of its track that is filled goes to the CSS as `--v`. */
-const OpacityRange = ({ value, onChange }: { value: number; onChange: (value: number) => void }) => {
-  const ref = useRef<HTMLInputElement>(null);
-  useLayoutEffect(() => {
-    const share = ((value - OPACITY.min) / (OPACITY.max - OPACITY.min)) * 100;
-    ref.current?.style.setProperty('--v', `${Math.min(100, Math.max(0, share)).toFixed(1)}%`);
-  }, [value]);
-  return (
-    <span className="hx-ann__range">
-      <input
-        ref={ref}
-        type="range"
-        min={OPACITY.min}
-        max={OPACITY.max}
-        step={OPACITY.step}
-        value={Math.min(OPACITY.max, Math.max(OPACITY.min, value))}
-        aria-label={t('next.notes.style.opacity')}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-      <span className="hx-ann__vtext">{value}%</span>
-    </span>
-  );
-};
-
-/** The settings of the picked block, as the card of the design has them: what it is, then the fill, the corners and
- *  the opacity; what is changed is dotted, and «Сбросить» gives the block back to the page. */
-const NoteProps = ({
-  picked,
-  look,
-  edit,
-  onEdit,
-  open,
-  gone,
-}: {
-  /** The block the settings are of: its tag and its name head them. */
-  picked: IPicked;
-  look: IPickedLook;
-  edit: IStyleEdit;
-  onEdit: (edit: IStyleEdit) => void;
-  open: boolean;
-  gone: boolean;
-}) => {
-  const [swatches, setSwatches] = useState(false);
-  const sws = usePresentFlag(swatches && open, SWATCHES_OUT_MS);
-  const shown = shownValues(edit, look);
-  const changed = changedKeys(edit);
-  const set = <K extends TStyleKey>(key: K, value: IStyleEdit[K]) =>
-    onEdit(withValue(edit, look, key, value));
-  const mark = (key: TStyleKey) => changed.includes(key);
-  const fill = shown.background;
-  return (
-    <div className="hx-ann__props" aria-hidden={!open} inert={!open}>
-      <div className="hx-ann__props-in">
-        <div className="hx-ann__el">
-          <code className="hx-ann__tag">{`<${picked.tag}>`}</code>
-          <span className="hx-ann__target">{pickedLabel(picked)}</span>
-          <span className="hx-spacer" />
-          <button
-            type="button"
-            className="hx-ann__reset hx-tipped"
-            data-on={changed.length > 0}
-            tabIndex={changed.length > 0 && open ? 0 : -1}
-            aria-label={t('next.notes.reset')}
-            onClick={() => {
-              setSwatches(false);
-              onEdit(NO_EDIT);
-            }}
-          >
-            <Icon name="rotate-ccw" size="sm" />
-            <span className="hx-tip" data-pos="below" data-align="end">
-              {t('next.notes.reset')}
-            </span>
-          </button>
-        </div>
-        <div className="hx-ann__grid">
-          {look.words !== undefined && (
-            <input
-              className="hx-ann__words"
-              data-changed={mark('text')}
-              value={shown.text}
-              maxLength={MAX_WORDS}
-              aria-label={t('next.notes.style.text')}
-              placeholder={t('next.notes.style.text')}
-              onChange={(event) => set('text', event.target.value)}
-            />
-          )}
-          {look.font && picked.text !== '' && (
-            <>
-              <div className="hx-ann__prop" data-changed={mark('size')}>
-                <span className="hx-ann__label">{t('next.notes.style.size')}</span>
-                <span className="hx-ann__step">
-                  <button
-                    type="button"
-                    aria-label={t('next.notes.style.smaller')}
-                    onClick={() => set('size', stepSize(shown.size, -1))}
-                  >
-                    <Icon name="minus" size="sm" />
-                  </button>
-                  <span className="hx-ann__vtext">{shown.size}%</span>
-                  <button
-                    type="button"
-                    aria-label={t('next.notes.style.larger')}
-                    onClick={() => set('size', stepSize(shown.size, 1))}
-                  >
-                    <Icon name="plus" size="sm" />
-                  </button>
-                </span>
-              </div>
-              <div className="hx-ann__prop" data-changed={mark('weight')}>
-                <span className="hx-ann__label">{t('next.notes.style.weight')}</span>
-                <span className="hx-ann__seg" role="radiogroup" aria-label={t('next.notes.style.weight')}>
-                  {WEIGHTS.map((weight) => (
-                    <button
-                      key={weight}
-                      type="button"
-                      role="radio"
-                      data-weight={weight}
-                      aria-checked={weight >= 600 === (shown.weight ?? 400) >= 600}
-                      onClick={() => set('weight', weight)}
-                    >
-                      {t(`next.notes.style.weights.${weight}`)}
-                    </button>
-                  ))}
-                </span>
-              </div>
-              <div className="hx-ann__prop" data-changed={mark('color')}>
-                <span className="hx-ann__label">{t('next.notes.style.color')}</span>
-                <span className="hx-ann__inks" role="radiogroup" aria-label={t('next.notes.style.color')}>
-                  {[null, ...TEXT_SWATCHES].map((color) => (
-                    <SwatchButton
-                      key={color ?? 'none'}
-                      color={color}
-                      label={color ?? t('next.notes.style.asTheme')}
-                      on={(color?.toLowerCase() ?? null) === (shown.color?.toLowerCase() ?? null)}
-                      onPick={() => set('color', color)}
-                    />
-                  ))}
-                </span>
-              </div>
-              <div className="hx-ann__line" />
-            </>
-          )}
-          <div className="hx-ann__prop" data-changed={mark('background')}>
-            <span className="hx-ann__label">{t('next.notes.style.background')}</span>
-            <button
-              type="button"
-              className="hx-ann__val"
-              aria-expanded={swatches}
-              onClick={() => setSwatches((on) => !on)}
-            >
-              <SwatchDot color={fill} />
-              <span className="hx-ann__vtext">{fill ?? t('next.notes.style.asTheme')}</span>
-            </button>
-          </div>
-          {sws.mounted && (
-            <div
-              className="hx-ann__sws"
-              data-state={sws.state}
-              role="radiogroup"
-              aria-label={t('next.notes.style.background')}
-            >
-              {[null, ...SWATCHES].map((color) => (
-                <SwatchButton
-                  key={color ?? 'none'}
-                  color={color}
-                  label={color ?? t('next.notes.style.asTheme')}
-                  on={color?.toLowerCase() === fill?.toLowerCase()}
-                  onPick={() => set('background', color)}
-                />
-              ))}
-            </div>
-          )}
-          <div className="hx-ann__prop" data-changed={mark('radius')}>
-            <span className="hx-ann__label">{t('next.notes.style.radius')}</span>
-            <span className="hx-ann__step">
-              <button
-                type="button"
-                aria-label={t('next.notes.style.less')}
-                onClick={() => set('radius', stepRadius(shown.radius, -1))}
-              >
-                <Icon name="minus" size="sm" />
-              </button>
-              <span className="hx-ann__vtext">{shown.radius === null ? '—' : `${shown.radius} px`}</span>
-              <button
-                type="button"
-                aria-label={t('next.notes.style.more')}
-                onClick={() => set('radius', stepRadius(shown.radius, 1))}
-              >
-                <Icon name="plus" size="sm" />
-              </button>
-            </span>
-          </div>
-          <div className="hx-ann__prop" data-changed={mark('opacity')}>
-            <span className="hx-ann__label">{t('next.notes.style.opacity')}</span>
-            <OpacityRange value={shown.opacity} onChange={(value) => set('opacity', value)} />
-          </div>
-        </div>
-        {gone && <div className="hx-ann__hint">{t('next.notes.style.gone')}</div>}
-      </div>
-    </div>
-  );
-};
-
 export const NotePopover = ({
   n,
   draft,
   text,
   onText,
   mic,
-  needsText,
+  batch,
   onOk,
   onCancel,
   onDelete,
@@ -398,24 +150,30 @@ export const NotePopover = ({
   guest,
   image,
 }: INotePopoverProps) => {
-  const editText = useContext(BoardTextContext);
+  const boardHand = useContext(BoardHandContext);
+  // A guest only writes: the look of the block is the owner's to change.
+  const look = guest ? null : draft.picked.look;
+  const hand = look ? boardHand : null;
   const ref = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
   const [sending, setSending] = useState(false);
-  // The block's settings are folded until asked for: the card opens small, over less of the page.
-  const [tune, setTune] = useState(false);
+  // The fill, the corners and the opacity are folded behind «⋯»: the card opens small, over less of the page.
+  const [more, setMore] = useState(false);
+  // A card opened by a double click on a text leaves the caret there.
+  const [caretThere] = useState(() => hand?.caretAsked() === true);
   // Where the person moved the card (this session's); null while it stands at its block.
   const [moved, setMoved] = useState<IPoint | null>(readNotePos);
-  // A guest only writes: the look of the block (its settings) is the owner's to try.
-  const look = guest ? null : draft.picked.look;
-  const wants = needsText && !text.trim() && !hasEdit(draft.style);
+  /** The source takes the hand's changes: they are written when the card closes. */
+  const writes = hand?.state != null && hand.state.tpl !== null;
+  const direct = hasEdit(draft.style) || hand?.state?.changed === true;
+  const words = text.trim();
+  // An area or a drawing goes to the agent without words too.
+  const area = draft.area;
+  const wants = guest ? !words : !area && !words && !direct;
+  /** Only the hand's own changes: the button saves them, no agent is asked. */
+  const saves = writes && direct && !words;
 
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.setProperty('--nx', `${draft.at.x}px`);
-    el.style.setProperty('--ny', `${draft.at.y}px`);
-  }, [draft.at.x, draft.at.y]);
+  useCardPlace(ref, draft.at);
 
   useLayoutEffect(() => {
     if (!moved) return;
@@ -423,7 +181,7 @@ export const NotePopover = ({
     ref.current?.style.setProperty('--my', `${moved.y}px`);
   }, [moved]);
 
-  // Its height goes to the CSS, which keeps the whole card inside the view as the settings unfold.
+  // Its height goes to the CSS, which keeps a moved card inside the view as «⋯» unfolds.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -434,9 +192,27 @@ export const NotePopover = ({
     return () => observer.disconnect();
   }, []);
 
+  // The board holds the block while the card is open: its text is edited where it stands. Leaving without a word to the
+  // board (the card taken away) gives the words back.
+  const held = hand !== null && !hidden;
+  const hold = useEffectEvent(() => hand?.hold(draft.picked));
+  const drop = useEffectEvent(() => hand?.drop());
+  useEffect(() => {
+    if (!held) return;
+    hold();
+    return () => drop();
+  }, [held, draft.picked]);
+
   const leave = (then: () => void) => {
     setClosing(true);
     window.setTimeout(then, NOTE_OUT_MS);
+  };
+  /** Hands the card's words and the hand's changes to its owner. */
+  const finish = (how: TNoteOk) =>
+    onOk(words, writes && direct ? (hand?.commit(toCss(draft.style, look)) ?? null) : null, how);
+  const cancel = () => {
+    hand?.drop();
+    leave(onCancel);
   };
   // «Приложить» while the voice is still being written down: it finishes, and the card goes once the words are in.
   const [okAfterVoice, setOkAfterVoice] = useState(false);
@@ -449,11 +225,11 @@ export const NotePopover = ({
       return;
     }
     if (!guest) {
-      leave(() => onOk(text.trim()));
+      leave(() => finish(NOTE_OK.send));
       return;
     }
     setSending(true);
-    void guest.submit(text.trim()).then((taken) => {
+    void guest.submit(words).then((taken) => {
       setSending(false);
       if (taken) leave(onCancel);
     });
@@ -470,6 +246,50 @@ export const NotePopover = ({
     const timer = window.setTimeout(okAfterWords, 0);
     return () => window.clearTimeout(timer);
   }, [voiceDone]);
+
+  /**
+   * A press away closes the card and keeps what was done: the hand's changes are written, typed words stay with the
+   * message. At once, not after the exit: the press may open another card.
+   */
+  const away = useEffectEvent(() => {
+    if (closing || sending || mic?.recording) return;
+    if (guest) {
+      if (!words) onCancel();
+      return;
+    }
+    // A drawing is not lost to a stray press: the card of an area waits for its button.
+    if (area) return;
+    if (wants) {
+      hand?.drop();
+      onCancel();
+      return;
+    }
+    finish(NOTE_OK.keep);
+  });
+  useEffect(() => {
+    if (hidden) return;
+    const onDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || ref.current?.contains(target) || target.closest(KEEPS_CARD)) return;
+      away();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [hidden]);
+  // The same from the board: a press away on it, Esc and Enter typed there.
+  const signal = hand?.signal ?? null;
+  const heard = useRef(signal?.n ?? 0);
+  const answer = useEffectEvent(() => {
+    if (!signal || signal.n <= heard.current) return;
+    heard.current = signal.n;
+    if (signal.kind === HAND_KEY.escape) cancel();
+    else if (signal.kind === HAND_KEY.enter) ok();
+    else away();
+  });
+  useEffect(() => {
+    const timer = window.setTimeout(answer, 0);
+    return () => window.clearTimeout(timer);
+  }, [signal?.n]);
 
   // The words grow the field up to a few lines (the CSS caps it).
   const field = useRef<HTMLTextAreaElement>(null);
@@ -493,15 +313,18 @@ export const NotePopover = ({
     setMoved(null);
     keepNotePos(null);
   };
-  const okLabel = guest ? t('next.guest.send') : t('next.notes.toMessage');
+  const okLabel = () => {
+    if (guest) return t('next.guest.send');
+    if (saves) return t('next.notes.save');
+    return t(batch ? 'next.notes.toMessage' : 'next.notes.toAgent');
+  };
 
   return (
     <div
       ref={ref}
       className="hx-note hx-ann"
-      data-side={draft.at.right ? 'end' : 'start'}
       data-state={closing || hidden ? 'closing' : 'open'}
-      data-tune={look !== null && tune}
+      data-more={look !== null && more}
       data-moved={moved !== null}
       role="dialog"
       aria-label={t('next.notes.dialog')}
@@ -513,136 +336,127 @@ export const NotePopover = ({
         if (event.key === 'Escape') {
           event.preventDefault();
           event.stopPropagation();
-          leave(onCancel);
+          cancel();
         }
       }}
     >
-      <div className="hx-ann__row" onPointerDown={onGround} onDoubleClick={onGroundDouble}>
-        {look ? (
-          <button
-            type="button"
-            className="hx-ann__tune hx-tipped"
-            aria-pressed={tune}
-            aria-label={t('next.notes.tune')}
-            onClick={() => setTune((on) => !on)}
-          >
-            <Icon name="sliders-horizontal" />
-            <span className="hx-tip" data-pos="below" data-align="start">
-              {t('next.notes.tune')}
-            </span>
-          </button>
-        ) : (
-          <NoteDot
-            className="hx-ann__n"
-            n={n}
-            label={t('next.notes.pin', { n, label: pickedLabel(draft.picked) })}
-            empty={!text.trim()}
+      <div className="hx-ann__body">
+        <div className="hx-ann__row" onPointerDown={onGround} onDoubleClick={onGroundDouble}>
+          {!look && (
+            <NoteDot
+              className="hx-ann__n"
+              n={n}
+              label={t('next.notes.pin', { n, label: pickedLabel(draft.picked) })}
+              empty={!words}
+            />
+          )}
+          <textarea
+            ref={field}
+            className="hx-ann__input"
+            autoFocus={!caretThere}
+            rows={1}
+            disabled={sending}
+            placeholder={guest ? t('next.guest.placeholder') : t('next.notes.placeholder')}
+            aria-label={guest ? t('next.guest.placeholder') : t('next.notes.placeholder')}
+            value={text}
+            onChange={(event) => onText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                ok();
+              }
+            }}
+          />
+        </div>
+        {look && (
+          <NoteTools
+            picked={draft.picked}
+            look={look}
+            edit={draft.style}
+            onEdit={onStyle}
+            hand={hand}
+            open={more}
+            onOpen={setMore}
+            gone={gone}
           />
         )}
-        <textarea
-          ref={field}
-          className="hx-ann__input"
-          autoFocus
-          rows={1}
-          disabled={sending}
-          placeholder={guest ? t('next.guest.placeholder') : t('next.notes.placeholder')}
-          aria-label={guest ? t('next.guest.placeholder') : t('next.notes.placeholder')}
-          value={text}
-          onChange={(event) => onText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              ok();
-            }
-          }}
-        />
-      </div>
-      {look && (
-        <NoteProps
-          picked={draft.picked}
-          look={look}
-          edit={draft.style}
-          onEdit={onStyle}
-          open={tune}
-          gone={gone}
-        />
-      )}
-      {image && !guest && draft.picked.draw && (
-        <CardImageGen
-          machine={image.machine}
-          artifact={image.artifact}
-          file={image.file}
-          draw={draft.picked.draw}
-        />
-      )}
-      <div className="hx-ann__foot" onPointerDown={onGround} onDoubleClick={onGroundDouble}>
-        {/* Leaves the card: a note being changed goes back to what it was, a new one is not kept. */}
-        <button type="button" className="hx-ann__cancel" onClick={() => leave(onCancel)}>
-          {t('next.notes.revert')}
-        </button>
-        {!guest && (
-          <button
-            type="button"
-            className="hx-ann__icon hx-ann__del hx-tipped"
-            aria-label={t('next.notes.delete')}
-            onClick={() => leave(onDelete)}
-          >
-            <Icon name="trash-2" size="sm" />
-            <span className="hx-tip" data-pos="below">
-              {t('next.notes.delete')}
-            </span>
-          </button>
+        {image && !guest && draft.picked.draw && (
+          <CardImageGen
+            machine={image.machine}
+            artifact={image.artifact}
+            file={image.file}
+            draw={draft.picked.draw}
+          />
         )}
-        <span className="hx-spacer" onPointerDown={onGround} onDoubleClick={onGroundDouble} />
-        {/* The words are written by hand on the page itself; the note is left. */}
-        {!guest && editText && draft.picked.text !== '' && (
-          <button
-            type="button"
-            className="hx-ann__write hx-tipped"
-            aria-label={t('next.site.ctx.text')}
-            onClick={() => {
-              const { picked } = draft;
-              leave(() => {
-                onCancel();
-                editText(picked);
-              });
-            }}
-          >
-            <Icon name="pencil" size="sm" />
-            {t('next.site.ctx.text')}
-            <span className="hx-tip" data-pos="below">
-              {t('next.site.ctx.textTip')}
-            </span>
+        <div className="hx-ann__foot" onPointerDown={onGround} onDoubleClick={onGroundDouble}>
+          {/* Leaves the card: the block and a note being changed go back to what they were, a new one is not kept. */}
+          <button type="button" className="hx-ann__cancel" onClick={cancel}>
+            {t('next.notes.revert')}
           </button>
-        )}
-        {mic && (
+          {!guest && (
+            <button
+              type="button"
+              className="hx-ann__icon hx-ann__del hx-tipped"
+              aria-label={t('next.notes.delete')}
+              onClick={() => {
+                hand?.drop();
+                leave(onDelete);
+              }}
+            >
+              <Icon name="trash-2" size="sm" />
+              <span className="hx-tip" data-pos="below">
+                {t('next.notes.delete')}
+              </span>
+            </button>
+          )}
+          <span className="hx-spacer" onPointerDown={onGround} onDoubleClick={onGroundDouble} />
+          {area?.onComment && (
+            <button
+              type="button"
+              className="hx-ann__icon hx-tipped"
+              aria-label={t('next.notes.comment')}
+              onClick={() => {
+                hand?.drop();
+                void area.onComment?.(words);
+                leave(onCancel);
+              }}
+            >
+              <Icon name="message-circle" size="sm" />
+              <span className="hx-tip" data-pos="below" data-align="end">
+                {t('next.notes.comment')}
+              </span>
+            </button>
+          )}
+          {mic && (
+            <button
+              type="button"
+              className="hx-ann__icon hx-ann__mic hx-tipped"
+              data-rec={mic.recording}
+              aria-label={t('next.notes.dictate')}
+              onClick={mic.onToggle}
+            >
+              <Icon name="mic" />
+              <span className="hx-tip" data-pos="below" data-align="end">
+                {t('next.notes.dictate')}
+              </span>
+            </button>
+          )}
           <button
             type="button"
-            className="hx-ann__icon hx-ann__mic hx-tipped"
-            data-rec={mic.recording}
-            aria-label={t('next.notes.dictate')}
-            onClick={mic.onToggle}
+            className="hx-ann__ok hx-tipped"
+            data-save={saves || undefined}
+            aria-label={okLabel()}
+            aria-disabled={wants || sending || undefined}
+            aria-busy={sending || undefined}
+            onClick={ok}
           >
-            <Icon name="mic" />
+            {saves ? okLabel() : <Icon name="arrow-up" />}
             <span className="hx-tip" data-pos="below" data-align="end">
-              {t('next.notes.dictate')}
+              {okLabel()}
+              <kbd>↵</kbd>
             </span>
           </button>
-        )}
-        <button
-          type="button"
-          className="hx-ann__ok hx-tipped"
-          aria-label={okLabel}
-          aria-disabled={wants || sending || undefined}
-          aria-busy={sending || undefined}
-          onClick={ok}
-        >
-          <Icon name="arrow-up" />
-          <span className="hx-tip" data-pos="below" data-align="end">
-            {okLabel}
-            <kbd>↵</kbd>
-          </span>
-        </button>
+        </div>
       </div>
     </div>
   );

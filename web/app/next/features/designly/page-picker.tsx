@@ -194,7 +194,6 @@ const PagePicker = ({
                   className="hx-pgpick__row"
                   aria-selected={p.path === path}
                   data-active={i === row}
-                  title={p.name}
                   onMouseMove={() => i !== row && setAt(i)}
                   onClick={() => onGo(p.path)}
                 >

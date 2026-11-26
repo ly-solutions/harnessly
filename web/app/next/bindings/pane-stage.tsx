@@ -15,7 +15,12 @@ import {
   siteModeOf,
   type TPaneChat,
 } from '@/next/features/designly/pane-chat';
-import { NotePins, NOTE_OUT_MS } from '@/next/features/designly/site-notes';
+import { NOTE_OK, NotePins, NOTE_OUT_MS } from '@/next/features/designly/site-notes';
+import { formatAnnotation, noteLeft } from '@/next/features/designly/annotation';
+import { areaMessage } from '@/next/features/designly/note-area';
+import { toast } from '@/next/ui/toast';
+import { t } from '@/next/i18n';
+import { tourSignal } from '@/next/stores/tour';
 import { usePageDraft } from '@/next/features/designly/page-drafts';
 import type { ConvId } from '@/next/protocol/v2';
 import { DECK_CTX_ID } from '@/next/features/designly/deck/chat-context';
@@ -81,7 +86,7 @@ export const usePaneStage = ({ machine, design, fromChat, pageUrl, port }: IStag
             },
             page: pageUrl,
             text: '',
-            at: { x: 0, y: 0, right: false },
+            at: { x: 0, y: 0, top: 0, right: false },
             style: NO_EDIT,
             port: port ?? 0,
           },
@@ -106,9 +111,9 @@ export const usePaneStage = ({ machine, design, fromChat, pageUrl, port }: IStag
     pick: bridged && noteDraft === null && picking,
     picking: bridged ? picking : null,
     onPick: () => setPicking((on) => !on),
-    onPicked: (picked, at) => {
+    onPicked: (picked, at, area) => {
       setPicking(false);
-      setNoteDraft({ picked, at, text: '', style: NO_EDIT });
+      setNoteDraft({ picked, at, text: '', style: NO_EDIT, ...(area ? { area } : {}) });
     },
     onPickEnd: () => setPicking(false),
     onBridge: setBridged,
@@ -138,29 +143,74 @@ export const usePaneStage = ({ machine, design, fromChat, pageUrl, port }: IStag
         draft={shown}
         hidden={card.state === PRESENCE.closing}
         onTextChange={(text) => setNoteDraft({ ...shown, text })}
-        needsText={false}
+        batch={shown.id !== undefined}
         gone={shown.picked.id !== null && goneBlocks.includes(shown.picked.id)}
         onStyle={(style) => setNoteDraft({ ...shown, style })}
-        onOk={(words) => {
-          if (shown.id) {
-            patchDesignNotes(conv, (have) =>
-              have.map((n) => (n.id === shown.id ? { ...n, text: words, style: shown.style } : n)),
+        onOk={(words, written, how) => {
+          setNoteDraft(null);
+          if (shown.area) {
+            const { area, picked, style } = shown;
+            void areaMessage(
+              area,
+              { words, written, style, look: picked.look },
+              { url: pageUrl, port: port ?? 0 },
+            ).then(
+              (message) => {
+                if (!message) return;
+                sendMessage(machine, { conversationId: conv, ...message, mode: sendModeNow(conv) });
+                tourSignal('site:note');
+              },
+              (failure: Error) => {
+                toast(t('next.notes.sendFailed'), { tone: 'error', description: failure.message });
+                setNoteDraft({ ...shown, text: words });
+              },
             );
-          } else {
+            return;
+          }
+          void noteLeft(words, written, shown.style, shown.picked.look).then((left) => {
+            const { id } = shown;
+            if (id) {
+              patchDesignNotes(conv, (have) =>
+                left
+                  ? have.map((n) =>
+                      n.id === id ? { ...n, ...left, saved: [...(n.saved ?? []), ...left.saved] } : n,
+                    )
+                  : have.filter((n) => n.id !== id),
+              );
+              return;
+            }
+            if (!left) return;
+            // The card's button asks the chat beside at once; a press away keeps the note in its field.
+            if (how === NOTE_OK.send) {
+              const { text, style, saved } = left;
+              sendMessage(machine, {
+                conversationId: conv,
+                text: formatAnnotation({
+                  n: 1,
+                  picked: shown.picked,
+                  comment: text,
+                  style,
+                  saved,
+                  url: pageUrl,
+                  port: port ?? 0,
+                }),
+                mode: sendModeNow(conv),
+              });
+              tourSignal('site:note');
+              return;
+            }
             patchDesignNotes(conv, (have) => [
               ...have,
               {
                 id: `pn${++noteSeq}`,
                 picked: shown.picked,
                 page: pageUrl,
-                text: words,
                 at: shown.at,
-                style: shown.style,
                 port: port ?? 0,
+                ...left,
               },
             ]);
-          }
-          setNoteDraft(null);
+          });
         }}
         onCancel={() => setNoteDraft(null)}
         onDelete={() => {

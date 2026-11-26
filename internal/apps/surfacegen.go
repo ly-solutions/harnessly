@@ -121,8 +121,18 @@ func SurfaceTS() []byte {
 		for _, a := range m.Aliases {
 			aliases = append(aliases, a.Name)
 		}
-		fmt.Fprintf(&b, "  {\n    id: %s,\n    name: %s,\n    version: %s,\n    targets: %s,\n    permissions: %s,\n    points: %s,\n    aliases: %s,\n  },\n",
-			tsString(m.ID), tsString(m.Name), tsString(m.Version), quoted(m.Targets), quoted(m.Permissions), quoted(points), quoted(aliases))
+		views := make([]string, len(m.Views))
+		for i, v := range m.Views {
+			size := ""
+			if v.Widget != nil {
+				size = v.Widget.Size
+			}
+			views[i] = fmt.Sprintf("{ id: %s, title: %s, icon: %s, targets: %s, size: %s }",
+				tsString(v.ID), tsString(v.Title), tsString(v.Icon), quoted(v.Targets), tsString(size))
+		}
+		fmt.Fprintf(&b, "  {\n    id: %s,\n    name: %s,\n    version: %s,\n    targets: %s,\n    permissions: %s,\n    points: %s,\n    aliases: %s,\n    views: [%s],\n  },\n",
+			tsString(m.ID), tsString(m.Name), tsString(m.Version), quoted(m.Targets), quoted(m.Permissions), quoted(points), quoted(aliases),
+			strings.Join(views, ", "))
 	}
 	b.WriteString("] as const;\n")
 	return b.Bytes()
@@ -152,7 +162,7 @@ func SurfaceReference() []byte {
 		fmt.Fprintf(&b, "| `%s` | `%s` | %s | %s |\n", k.Name, k.Field, "`"+strings.Join(k.Targets, "`, `")+"`", owned(k.Doc, k.Owner, "A point"))
 	}
 	b.WriteString("\n## Builtin apps\n\nApps of the host's own: they run in the host's page and reach the host through the same bridge, " +
-		"with rights from the same list. Their points take contributions from any app.\n\n| App | Rights | Points | Aliases |\n| --- | --- | --- | --- |\n")
+		"with rights from the same list. Their points take contributions from any app.\n\n| App | Rights | Points | Aliases | Views |\n| --- | --- | --- | --- | --- |\n")
 	for _, m := range Builtins() {
 		var points, aliases []string
 		for _, p := range m.Points {
@@ -161,8 +171,12 @@ func SurfaceReference() []byte {
 		for _, a := range m.Aliases {
 			aliases = append(aliases, a.Name)
 		}
-		fmt.Fprintf(&b, "| `%s` (%s) | `%s` | `%s` | `%s` |\n", m.ID, mdCell(m.Name), strings.Join(m.Permissions, "`, `"),
-			strings.Join(points, "`, `"), strings.Join(aliases, "`, `"))
+		var views []string
+		for _, v := range m.Views {
+			views = append(views, v.ID+" ("+strings.Join(v.Targets, ", ")+")")
+		}
+		fmt.Fprintf(&b, "| `%s` (%s) | `%s` | `%s` | `%s` | `%s` |\n", m.ID, mdCell(m.Name), strings.Join(m.Permissions, "`, `"),
+			strings.Join(points, "`, `"), strings.Join(aliases, "`, `"), strings.Join(views, "`, `"))
 	}
 	b.WriteString("\n## Permissions\n\nEvery right has a class of risk. The class forbids nothing: it orders the install screen, from critical down, and a " +
 		"high or critical right is shown with what it can do to the person and journals what it does.\n\n" +

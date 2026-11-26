@@ -7,6 +7,8 @@ import {
   shownValues,
   stepRadius,
   styleLine,
+  toCss,
+  toggleLine,
   toItem,
   withValue,
 } from '@/next/features/designly/element-style';
@@ -97,26 +99,60 @@ describe('styleLine', () => {
   });
 });
 
-describe('the type of a block (HRN-1764)', () => {
-  const typed = { ...look, font: { size: 20, weight: 400, color: '#111111' }, words: 'Old words' };
+describe('the type of a block (HRN-1764, HRN-1770)', () => {
+  const typed = {
+    ...look,
+    font: { size: 20, weight: 400, color: '#111111', italic: false, line: 'none' },
+  };
 
   it('keeps only what differs from the block', () => {
     expect(withValue(NO_EDIT, typed, 'size', 100)).toEqual(NO_EDIT);
     expect(withValue(NO_EDIT, typed, 'weight', 400)).toEqual(NO_EDIT);
-    expect(withValue(NO_EDIT, typed, 'text', 'Old words')).toEqual(NO_EDIT);
+    expect(withValue(NO_EDIT, typed, 'slant', 'normal')).toEqual(NO_EDIT);
+    expect(withValue(NO_EDIT, typed, 'line', 'none')).toEqual(NO_EDIT);
     expect(withValue(NO_EDIT, typed, 'color', '#111111')).toEqual(NO_EDIT);
   });
 
+  it('puts a line on and takes it off beside the other', () => {
+    expect(toggleLine('none', 'underline')).toBe('underline');
+    expect(toggleLine('underline', 'line-through')).toBe('underline line-through');
+    expect(toggleLine('underline line-through', 'underline')).toBe('line-through');
+    expect(toggleLine('line-through', 'line-through')).toBe('none');
+  });
+
+  const edit = { ...NO_EDIT, size: 150, weight: 700, slant: 'italic' as const, color: '#E5484D' };
+
   it('sends the size in pixels of the block’s own and says what was', () => {
-    const edit = { ...NO_EDIT, size: 150, weight: 700, color: '#E5484D', text: 'New' };
-    expect(toItem(2, edit, typed)).toMatchObject({ size: 30, weight: 700, color: '#E5484D', text: 'New' });
+    expect(toItem(2, edit, typed)).toMatchObject({
+      size: 30,
+      weight: 700,
+      slant: 'italic',
+      color: '#E5484D',
+    });
     expect(styleLine(edit, typed)).toBe(
-      'text: «New» (was «Old words»); font-size: 30px (was 20px); font-weight: 700 (was 400); color: #E5484D (was #111111)',
+      'font-size: 30px (was 20px); font-weight: 700 (was 400); font-style: italic; color: #E5484D (was #111111)',
     );
+  });
+
+  it('writes the edit as the CSS the board’s source takes', () => {
+    expect(
+      toCss({ ...edit, background: '#FFFFFF', radius: 0, opacity: 50, line: 'underline' }, typed),
+    ).toEqual({
+      'font-size': '30px',
+      'font-weight': '700',
+      'font-style': 'italic',
+      'text-decoration-line': 'underline',
+      color: '#E5484D',
+      background: '#FFFFFF',
+      'border-radius': '0px',
+      opacity: '0.5',
+    });
+    expect(toCss(NO_EDIT, typed)).toBeNull();
   });
 
   it('reads a note kept before the type as no change of it', () => {
     const old = { background: null, radius: 4, opacity: null } as unknown as typeof NO_EDIT;
     expect(styleLine(old, typed)).toBe('border-radius: 4px (was 16px)');
+    expect(toCss(old, typed)).toEqual({ 'border-radius': '4px' });
   });
 });

@@ -12,13 +12,18 @@ it. An address the agent writes in its answer is a chip in the text, not an open
   «already opened» and asks nothing of the page.
 - The tab the person is in is never taken away: while they are busy in a tab of the open pane, a new one goes behind it
   with a dot.
+- Beside another screen (a design open full screen, an app's space such as the boards or the documents) the person is
+  busy with that screen: while the pane is shut there, the agent's `open` and `open show` neither bring it out nor
+  change its front tab. The tab waits behind with a dot until the person opens the pane. A click of the person (a chip,
+  a card, a view's button) opens it as everywhere.
 - On a phone the pane is a sheet over the chat and never comes out by itself; the tabs wait under its button.
 
 ## Triggers
 
 | Trigger | Where it is decided | What happens |
 |---|---|---|
-| The agent's `open <tab> <target>` / `open show` | `internal/coreapi/layoutapi` `cliPanel`, applied by `web/app/next/bindings/right-pane.tsx` | Its tab in front, the pane comes out (not on a phone) |
+| The agent's `open <tab> <target>` / `open show` | `internal/coreapi/layoutapi` `cliPanel`, applied by `web/app/next/bindings/right-pane.tsx` | On a chat's page: its tab in front, the pane comes out (not on a phone) |
+| The same beside a design or an app's space, the pane shut | `requestsOf` in `web/app/next/features/pane/intents.ts` | Its tab behind with a dot; the pane stays shut |
 | The same `open` again within 10 minutes | `paneauto.Repeated` | Nothing; the agent is told it was already opened |
 | A design file the agent writes | `internal/paneauto` `Detect` (auto) | Its tab behind with a dot; the pane does not come out |
 | A document or board the agent publishes (`artifact publish`, `board create`) | `internal/paneauto` `Detect` (auto) | Its tab behind with a dot; the pane does not come out |

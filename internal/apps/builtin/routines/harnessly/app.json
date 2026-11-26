@@ -1,0 +1,27 @@
+{
+  "id": "harnessly.routines",
+  "name": "Регулярные задачи",
+  "description": "The chat of a routine's run: a card at its start (the task, its schedule, how it started) and one with the run's result, and widgets of the chat's right column (results, sources, runs, next starts, memory). Built into the host: it runs in the host's page and reads the routines through the SDK (hl.routines); in a chat that is no run of a routine it shows nothing.",
+  "version": "1.0.0",
+  "harnessly": ">=0.16.0",
+  "trust": "trusted",
+  "delivery": "builtin",
+  "icon": "clock",
+  "targets": [
+    "chat",
+    "side"
+  ],
+  "permissions": [
+    "routines.read",
+    "routines.write"
+  ],
+  "views": [
+    { "id": "start", "title": "Запуск задачи", "entry": "", "targets": ["chat"] },
+    { "id": "result", "title": "Итог запуска", "entry": "", "targets": ["chat"] },
+    { "id": "results", "title": "Результаты", "entry": "", "icon": "files", "targets": ["side"], "widget": { "size": "m" } },
+    { "id": "sources", "title": "Источники", "entry": "", "icon": "link", "targets": ["side"], "widget": { "size": "s" } },
+    { "id": "runs", "title": "Запуски", "entry": "", "icon": "history", "targets": ["side"], "widget": { "size": "m" } },
+    { "id": "next", "title": "Следующие запуски", "entry": "", "icon": "clock", "targets": ["side"], "widget": { "size": "s" } },
+    { "id": "memory", "title": "Память", "entry": "", "icon": "book-open", "targets": ["side"], "widget": { "size": "s" } }
+  ]
+}

@@ -46,6 +46,8 @@ type SiteCommentSpec struct {
 	Mentions []DeckPerson
 	Agent    bool
 	ByAgent  bool
+	// Drawing goes with a thread's first comment only; with it, the words may be left out.
+	Drawing *SiteDrawing
 }
 
 // SiteReaction is one emoji of a comment as a person sees it.
@@ -139,7 +141,8 @@ func (l *Library) AddSiteComment(id string, by DeckPerson, spec SiteCommentSpec)
 		return DeckComment{}, deckErr(http400, "board is the board's path", "board — путь доски")
 	}
 	text := cleanCommentText(spec.Text)
-	if text == "" || utf8.RuneCountInString(text) > maxDeckCommentRune {
+	drawn := spec.Drawing != nil && spec.Parent == ""
+	if (text == "" && !drawn) || utf8.RuneCountInString(text) > maxDeckCommentRune {
 		return DeckComment{}, deckErr(http400, "The comment is empty or over 2000 characters", "Комментарий пуст или длиннее 2000 знаков")
 	}
 	existing, _ := l.ReadDeckComments(id)
@@ -148,6 +151,9 @@ func (l *Library) AddSiteComment(id string, by DeckPerson, spec SiteCommentSpec)
 	}
 	c := DeckComment{ID: NewPageID(), View: DeckCommentSite, Board: board, Text: text, By: by,
 		At: l.clock().UTC().Format(time.RFC3339), Agent: spec.Agent, ByAgent: spec.ByAgent}
+	if drawn {
+		c.Drawing = spec.Drawing
+	}
 	if spec.Parent != "" {
 		parent, err := l.readComment(id, spec.Parent)
 		if err != nil || parent.View != DeckCommentSite || parent.Parent != "" {
@@ -316,6 +322,11 @@ func (a *API) SiteComments(r *http.Request) Answer {
 	spec.Label, _ = strField(body, "label")
 	spec.Parent, _ = strField(body, "parent")
 	spec.Agent, _ = Field(body, "agent").(bool)
+	drawing, ok := siteDrawingOf(Field(body, "drawing"))
+	if !ok {
+		return JSON(r, http.StatusBadRequest, errorBody(locale.Pick("The drawing is not one or is too large", "Рисунок не читается или слишком большой")), noStore())
+	}
+	spec.Drawing = drawing
 	if spec.Parent == "" {
 		x, okX := Field(body, "x").(float64)
 		y, okY := Field(body, "y").(float64)

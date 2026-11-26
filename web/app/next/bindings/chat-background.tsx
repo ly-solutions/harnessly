@@ -27,6 +27,7 @@ import { SMART_KIND } from '@/next/features/smart-notice/smart-notice';
 import MachineDrop from '@/next/bindings/machine-drop';
 import SideWidgetsBinding from '@/next/bindings/side-widgets';
 import ChatDocs from '@/next/bindings/chat-docs';
+import RoutineWidgets from '@/next/features/app-views/routines-app/widgets';
 import { askDropBack, dismissDrops, useDrops, type IDrop } from '@/next/stores/smart-drops';
 import type { IFolderSuggest } from '@/next/features/folder-suggest/use-folder-suggestion';
 import { dropNotices, isNews } from '@/next/stores/notices';
@@ -243,6 +244,7 @@ export const useChatBackground = (
               {widgetsMounted && machine && (
                 <div className="hx-wgs-wrap" data-shown={widgetsShown} data-pop={widgetsPop || undefined}>
                   {conv && onOpenOutput && <ChatDocs machine={machine} conv={conv} onOpen={onOpenOutput} />}
+                  {conv && <RoutineWidgets machine={machine} chat={conv} />}
                   <SideWidgetsBinding machine={machine} chat={conv} onOpenChat={onOpenChat} />
                 </div>
               )}

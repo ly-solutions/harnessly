@@ -1,9 +1,19 @@
-// The look of a picked block that the note's card lets the person try on: the fill, the corner radius and the opacity.
-// The page shows it at once (the bridge's `tk:styles`) and the note carries it to the agent in the annotation block, which
-// is how the source gets changed. An edit holds only what differs from the block as the page has it; null is «as it is».
+// The look of a picked block the person changes in the note's card: its type, fill, corner radius and opacity. The page
+// shows it at once (the bridge's `tk:styles`); the card writes it into the board's source (hand-edit.ts), or, where the
+// source takes no hand edit, the note carries it to the agent. An edit holds only what differs from the block as the page
+// has it; null is «as it is».
 import type { IPickedLook } from '@/next/features/designly/page-bridge';
 
-export const STYLE_KEYS = ['text', 'size', 'weight', 'color', 'background', 'radius', 'opacity'] as const;
+export const STYLE_KEYS = [
+  'size',
+  'weight',
+  'slant',
+  'line',
+  'color',
+  'background',
+  'radius',
+  'opacity',
+] as const;
 export type TStyleKey = (typeof STYLE_KEYS)[number];
 
 export interface IStyleEdit {
@@ -17,9 +27,15 @@ export interface IStyleEdit {
   size: number | null;
   weight: number | null;
   color: string | null;
-  /** The words of a block of one run of text. */
-  text: string | null;
+  /** CSS `font-style`. */
+  slant: TSlant | null;
+  /** CSS `text-decoration-line`: `none`, `underline`, `line-through` or both. */
+  line: string | null;
 }
+
+export type TSlant = 'italic' | 'normal';
+export const LINES = ['underline', 'line-through'] as const;
+export type TLine = (typeof LINES)[number];
 
 export const NO_EDIT: IStyleEdit = {
   background: null,
@@ -28,7 +44,8 @@ export const NO_EDIT: IStyleEdit = {
   size: null,
   weight: null,
   color: null,
-  text: null,
+  slant: null,
+  line: null,
 };
 
 /** The steps of the type's size, percent. */
@@ -52,6 +69,15 @@ export const percentOf = (opacity: number) => Math.round(opacity * 100);
 
 const sameColor = (a: string | null, b: string | null) => a?.toLowerCase() === b?.toLowerCase();
 
+const slantOf = (look: IPickedLook): TSlant => (look.font?.italic ? 'italic' : 'normal');
+const lineOf = (look: IPickedLook): string => look.font?.line ?? 'none';
+
+/** The lines with one of them put on or taken off, in the order CSS names them. */
+export const toggleLine = (current: string, line: TLine): string => {
+  const on = LINES.filter((one) => (one === line) !== current.split(' ').includes(one));
+  return on.length > 0 ? on.join(' ') : 'none';
+};
+
 /** The edit with `key` set; a value the block already has is no edit. */
 export const withValue = <K extends TStyleKey>(
   edit: IStyleEdit,
@@ -68,7 +94,8 @@ export const withValue = <K extends TStyleKey>(
   if (key === 'weight' && next.weight === look.font?.weight) next.weight = null;
   if (key === 'color' && next.color !== null && sameColor(next.color, look.font?.color ?? null))
     next.color = null;
-  if (key === 'text' && next.text === look.words) next.text = null;
+  if (key === 'slant' && next.slant === slantOf(look)) next.slant = null;
+  if (key === 'line' && next.line === lineOf(look)) next.line = null;
   return next;
 };
 
@@ -84,7 +111,8 @@ export const shownValues = (edit: IStyleEdit, look: IPickedLook) => ({
   size: edit.size ?? 100,
   weight: edit.weight ?? look.font?.weight ?? null,
   color: edit.color,
-  text: edit.text ?? look.words ?? '',
+  slant: edit.slant ?? slantOf(look),
+  line: edit.line ?? lineOf(look),
 });
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -110,7 +138,8 @@ export interface IStyleItem {
   size?: number;
   weight?: number;
   color?: string;
-  text?: string;
+  slant?: TSlant;
+  line?: string;
 }
 
 export const toItem = (id: number, edit: IStyleEdit, look: IPickedLook | null = null): IStyleItem => {
@@ -123,8 +152,25 @@ export const toItem = (id: number, edit: IStyleEdit, look: IPickedLook | null = 
     ...(size === null ? {} : { size }),
     ...(edit.weight ? { weight: edit.weight } : {}),
     ...(edit.color ? { color: edit.color } : {}),
-    ...(typeof edit.text === 'string' ? { text: edit.text } : {}),
+    ...(edit.slant ? { slant: edit.slant } : {}),
+    ...(edit.line ? { line: edit.line } : {}),
   };
+};
+
+/** The edit as the CSS the board's source takes (the hand edit of the patch route); null where there is none. */
+export const toCss = (edit: IStyleEdit, look: IPickedLook | null): Record<string, string> | null => {
+  const size = pixelsOf(edit.size ?? null, look);
+  const css: Record<string, string> = {
+    ...(size === null ? {} : { 'font-size': `${size}px` }),
+    ...(edit.weight ? { 'font-weight': String(edit.weight) } : {}),
+    ...(edit.slant ? { 'font-style': edit.slant } : {}),
+    ...(edit.line ? { 'text-decoration-line': edit.line } : {}),
+    ...(edit.color ? { color: edit.color } : {}),
+    ...(edit.background ? { background: edit.background } : {}),
+    ...((edit.radius ?? null) === null ? {} : { 'border-radius': `${edit.radius}px` }),
+    ...((edit.opacity ?? null) === null ? {} : { opacity: String((edit.opacity as number) / 100) }),
+  };
+  return Object.keys(css).length > 0 ? css : null;
 };
 
 /** The looks the page should wear: of every note, the card's own edit in place of its note's. */
@@ -151,10 +197,6 @@ export const itemsOf = (
 /** The line of the annotation block: what is tried on the page and was before, in CSS the agent can put into the source. */
 export const styleLine = (edit: IStyleEdit, look: IPickedLook | null): string => {
   const parts: string[] = [];
-  if ((edit.text ?? null) !== null) {
-    const was = look?.words === undefined ? '' : ` (was «${look.words}»)`;
-    parts.push(`text: «${edit.text}»${was}`);
-  }
   if ((edit.size ?? null) !== null) {
     const pixels = pixelsOf(edit.size, look);
     parts.push(
@@ -164,6 +206,12 @@ export const styleLine = (edit: IStyleEdit, look: IPickedLook | null): string =>
   if ((edit.weight ?? null) !== null) {
     const was = look?.font ? ` (was ${look.font.weight})` : '';
     parts.push(`font-weight: ${edit.weight}${was}`);
+  }
+  if ((edit.slant ?? null) !== null) {
+    parts.push(`font-style: ${edit.slant}`);
+  }
+  if ((edit.line ?? null) !== null) {
+    parts.push(`text-decoration-line: ${edit.line}`);
   }
   if ((edit.color ?? null) !== null) {
     const was = look?.font?.color ? ` (was ${look.font.color})` : '';

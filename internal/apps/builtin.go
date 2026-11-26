@@ -17,6 +17,8 @@ import (
 // Builtin apps: apps that come with the host, in its own bundle, and run in the host's page instead of a
 // frame. They are written as any app is, with a manifest, and get no right the list of the surface does not give any
 // app: what is theirs alone is where they run. Sinopia is the first: builtin/sinopia/harnessly/app.json.
+// The routines app (builtin/routines) has no screen: its views are the cards of a routine run's chat and the
+// widgets of that chat's right column, drawn by its code in the page.
 //
 // A builtin app with a screen of its own may declare points: the places other apps contribute to (`points`), and the
 // targets of older manifests that name its screen (`aliases`, such as sinopia.<kind>). A record of the registry of
@@ -112,6 +114,20 @@ func parseBuiltin(raw []byte) (*Manifest, error) {
 	for _, p := range m.Permissions {
 		if !permissions[p] {
 			return nil, fmt.Errorf("%q is not a right of the surface", p)
+		}
+	}
+	// A builtin's views are drawn by its own code in the page (no entry, no frame): each names a target of the app,
+	// and a side view says how tall its widget is.
+	views := map[string]bool{}
+	for _, v := range m.Views {
+		if !viewIDRe.MatchString(v.ID) || views[v.ID] || v.Entry != "" || len(v.Targets) == 0 {
+			return nil, fmt.Errorf("view %q: an id, once, targets and no entry", v.ID)
+		}
+		views[v.ID] = true
+		for _, t := range v.Targets {
+			if !contains(m.Targets, t) {
+				return nil, fmt.Errorf("view %q: %q is not a target of the app", v.ID, t)
+			}
 		}
 	}
 	seen := map[string]bool{}

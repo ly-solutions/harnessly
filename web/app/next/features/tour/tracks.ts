@@ -126,11 +126,14 @@ const site: ITourTrack = {
       id: 'note',
       target: ['.hx-ann .hx-ann__input', NOTE_CARD],
       note: 'Сделай заголовок короче и ярче',
+      // The card's arrow sends it to the agent: this is the lesson's request.
       done: (env) => env.signals.has('site:note') || env.find(NOTE_PIN) !== null,
       needs: { test: found(NOTE_CARD, NOTE_PIN), back: 'pick' },
+      cheap: true,
+      sideChat: true,
+      skip: noAgent,
       ...IN('relay-site'),
     },
-    { ...ask('relay-site', undefined, SITE_FRAME), needs: { test: found(NOTE_PIN), back: 'pick' } },
     {
       id: 'page',
       target: ['.hx-browser__url', SITE_FRAME],

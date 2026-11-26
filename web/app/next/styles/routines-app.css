@@ -1,0 +1,260 @@
+/* The routines app in a run's chat (features/app-views/routines-app): its cards at the head and the end of
+   the feed, and its widgets under the chat's right column (the cards themselves are .hx-wg of widgets.css). Colours
+   from the tokens only, so both themes hold; the cards fit from 280 px. */
+
+.hx-rta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-2);
+  max-width: 560px;
+  padding: var(--hx-space-3) var(--hx-space-4) var(--hx-space-4);
+  border: 1px solid var(--hx-border-strong);
+  border-radius: var(--hx-radius-lg);
+  background: var(--hx-bg-raised);
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-md);
+}
+.hx-feed__lead .hx-rta {
+  margin: var(--hx-space-2) 0 var(--hx-space-4);
+}
+.hx-rta[data-view='result'] {
+  margin-top: var(--hx-space-3);
+}
+.hx-rta__top {
+  display: flex;
+  align-items: center;
+  gap: var(--hx-space-2);
+  min-width: 0;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-sm);
+}
+.hx-rta__ic {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--hx-radius-full);
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+}
+.hx-rta__ic[data-state='ok'],
+.hx-rtw__dot[data-state='ok'] {
+  background: var(--hx-success-soft);
+  color: var(--hx-success);
+}
+.hx-rta__ic[data-state='failed'],
+.hx-rtw__dot[data-state='failed'] {
+  background: var(--hx-warning-soft);
+  color: var(--hx-danger);
+}
+.hx-rta__ic[data-state='running'] .hx-icon,
+.hx-rtw__dot[data-state='running'] .hx-icon {
+  animation: hx-rta-spin 1.2s linear infinite;
+}
+@keyframes hx-rta-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-rta__ic[data-state='running'] .hx-icon,
+  .hx-rtw__dot[data-state='running'] .hx-icon {
+    animation: none;
+  }
+}
+.hx-rta__kind,
+.hx-rta__state {
+  font-weight: var(--hx-weight-medium);
+}
+.hx-rta__state {
+  color: var(--hx-fg-1);
+}
+.hx-rta__at {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.hx-rta__chip {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: var(--hx-radius-full);
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-xs);
+}
+.hx-rta__name {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--hx-text-lg);
+  font-weight: var(--hx-weight-semibold);
+  line-height: 1.3;
+}
+.hx-rta__line,
+.hx-rta__sum,
+.hx-rta__next {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.hx-rta__line {
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+.hx-rta__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hx-space-2);
+  margin-top: var(--hx-space-1);
+}
+.hx-rta__arts,
+.hx-rtw__arts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-2);
+}
+.hx-rta-art {
+  flex: none;
+  max-width: 100%;
+  text-decoration: none;
+}
+.hx-rta__srcs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: var(--hx-text-sm);
+}
+.hx-rta__label {
+  margin-right: 2px;
+  color: var(--hx-fg-3);
+}
+.hx-rta__src {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--hx-radius-full);
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+  text-decoration: none;
+}
+.hx-rta__src span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+a.hx-rta__src:hover {
+  color: var(--hx-fg-1);
+  background: var(--hx-bg-active);
+}
+.hx-rta__next {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: var(--hx-space-2);
+  border-top: 1px solid var(--hx-border);
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-sm);
+}
+
+/* The widgets: above the person's own, the same cards. */
+.hx-rtws + .hx-wgs {
+  margin-top: 6px;
+}
+.hx-rtws .hx-rta-art {
+  padding: 6px 8px;
+}
+.hx-rtws .hx-rta-art .hx-file__ico {
+  width: 28px;
+  height: 28px;
+}
+.hx-rtw__ic {
+  flex: none;
+  color: var(--hx-fg-3);
+}
+.hx-rtw__meta {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+a.hx-wgr__row {
+  text-decoration: none;
+}
+.hx-rtw__run {
+  align-items: flex-start;
+  min-height: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.hx-rtw__run:disabled {
+  cursor: default;
+}
+.hx-rtw__run[data-current] {
+  background: var(--hx-accent-soft);
+}
+.hx-rtw__dot {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--hx-radius-full);
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-3);
+}
+.hx-rtw__runtext {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.hx-rtw__when {
+  display: flex;
+  gap: 6px;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+.hx-rtw__when em {
+  color: var(--hx-accent);
+  font-style: normal;
+  font-weight: var(--hx-weight-medium);
+}
+.hx-rtw__sum {
+  overflow: hidden;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hx-rtw__memtext {
+  margin: 0;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hx-rtw__memtext[data-clamped] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+.hx-rtw__more {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hx-accent);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  cursor: pointer;
+}
