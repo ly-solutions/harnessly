@@ -11,7 +11,7 @@
 //      port is up waits in a queue.
 //
 // A document the frame navigated to has no nonce (or the host has closed its port), so it never gets a port.
-(function () {
+function installBridge(expectedOrigin) {
   'use strict';
   var realParent = window.parent;
   if (!realParent || realParent === window) return;
@@ -26,7 +26,7 @@
     try {
       realParent.postMessage(
         { hlViewError: { kind: kind, text: String(text).slice(0, 500), src: src ? String(src).slice(0, 500) : '' } },
-        '*',
+        expectedOrigin || '*',
       );
     } catch (e) {
       // a host that cannot be told stays untold
@@ -124,6 +124,7 @@
 
   var onReply = function (event) {
     if (port !== null || event.source !== realParent) return;
+    if (expectedOrigin && event.origin !== expectedOrigin) return;
     var m = event.data;
     if (!m || m.jsonrpc !== '2.0' || typeof m.id !== 'string' || m.id.indexOf(PREFIX) !== 0 || m.method !== undefined) return;
     if (m.error) {
@@ -171,7 +172,7 @@
           nonce: nonce,
         },
       },
-      '*',
+      expectedOrigin || '*',
     );
   };
 
@@ -187,4 +188,4 @@
   // The host's bridge may not be listening yet when the page starts: ask again until it answers.
   hello();
   timer = setInterval(hello, RETRY_MS);
-})();
+}
