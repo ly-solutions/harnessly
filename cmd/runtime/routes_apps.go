@@ -179,6 +179,9 @@ func viewOfApp(a apps.Installed, withDir bool) appView {
 	v.MCPServers = []string{}
 	v.PluginParts = []string{}
 	if pkg, _ := apps.CachedPackage(a.Dir); pkg != nil {
+		if pkg.Icon != "" {
+			v.Icon = pkg.Icon
+		}
 		// A server through the person's connection is set up in «Настройка» too: the person allows it there.
 		v.Setup = v.Setup || len(pkg.Connections()) > 0
 		for name := range pkg.MCP {

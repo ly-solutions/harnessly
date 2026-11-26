@@ -1,10 +1,14 @@
 package apps
 
 import (
+	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -34,7 +38,10 @@ const (
 )
 
 // Package is a package read from a folder.
+const appIconPath = "harnessly/icon.png"
+
 type Package struct {
+	Icon     string // A small package PNG as a data URL for the app list.
 	Dir      string
 	Manifest *Manifest
 	// MCP is the package's .mcp.json servers by name, as written.
@@ -185,7 +192,7 @@ var packageCache sync.Map // abs dir -> cachedPackage
 // manifest and the package's top folder (a part of a plugin appearing in it). Size and modification time of each.
 func packageStamp(dir string) string {
 	var b strings.Builder
-	for _, rel := range []string{".", ManifestPath, ".mcp.json", ".claude-plugin/plugin.json"} {
+	for _, rel := range []string{".", ManifestPath, appIconPath, ".mcp.json", ".claude-plugin/plugin.json"} {
 		info, err := os.Stat(filepath.Join(dir, rel))
 		if err != nil {
 			b.WriteString("-;")
@@ -239,7 +246,51 @@ func LoadPackage(dir string) (*Package, Problems) {
 	}
 	p := &Package{Dir: abs, Manifest: m}
 	ps = append(ps, p.checkFiles()...)
+	icon, iconErr := p.readIcon()
+	if iconErr != nil {
+		ps = append(ps, Problem{Path: appIconPath, Message: iconErr.Error()})
+	}
+	p.Icon = icon
 	return p, ps
+}
+
+func (p *Package) readIcon() (string, error) {
+	root, err := os.OpenRoot(p.Dir)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	info, err := root.Lstat(appIconPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("expected a regular PNG file")
+	}
+	file, err := root.Open(appIconPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	const limit = 16 << 10
+	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return "", err
+	}
+	if len(raw) > limit {
+		return "", errors.New("icon exceeds 16 KiB")
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(raw))
+	if err != nil || cfg.Width > 128 || cfg.Height > 128 {
+		return "", errors.New("expected a PNG up to 128 by 128 pixels")
+	}
+	if _, err = png.Decode(bytes.NewReader(raw)); err != nil {
+		return "", err
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(raw), nil
 }
 
 // checkFiles is the part of the check that reads the package's files.

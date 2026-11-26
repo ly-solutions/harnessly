@@ -10,6 +10,11 @@
   -webkit-mask: var(--hx-i) center / contain no-repeat;
   mask: var(--hx-i) center / contain no-repeat;
 }
+.hx-icon--image {
+  background: transparent;
+  mask: none;
+  object-fit: contain;
+}
 .hx-icon[data-size='sm'] {
   width: var(--hx-icon-sm);
   height: var(--hx-icon-sm);

@@ -62,6 +62,7 @@ const PublicCatalog = ({
             {rows.map((entry) => (
               <AppTile
                 key={entry.id}
+                icon={entry.icon}
                 name={entry.name}
                 line={entry.description}
                 note={refusalOf(entry.check)}
