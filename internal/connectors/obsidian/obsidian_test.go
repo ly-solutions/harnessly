@@ -293,6 +293,8 @@ func TestPluginEndToEnd(t *testing.T) {
 		t.Skip("no node")
 	}
 	in := instance(t)
+	// Set before the server starts: its handler reads the instance, and the race detector sees no order through node.
+	in.ID = "cx1"
 	now = time.Now
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -309,7 +311,6 @@ func TestPluginEndToEnd(t *testing.T) {
 	defer srv.Close()
 	// The plugin takes http only for localhost: the test server is 127.0.0.1.
 	webhook.Base = func() string { return srv.URL + "/m" }
-	in.ID = "cx1"
 	c, err := code(in)
 	if err != nil {
 		t.Fatal(err)
