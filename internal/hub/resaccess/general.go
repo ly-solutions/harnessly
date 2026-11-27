@@ -67,8 +67,12 @@ func (s *Service) setGeneral(t *txn, ref Ref, actor, level, target string) error
 			}
 			return t.log(ref, actor, "link_general", l.ID, map[string]any{"rights": level})
 		}
-		// The hub's key changed: the old address cannot be copied again, a new one replaces it.
+		// The hub's key changed: the old address cannot be copied again, a new one replaces it. The old link stops
+		// being the general one, or a new link made in the same second could lose the pick to it.
 		if err := t.revokeLink(ref, actor, l.ID); err != nil {
+			return err
+		}
+		if _, err := t.q.Exec(t.ctx, `UPDATE resource_guest_links SET general = 0 WHERE link_id = ?`, l.ID); err != nil {
 			return err
 		}
 	}
