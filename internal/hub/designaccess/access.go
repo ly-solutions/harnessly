@@ -185,6 +185,11 @@ func (s *Service) viewIn(t *txn, p project, stored bool, email string) (map[stri
 	if !stored {
 		return out, nil
 	}
+	if s.shareURL != "" {
+		if out["general"], err = s.generalOf(t, p.ID); err != nil {
+			return nil, err
+		}
+	}
 	mine, err := t.requests(p.ID, normEmail(email), "open")
 	if err != nil {
 		return nil, err
@@ -388,6 +393,9 @@ func (s *Service) resourceRoute(r *http.Request, m store.Machine, email, project
 			}
 		}
 		return change(func(t *txn) error { return t.setTeam(project, email, level) })
+
+	case section == "general" && n == 1 && method == http.MethodPut:
+		return s.generalRoute(r, m, email, project)
 
 	case section == "links":
 		return s.linksRoute(r, m, email, project, manager, rest)

@@ -68,3 +68,12 @@ old kit read only the rows of that space.
 - **Dialog.** `GET/PUT /access/kit/<id>/...` answers like a design's. No links, shares or guest comments for kits.
 - **Limits.** The view of a machine is cached for 15 s. The runtime does not yet get the kit grants in its access
   snapshot: until it does, "edit" on a machine is held by the store, not by the runtime's own checks.
+
+## General access
+
+«Общий доступ → Все, у кого есть ссылка» opens a document or a board to anyone at one address, without an account and
+whether any machine is on: `PUT /access/{kind}/{id}/general {level}` with `none`, `view` or `comment`, whoever may make
+a guest link. It is a guest link marked `general`, not listed among the links, its token kept sealed (`token_enc`, the
+hub's link key, internal/hub/linkseal) so the dialog copies the address again; switched off it is revoked and kept, on
+again the same address opens. When the hub's key changed the old address is revoked and a new one made. UI kits have no
+general access.

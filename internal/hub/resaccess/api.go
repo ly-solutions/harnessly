@@ -247,12 +247,23 @@ func (s *Service) route(r *http.Request, a Actor, ref Ref, rest []string, info I
 	email := normEmail(a.Email)
 	method, n := r.Method, len(rest)
 	section, second := part(rest, 0), part(rest, 1)
-	if ref.Kind == KindKit && (section == "links" || section == "shares" || section == "guest-comments") {
+	if ref.Kind == KindKit && (section == "links" || section == "shares" || section == "guest-comments" || section == "general") {
 		return nil, 0, fail("forbidden", "Кит не раздают по ссылке без входа: только людям и командам")
 	}
 
+	// The view with the general link, for whoever the resource is open to; a kit has none.
+	viewOf := func(t *txn) (map[string]any, error) {
+		v, err := t.view(ref, a, info)
+		if err != nil || ref.Kind == KindKit {
+			return v, err
+		}
+		if role, _ := v["role"].(string); role != "" || v["canManage"] == true {
+			v["general"], err = s.general(t, ref, info.Target)
+		}
+		return v, err
+	}
 	t := s.read(ctx)
-	v, err := t.view(ref, a, info)
+	v, err := viewOf(t)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -261,7 +272,7 @@ func (s *Service) route(r *http.Request, a Actor, ref Ref, rest []string, info I
 	steward, _ := v["steward"].(bool)
 	stored, _ := v["stored"].(bool)
 	fresh := func() (any, int, error) {
-		x, err := s.read(ctx).view(ref, a, info)
+		x, err := viewOf(s.read(ctx))
 		return x, 200, err
 	}
 	if method == http.MethodGet && n == 0 {
@@ -439,6 +450,9 @@ func (s *Service) route(r *http.Request, a Actor, ref Ref, rest []string, info I
 			return nil, 0, fail("forbidden", deniedManage)
 		}
 		return change(func(t *txn) error { return t.revokeAll(ref, email) })
+
+	case method == http.MethodPut && section == "general" && n == 1:
+		return s.generalRoute(r, ref, email, info, change)
 
 	case section == "shares":
 		return s.sharesRoute(r, a, ref, rest, info, pinned, change)

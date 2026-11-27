@@ -307,5 +307,12 @@
   "next.access.invites.more": "More",
   "next.access.invites.team": "Only for the team",
   "next.access.invites.cancel": "Cancel",
-  "next.access.invites.create": "Create link"
+  "next.access.invites.create": "Create link",
+  "next.access.general.title": "General access",
+  "next.access.general.restricted": "Restricted",
+  "next.access.general.anyone": "Anyone with the link",
+  "next.access.general.restrictedLead": "Only people with access can open it",
+  "next.access.general.anyoneLead": "Anyone with the link can open it without signing in",
+  "next.access.general.scope": "Who can open it with the link",
+  "next.access.general.copied": "Link copied: it opens without signing in"
 }

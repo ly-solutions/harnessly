@@ -2390,6 +2390,10 @@
         {
           "name": "last_opened_at",
           "type": "BIGINT"
+        },
+        {
+          "name": "general",
+          "type": "INTEGER"
         }
       ],
       "primaryKey": [
@@ -7303,6 +7307,14 @@
         },
         {
           "name": "space_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "general",
+          "type": "INTEGER"
+        },
+        {
+          "name": "token_enc",
           "type": "TEXT"
         }
       ],

@@ -72,7 +72,8 @@ func scanLink(row interface{ Scan(...any) error }) (link, error) {
 }
 
 func (t *txn) links(ref Ref) ([]link, error) {
-	rows, err := t.q.Query(t.ctx, `SELECT `+linkCols+` FROM resource_guest_links l WHERE l.kind = ? AND l.id = ? AND COALESCE(l.space_id, '') = ? ORDER BY l.created_at DESC, l.link_id`, ref.Kind, ref.ID, ref.Space)
+	rows, err := t.q.Query(t.ctx, `SELECT `+linkCols+` FROM resource_guest_links l WHERE l.kind = ? AND l.id = ? AND COALESCE(l.space_id, '') = ?
+		AND (l.general IS NULL OR l.general = 0) ORDER BY l.created_at DESC, l.link_id`, ref.Kind, ref.ID, ref.Space)
 	if err != nil {
 		return nil, err
 	}

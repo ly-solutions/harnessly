@@ -466,7 +466,7 @@ func New(o Options) (*Hub, error) {
 		h.Design.ReconcileLinks(ctx)
 	}()
 	h.Efficiency = &efficiency.Service{DB: db, OrgGate: h.Orgs.OrgGate, Features: h.Features, Switches: h.Switches, Now: o.Now}
-	h.Docs = docs.New(docs.Deps{Config: cfg, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry, Gate: h.Switches, AppToken: h.appTokenSubject, Bell: func(ctx context.Context, userID, email, key, title, text, link string) bool {
+	h.Docs = docs.New(docs.Deps{Config: cfg, LinkKey: linkKey, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry, Gate: h.Switches, AppToken: h.appTokenSubject, Bell: func(ctx context.Context, userID, email, key, title, text, link string) bool {
 		return h.Notices.RingMention(ctx, userID, email, key, title, text, link)
 	}, Notice: func(ctx context.Context, to, subject, body, link string) error {
 		if n, ok := o.Mailer.(mail.Noticer); ok {

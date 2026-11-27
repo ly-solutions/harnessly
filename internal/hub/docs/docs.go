@@ -17,6 +17,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/hub/auth"
 	"github.com/ly-solutions/harnessly/internal/hub/config"
+	"github.com/ly-solutions/harnessly/internal/hub/linkseal"
 	"github.com/ly-solutions/harnessly/internal/hub/ratelimit"
 	"github.com/ly-solutions/harnessly/internal/hub/resaccess"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
@@ -29,6 +30,9 @@ type Deps struct {
 	Auth   *auth.Service
 	Log    *slog.Logger
 	Now    func() time.Time
+	// LinkKey is the hub's own secret: the address of a resource's general link is kept sealed with a key derived
+	// from it, so the share dialog can copy it again; nil keeps no address.
+	LinkKey []byte
 	// Links hands comments to the machines' conversations; nil keeps them on the hub.
 	Links Linker
 	// HTTP reaches the documents and boards services; nil: a client with a 30 second timeout.
@@ -87,6 +91,7 @@ func New(d Deps) *Service {
 		// A guest link to a board opens on the boards service, which asks the hub what the link allows (_guest) and
 		// lets a guest comment there when it does.
 		s.access.LinkURL = s.boardLinkURL
+		s.access.Seal = linkseal.New(d.LinkKey)
 	}
 	if s.log == nil {
 		s.log = slog.Default()
