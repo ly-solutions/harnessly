@@ -43,10 +43,10 @@ never learns another's hostname or fleet id, and an answer is written back to th
   the receiving machine as on the site: a place in the machine's space (or managing it from above), and, when the
   machine has an access list, a line in it for them or their team. Otherwise the machine answers `unreachable` and is
   left out of the directory. `warn` logs what `on` would refuse and lets it through; `off` asks nothing.
-- **The sender** is the machine the signature proves and a person of its space. The person the runtime names
-  (`RUNTIME_OWNER_EMAIL`) is believed as the hub believes a page session: they registered the machine or opened it
-  through the hub lately, and still have a role in its space. Otherwise the message is from the person who registered
-  the machine; a machine with neither cannot send (`unverified`).
+- **The sender** is the machine the signature proves and the person who registered it, while they have a role in its
+  space; a machine with no such person cannot send (`unverified`). The person the runtime names
+  (`RUNTIME_OWNER_EMAIL`, `person` of the request) is not taken: opening a machine does not make its messages yours
+ .
 - **The receiver decides.** The hub only carries; the receiving runtime's settings say who may write, and its audit
   keeps every message.
 - **Limits.** 30 requests a minute per machine for sends and directory lookups together (`rate-limited`), 1 MB a

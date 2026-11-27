@@ -54,6 +54,7 @@ import type { IPublishState } from '@/next/features/designly/publish/use-publish
 import type { TAccessFocus } from '@/next/routes/routes';
 import { t } from '@/next/i18n';
 import '@/next/styles/design-access.css';
+import ActionError from './action-error';
 
 const VIEW = { log: 'log', transfer: 'transfer', links: 'links', link: 'link', publish: 'publish' } as const;
 type TView = (typeof VIEW)[keyof typeof VIEW];
@@ -119,11 +120,7 @@ const LegacyLinks = ({ links, membersOnly }: { links: ILegacyLinks; membersOnly:
         onNext={links.onNext}
         pages={links.pages}
       />
-      {action.error && (
-        <p className="hx-create__err" role="alert">
-          {action.error}
-        </p>
-      )}
+      <ActionError message={action.error} />
     </>
   );
 };
@@ -695,12 +692,9 @@ const Loaded = ({
         ) : (
           <Looker props={props} address={address} askFirst={ask} />
         )}
-        {action.error && (
-          <p className="hx-create__err" role="alert">
-            {action.error}
-          </p>
-        )}
       </div>
+      {/* Under the body that scrolls, over the button that was pressed: never out of sight (GitHub #190). */}
+      <ActionError message={action.error} className="hx-create__err hx-acc-err" />
       {sub === VIEW.link ? (
         <div className="hx-modal__foot hx-acc-foot hx-acc-foot--full">
           <button

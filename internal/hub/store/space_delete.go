@@ -178,6 +178,9 @@ var SpaceCascade = []SpaceCascadeStep{
 
 // keptOnSpaceDelete lists the tables a space's deletion leaves alone, each with why.
 var keptOnSpaceDelete = map[string]string{
+	"automation_operators": "the person's right, not the space's",
+	// A row of the space stays too: an emptied list would make an upgraded installation look new (SafeRefTenant).
+	"safe_ref_tenants":  "installation",
 	"schema_migrations": "installation", "instance_defaults": "installation", "currency_rates": "installation", "prices": "installation",
 	"job_leases":      "installation: which replica does a background job",
 	"auth_challenges": "installation", "auth_events": "installation: the record of the deletion itself is here",

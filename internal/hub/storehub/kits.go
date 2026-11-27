@@ -81,8 +81,8 @@ func copyKits(v map[string]KitGrant) map[string]KitGrant {
 }
 
 // kitsFilter limits a machine to the kits its person may see and takes writes only to those they may edit. A
-// kit nobody recorded is claimed by the first machine to put a file of it in the room: its person becomes the owner and
-// it is private to them; the claim is one insert under the table's key, so two machines racing get one owner. The kit
+// kit nobody recorded is claimed by the first machine to put a file of it in the room (while the room holds nothing of
+// it that another person's machine wrote): its person becomes the owner and it is private to them; the claim is one insert under the table's key, so two machines racing get one owner. The kit
 // access of the hub decides, not any file in the room. The seals and the immutability of the versions apply on top.
 func (s *Store) kitsFilter(ctx context.Context, m store.Machine, acc *filestore.Access) error {
 	view, err := s.kitView(ctx, m)
@@ -90,6 +90,7 @@ func (s *Store) kitsFilter(ctx context.Context, m store.Machine, acc *filestore.
 		return err
 	}
 	acc.Scope = kitScope(view)
+	wrote := s.writers(ctx, m, acc.Room)
 	acc.Sees = func(p string) bool {
 		id, ok := kitOf(p)
 		return ok && view[id].See
@@ -101,6 +102,10 @@ func (s *Store) kitsFilter(ctx context.Context, m store.Machine, acc *filestore.
 		}
 		g, known := view[id]
 		if !known {
+			// A kit nobody recorded that already holds files is claimed only by the person whose machines wrote them.
+			if !wrote.folder(id) {
+				return false
+			}
 			owner, err := s.kits.ClaimKit(ctx, m, id)
 			if err != nil {
 				s.log.Warn("store: a kit could not be claimed", "kit", id, "err", err)

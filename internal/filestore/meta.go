@@ -43,6 +43,8 @@ type RoomMeta interface {
 	HistoryUnder(ctx context.Context, prefix string, limit int) ([]Entry, error)
 	// CountUnder counts the revisions under an ASCII prefix in any letter case, up to limit.
 	CountUnder(ctx context.Context, prefix string, limit int) (int, error)
+	// WrittenByOthers says whether a revision under an ASCII prefix, in any letter case, is by none of the members.
+	WrittenByOthers(ctx context.Context, prefix string, members []string) (bool, error)
 	// Snapshot is the newest revision not newer than at of every path under prefix (a folder, ending in "/"),
 	// deleted ones included, by path.
 	Snapshot(ctx context.Context, prefix string, at int64) ([]Entry, error)

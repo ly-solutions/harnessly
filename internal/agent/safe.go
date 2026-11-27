@@ -37,6 +37,10 @@ func refusalFrom(status int, raw []byte) error {
 		return &secrets.Refusal{Reason: reason, Err: fmt.Errorf("the hub's safe refused: %s", reason)}
 	}
 	switch {
+	case e.Error == hubproto.CodeRelinkRequired:
+		return &secrets.Refusal{Reason: secrets.ReasonDenied, Err: errors.New("the hub keeps the owner's secrets from this machine's keys: its owner has to accept the machine in the hub's web page or register it again with their own code (the install command with --re-register)")}
+	case e.Error == "owner_disabled":
+		return &secrets.Refusal{Reason: secrets.ReasonDenied, Err: errors.New("the account of the machine's owner is switched off")}
 	case e.Error == "not_enabled":
 		return &secrets.Refusal{Reason: secrets.ReasonUnavailable, Err: errors.New("the hub's safe is not switched on for this machine")}
 	case status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusLocked:

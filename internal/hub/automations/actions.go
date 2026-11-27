@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -148,6 +149,36 @@ func (s *Service) fail(ctx context.Context, id, reason string) {
 		StatusFailed, reason, store.Ms(s.now()), id); err != nil {
 		s.log.Warn("automation run not marked failed", "run", id, "error", err)
 	}
+}
+
+// operator says whether the person acts for the deployment: an enabled instance administrator, somebody who owned a rule
+// before operators' rights came (store.AutomationOperator), or the holder of an address of HUB_AUTOMATIONS_OPERATORS who
+// has proved it. Anybody may sign up, make a rule and report from their own machine, so only an operator's rules take the shared /hook's events and only an operator's decision uses the hub's
+// GitLab token.
+func (s *Service) operator(ctx context.Context, userID string) (bool, error) {
+	u, err := s.db.S().UserByID(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil || u.DisabledAt != nil {
+		return false, err
+	}
+	if u.IsAdmin {
+		return true, nil
+	}
+	if had, err := s.db.S().AutomationOperator(ctx, userID); err != nil || had {
+		return had, err
+	}
+	proved, err := s.db.S().VerifiedEmails(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, e := range proved {
+		if slices.Contains(s.cfg.AutomationsOperators, e) || (e == u.Email && s.cfg.IsAdminEmail(e)) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // settle does what a recorded decision asks of the merge request. A merge that cannot be done does not leave the run

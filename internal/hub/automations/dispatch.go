@@ -89,15 +89,33 @@ func runFrom(rule Rule) map[string]string {
 // errNoMachine says a rule has no machine to run on just now.
 var errNoMachine = errors.New("no machine")
 
-// machineFor is the machine that runs a rule: the one it names, else the first connected machine its owner registered.
+// machineFor is the machine that runs a rule: the one it names, else the first connected machine of its owner. A named
+// machine is the owner's own, or one of somebody else's they may still give tasks (Deps.Operates): handed over, with the
+// rule's owner left on it.
 func (s *Service) machineFor(ctx context.Context, rule Rule) (string, error) {
+	// Only a machine that is still the rule owner's own, with keys they accepted, and while their account works.
+	const own = `SELECT m.id FROM machines m JOIN users u ON u.id = m.created_by AND u.disabled_at IS NULL
+		WHERE m.created_by = ? AND ` + store.SQLOwnKeys + ` AND m.revoked_at IS NULL AND m.disabled_at IS NULL`
 	if rule.MachineID != "" {
+		var n int
+		if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM (`+own+` AND m.id = ?) x`, rule.OwnerID, rule.MachineID).Scan(&n); err != nil {
+			return "", err
+		}
+		if n == 0 {
+			ok, err := s.operatesOthers(ctx, rule.OwnerID, rule.MachineID)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				return "", fmt.Errorf("machine %s is not the owner's to use: %w", rule.MachineID, errNoMachine)
+			}
+		}
 		if s.links.Get(rule.MachineID) == nil {
 			return "", fmt.Errorf("machine %s is not connected: %w", rule.MachineID, errNoMachine)
 		}
 		return rule.MachineID, nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT id FROM machines WHERE created_by = ? AND revoked_at IS NULL AND disabled_at IS NULL ORDER BY created_at, id`, rule.OwnerID)
+	rows, err := s.db.Query(ctx, own+` ORDER BY m.created_at, m.id`, rule.OwnerID)
 	if err != nil {
 		return "", err
 	}
@@ -131,6 +149,30 @@ func (s *Service) machineFor(ctx context.Context, rule Rule) (string, error) {
 		return "", err
 	}
 	return "", fmt.Errorf("no connected machine of the owner: %w", errNoMachine)
+}
+
+// operatesOthers says whether the rule's owner may give tasks to a machine that is not their own, while their account
+// works. Their own machine is never taken this way: one whose keys they have not accepted stays off.
+func (s *Service) operatesOthers(ctx context.Context, userID, machineID string) (bool, error) {
+	if s.operates == nil {
+		return false, nil
+	}
+	st := s.db.S()
+	m, err := st.MachineByID(ctx, machineID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil || m.CreatedBy == userID || m.RevokedAt != nil || m.DisabledAt != nil {
+		return false, err
+	}
+	u, err := st.UserByID(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil || u.DisabledAt != nil {
+		return false, err
+	}
+	return s.operates(ctx, userID, m), nil
 }
 
 // Dispatch is one pass: it puts back the runs whose start was abandoned, then takes one queued run whose machine is

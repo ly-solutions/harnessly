@@ -82,8 +82,10 @@ type HubMachine struct {
 	Access       []AccessView     `json:"access"`
 	// Owner is the person whose own machine it is (who connected it, or whom it was handed to); null when the account is
 	// gone.
-	Owner    *orgs.PersonRef `json:"owner"`
-	Problems []string        `json:"problems"`
+	Owner *orgs.PersonRef `json:"owner"`
+	// AwaitsOwner is set while the owner has not accepted the keys the machine holds: their own data stays off it.
+	AwaitsOwner *AwaitsOwnerView `json:"awaitsOwner"`
+	Problems    []string         `json:"problems"`
 	// OpensRuntime is false for a machine whose own policy keeps the hub out of its runtime (an observed machine run by
 	// a cluster of its own): the hub lists it, but «Открыть» has nowhere to lead.
 	OpensRuntime bool `json:"opensRuntime"`
@@ -105,6 +107,12 @@ type HubMachine struct {
 	// AccessLevels says the viewer may open the machine to a person or a team only to watch (AccessView.Level); set by
 	// the list that knows the viewer, false elsewhere.
 	AccessLevels bool `json:"accessLevels"`
+}
+
+// AwaitsOwnerView is a machine that waits for its owner (store.PersonRelink): HeldBy is who registered the keys it
+// holds and may still control it; null when that is not known.
+type AwaitsOwnerView struct {
+	HeldBy *orgs.PersonRef `json:"heldBy"`
 }
 
 // AccessLevels says the person may set levels on the machine's access list (machaccess.Checker.LevelsOn).
@@ -219,6 +227,12 @@ func (s *Service) HubMachines(ctx context.Context, st store.Store, ms []store.Ma
 		if m.CreatedBy != "" {
 			if name, ok := lb.user(m.CreatedBy); ok {
 				h.Owner = &orgs.PersonRef{UserID: m.CreatedBy, Name: name}
+			}
+			if holder := m.Holder(); holder != m.CreatedBy {
+				h.AwaitsOwner = &AwaitsOwnerView{}
+				if name, ok := lb.user(holder); ok {
+					h.AwaitsOwner.HeldBy = &orgs.PersonRef{UserID: holder, Name: name}
+				}
 			}
 		}
 		var last int64

@@ -18,6 +18,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/machine"
 	"github.com/ly-solutions/harnessly/internal/memstore"
 	"github.com/ly-solutions/harnessly/internal/nodejson"
+	"github.com/ly-solutions/harnessly/internal/secrets"
 	"github.com/ly-solutions/harnessly/internal/tmux"
 )
 
@@ -259,6 +260,22 @@ func workspaceAccess(d deps) *files.Access {
 	}
 	access := files.NewAccess(roots, splitList(os.Getenv("RUNTIME_SECRET_CONFIG_DIRS")))
 	access.VersionsDir = filepath.Join(d.DataDir, "file-versions")
+	// Credentials are no file of the workspace, even where the workspace is the whole home folder: the machine's keys and
+	// tokens in the data folders, the sign-ins of the agents and the tools. What the chats show from inside them stays.
+	denied := append(files.HomeCredentials(d.Home), d.DataDir, os.Getenv("AGENT_DATA_DIR"), os.Getenv("CODEX_HOME"),
+		xdgGH())
+	if key := secrets.DefaultKeyFile(os.Getenv, d.Home); filepath.IsAbs(key) {
+		denied = append(denied, key)
+	}
+	open := append([]string{imagesDir(d), mediaDir(d), codexImagesDir(d), os.Getenv("RUNTIME_UPLOADS_DIR")}, roots...)
+	for _, data := range []string{d.DataDir, filepath.Join(d.Home, ".harnessly")} {
+		for _, shown := range []string{"uploads", "v2/uploads", "v2/chat-exports", "design-artifacts", "design/library"} {
+			if data != "" {
+				open = append(open, filepath.Join(data, shown))
+			}
+		}
+	}
+	access.Deny(denied, open, []string{d.Home, d.WorkspaceRoot})
 	return access
 }
 
@@ -346,4 +363,12 @@ func previewChecks(access *files.Access, body any) files.Object {
 		}
 	}
 	return files.Object{{K: "available", V: available}}
+}
+
+// xdgGH is the gh CLI's sign-in under XDG_CONFIG_HOME, "" where the variable is unset.
+func xdgGH() string {
+	if base := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(base) {
+		return filepath.Join(base, "gh")
+	}
+	return ""
 }

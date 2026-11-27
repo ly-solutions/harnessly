@@ -161,7 +161,8 @@ When the hub stands behind a proxy that has already signed the person in with it
 pass the provider's signed token in a header and the person needs no hub sign-in. It is off unless
 `HUB_PROXY_JWT_JWKS_URL` is set.
 
-- The token is believed only on a connection from `HUB_TRUSTED_PROXIES`; from any other peer the header is ignored.
+- The token is read only on requests whose `Host` is `HUB_PROXY_JWT_HOST`, whatever the peer's address. The hub takes
+  the header off every request it forwards to a machine or a preview.
 - It is checked on every request: the signature (RS256 or ES256) against the provider's key set at
   `HUB_PROXY_JWT_JWKS_URL` (kept for an hour; an unknown `kid` refetches it, at most once in 30 seconds), `exp` and `nbf`
   with a small leeway, `aud` against `HUB_PROXY_JWT_AUDIENCE` and, when set, `iss` against `HUB_PROXY_JWT_ISSUER`. A
@@ -201,7 +202,7 @@ The person's numbers are described in [analytics.md](analytics.md#the-person-api
 | `GET /api/spaces/{spaceId}/members` | member | | `{ members: { userId, email, name, role, joinedAt }[] }` |
 | `GET /api/spaces/{spaceId}/apps` | member | | `{ apps: { id, name, version, targets, path? }[] }`: the apps installed for the space, from the store; `path` is the app's page at the hub (`/apps/space/{spaceId}/{appId}/`, a member's session; without one a GET leads to the sign-in), served with every machine off (docs/apps.md) |
 | `PATCH /api/spaces/{spaceId}/members/{userId}` | owner | `{ role }` | `{ member }`; 409 `last_owner`. Every change of who is in a space or in what role (a space made, an invitation accepted, a role changed, a person removed or gone) is one transaction that also writes its line into the journal of changes (`member.add`, `member.role`, `member.remove`); two changes asked for at once are decided one after the other, so a space never loses its last owner |
-| `DELETE /api/spaces/{spaceId}/members/{userId}` | owner, or self | | 204; 409 `last_owner`. In one transaction the person loses the membership, their roles on the space and its teams, their places in the teams, their lines in the access lists of its machines, the limits set for them there, their roles and requests in its documents, and the sessions they opened on its machines; the machines they registered in the space are revoked (to keep one, give it to another member first: `POST /api/machines/{machineId}/owner`) |
+| `DELETE /api/spaces/{spaceId}/members/{userId}` | owner, or self | | 204; 409 `last_owner`. In one transaction the person loses the membership, their roles on the space and its teams, their places in the teams, their lines in the access lists of its machines, the limits set for them there, their roles and requests in its documents, and the sessions they opened on its machines; the machines they own in the space, and those whose keys they hold, are revoked (to keep one, give it to another member first, `POST /api/machines/{machineId}/owner`, and have them accept it or register it again: [Whose keys](machine.md#whose-keys)) |
 | `POST /api/spaces/{spaceId}/invites` | owner | `{ emails: string[], role?: "member" \| "owner", teamId?: string }` (≤ 20; `role` is what the invitee becomes, member by default; `teamId` is a team of this space the invitee joins on accepting, else 400 `invalid_request`; `GET /api/invites/{token}` then also says `teamName`) | 201 `{ invites: Invite[] }` |
 | `POST /api/spaces/{spaceId}/invites/link` | owner | `{ maxUses?: number, days?: 1..7, teamId?: string }` | 201 `{ invite: Invite }`; returns the current active link invite if one exists and the body is empty (a link that names a team is always a new one) |
 | `GET /api/spaces/{spaceId}/invites` | owner | | `{ invites: Invite[] }` (active ones; `url` absent: only hashes are kept) |
@@ -430,6 +431,7 @@ for someone else's machine `targets` answers 409 `machine_offline` / 404 as befo
 | `DELETE /api/machines/{machineId}` | owner | | 204 (revoked, link closed with 4010) |
 | `GET /api/machines/{machineId}/open` | member | `?redirect=1` answers 302 instead | `{ url }` — path mode: `/m/<id>/` (403 `machine_untrusted` unless an instance administrator connected the machine or, with `HUB_MACHINE_TRUST=on`, the owner of its space trusted it); subdomain mode: `https://<id>.<HUB_RUNTIME_DOMAIN>/m/<id>/?hl_ticket=<t>` (60 s, single use) |
 | `POST /api/machines/{machineId}/trust` | owner | `{}` | `{ machine: Machine }` — path mode only, and only with `HUB_MACHINE_TRUST=on`: the owner of the machine's space lets the hub open it on its own origin (journal `machine_trusted`). `DELETE` takes the trust back (`machine_untrusted`). 409 `trust_unavailable` in subdomain mode (every machine has its own origin there) or with `HUB_MACHINE_TRUST` off. `Machine.runtime` is `ready`, `needs_trust` (the owner may trust it) or `blocked` (path mode with trust off: only administrator-connected machines open) |
+| `POST /api/machines/{machineId}/accept` | the machine's owner, signed in | `{}` | `{ machine: Machine }` — the owner accepts the keys a machine handed to them holds: their own data reaches it from now on ([Whose keys](machine.md#whose-keys); journal `machine_keys_accepted`). 403 `forbidden` for anybody else, a space owner included; 409 `owner_changed` |
 | `POST /api/machines/{machineId}/preflight` | owner | `{}` | `{ preflight: PreflightReport }` (runs it again) |
 
 Resources, load and operations of a machine (only with the organization's `machine.resources` feature, 404 `not_enabled`
@@ -1000,8 +1002,8 @@ requests already carry the base path and pass the route filter unchanged, `X-For
 | `HUB_PROXY_JWT_JWKS_URL` | | the identity provider's key set; setting it turns [proxy sign-in](#proxy-sign-in) on |
 | `HUB_PROXY_JWT_AUDIENCE` | | required with the key set: the `aud` the token must carry |
 | `HUB_PROXY_JWT_ISSUER` | | when set, the `iss` the token must carry |
-| `HUB_PROXY_JWT_HEADER` | `X-Forwarded-Access-Token` | the header the proxy passes the token in (`Authorization` takes `Bearer <token>`) |
-| `HUB_PROXY_JWT_EMAIL_CLAIM` | `email` | the claim that holds the person's email |
+| `HUB_PROXY_JWT_HEADER` | `Teleport-Jwt-Assertion` | the header the proxy passes the token in (`Authorization` takes `Bearer <token>`); the hub takes it off what it forwards to machines and previews |
+| `HUB_PROXY_JWT_EMAIL_CLAIM` | `sub` | the claim that holds the person's email |
 | `HUB_PEERS` | `off` | `on`: the hub carries messages between the agents of its machines ([peers.md](peers.md)); `off`: `/agent/peers/*` answer 404 |
 | `HUB_BUILDERS` | `on` | `off`: no pool of builder machines and no heavy jobs: `/agent/jobs/*`, `/api/spaces/{id}/builders`, `/api/spaces/{id}/jobs` and `PUT /api/machines/{id}/builder` answer 404 ([builders.md](builders.md)) |
 | `HUB_MIN_AGENT_VERSION` | | refuse older agents (426 / 4012) |

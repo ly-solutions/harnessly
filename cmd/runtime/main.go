@@ -366,6 +366,8 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	if err != nil {
 		return nil, err
 	}
+	f.Protect(watcherGuard(secret, cookieName))
+	f.Protect(sessionWriteGuard(secret, cookieName, cli.OK))
 	// With the launch slice on the core starts and resumes agents itself; off, the old runtime still does.
 	ref.c.agents.launchOn = func() bool { return f.SliceOn("launch") }
 	ref.c.sliceOn = f.SliceOn

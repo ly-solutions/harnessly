@@ -59,6 +59,7 @@ import { readVideoLinkView, videoLinkOf, videoViewOf } from '@/next/features/des
 import type { TVideoFormat } from '@/next/features/designly/video/types';
 import { useMe } from '@/next/stores/me';
 import '@/next/styles/design-access.css';
+import ActionError from '@/next/features/designly/access/action-error';
 
 export interface IDeckShareProps {
   /** The machine the deck lives on: the PDF for guests is built there. */
@@ -403,11 +404,7 @@ const DeckShare = ({ machine, project, title, closing, onAsGuest, video }: IDeck
         </div>
       )}
       {others.length > 0 && <p className="hx-deck-share__note">{t('next.deck.share.otherLinks')}</p>}
-      {action.error && (
-        <p className="hx-deck-share__error" role="alert">
-          {action.error}
-        </p>
-      )}
+      <ActionError message={action.error} className="hx-deck-share__error" />
       <button type="button" className="hx-deck-share__item" onClick={() => onAsGuest(flags)}>
         <Icon name="eye" />
         <span>{t('next.deck.share.asGuest')}</span>

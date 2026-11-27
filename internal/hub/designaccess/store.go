@@ -51,8 +51,12 @@ type txn struct {
 	machines map[string]store.Machine
 }
 
+// liveFirst orders the rows of machines m that are not revoked before the others.
+const liveFirst = `CASE WHEN m.revoked_at IS NULL THEN 0 ELSE 1 END`
+
 // key is the machine whose rows hold a project: this one, or with a shared library the machine of the space that
-// recorded it (the most recently changed when several did). A project nobody recorded yet is this machine's.
+// recorded it (a live one before a revoked one, then the most recently changed). The project is the space's, so a row
+// counts when its machine is revoked too. A project nobody recorded yet is this machine's.
 func (t *txn) key(id string) string {
 	if !t.shared || t.m.SpaceID == "" {
 		return t.m.ID
@@ -65,7 +69,7 @@ func (t *txn) key(id string) string {
 	if err := t.q.QueryRow(t.ctx, `SELECT COUNT(*) FROM design_projects WHERE machine_id = ? AND project_id = ?`, t.m.ID, id).Scan(&mine); err == nil && mine == 0 {
 		var other string
 		err := t.q.QueryRow(t.ctx, `SELECT p.machine_id FROM design_projects p JOIN machines m ON m.id = p.machine_id
-			WHERE p.project_id = ? AND m.space_id = ? AND m.revoked_at IS NULL ORDER BY p.updated_at DESC, p.machine_id LIMIT 1`, id, t.m.SpaceID).Scan(&other)
+			WHERE p.project_id = ? AND m.space_id = ? ORDER BY `+liveFirst+`, p.updated_at DESC, p.machine_id LIMIT 1`, id, t.m.SpaceID).Scan(&other)
 		if err == nil && other != "" {
 			home = other
 		}
@@ -491,11 +495,12 @@ func (s *Service) registerDeleted(ctx context.Context, m store.Machine, id, emai
 		if f.Role != roleOwner {
 			return t.writeLog(id, who, "delete_refused", who, map[string]any{"role": nullStr(f.Role)})
 		}
-		if err := t.leaveRegistry(t.key(id), id); err != nil {
+		holders, err := t.revokedHolders(id, who)
+		if err != nil {
 			return err
 		}
-		for _, table := range []string{"design_members", "design_team_grants", "design_requests", "design_invites", "design_share_links", "design_projects"} {
-			if _, err := t.q.Exec(t.ctx, `DELETE FROM `+table+` WHERE machine_id = ? AND project_id = ?`, t.key(id), id); err != nil {
+		for _, holder := range append(holders, t.key(id)) {
+			if err := t.dropProject(holder, id); err != nil {
 				return err
 			}
 		}
@@ -503,6 +508,42 @@ func (s *Service) registerDeleted(ctx context.Context, m store.Machine, id, emai
 		return t.writeLog(id, who, "delete", who, map[string]any{"owner": nullStr(p.Owner), "role": f.Role})
 	})
 	return done, err
+}
+
+// revokedHolders are the revoked machines of the space that still hold a row of the owner's for the project: with a
+// shared library such a row counts once the live one is gone, so a delete takes it too.
+func (t *txn) revokedHolders(id, owner string) ([]string, error) {
+	if !t.shared || t.m.SpaceID == "" {
+		return nil, nil
+	}
+	rows, err := t.q.Query(t.ctx, `SELECT p.machine_id FROM design_projects p JOIN machines m ON m.id = p.machine_id
+		WHERE p.project_id = ? AND p.owner_email = ? AND p.machine_id <> ? AND m.space_id = ? AND m.revoked_at IS NOT NULL`, id, owner, t.key(id), t.m.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var holder string
+		if err := rows.Scan(&holder); err != nil {
+			return nil, err
+		}
+		out = append(out, holder)
+	}
+	return out, rows.Err()
+}
+
+// dropProject removes what a machine holds of a project; the journal stays.
+func (t *txn) dropProject(holder, id string) error {
+	if err := t.leaveRegistry(holder, id); err != nil {
+		return err
+	}
+	for _, table := range []string{"design_members", "design_team_grants", "design_requests", "design_invites", "design_share_links", "design_projects"} {
+		if _, err := t.q.Exec(t.ctx, `DELETE FROM `+table+` WHERE machine_id = ? AND project_id = ?`, holder, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ---- changes ------------------------------------------------------------------------------------------------------
@@ -635,6 +676,14 @@ func (t *txn) machinesOfProject() (string, []any) {
 		return `machine_id IN (SELECT id FROM machines WHERE space_id = ?)`, []any{t.m.SpaceID}
 	}
 	return `machine_id = ?`, []any{t.m.ID}
+}
+
+// linkScope is the condition on the links of one project and its arguments: the link id when given, then the machines
+// of machinesOfProject, then the project. A link is the project's, whichever machine's page made it; its
+// own machine_id stays the one a guest is served from.
+func (t *txn) linkScope(project string, first ...any) (string, []any) {
+	in, args := t.machinesOfProject()
+	return in + ` AND project_id = ?`, append(append(first, args...), project)
 }
 
 // revokeAll takes back the people, the teams' grants, the team level and every link; requests stay to be decided.

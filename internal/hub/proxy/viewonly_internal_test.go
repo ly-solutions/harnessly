@@ -14,22 +14,3 @@ func TestRuntimePath(t *testing.T) {
 		}
 	}
 }
-
-func TestViewMessage(t *testing.T) {
-	allow := viewSockets["/api/status"]
-	for msg, want := range map[string]bool{
-		`{"type":"ping"}`:                    true,
-		`{"type":"status:request-sync"}`:     true,
-		`{"type":"status:tab-dismissed"}`:    false,
-		`{"type":"status:ack-notification"}`: false,
-		`[]`:                                 false,
-		``:                                   false,
-	} {
-		if got := viewMessage([]byte(msg), allow); got != want {
-			t.Errorf("%s: %v", msg, got)
-		}
-	}
-	if viewMessage([]byte(`{"type":"timeline:resume"}`), viewSockets["/api/timeline"]) {
-		t.Error("timeline:resume starts the agent: a task, not watching")
-	}
-}

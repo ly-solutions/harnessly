@@ -13,15 +13,16 @@ import (
 const variantFile = "variant.json"
 
 // serveOrSource answers a file of the project; a file a conflict variant does not hold is answered from the project it
-// was split from, when the person may open that one too. True when the answer came from that project: it
+// was split from, when the person may open that one too — for a person of another space (foreign), only
+// when that one names them. True when the answer came from that project: it
 // is not decided by this project's revision alone, nor the same for everyone.
 func (s *Service) serveOrSource(w http.ResponseWriter, r *http.Request, t *txn, u store.User, spaceID, project string,
-	head int64, segs []string) (bool, error) {
+	head int64, segs []string, foreign bool) (bool, error) {
 	miss := &missWriter{w: w, header: http.Header{}}
 	if err := s.view.Serve(miss, r, spaceID, project, head, segs, nil, false); err != nil || !miss.missed {
 		return false, err
 	}
-	of, ofHead := s.variantSource(r.Context(), t, u, spaceID, project)
+	of, ofHead := s.variantSource(r.Context(), t, u, spaceID, project, foreign)
 	if of == "" {
 		miss.flush()
 		return false, nil
@@ -30,7 +31,7 @@ func (s *Service) serveOrSource(w http.ResponseWriter, r *http.Request, t *txn, 
 }
 
 // variantSource is the project a variant was split from and its head, when the person may open it; "" otherwise.
-func (s *Service) variantSource(ctx context.Context, t *txn, u store.User, spaceID, project string) (string, int64) {
+func (s *Service) variantSource(ctx context.Context, t *txn, u store.User, spaceID, project string, foreign bool) (string, int64) {
 	lib, ok := s.view.(Librarian)
 	if !ok {
 		return "", 0
@@ -49,7 +50,8 @@ func (s *Service) variantSource(ctx context.Context, t *txn, u store.User, space
 	if err != nil || !stored {
 		return "", 0
 	}
-	if f, err := t.fold(p, u.Email); err != nil || f.Role == "" {
+	// A team level of a space the person is no member of is not theirs, as foreignHolder has it.
+	if f, err := t.fold(p, u.Email); err != nil || f.Role == "" || foreign && f.Source != "person" && f.Source != "link" {
 		return "", 0
 	}
 	head, err := s.view.Head(ctx, spaceID, link.Of)

@@ -91,6 +91,7 @@ export interface MachineCard {
   saveAccess: (change: AccessChange) => Promise<boolean>;
   /** Hands the machine to another member of its space; the answer is the card with the new owner. */
   assignOwner: (userId: string, history: OwnerHistory) => Promise<boolean>;
+  accept: () => Promise<boolean>;
 }
 
 export const useMachineCard = (id: string, onChanged: (m: OrgMachine) => void): MachineCard => {
@@ -230,6 +231,12 @@ export const useMachineCard = (id: string, onChanged: (m: OrgMachine) => void): 
         (d) => d,
         () => api.assignMachineOwner(id, userId, history),
         'владелец изменён',
+      ),
+    accept: () =>
+      act(
+        (d) => d,
+        () => api.acceptMachine(id),
+        'машина принята',
       ),
     resize: (to) =>
       act(

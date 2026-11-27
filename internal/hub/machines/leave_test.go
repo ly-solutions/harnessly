@@ -9,14 +9,16 @@ import (
 )
 
 // After a person left a space, no request of theirs to what the space holds is answered, and the machine they
-// registered there is revoked: its link closes and it cannot dial again. A machine given to another member before
-// the person left stays.
+// registered there is revoked: its link closes and it cannot dial again. A machine given to another member and
+// registered again by them before the person left stays; one whose keys the leaver still holds is revoked too.
 func TestLeaverKeepsNothingOfTheSpace(t *testing.T) {
 	s := hubtest.New(t)
 	owner, guest := s.SignIn("owner@example.test"), s.SignIn("guest@example.test")
 	space, _ := owner.NewSpace("North")
 	owner.Join(space, guest)
 	shared, laptop, given := owner.Machine(space, nil), owner.Machine(space, nil), owner.Machine(space, nil)
+	// A machine the guest connected and gave away: its keys are still theirs.
+	held := guest.Machine(space, nil)
 	give := func(a *hubtest.Agent, to *hubtest.Person) {
 		t.Helper()
 		if r := owner.Do("POST", "/api/machines/"+a.MachineID+"/owner", map[string]string{"userId": to.ID}); r.Code != http.StatusOK {
@@ -27,6 +29,7 @@ func TestLeaverKeepsNothingOfTheSpace(t *testing.T) {
 	give(laptop, guest)
 	give(given, guest)
 	give(given, owner)
+	give(held, owner)
 
 	paths := []string{
 		"/api/spaces/" + space, "/api/spaces/" + space + "/members", "/api/spaces/" + space + "/machines",
@@ -58,7 +61,8 @@ func TestLeaverKeepsNothingOfTheSpace(t *testing.T) {
 	for name, tc := range map[string]struct {
 		id      string
 		revoked bool
-	}{"the leaver's machine": {laptop.MachineID, true}, "the machine given away": {given.MachineID, false}, "the shared machine": {shared.MachineID, false}} {
+	}{"the leaver's machine": {laptop.MachineID, true}, "the machine given away": {given.MachineID, false}, "the shared machine": {shared.MachineID, false},
+		"the machine whose keys the leaver holds": {held.MachineID, true}} {
 		m, err := s.DB.S().MachineByID(ctx, tc.id)
 		if err != nil || (m.RevokedAt != nil) != tc.revoked {
 			t.Errorf("%s: revoked %v (%v), want %v", name, m.RevokedAt != nil, err, tc.revoked)

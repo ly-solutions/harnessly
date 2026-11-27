@@ -81,6 +81,7 @@ func (s *Service) servePreviewOn(w http.ResponseWriter, r *http.Request, id stri
 			h := pr.Out.Header
 			h.Del("Authorization")
 			h.Del("Proxy-Authorization")
+			s.dropAssertion(h)
 			h.Del("Cookie")
 			if own := targetCookies(pr.In); own != "" {
 				h.Set("Cookie", own)

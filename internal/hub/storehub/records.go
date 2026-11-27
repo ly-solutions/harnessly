@@ -18,8 +18,8 @@ type MetaRecorder interface {
 
 // recordsFilter limits a machine to the records of the entities its person may open, as the design collection limits
 // it to their projects: `<id>.json` is the record of the project `<id>`. A record of a project the hub has no row for
-// is the machine's to put (the hub learns the project from its own events); a recorded one takes writes only from a
-// person who may edit it.
+// is the machine's to put (the hub learns the project from its own events), and with closed unrecorded projects only
+// the writer's person changes it after; a recorded one takes writes only from a person who may edit it.
 func (s *Store) recordsFilter(ctx context.Context, m store.Machine, acc *filestore.Access) error {
 	return s.entityFilter(ctx, m, acc, filestore.RecordID, true)
 }
@@ -40,6 +40,7 @@ func (s *Store) entityFilter(ctx context.Context, m store.Machine, acc *filestor
 		return err
 	}
 	closed := s.design.ClosedUnrecorded()
+	wrote := s.writers(ctx, m, acc.Room)
 	acc.Scope = scope
 	acc.Sees = func(p string) bool {
 		id, ok := idOf(p)
@@ -58,7 +59,15 @@ func (s *Store) entityFilter(ctx context.Context, m store.Machine, acc *filestor
 			return false
 		}
 		g, known := view[id]
-		return !known || g.Edit
+		if known {
+			return g.Edit
+		}
+		if !closed {
+			return true
+		}
+		// Closed: an unrecorded entity's file is started by anyone and changed by its writer's person.
+		free, own := wrote.path(p)
+		return free || own
 	}
 	room := acc.Room
 	rec, _ := s.design.(MetaRecorder)

@@ -70,7 +70,16 @@ What it does **not** protect against:
   values shorter than 4 bytes are not masked at all;
 - root on the machine, or someone with the person's page session.
 
+The credentials the runtime keeps for integrations (connections, connectors, MCP servers) are refused to `secret run`
+and `secret file` (`integration`), so that mail is sent and a tracker is written only the runtime's way. This
+stops the plain command, not a hostile agent of the same Unix user (above).
+
 ## Keeping the safe on a server
+
+A secret's limits (projects and sites) lie on the server beside the value (the key `harnessly-limits`), so every machine
+of the person applies them. Limits set earlier are sent the first time their machine uses the secret. With a
+hub older than the runtime, or a record kept under another key than `value`, they stay on the machine that set them. A
+`vault:` reference does not open a limited secret.
 
 By default the safe is the file above and needs nothing. A runtime can instead keep the values on a Vault-compatible
 server — [OpenBao](https://openbao.org) or HashiCorp Vault, the same API — so that they live where the organisation
@@ -181,6 +190,7 @@ HUB_SECRETS_VAULT_AUTH=kubernetes          # token-file | approle | kubernetes |
 HUB_SECRETS_VAULT_ROLE=harnessly-hub
 HUB_SECRETS_VAULT_PREFIX=harnessly         # the hub's folder in the mount, harnessly by default
 HUB_SECRETS_REF_PREFIXES=shared/ci         # what vault: references may read; empty: none
+# HUB_SECRETS_ORG_REF_PREFIXES=<org id>=teams/beta;*=shared/all   # folders per organization, once there are several
 ```
 
 The hub takes every `HUB_SECRETS_VAULT_*` setting the runtime takes under `RUNTIME_SECRETS_VAULT_*`; without
@@ -195,10 +205,11 @@ keeps its safe at home: the observe link serves the safe only when the machine's
 **The way of a request.** The runtime asks its machine agent on the loopback (`POST /secrets/hub`, with the agent's
 local token). The agent signs the request with the machine's Ed25519 key over the hub's host and the SHA-256 of the
 body (domain `harnessly-agent-secrets-v1`, a nonce used once) and posts it to the hub's `POST /agent/secrets`. The hub
-checks the signature and that the machine is neither revoked nor switched off, then reads or writes:
+checks the signature, that the machine is neither revoked nor switched off, and that its owner accepted its keys and
+has a working account ([Whose keys](hub/machine.md#whose-keys)), then reads or writes:
 
 ```text
-<prefix>/users/<owner id>/<name>   the secrets of the person who registered the machine, the value under "value"
+<prefix>/users/<owner id>/<name>   the secrets of the machine's owner, the value under "value"
 ```
 
 The folder comes from the hub's own record of the machine, never from the request: a name is one segment of letters,
@@ -206,8 +217,14 @@ digits, `.`, `_` and `-`, so a machine cannot leave its owner's folder. Two mach
 two people never do. A value read comes back sealed to the machine's X25519 key (in parts of 8 KiB, each bound to the
 nonce of the request and to its place), so it is in the clear only in the hub's memory and in the runtime's.
 
-**References** (`vault:<path>#<key>`) go through the hub as well and are read only under `HUB_SECRETS_REF_PREFIXES`,
-never under `<prefix>/users`, whatever the prefixes say.
+**References** (`vault:<path>#<key>`) go through the hub as well and are read only under the folders of the machine's
+organization, never under `<prefix>/users`, whatever the lists say. `HUB_SECRETS_ORG_REF_PREFIXES` names them:
+`<organization id>=<folder>,<folder>` entries separated by `;`, with `*` for every organization and `space:<id>` for a
+space outside any. `HUB_SECRETS_REF_PREFIXES` names no organization. Every organization and every space outside any that
+existed when the hub was upgraded to per-organization folders keeps it (the migration lists them in `safe_ref_tenants`),
+so nothing changes for them. An organization made after that upgrade needs an entry of its own. On a new installation it
+applies while the hub has one organization at most, and with several to the oldest only; a space outside any organization
+made later has it while the hub has one organization at most.
 
 **The journal.** Every read, write, removal and reference is an event of the space's audit journal (`secret.read`,
 `secret.write`, `secret.delete`, `secret.ref`): who, which machine, which name, whether it was refused. Never a value.

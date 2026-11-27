@@ -74,7 +74,8 @@ func (s *SessionRefresh) apply(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.now()
 	exp, ok := agent.SessionExpiry(s.Secret, token, now)
-	if !ok {
+	// A watcher's session is the hub's to renew: signed anew here it would become a full one.
+	if !ok || agent.WatcherSession(s.Secret, token, now) {
 		return
 	}
 	maxAge := int64(s.MaxAge / time.Second)

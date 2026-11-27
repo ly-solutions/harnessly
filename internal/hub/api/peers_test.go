@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/ly-solutions/harnessly/internal/hub/hubtest"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
@@ -254,5 +255,34 @@ func TestPeersKeepTheMachineAccessList(t *testing.T) {
 	}
 	if res := peerSend(t, s, a, "", to, "x"); res.State != hubproto.PeerDelivered {
 		t.Fatalf("a sender on the list: %+v", res)
+	}
+}
+
+// A person who only looked at a machine is not who its messages come from: the machine's owner names whoever it likes,
+// and a message "from the receiver themselves" would skip their inbox and their access lists.
+func TestPeersAVisitorIsNotTheSender(t *testing.T) {
+	s := hubtest.New(t, hubtest.Env("HUB_PEERS", "on"))
+	owner, victim := s.SignIn("owner@example.com"), s.SignIn("victim@example.com")
+	id, _ := owner.NewSpace("Acme")
+	owner.Join(id, victim)
+	a := owner.Machine(id, nil)
+	b := owner.Machine(id, nil)
+	b.Handle(hubproto.OpPeersDeliver, deliverer)
+	// The victim opened the owner's machine a moment ago.
+	if err := s.DB.S().AddEntryTicket(context.Background(), "hash", store.EntryTicket{UserID: victim.ID, Scope: a.MachineID,
+		Expires: s.Clock.Now().Add(time.Minute)}, s.Clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.DB.S().EntryTicketSince(context.Background(), victim.ID, a.MachineID, s.Clock.Now().Add(-time.Hour)); err != nil || !ok {
+		t.Fatalf("the visit: %v %v", ok, err)
+	}
+	if res := peerSend(t, s, a, "victim@example.com", hubproto.PeerRefPrefix+b.MachineID+"/c", "x"); res.State != hubproto.PeerDelivered {
+		t.Fatalf("result %+v", res)
+	}
+	var got hubproto.PeersDeliver
+	raw, _ := json.Marshal(b.Calls(hubproto.OpPeersDeliver)[0].Params)
+	_ = json.Unmarshal(raw, &got)
+	if got.Sender.Person != "owner@example.com" {
+		t.Fatalf("the machine spoke as %q", got.Sender.Person)
 	}
 }

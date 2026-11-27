@@ -1,6 +1,7 @@
 package env
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -175,7 +176,7 @@ func (s *Service) machineListMemo(w *world, spaceID string, m store.Machine, mem
 	}
 	owner := ""
 	if len(w.groups) > 0 {
-		owner = m.CreatedBy // with groups the list depends on the owner's choices
+		owner = s.db.S().AsPerson(context.Background(), m).CreatedBy // with groups the list depends on the owner's choices
 	}
 	key := fmt.Sprintf("%s/%s/%s/%t/%t/%t/%t/%t/%t/%t/%t", spaceID, m.TeamID, owner, setup, known, ex.Claude, ex.Apps, ex.Packs, ex.AppsConsent, ex.Providers, ex.Links)
 	if v, ok := memo[key]; ok {

@@ -3,14 +3,17 @@ package automations
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/hub/config"
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
 	"github.com/ly-solutions/harnessly/internal/hub/link"
+	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
 // hookLinks is a machine link that records what was passed and answers a status.
@@ -33,8 +36,27 @@ func (f *hookLinks) Do(_ context.Context, _ string, op string, params any, _ tim
 	return json.Marshal(map[string]int{"status": f.status})
 }
 
+// hookMachine is a machine of the hub with this id.
+func hookMachine(t *testing.T, s *Service, id string) {
+	t.Helper()
+	ctx := context.Background()
+	u := &store.User{Email: id + "@example.com"}
+	if err := s.db.S().CreateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	sp := &store.Space{Slug: id, Name: id, CreatedBy: u.ID}
+	if err := s.db.S().CreateSpace(ctx, sp); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.S().CreateMachine(ctx, &store.Machine{ID: id, SpaceID: sp.ID, Name: id, KeyPub: id, CreatedBy: u.ID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWebhookPassesToTheMachineOnly(t *testing.T) {
 	s := newSvc(t, noon())
+	hookMachine(t, s, "mach1")
+	hookMachine(t, s, "mach2")
 	links := &hookLinks{status: http.StatusAccepted}
 	s.links = links
 	webhookLimits = &limiter{m: map[string]*bucket{}}
@@ -90,5 +112,67 @@ func TestWebhookPassesToTheMachineOnly(t *testing.T) {
 	}
 	if !limited {
 		t.Fatal("no rate limit")
+	}
+}
+
+// The gateway's assertion on its own address is not a webhook's proof and does not go to the machine.
+func TestWebhookKeepsTheGatewaysAssertion(t *testing.T) {
+	s := newSvc(t, noon())
+	s.cfg.ProxyJWT = config.ProxyJWT{JWKSURL: "https://gw.example.com/jwks", Host: "gw.example.com", Header: "Authorization"}
+	links := &hookLinks{status: http.StatusAccepted}
+	s.links = links
+	webhookLimits = &limiter{m: map[string]*bucket{}}
+	hookMachine(t, s, "mach1")
+	mux := http.NewServeMux()
+	s.Mount(mux)
+	for host, want := range map[string]any{"gw.example.com": nil, "hub.example.com": "Bearer x"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/platform/automations/hook/m/mach1/cx0123456789ab", strings.NewReader(`{}`))
+		req.Host = host
+		req.Header.Set("Authorization", "Bearer x")
+		mux.ServeHTTP(httptest.NewRecorder(), req)
+		if header, _ := links.params["header"].(map[string]any); header["Authorization"] != want {
+			t.Errorf("%s: passed %v, want %v", host, header["Authorization"], want)
+		}
+	}
+}
+
+// The route needs no account, so what a caller names costs nothing until it is a machine, one address is limited
+// whatever it names, and the memory of the limiter has a ceiling.
+func TestWebhookIsBounded(t *testing.T) {
+	s := newSvc(t, noon())
+	links := &hookLinks{status: http.StatusAccepted}
+	s.links = links
+	webhookLimits, webhookSenders = &limiter{m: map[string]*bucket{}}, &limiter{m: map[string]*bucket{}}
+	hookMachine(t, s, "mach1")
+	mux := http.NewServeMux()
+	s.Mount(mux)
+	post := func(ip, path string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/platform/automations/hook/m/"+path, strings.NewReader(`{}`))
+		req.RemoteAddr = ip + ":1000"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := post("192.0.2.1", "ghost/cx0123456789ab"); code != http.StatusServiceUnavailable || links.op != "" || len(webhookLimits.m) != 0 {
+		t.Fatalf("an unknown machine: %d, passed %q, %d addresses kept", code, links.op, len(webhookLimits.m))
+	}
+	limited := false
+	for i := range webhookSenderBurst + 5 {
+		if post("192.0.2.2", fmt.Sprintf("mach1/cx%012x", i)) == http.StatusTooManyRequests {
+			limited = true
+		}
+	}
+	if !limited {
+		t.Fatal("one sender is not limited across addresses")
+	}
+	if code := post("192.0.2.3", "mach1/cx0123456789ab"); code != http.StatusAccepted {
+		t.Fatalf("another sender: %d", code)
+	}
+	l := &limiter{m: map[string]*bucket{}}
+	for i := range limiterKeys + 100 {
+		l.allow(fmt.Sprint(i), noon(), webhookRate, webhookBurst)
+	}
+	if len(l.m) > limiterKeys {
+		t.Fatalf("the limiter holds %d keys, more than %d", len(l.m), limiterKeys)
 	}
 }

@@ -39,6 +39,7 @@ import { usePhone } from '@/next/ui/use-media';
 import type { TAccessFocus } from '@/next/routes/routes';
 import { t } from '@/next/i18n';
 import '@/next/styles/design-access.css';
+import ActionError from './action-error';
 
 export interface IShareDialogProps {
   open: boolean;
@@ -354,11 +355,7 @@ const ShareDialog = ({
             )}
           </section>
         )}
-        {action.error && (
-          <p className="hx-create__err" role="alert">
-            {action.error}
-          </p>
-        )}
+        <ActionError message={action.error} />
       </div>
       <div className="hx-modal__foot hx-acc-foot">
         <div className="hx-acc-foot__left">

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/ly-solutions/harnessly/internal/hub/hubtest"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
@@ -53,6 +54,20 @@ func TestAdministeredMachinesStayOutOfThePersonalList(t *testing.T) {
 		}
 		// The link dials again and is read with its new owner; the id and key are the same.
 		starts := len(give.m.Calls(hubproto.OpHistoryStart))
+		give.m.WaitClosed()
+		give.m.Connect()
+		// Until the new owner registers it again, the keys write nothing into their history.
+		emit(give.m, "tab-planted", "Подброшенный чат", 100)
+		time.Sleep(200 * time.Millisecond)
+		if n := len(give.m.Calls(hubproto.OpHistoryStart)); n != starts {
+			t.Errorf("the old keys were told where the new owner's copy stands")
+		}
+		code := give.to.NewCode(space, "dir")
+		req := give.m.RegisterRequest(code, hubproto.ProfileDir, hubproto.ViaCommand)
+		req.Previous = hubproto.SignReregister(give.m.Priv, give.m.MachineID, code, req.PublicKey)
+		if r := s.Browser().Do("POST", "/agent/register", req); r.Code != http.StatusOK {
+			t.Fatalf("register again: %s", r)
+		}
 		give.m.WaitClosed()
 		give.m.Connect()
 		waitFor(t, func() bool { return len(give.m.Calls(hubproto.OpHistoryStart)) > starts })

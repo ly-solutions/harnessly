@@ -23,6 +23,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/sameorigin"
 	"github.com/ly-solutions/harnessly/internal/transcript"
 	"github.com/ly-solutions/harnessly/internal/typist"
+	"github.com/ly-solutions/harnessly/internal/viewonly"
 )
 
 const (
@@ -178,7 +179,9 @@ func (s *Server) keeper() Keeper {
 
 // conn is one socket's view of a tab.
 type conn struct {
-	c           *client
+	c *client
+	// watching: the page of a person who may only watch; its messages that act are dropped (internal/viewonly).
+	watching    bool
 	session     string
 	panePID     int
 	provider    *Provider
@@ -282,7 +285,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !has {
 		hint, _ = query(r.URL.RawQuery, "claudeSessionId")
 	}
-	cn := &conn{c: c, session: session, provider: p, lastPong: time.Now(), stopBeat: make(chan struct{}), inbox: make(chan []byte, 256),
+	cn := &conn{c: c, watching: viewonly.Watching(r.Context()), session: session, provider: p, lastPong: time.Now(), stopBeat: make(chan struct{}), inbox: make(chan []byte, 256),
 		readyCh: make(chan struct{}), handlerDone: make(chan struct{})}
 	go s.setup(cn, hint)
 	s.readLoop(cn)
@@ -507,6 +510,9 @@ func (s *Server) onMessage(cn *conn, data []byte) {
 		return
 	}
 	typ, _ := m.Get("type")
+	if name, _ := typ.(string); cn.watching && !viewonly.MessageType("/api/timeline", name) {
+		return
+	}
 	switch typ {
 	case "timeline:subscribe":
 		raw, _ := m.Get("jsonlPath")

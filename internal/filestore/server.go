@@ -48,6 +48,21 @@ type Access struct {
 	Committed func(ctx context.Context, e Entry)
 	// Admits, when set, judges a commit whole (its path and size) after Writes; an error refuses it with 403.
 	Admits func(req CommitRequest) error
+	// Leases, when set, is what the caller may do with the lease on a key. Nil: everything in a room the caller reads
+	// and writes whole, nothing in one whose paths are filtered (a key is not a path, so no path rule speaks for it).
+	Leases func(key string) LeaseRight
+}
+
+// LeaseRight is what a caller may do with the lease on one key: see it listed, take, renew or release it as its own,
+// force another's off.
+type LeaseRight struct{ See, Take, Force bool }
+
+func (a Access) lease(key string) LeaseRight {
+	if a.Leases != nil {
+		return a.Leases(key)
+	}
+	all := a.Sees == nil && a.Writes == nil
+	return LeaseRight{See: all, Take: all, Force: all}
 }
 
 func (a Access) sees(p string) bool { return a.Sees == nil || a.Sees(p) }
@@ -583,7 +598,6 @@ func (s *Server) snapshot(w http.ResponseWriter, r *http.Request, c caller) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// leases lists the live leases of the room.
 // keys lists the room key as wrapped for each member of a profile room (design-sync's machines): a machine of
 // the person that still has a design-sync identity opens the one wrapped for it and keeps the key in the hub's safe.
 // Each is sealed to its member's age identity, so the list gives nothing to anyone else.
@@ -614,6 +628,7 @@ func (s *Server) keys(w http.ResponseWriter, r *http.Request, c caller) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// leases lists the live leases of the room that the caller may see.
 func (s *Server) leases(w http.ResponseWriter, r *http.Request, c caller) {
 	ls, err := c.store.meta.Leases(r.Context(), time.Now().UnixMilli())
 	if err != nil {
@@ -621,7 +636,16 @@ func (s *Server) leases(w http.ResponseWriter, r *http.Request, c caller) {
 		http.Error(w, "cannot read leases", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, Leases{Leases: ls})
+	seen := ls[:0:0]
+	for _, l := range ls {
+		if c.acc.lease(l.Key).See {
+			seen = append(seen, l)
+		}
+	}
+	if seen == nil {
+		seen = []Lease{}
+	}
+	writeJSON(w, http.StatusOK, Leases{Leases: seen})
 }
 
 // leaseTake gives the caller's chat the lease on a key, or answers 409 with the live holder. The machine is the one
@@ -630,6 +654,10 @@ func (s *Server) leaseTake(w http.ResponseWriter, r *http.Request, c caller) {
 	var req LeaseRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&req); err != nil || req.Key == "" || req.Chat == "" || len(req.Key) > 512 {
 		http.Error(w, "bad json: key and chat are required", http.StatusBadRequest)
+		return
+	}
+	if !c.acc.lease(req.Key).Take {
+		http.Error(w, "this caller may not take the lease on "+req.Key, http.StatusForbidden)
 		return
 	}
 	l, held, err := c.store.meta.LeaseTake(r.Context(), req, c.member, time.Now().UnixMilli())
@@ -649,6 +677,10 @@ func (s *Server) leaseRelease(w http.ResponseWriter, r *http.Request, c caller) 
 	var req LeaseRelease
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&req); err != nil || req.Key == "" {
 		http.Error(w, "bad json: key is required", http.StatusBadRequest)
+		return
+	}
+	if right := c.acc.lease(req.Key); req.Force && !right.Force || !req.Force && !right.Take {
+		http.Error(w, "this caller may not release the lease on "+req.Key, http.StatusForbidden)
 		return
 	}
 	dropped, err := c.store.meta.LeaseDrop(r.Context(), req, c.member, time.Now().UnixMilli())

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/hub/link"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
+	"github.com/ly-solutions/harnessly/internal/hub/store/storetest"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
 
@@ -35,8 +36,15 @@ func (oldHistory) Backfill(context.Context, store.Machine, json.RawMessage) {}
 // old events, which the hub still takes.
 func TestBatchesOnlyForAnAgentThatSpeaksThem(t *testing.T) {
 	h := &batchHistory{}
-	s := &Service{history: h}
-	m := store.Machine{ID: "m1", CreatedBy: "u1"}
+	db := storetest.Open(t)
+	m := store.Machine{ID: "m1", KeyPub: "k1", CreatedBy: "u1"}
+	if err := db.S().CreateUser(context.Background(), &store.User{ID: "u1", Email: "u1@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.S().CreateMachine(context.Background(), &m); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{db: db, history: h}
 	both := []string{hubproto.FeatureHistory, hubproto.FeatureRepl}
 	if s.replHandlers(nil, m, []string{hubproto.FeatureHistory}) != nil {
 		t.Error("batches for an agent without the feature")
@@ -44,7 +52,7 @@ func TestBatchesOnlyForAnAgentThatSpeaksThem(t *testing.T) {
 	if hs := s.replHandlers(nil, store.Machine{ID: "m1"}, both); hs[hubproto.ReplHistoryEvents] != nil || hs[hubproto.EventMetricsSample] == nil {
 		t.Error("chats as batches for a machine whose chats have no owner, or its reports not")
 	}
-	if hs := (&Service{history: oldHistory{}}).replHandlers(nil, m, both); hs[hubproto.ReplHistoryEvents] != nil {
+	if hs := (&Service{db: db, history: oldHistory{}}).replHandlers(nil, m, both); hs[hubproto.ReplHistoryEvents] != nil {
 		t.Error("batches for a history that cannot store them")
 	}
 	hs := s.replHandlers(nil, m, both)

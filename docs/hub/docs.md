@@ -146,6 +146,9 @@ author the service names is an address a person of the hub has proved (an accoun
 address, with a provider that does not vouch for it, is not the author). What nothing ties to an organization is viewable by
 everybody of the hub's only organization; on a hub with several it is closed to all but its author and the
 administrators, and the hub's log names such documents once at the start, so that an administrator shares them.
+A board without a record that no machine's agent drew is owned (its «Поделиться») only by the person who has proved the
+address the boards service names as its author; a display name makes nobody an owner, and an administrator shares such a
+board.
 `GET <platform api>/docs/people?q=` finds the people to name in a comment: among those the person shares a space with
 (an administrator of the installation finds anybody), by two characters or more, 120 searches a minute per person.
 Agent visibility maps to levels: `private` none, `team` or `view` view, `comment`, `edit`, and

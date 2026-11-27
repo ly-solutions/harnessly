@@ -46,6 +46,9 @@ type Deps struct {
 	Gate Gate
 	// Bell puts a notice into a person's bell of harnessly (routines' results); nil: no notices.
 	Bell func(ctx context.Context, userID, email, icon, key, title, text, link string) bool
+	// Operates says whether the person may give tasks to the machine (its space and its access list); nil: only the
+	// rule owner's own machines run it.
+	Operates func(ctx context.Context, userID string, m store.Machine) bool
 	// Bus is the journal of events (docs/hub/event-bus.md); nil: events reach the rules without being journaled.
 	Bus *eventbus.Bus
 }
@@ -63,10 +66,12 @@ type Service struct {
 	gate   Gate
 	bell   func(ctx context.Context, userID, email, icon, key, title, text, link string) bool
 	bus    *eventbus.Bus
+	// operates is Deps.Operates.
+	operates func(ctx context.Context, userID string, m store.Machine) bool
 }
 
 func New(d Deps) *Service {
-	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, links: d.Links, log: d.Log, now: d.Now, client: &http.Client{}, gate: d.Gate, bell: d.Bell, bus: d.Bus}
+	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, links: d.Links, log: d.Log, now: d.Now, client: &http.Client{}, gate: d.Gate, bell: d.Bell, bus: d.Bus, operates: d.Operates}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -319,7 +324,8 @@ func (s *Service) listRuns(w http.ResponseWriter, r *http.Request, p *auth.Princ
 }
 
 // decision is the owner's answer to a finished run: {action: "approve"|"reject"}. The hub records it and, when it is set
-// up for GitLab, merges or closes the run's merge request (actions.go, docs/hub/automations.md).
+// up for GitLab and the owner is an operator, merges or closes the run's merge request (actions.go,
+// docs/hub/automations.md).
 func (s *Service) decision(w http.ResponseWriter, r *http.Request, p *auth.Principal) error {
 	var b struct {
 		Action string `json:"action"`
@@ -331,6 +337,10 @@ func (s *Service) decision(w http.ResponseWriter, r *http.Request, p *auth.Princ
 	if status == "" {
 		return invalid("action: approve или reject")
 	}
+	operator, err := s.operator(r.Context(), p.User.ID)
+	if err != nil {
+		return err
+	}
 	run, ok, err := s.decide(r.Context(), r.PathValue("id"), p.User.ID, status)
 	if err == store.ErrNotFound {
 		return errNoRun
@@ -341,7 +351,12 @@ func (s *Service) decision(w http.ResponseWriter, r *http.Request, p *auth.Princ
 	if !ok {
 		return errDecided
 	}
-	out := s.settle(r.Context(), run)
+	var out Outcome
+	if operator || p.Admin || run.MRURL == "" || !s.gitlabOn() {
+		out = s.settle(r.Context(), run)
+	} else {
+		out = Outcome{Run: run, Reason: "only an administrator or an operator of automations merges or closes merge requests with the hub's token: do it in GitLab"}
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"run": out.Run, "merged": out.Merged, "reason": out.Reason})
 	return nil
 }
@@ -405,9 +420,9 @@ func (s *Service) hook(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// take queues the runs of an event for the enabled rules of its source, of every owner ("" — the deployment's /hook) or
-// of one owner (a machine's connector event): every rule whose filter the event meets gets a queued run, and every wait
-// the event starts or stops moves.
+// take queues the runs of an event for the enabled rules of its source, of every operator ("" — the deployment's /hook,
+// see operator) or of one owner (a machine's connector event): every rule whose filter the event meets gets a queued
+// run, and every wait the event starts or stops moves.
 func (s *Service) take(ctx context.Context, owner, source, fingerprint string, event map[string]any, raw json.RawMessage) ([]map[string]any, []WaitOutcome, error) {
 	rules, err := s.rules(ctx, owner, true)
 	if err != nil {
@@ -416,7 +431,20 @@ func (s *Service) take(ctx context.Context, owner, source, fingerprint string, e
 	results := []map[string]any{}
 	waits := []WaitOutcome{}
 	on := map[string]bool{}
+	operators := map[string]bool{}
 	for _, rule := range rules {
+		if owner == "" {
+			v, seen := operators[rule.OwnerID]
+			if !seen {
+				if v, err = s.operator(ctx, rule.OwnerID); err != nil {
+					return nil, nil, err
+				}
+				operators[rule.OwnerID] = v
+			}
+			if !v {
+				continue
+			}
+		}
 		if rule.Trigger.Wait != nil {
 			v, seen := on[rule.OwnerID]
 			if !seen {

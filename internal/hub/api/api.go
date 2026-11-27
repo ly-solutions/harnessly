@@ -450,7 +450,7 @@ func New(o Options) (*Hub, error) {
 		Bell: func(ctx context.Context, machineID, to, key, title, text, link string) {
 			h.Notices.Ring(ctx, machineID, to, key, title, text, link)
 		}, Shared: !cfg.Store.Off, Kits: kitAccess(cfg, db, o),
-		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: closedUnrecorded,
+		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: closedUnrecorded, TrustedProxies: cfg.TrustedProxies,
 		Opens: (&machaccess.Checker{Config: cfg, DB: db, Authz: h.Spaces.Authz, IsAdmin: h.Auth.IsInstanceAdmin, Log: log,
 			Switches: h.Switches, Now: o.Now}).Opens,
 		HomeOn: func(ctx context.Context, email, machineID string) bool {
@@ -479,7 +479,18 @@ func New(o Options) (*Hub, error) {
 		h.Bus = eventbus.New(db, log, o.Now)
 		h.Bus.Retention = cfg.EventBusRetention
 	}
+	// Who may give a machine tasks, as the proxy decides it: a member of its space the access list lets that far.
+	operates := &machaccess.Checker{Config: cfg, DB: db, Authz: h.Spaces.Authz, IsAdmin: h.Auth.IsInstanceAdmin, Log: log, Switches: h.Switches, Now: o.Now}
 	h.Automations = automations.New(automations.Deps{Config: cfg, DB: db, Auth: h.Auth, Log: log, Now: o.Now, Links: h.Registry, Gate: h.Switches, Bus: h.Bus,
+		Operates: func(ctx context.Context, userID string, m store.Machine) bool {
+			if m.SpaceID == "" {
+				return false
+			}
+			if _, err := h.Spaces.Access(ctx, userID, m.SpaceID); err != nil {
+				return false
+			}
+			return operates.Check(ctx, userID, m) == nil
+		},
 		Bell: func(ctx context.Context, userID, email, icon, key, title, text, link string) bool {
 			return h.Notices.RingAs(ctx, userID, email, icon, key, title, text, link)
 		}})

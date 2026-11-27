@@ -130,7 +130,7 @@ func deleteSpaceDataLeavesNoRow(t *testing.T, db *DB, schema Schema) {
 	must(s.CreateSpace(ctx, gone))
 	userish := map[string]bool{"user_id": true, "created_by": true, "owner_id": true, "actor_id": true, "granted_by": true, "set_by": true,
 		"updated_by": true, "decided_by": true, "author_id": true, "addressee_id": true, "person_id": true, "created_by_id": true,
-		"connected_by": true, "delivered_by": true, "owner_user_id": true}
+		"connected_by": true, "keys_by": true, "delivered_by": true, "owner_user_id": true}
 	var named func(table string, c Column) (any, bool)
 	refs := map[string]string{"machine_id": "machines-id", "team_id": "teams-id", "invite_id": "invites-id", "site_id": "sites-id",
 		"thread_id": "doc_threads-id", "comment_id": "doc_comments-id", "account_id": "accounts-id", "rule_id": "automation_rules-id",

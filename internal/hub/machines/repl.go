@@ -3,6 +3,7 @@ package machines
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"sync"
 
@@ -42,6 +43,8 @@ var replEvents = []string{
 	hubproto.EventDesign, hubproto.EventAutomationResult,
 }
 
+var errNoPerson = errors.New("the machine's keys may not write its owner's history")
+
 // replHandlers are the kinds the hub takes as batches from this link; nil for an agent that does not send batches.
 func (s *Service) replHandlers(l *link.Link, m store.Machine, features []string) map[string]repl.Handler {
 	if !slices.Contains(features, hubproto.FeatureRepl) {
@@ -54,12 +57,28 @@ func (s *Service) replHandlers(l *link.Link, m store.Machine, features []string)
 			return nil
 		}
 	}
-	if hb, ok := s.history.(HistoryBatches); ok && m.CreatedBy != "" && slices.Contains(features, hubproto.FeatureHistory) {
+	if hb, ok := s.history.(HistoryBatches); ok && slices.Contains(features, hubproto.FeatureHistory) && s.db.S().AsPerson(context.Background(), m).CreatedBy != "" {
+		// Asked for every batch: one the machine's keys may not store any more is not acked, so the machine keeps it.
+		person := func(ctx context.Context) (store.Machine, error) {
+			p := s.db.S().AsPerson(ctx, m)
+			if p.CreatedBy == "" {
+				return p, errNoPerson
+			}
+			return p, nil
+		}
 		out[hubproto.ReplHistoryEvents] = func(ctx context.Context, data json.RawMessage) error {
-			return hb.LiveBatch(ctx, m, data)
+			p, err := person(ctx)
+			if err != nil {
+				return err
+			}
+			return hb.LiveBatch(ctx, p, data)
 		}
 		out[hubproto.ReplHistoryBackfill] = func(ctx context.Context, data json.RawMessage) error {
-			return hb.BackfillBatch(ctx, m, data)
+			p, err := person(ctx)
+			if err != nil {
+				return err
+			}
+			return hb.BackfillBatch(ctx, p, data)
 		}
 	}
 	return out

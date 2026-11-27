@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ly-solutions/harnessly/internal/agent"
@@ -527,6 +528,11 @@ func appExtRoutes(d deps, reg *apps.Registry, guests *apps.Guests, version strin
 		}
 		if !readSecretBody(r, &b) || b.ID == "" || len(b.Names) == 0 || len(b.Names) > 32 {
 			bad(w)
+			return
+		}
+		// A chat's agent reaches the secrets of the apps that are on in its chat, as the MCP proxy does.
+		if session, isAgent := d.CLI.AgentOf(r); isAgent && !slices.Contains(reg.GrantedApps(session), b.ID) {
+			secretJSON(w, http.StatusForbidden, map[string]string{"error": "not-on"})
 			return
 		}
 		a, err := reg.Get(b.ID)

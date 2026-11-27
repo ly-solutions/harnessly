@@ -224,6 +224,14 @@ func (s *Store) CountUnder(ctx context.Context, prefix string, limit int) (int, 
 	return s.meta.CountUnder(ctx, prefix, limit)
 }
 
+// WrittenByOthers says whether a revision under an ASCII folder, in any letter case, is by none of the members.
+func (s *Store) WrittenByOthers(ctx context.Context, prefix string, members []string) (bool, error) {
+	if !strings.HasSuffix(prefix, "/") || !SafeRel(strings.TrimSuffix(prefix, "/")) || !isASCII(prefix) {
+		return false, ErrBadRequest
+	}
+	return s.meta.WrittenByOthers(ctx, prefix, members)
+}
+
 func isASCII(v string) bool {
 	for i := 0; i < len(v); i++ {
 		if v[i] >= 0x80 {

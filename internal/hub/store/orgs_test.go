@@ -184,6 +184,11 @@ func exerciseOrgs(t *testing.T, db *DB) {
 // the statements it may run: each of them leaves what the previous binary reads as it was.
 func TestMigrationsAreAdditive(t *testing.T) {
 	moves := map[string]*regexp.Regexp{
+		// Fills the column the migration adds: who a machine handed over before is held by.
+		"0090_machine_keys_by.sql": regexp.MustCompile(`(?is)^UPDATE machines SET keys_by = `),
+		// Fill the tables the migrations create with what the installation had before a stricter rule.
+		"0091_automation_operators.sql": regexp.MustCompile(`(?is)^INSERT INTO automation_operators `),
+		"0092_safe_ref_tenants.sql":     regexp.MustCompile(`(?is)^INSERT INTO safe_ref_tenants `),
 		// Fills the column the migration adds.
 		"0049_resource_space.sql": regexp.MustCompile(`(?is)^UPDATE \w+ SET space_id = `),
 		// Fills the tables the migration creates, and takes the tie to a server off the machines that named a server

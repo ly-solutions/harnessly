@@ -2,13 +2,11 @@ package designaccess
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,10 +16,10 @@ import (
 	"github.com/ly-solutions/harnessly/internal/storerev"
 )
 
-// A guest link reads its project from the hub's store, not from the author's machine: the hub puts the
-// revision into a folder of its own and answers with the runtime's code (internal/hub/designview). The machine is
-// asked only for what the store cannot say: a project the store has nothing of yet (the screen «still loading from the
-// owner's machine»), and a link pinned to a version of git, made before the library moved to the store.
+// HRN-881, HRN-1755. A guest link reads its project from the hub's store and nowhere else: the hub puts the revision
+// into a folder of its own and answers with the runtime's code (internal/hub/designview). The owner's machine is asked
+// only while a link is being made (askMachine in public.go): the apps' checks, and the version of git a hub without a
+// store or a snapshot of the pages pins.
 
 // Viewer is the hub's own read of a project from the store (designview.View).
 type Viewer interface {
@@ -40,47 +38,6 @@ type Viewer interface {
 
 // UseView makes guest links read their projects from the store; it is set once, before the hub serves.
 func (s *Service) UseView(v Viewer) { s.view = v }
-
-// storeRev is the revision the store answers a scope at: the pinned one, or the project's newest; false when the
-// store cannot answer it.
-func (s *Service) storeRev(ctx context.Context, m store.Machine, req hubproto.DesignPublicTokenRequest) (int64, bool, error) {
-	if s.view == nil || m.SpaceID == "" {
-		return 0, false, nil
-	}
-	if req.Rev != "" {
-		n, ok := storerev.Of(req.Rev)
-		return n, ok, nil
-	}
-	head, err := s.view.Head(ctx, m.SpaceID, req.Project)
-	if err != nil {
-		return 0, false, err
-	}
-	return head, head > 0, nil
-}
-
-// fromStore answers what fetch would ask the machine for; done false when the machine has to be asked. Only the
-// owner's side (the link's making) is left to fetch: a guest reads through guestFetch.
-func (s *Service) fromStore(ctx context.Context, machine string, req hubproto.DesignPublicTokenRequest, segs []string, r *http.Request, pass []string) (*http.Response, bool, error) {
-	if s.view == nil {
-		return nil, false, nil
-	}
-	m, err := s.db.S().MachineByID(ctx, machine)
-	if err != nil {
-		return nil, false, nil
-	}
-	if req.Pin {
-		return s.pinFromStore(ctx, m, req, segs)
-	}
-	at, ok, err := s.storeRev(ctx, m, req)
-	if err != nil {
-		s.log.Warn("design: the store did not answer an owner read, the machine is asked", "project", req.Project, "error", err)
-		return nil, false, nil
-	}
-	if !ok {
-		return nil, false, nil
-	}
-	return s.readStore(ctx, m, req, at, segs, r, pass)
-}
 
 // readStore answers a read of the project at a revision of the store.
 func (s *Service) readStore(ctx context.Context, m store.Machine, req hubproto.DesignPublicTokenRequest, at int64, segs []string, r *http.Request, pass []string) (*http.Response, bool, error) {
@@ -150,36 +107,6 @@ func (s *Service) guestFetch(ctx context.Context, g guestReq, segs []string, r *
 		return nil, gLater
 	}
 	return res, nil
-}
-
-// pinFromStore answers the two questions a new link asks: may a link be made (__share) and which version a pinned one
-// holds (__rev, the project's newest revision). The apps' checks that may block a link run on a machine: the owner's
-// is asked when it is there, and a machine that is off lets the link be made, as it always has.
-func (s *Service) pinFromStore(ctx context.Context, m store.Machine, req hubproto.DesignPublicTokenRequest, segs []string) (*http.Response, bool, error) {
-	if len(segs) != 1 || (segs[0] != "__rev" && segs[0] != "__share") {
-		return nil, false, nil
-	}
-	head, ok, err := s.storeRev(ctx, m, hubproto.DesignPublicTokenRequest{Project: req.Project})
-	if err != nil || !ok {
-		return nil, false, nil
-	}
-	if s.reg != nil && s.reg.Get(m.ID) != nil {
-		if res, err := s.machineFetch(ctx, m.ID, req, []string{"__share"}, nil); err == nil {
-			if res.StatusCode == http.StatusConflict {
-				return res, true, nil
-			}
-			res.Body.Close()
-		}
-	}
-	body := []byte(`{"blocked":false}`)
-	if segs[0] == "__rev" {
-		body, _ = json.Marshal(struct {
-			Rev string `json:"rev"`
-		}{storerev.ID(head)})
-	}
-	h := http.Header{}
-	h.Set("Content-Type", "application/json; charset=utf-8")
-	return &http.Response{StatusCode: http.StatusOK, Header: h, ContentLength: int64(len(body)), Body: io.NopCloser(strings.NewReader(string(body)))}, true, nil
 }
 
 // serveToResponse runs a handler and hands its answer over as a response whose body streams while the handler writes.

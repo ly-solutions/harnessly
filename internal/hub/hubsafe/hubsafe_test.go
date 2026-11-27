@@ -99,3 +99,25 @@ func TestBrokerWritesOneValueOfBoundedSize(t *testing.T) {
 		t.Fatalf("unknown op: %v", err)
 	}
 }
+
+// A secret's limits lie beside its value; a machine of before, which writes the value alone, does not take them away.
+func TestBrokerKeepsLimitsBesideTheValue(t *testing.T) {
+	kv := secretstest.New()
+	b := New(kv, "harnessly", nil)
+	ctx := context.Background()
+	write := func(data map[string]string) {
+		t.Helper()
+		if _, _, err := b.Do(ctx, "u1", hubproto.SecretsRequest{Op: hubproto.SecretsWrite, Name: "n", Data: data}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(map[string]string{"value": "v1", secrets.LimitsKey: `{"projects":["a"]}`})
+	write(map[string]string{"value": "v2"})
+	if got := kv.Data["harnessly/users/u1/n"]; got["value"] != "v2" || got[secrets.LimitsKey] != `{"projects":["a"]}` {
+		t.Fatalf("stored %v", got)
+	}
+	write(map[string]string{"value": "v3", secrets.LimitsKey: `{}`})
+	if got := kv.Data["harnessly/users/u1/n"]; got[secrets.LimitsKey] != `{}` {
+		t.Fatalf("stored %v", got)
+	}
+}

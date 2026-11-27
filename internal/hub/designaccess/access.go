@@ -523,7 +523,8 @@ func (s *Service) resourceRoute(r *http.Request, m store.Machine, email, project
 // ---- links without sign-in ----------------------------------------------------------------------------------------
 
 func (t *txn) shareByID(id, linkID string) (shareRow, error) {
-	r, err := scanShare(t.q.QueryRow(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE l.id = ? AND l.machine_id = ? AND l.project_id = ?`, linkID, t.m.ID, id))
+	scope, args := t.linkScope(id, linkID)
+	r, err := scanShare(t.q.QueryRow(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE l.id = ? AND `+scope, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return shareRow{}, fail("not_found", "Ссылка не найдена")
 	}
@@ -534,8 +535,9 @@ func (t *txn) enableShare(id, actor, linkID string) error {
 	if _, err := t.lockProject(id); err != nil {
 		return err
 	}
-	if _, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET revoked_at = NULL WHERE id = ? AND machine_id = ? AND project_id = ? AND revoked_at IS NOT NULL`,
-		linkID, t.m.ID, id); err != nil {
+	scope, args := t.linkScope(id, linkID)
+	if _, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET revoked_at = NULL WHERE id = ? AND `+scope+` AND revoked_at IS NOT NULL`,
+		args...); err != nil {
 		return err
 	}
 	if err := t.enterLink(linkID); err != nil {
@@ -557,8 +559,9 @@ func (t *txn) reissueShare(id, actor, linkID string) (string, error) {
 	if count > 0 {
 		token = "snap-" + token
 	}
-	res, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET token_hash = ?, token_enc = ? WHERE id = ? AND machine_id = ? AND project_id = ? AND revoked_at IS NULL`,
-		store.HashToken(token), nullStr(t.seal.seal(linkID, token)), linkID, t.m.ID, id)
+	scope, args := t.linkScope(id, store.HashToken(token), nullStr(t.seal.seal(linkID, token)), linkID)
+	res, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET token_hash = ?, token_enc = ? WHERE id = ? AND `+scope+` AND revoked_at IS NULL`,
+		args...)
 	if err != nil {
 		return "", err
 	}
@@ -574,7 +577,8 @@ func (t *txn) reissueShare(id, actor, linkID string) (string, error) {
 // shareAddress is the kept token of a link; false when it was never kept or the hub's key changed.
 func (t *txn) shareAddress(id, linkID string) (string, bool, error) {
 	var enc sql.NullString
-	err := t.q.QueryRow(t.ctx, `SELECT token_enc FROM design_share_links WHERE id = ? AND machine_id = ? AND project_id = ?`, linkID, t.m.ID, id).Scan(&enc)
+	scope, args := t.linkScope(id, linkID)
+	err := t.q.QueryRow(t.ctx, `SELECT token_enc FROM design_share_links WHERE id = ? AND `+scope, args...).Scan(&enc)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, fail("not_found", "Ссылка не найдена")
 	}
@@ -698,12 +702,12 @@ func (s *Service) createLink(r *http.Request, m store.Machine, email, project st
 	}
 	if s.staticGuests {
 		if in.Rights != roleView {
-			return nil, 0, fail("bad_request", "Static snapshots are read-only")
+			return nil, 0, fail("bad_request", "Снимок страниц можно только смотреть: комментарии по нему не оставить")
 		}
 		in.Static = true
 		in.Version = "pinned"
 		if in.TTL.none {
-			return nil, 0, fail("bad_request", "An expiry is required")
+			return nil, 0, fail("bad_request", "У снимка страниц должен быть срок: выберите, сколько он будет открываться")
 		}
 	}
 	var pages []staticPage
@@ -751,11 +755,11 @@ func (s *Service) changeLink(r *http.Request, m store.Machine, email, project st
 	if s.staticGuests {
 		for _, key := range []string{"rights", "version", "pages", "options"} {
 			if _, ok := b[key]; ok {
-				return nil, 0, fail("bad_request", "Publish a new snapshot to change its contents")
+				return nil, 0, fail("bad_request", "Снимок не меняется: чтобы показать другое, создайте новый")
 			}
 		}
 		if v, ok := b["ttl"]; ok && v == nil {
-			return nil, 0, fail("bad_request", "An expiry is required")
+			return nil, 0, fail("bad_request", "У снимка страниц должен быть срок: выберите, сколько он будет открываться")
 		}
 	}
 	var c shareChange

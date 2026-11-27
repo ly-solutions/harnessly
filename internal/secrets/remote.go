@@ -197,6 +197,9 @@ func (r *Remote) put(name, value string, asked *Ask) (View, bool, error) {
 		return View{}, false, refuse(ReasonTooLarge, nil)
 	}
 	created := !r.Has(name)
+	if !created {
+		r.syncLimits(name)
+	}
 	if asked != nil && !created {
 		r.mu.Lock()
 		e := r.readLedger().Secrets[name]
@@ -205,10 +208,39 @@ func (r *Remote) put(name, value string, asked *Ask) (View, bool, error) {
 			return View{}, false, refuse(ReasonNotFound, nil)
 		}
 	}
+	// The limits the new value goes with: what the secret already had, and what the card that asked adds.
+	r.mu.Lock()
+	next := View{}
+	if e := r.readLedger().Secrets[name]; e != nil && !created {
+		next = *e
+	}
+	r.mu.Unlock()
+	if asked != nil && created && asked.Project != "" {
+		next.Projects = []string{asked.Project}
+	}
+	if asked != nil && asked.Origin != "" && !slices.Contains(next.Origins, asked.Origin) {
+		next.Origins = append(slices.Clone(next.Origins), asked.Origin)
+	}
 	ctx, cancel := ctxCall()
 	defer cancel()
-	if err := r.KV.Write(ctx, r.path(name), map[string]string{ValueKey: value}); err != nil {
-		return View{}, false, err
+	data := map[string]string{ValueKey: value}
+	if len(next.Projects) == 0 && len(next.Origins) == 0 {
+		// No limits to say: the server keeps what it has (a hub does; a new secret has none).
+		if err := r.KV.Write(ctx, r.path(name), data); err != nil {
+			return View{}, false, err
+		}
+	} else {
+		raw, err := json.Marshal(limits{Projects: next.Projects, Origins: next.Origins})
+		if err != nil {
+			return View{}, false, err
+		}
+		err = r.KV.Write(ctx, r.path(name), map[string]string{ValueKey: value, LimitsKey: string(raw)})
+		if ReasonOf(err) == ReasonEmpty {
+			err = r.KV.Write(ctx, r.path(name), data)
+		}
+		if err != nil {
+			return View{}, false, err
+		}
 	}
 	r.forgetList()
 	r.mu.Lock()
@@ -236,6 +268,7 @@ func (r *Remote) entry(name string) *View {
 	if !ValidName(name) || !r.Has(name) {
 		return nil
 	}
+	r.syncLimits(name)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if e := r.readLedger().Secrets[name]; e != nil {
@@ -246,8 +279,8 @@ func (r *Remote) entry(name string) *View {
 	return &View{Name: name, UsedBy: []Use{}}
 }
 
-// Lookup is the public view of a secret for a project's chat; a foreign one looks absent. Its limits live in the
-// ledger of this machine, beside its dates: the server keeps only the value.
+// Lookup is the public view of a secret for a project's chat; a foreign one looks absent. Its limits lie on the server
+// beside the value (limits.go), their copy in the ledger of this machine.
 func (r *Remote) Lookup(name, project string) (View, error) {
 	e := r.entry(name)
 	if e == nil || !e.Allowed(project) {
@@ -265,7 +298,8 @@ func (r *Remote) Metadata(name string, origins, projects []string) (View, error)
 	if r.entry(name) == nil {
 		return View{}, refuse(ReasonNotFound, nil)
 	}
-	return r.change(name, func(e *View) { e.Origins, e.Projects = sites, scopes }), nil
+	v := r.change(name, func(e *View) { e.Origins, e.Projects = sites, scopes })
+	return v, r.pushLimits(name, v)
 }
 
 // Grant adds a project and a site after a person answered a card.
@@ -294,7 +328,7 @@ func (r *Remote) grant(name, project, origin string, projectGrant bool) error {
 	if e == nil || !projectGrant && !e.Allowed(project) {
 		return refuse(ReasonNotFound, nil)
 	}
-	r.change(name, func(e *View) {
+	v := r.change(name, func(e *View) {
 		if projectGrant && len(e.Projects) > 0 && !slices.Contains(e.Projects, project) {
 			e.Projects = append(e.Projects, project)
 		}
@@ -302,7 +336,7 @@ func (r *Remote) grant(name, project, origin string, projectGrant bool) error {
 			e.Origins = append(e.Origins, origin)
 		}
 	})
-	return nil
+	return r.pushLimits(name, v)
 }
 
 // change edits the ledger's entry of a name and gives it back.
@@ -352,7 +386,7 @@ func valueOf(data map[string]string, key string) (string, bool) {
 	if v, ok := data[key]; ok {
 		return v, v != ""
 	}
-	if key == ValueKey && len(data) == 1 {
+	if _, ours := data[LimitsKey]; key == ValueKey && len(data) == 1 && !ours {
 		for _, v := range data {
 			return v, v != ""
 		}
@@ -360,36 +394,58 @@ func valueOf(data map[string]string, key string) (string, bool) {
 	return "", false
 }
 
-// Reveal reads the values from the server and records the use in the ledger.
+// Reveal reads the values from the server and records the use in the ledger. The limits the server keeps decide; for a
+// secret it keeps none of, the ledger's do, and they go to the server then.
 func (r *Remote) Reveal(names []string, use Use) (map[string]string, error) {
-	out := make(map[string]string, len(names))
-	r.mu.Lock()
-	limits := r.readLedger()
-	r.mu.Unlock()
 	for _, name := range names {
 		if !ValidName(name) {
 			return nil, refuse(ReasonBadName, errors.New(name))
 		}
-		if e := limits.Secrets[name]; e != nil {
-			if !e.Allowed(use.Project) {
-				return nil, refuse(ReasonNotFound, errors.New(name))
-			}
-			if use.Origin != "" && !slices.Contains(e.Origins, use.Origin) {
-				return nil, refuse("origin-denied", nil)
-			}
-		} else if use.Origin != "" {
-			return nil, refuse("origin-denied", nil)
-		}
 	}
+	r.mu.Lock()
+	ledger := r.readLedger()
+	r.mu.Unlock()
+	out := make(map[string]string, len(names))
+	shared := map[string]limits{}
 	ctx, cancel := ctxCall()
 	defer cancel()
 	for _, name := range names {
+		var known *View
+		if e := ledger.Secrets[name]; e != nil {
+			v := *e
+			known = &v
+		}
 		data, err := r.KV.Read(ctx, r.path(name))
 		if err != nil {
+			// What the ledger already refuses is refused the same way while the server is away.
+			if known != nil && !known.Allowed(use.Project) {
+				return nil, refuse(ReasonNotFound, errors.New(name))
+			}
 			if ReasonOf(err) == ReasonNotFound {
 				return nil, refuse(ReasonNotFound, errors.New(name))
 			}
 			return nil, err
+		}
+		l, onServer := limitsOf(data)
+		if onServer {
+			if known == nil {
+				known = &View{Name: name, UsedBy: []Use{}}
+			}
+			l.apply(known)
+			shared[name] = l
+		} else if known != nil && (len(known.Projects) > 0 || len(known.Origins) > 0) {
+			// A failure leaves the limits on this machine, where they are applied below all the same.
+			_ = r.storeLimits(ctx, name, data, *known)
+		}
+		if known != nil {
+			if !known.Allowed(use.Project) {
+				return nil, refuse(ReasonNotFound, errors.New(name))
+			}
+			if use.Origin != "" && !slices.Contains(known.Origins, use.Origin) {
+				return nil, refuse("origin-denied", nil)
+			}
+		} else if use.Origin != "" {
+			return nil, refuse("origin-denied", nil)
 		}
 		v, ok := valueOf(data, ValueKey)
 		if !ok {
@@ -407,6 +463,9 @@ func (r *Remote) Reveal(names []string, use Use) (map[string]string, error) {
 			e = &View{Name: name, UsedBy: []Use{}}
 			led.Secrets[name] = e
 		}
+		if l, ok := shared[name]; ok {
+			l.apply(e)
+		}
 		recordUse(e, use)
 	}
 	r.writeLedger(led)
@@ -423,6 +482,10 @@ func (r *Remote) ReadRef(path, key string) (string, error) {
 	data, err := r.KV.Read(ctx, path)
 	if err != nil {
 		return "", err
+	}
+	// A reference names no project and no site: it does not reach a secret that is limited to some.
+	if l, ok := limitsOf(data); ok && (key == LimitsKey || len(l.Projects) > 0 || len(l.Origins) > 0) {
+		return "", refuse(ReasonDenied, errors.New("this secret is limited to projects or sites: use it by its name"))
 	}
 	v, ok := valueOf(data, key)
 	if !ok {

@@ -40,7 +40,7 @@ func snapshotTerm(b map[string]any, now time.Time) (time.Time, error) {
 		return time.Time{}, fail("bad_request", ttlMessage)
 	}
 	if end.Sub(now) > maxSnapshotTerm {
-		return time.Time{}, fail("bad_request", "A snapshot lives for at most 30 days")
+		return time.Time{}, fail("bad_request", "Снимок живёт не дольше 30 дней: выберите срок короче")
 	}
 	return *end, nil
 }
@@ -160,7 +160,7 @@ func (s *Service) readSnapshot(w http.ResponseWriter, r *http.Request, m store.M
 		if s.reg != nil {
 			if res, err := s.machineFetch(ctx, m.ID, hubproto.DesignPublicTokenRequest{Project: project}, nil, nil); err == nil {
 				res.Body.Close()
-				return fail("live", "The owner machine is online: open the live project")
+				return fail("live", "Машина владельца включена: откройте проект, он свежее снимка")
 			}
 		}
 		meta, err := s.snapshotMeta(ctx, m, project)
@@ -168,7 +168,7 @@ func (s *Service) readSnapshot(w http.ResponseWriter, r *http.Request, m store.M
 			return err
 		}
 		if meta == nil {
-			return fail("no_snapshot", "The owner machine is offline and no snapshot was published")
+			return fail("no_snapshot", "Машина владельца выключена, а снимок проекта никто не публиковал. Попросите владельца включить машину или опубликовать снимок")
 		}
 		h := w.Header()
 		h.Set("Content-Type", "application/json; charset=utf-8")

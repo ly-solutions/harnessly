@@ -54,6 +54,8 @@ export interface OrgMachine {
   ownerName: string | null;
   /** The owner's user id when the hub says it (the card leaves them out of the people a machine is handed to). */
   ownerId?: string | null;
+  /** The machine waits for its owner to accept it: their own data stays off it. `heldBy`: who may still control it. */
+  awaitsOwner?: { heldBy: string | null } | null;
   /** What it is for («сборки и e2e»); null when nobody wrote it. */
   purpose: string | null;
   kind: 'personal' | 'shared';
@@ -271,6 +273,8 @@ export interface MachinesApi {
   removeMachine(id: string): Promise<void>;
   /** `POST /api/machines/{id}/owner`: the owner of the machine's space makes a member of it the machine's own owner. */
   assignMachineOwner(id: string, userId: string, history: OwnerHistory): Promise<MachineDetail>;
+  /** `POST /api/machines/{id}/accept`: the machine's owner accepts it, and it gets their own data from now on. */
+  acceptMachine(id: string): Promise<MachineDetail>;
   /** Where «Открыть» leads: the address of the machine's runtime (`GET /api/machines/{id}/open`). */
   openMachine(id: string): Promise<{ url: string }>;
   /** `POST /api/machines/{id}/trust`: the tenant's owner lets the hub open this machine on its own origin. */

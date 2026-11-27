@@ -28,6 +28,15 @@
   justify-content: space-between;
   padding: 12px 16px 16px;
 }
+/* the refusal of the last action, between the body that scrolls and the foot, so it is always in sight. */
+.hx-acc-err {
+  flex: none;
+  padding: 10px 16px 0;
+  border-top: 1px solid var(--hx-border, transparent);
+}
+.hx-acc-sheet .hx-acc-err {
+  padding: 10px 10px 0;
+}
 .hx-acc-foot__left {
   display: flex;
   align-items: center;

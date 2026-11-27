@@ -64,3 +64,36 @@ func (s *Service) assignOwner(w http.ResponseWriter, r *http.Request, t *tenant.
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"machine": v})
 	return nil
 }
+
+// accept is the owner's yes to the keys a machine holds (docs/hub/machine.md, «Whose keys»): from now on the machine gets
+// their own data, whoever registered those keys. Only the machine's owner says it, signed in as a person: neither a
+// personal token nor a machine's own session reaches this (tenant.Guard), and a page of another origin is refused before
+// (auth.Service.CSRF).
+func (s *Service) accept(w http.ResponseWriter, r *http.Request, t *tenant.Ctx) error {
+	p := t.Person
+	ctx := r.Context()
+	m := *t.Machine
+	if p.Token != nil || m.CreatedBy != p.User.ID {
+		return httpx.New(http.StatusForbidden, "forbidden", "Принять машину может только её владелец")
+	}
+	if m.Holder() != p.User.ID {
+		ok, err := s.db.S().AcceptMachineKeys(ctx, m.ID, p.User.ID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return httpx.Conflict("owner_changed", "Владелец машины сменился: обновите страницу")
+		}
+		m.KeysBy = p.User.ID
+		// The link dials again, and the history copy and the owner's environment start.
+		s.reg.Reconnect(m.ID)
+		s.auth.Audit(ctx, p.User.ID, "machine_keys_accepted", r, m.ID)
+	}
+	v, err := s.View(ctx, m)
+	if err != nil {
+		return err
+	}
+	s.Publish(ctx, m)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"machine": v})
+	return nil
+}

@@ -267,3 +267,7 @@ func TestAPathOfNoOneIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func (f fakeMachines) MachinePerson(context.Context, store.Machine) (store.PersonState, error) {
+	return store.PersonOK, nil
+}

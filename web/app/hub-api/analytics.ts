@@ -387,6 +387,9 @@ export type HubMachine = {
   // empty: everyone in its tenant; level: how far a line opens it (docs/hub/own-work.md, «Levels»), absent: an older hub
   access: { kind: 'user' | 'team'; id: string; label: string; level?: 'view' | 'tasks' }[];
   owner?: PersonRef | null; // whose own machine it is (who connected it or whom it was handed to); absent: an older hub
+  // set while the owner has not accepted the keys the machine holds (their own data stays off it); heldBy: who
+  // registered those keys and may still control it. Absent: an older hub
+  awaitsOwner?: { heldBy: PersonRef | null } | null;
   problems: MachineProblem[];
   opensRuntime?: boolean; // false: the hub only observes the machine and cannot open its runtime (absent: an older hub)
   canSeeDebug?: boolean; // the viewer may read its openings for debugging (GET /api/machines/{id}/debug); absent: an older hub

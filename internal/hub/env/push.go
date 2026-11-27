@@ -379,7 +379,7 @@ func (p *Pusher) pushOne(ctx context.Context, st store.Store, machineID string, 
 	held, ok := p.held[machineID]
 	setup, ex := p.setup[machineID], p.extra[machineID]
 	p.mu.Unlock()
-	items := MachineItems(w, sp.ID, m.TeamID, m.CreatedBy, setup, ex)
+	items := MachineItems(w, sp.ID, m.TeamID, st.AsPerson(ctx, m).CreatedBy, setup, ex)
 	consent := AppsConsentFor(w.org, ex)
 	links := LinksFor(w.org, ex)
 	hash := hubproto.EnvSetHashWith(hubproto.EnvHash(items), consent, links)

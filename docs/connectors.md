@@ -219,7 +219,8 @@ said on the page (the source's error), never the token. Without a token the addr
 **The address and where the body is.** `https://<hub>/api/platform/automations/hook/m/<machine>/<connection>` (with
 `/<secret>` when the secret is in the address): the hub's automation hook, next to `/hook`, not a second receiver of
 its own. The hub keeps nothing of the request and does not know the secret: it checks the shape of the address,
-limits the size (1 MiB, else 413) and the rate (60 a minute per address, 30 at once, else 429), and passes the body
+limits the size (1 MiB, else 413) and the rate (600 a minute from one sender's IP, 300 at once; 60 a minute per
+address of a machine the hub has, 30 at once; else 429), reads nothing for an unknown machine (503), and passes the body
 and the headers the presets read over the machine's link (`connectors.webhook`, served while the machine lets the hub
 reach the runtime for automations). The body lives in the hub's memory for the time of that call only and is never
 logged; the machine away is 503, and the sender tries again. On the machine the runtime checks the proof by the secret
@@ -291,6 +292,42 @@ in one batch (a checkout, a sync) is one event with `change: bulk` and `count`. 
 `… file path=<relative>` — the text (512 KiB at most; `..` and symlinks out of the folder are refused); `… search
 query=<words>` — matching lines as `path:line: text`. All as untrusted data. No action: writing into the folder is the
 agent's ordinary work with files.
+
+## Obsidian (`internal/connectors/obsidian`, plugin `clients/obsidian`)
+
+The vault stays on the person's device (a laptop, a phone, any Obsidian): the harnessly plugin of Obsidian pushes the
+notes the person chose to the machine, through the hub, as a webhook. The Folder connector above is for a vault that
+lives on the machine itself.
+
+**Connect.** Settings → Connections → Files → «Obsidian». The steps show the plugin's archive
+(`<hub>/dl/obsidian/harnessly-obsidian.zip`: a `harnessly/` folder for `<vault>/.obsidian/plugins/`; the hub also
+serves `main.js`, `styles.css`, `manifest.json` there, which the plugin reads to offer its updates), then the pairing
+link `obsidian://harnessly?pair=hly1.…` with its QR code. The code is base64url JSON `{u, s, n, p}`: the connection's
+hook address, its generated key, its name and the plugin address; the plugin takes only https (http for localhost).
+On pairing the person picks «choose what to share» (nothing goes) or «share the whole vault» (all but `#private`).
+
+**What is shared** is decided in Obsidian, per note, in this order: frontmatter `harnessly: true|false`; the «never»
+tags (`private` by default, a tag covers its nested tags); the note's own switch; the «always» tags; the nearest
+folder's switch (the vault root included); otherwise private. The Harnessly panel shows the folder tree with
+three-state switches and counts, the tags and the notes over 512 KiB that are not sent; the file menu, the commands
+and a dot in the file explorer do the same. A note's links go only to notes that are shared too, so a private note's
+name never leaves the vault.
+
+**The wire.** `POST` to the hook with `X-Signature-256: sha256=<hex HMAC-SHA256 of the body>` and the JSON `{v: 1, id,
+at, vault, device, plugin, upsert: [{path, text, mtime, ctime, title, tags, links}], delete: [paths], manifest: {sync,
+part, parts, paths}}`. A wrong signature is 401, a batch more than 10 minutes off or repeated by `id` is refused.
+Bodies stay under the hub's 1 MiB and its 60 requests a minute. A full sync (on start, on a change of the rules, on
+«Sync now») ends with the manifest — every shared path, in parts of 4000 — and the machine drops what is not in it:
+a note made private is gone from the machine at the next send. Paths are relative `.md`/`.canvas`, without `..`.
+
+**Events.** Only after the first full manifest (the first sync teaches, it does not flood): `note.created`,
+`note.changed` (`change: modified|removed`, one per note in 15 minutes) and `note.task` for a new open task with a
+date (`- [ ] … 📅 2026-12-01` or `due:: …`), facts `path`, `folder`, `vault`, `tags`; more than 100 in one batch is one
+`change: bulk` event with `count`.
+
+**Reads**, all untrusted data: `notes [folder=] [tag=] [limit=100]` (newest first), `note path=` (with links and
+backlinks among shared notes), `search query=`, `tags`, `links path=`, `changes [since=24h] [limit=]`. No action:
+the agent does not write into the vault.
 
 ## The page
 

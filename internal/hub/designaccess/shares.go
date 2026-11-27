@@ -212,11 +212,21 @@ func jsonOrNil(v any, isNil bool) any {
 	return string(raw)
 }
 
-// makerMayShare is the one rule behind a live link.
+// makerMayShare is the one rule behind a live link: its maker may share the project now, and an account of theirs is
+// switched on and in the project's space. The project's rows may still name a person who has left as its owner
+// An address the hub has no account of is a maker brought over from the gateway who has not signed in yet:
+// accounts are never deleted, so nobody who left looks like that.
 func (t *txn) makerMayShare(projectID, createdBy string) (bool, error) {
 	p, err := t.getProject(projectID, false)
 	if err != nil || p == nil {
 		return false, err
+	}
+	maker, err := t.w.person(createdBy)
+	if err != nil {
+		return false, err
+	}
+	if maker.user != "" && (maker.off || !t.w.mayOpen(createdBy)) {
+		return false, nil
 	}
 	f, err := t.fold(*p, createdBy)
 	return f.CanManage, err
@@ -237,8 +247,9 @@ func (t *txn) listShares(id string) ([]map[string]any, error) {
 }
 
 func (t *txn) shareRows(id string) ([]shareRow, error) {
-	rows, err := t.q.Query(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE l.machine_id = ? AND l.project_id = ? AND (l.revoked_at IS NULL OR l.revoked_at > ?)
-		ORDER BY l.created_at DESC, l.id`, t.m.ID, id, ms(t.now.Add(-revokedShown)))
+	scope, args := t.linkScope(id)
+	rows, err := t.q.Query(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE `+scope+` AND (l.revoked_at IS NULL OR l.revoked_at > ?)
+		ORDER BY l.created_at DESC, l.id`, append(args, ms(t.now.Add(-revokedShown)))...)
 	if err != nil {
 		return nil, err
 	}
@@ -323,8 +334,9 @@ func (t *txn) createShare(id, actor string, in shareInput) (shareRow, string, er
 // shareState is what the API decides on before it changes a live link.
 func (t *txn) shareState(id, linkID string) (createdBy, version, rev string, err error) {
 	var r sql.NullString
-	err = t.q.QueryRow(t.ctx, `SELECT created_by, version, rev FROM design_share_links WHERE id = ? AND machine_id = ? AND project_id = ? AND revoked_at IS NULL`,
-		linkID, t.m.ID, id).Scan(&createdBy, &version, &r)
+	scope, args := t.linkScope(id, linkID)
+	err = t.q.QueryRow(t.ctx, `SELECT created_by, version, rev FROM design_share_links WHERE id = ? AND `+scope+` AND revoked_at IS NULL`,
+		args...).Scan(&createdBy, &version, &r)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", "", fail("not_found", "Ссылка не найдена или уже отозвана")
 	}
@@ -394,9 +406,9 @@ func (t *txn) updateShare(id, actor, linkID string, c shareChange) (shareRow, er
 			details["view"] = "changed"
 		}
 	}
+	scope, one := t.linkScope(id, linkID)
 	if len(sets) > 0 {
-		args = append(args, linkID, t.m.ID, id)
-		res, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET `+strings.Join(sets, ", ")+` WHERE id = ? AND machine_id = ? AND project_id = ? AND revoked_at IS NULL`, args...)
+		res, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET `+strings.Join(sets, ", ")+` WHERE id = ? AND `+scope+` AND revoked_at IS NULL`, append(args, one...)...)
 		if err != nil {
 			return shareRow{}, err
 		}
@@ -407,7 +419,7 @@ func (t *txn) updateShare(id, actor, linkID string, c shareChange) (shareRow, er
 			return shareRow{}, err
 		}
 	}
-	r, err := scanShare(t.q.QueryRow(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE l.id = ? AND l.machine_id = ? AND l.project_id = ? AND l.revoked_at IS NULL`, linkID, t.m.ID, id))
+	r, err := scanShare(t.q.QueryRow(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE l.id = ? AND `+scope+` AND l.revoked_at IS NULL`, one...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return shareRow{}, fail("not_found", "Ссылка не найдена или уже отозвана")
 	}
@@ -421,7 +433,8 @@ func (t *txn) revokeShare(id, actor, linkID string) error {
 	if _, err := t.lockProject(id); err != nil {
 		return err
 	}
-	res, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET revoked_at = ? WHERE id = ? AND machine_id = ? AND project_id = ? AND revoked_at IS NULL`, ms(t.now), linkID, t.m.ID, id)
+	scope, args := t.linkScope(id, ms(t.now), linkID)
+	res, err := t.q.Exec(t.ctx, `UPDATE design_share_links SET revoked_at = ? WHERE id = ? AND `+scope+` AND revoked_at IS NULL`, args...)
 	if err != nil {
 		return err
 	}
@@ -470,9 +483,10 @@ func scanComment(row interface{ Scan(...any) error }) (guestComment, error) {
 
 // listGuestComments: everything guests left under any link of the project, newest first.
 func (t *txn) listGuestComments(id string) ([]guestComment, error) {
+	scope, args := t.linkScope(id)
 	rows, err := t.q.Query(t.ctx, `SELECT c.id, c.link_id, l.title, c.board, c.x, c.y, c.text, c.guest_name, c.anchor, c.created_at
 		FROM design_guest_comments c JOIN design_share_links l ON l.id = c.link_id
-		WHERE l.machine_id = ? AND l.project_id = ? ORDER BY c.id DESC LIMIT ?`, t.m.ID, id, commentLimit)
+		WHERE `+scope+` ORDER BY c.id DESC LIMIT ?`, append(args, commentLimit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -810,7 +824,8 @@ func (t *txn) recordSeen(l *shareTarget, in map[string]any) (bool, error) {
 // shareViews is the owner's «who looked and how long» of one link.
 func (t *txn) shareViews(id, linkID string) (map[string]any, error) {
 	var view sql.NullString
-	err := t.q.QueryRow(t.ctx, `SELECT view FROM design_share_links WHERE id = ? AND machine_id = ? AND project_id = ?`, linkID, t.m.ID, id).Scan(&view)
+	scope, args := t.linkScope(id, linkID)
+	err := t.q.QueryRow(t.ctx, `SELECT view FROM design_share_links WHERE id = ? AND `+scope, args...).Scan(&view)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail("not_found", "Ссылка не найдена")
 	}

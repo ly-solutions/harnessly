@@ -118,6 +118,7 @@ type Gate struct {
 	proxy  *httputil.ReverseProxy
 	slices *Slices
 	routes []Route
+	checks []func(http.ResponseWriter, *http.Request) (*http.Request, bool)
 
 	countMu sync.Mutex
 	counts  map[string]*pathCount
@@ -218,7 +219,20 @@ func (f *Gate) SetFallback(h http.Handler) { f.fallback = h }
 // Add appends routes; call before serving.
 func (f *Gate) Add(routes ...Route) { f.routes = append(f.routes, routes...) }
 
+// Protect runs check before any route: it returns the request to go on with (it may carry more in its context), or
+// false after answering it itself.
+func (f *Gate) Protect(check func(http.ResponseWriter, *http.Request) (*http.Request, bool)) {
+	f.checks = append(f.checks, check)
+}
+
 func (f *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, check := range f.checks {
+		next, ok := check(w, r)
+		if !ok {
+			return
+		}
+		r = next
+	}
 	f.withCLIHint(w, r, func(w http.ResponseWriter, r *http.Request) {
 		f.serve(w, r)
 	})

@@ -26,7 +26,7 @@ import '../styles/machines.css';
 const MEMBER_LEAD = 'Открыть — перейти в рантайм машины';
 
 const Screen = () => {
-  const { scope, shell } = useOrg();
+  const { api, scope, shell } = useOrg();
   const url = useDrawerUrl();
   const list = useMachineList();
   const add = useAddUrl(readAdd(useLocation().search));
@@ -66,6 +66,20 @@ const Screen = () => {
     </div>
   ) : null;
 
+  // A member has no machine card: a machine handed to them is accepted from their list.
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+  const accept = async (id: string) => {
+    setAcceptError(null);
+    try {
+      await api.acceptMachine(id);
+      list.refresh();
+      return true;
+    } catch (e) {
+      setAcceptError(orgErrorText(e));
+      return false;
+    }
+  };
+
   const content = () => {
     if (adding) {
       return (
@@ -88,7 +102,14 @@ const Screen = () => {
     }
     if (!data) return member ? <MemberSkeleton /> : <ListSkeleton />;
     const onAdd = () => add.open();
-    if (member) return <MemberView list={data} onAdd={canAdd ? onAdd : undefined} />;
+    if (member) {
+      return (
+        <>
+          {acceptError && <ErrorRow text={acceptError} onRetry={() => setAcceptError(null)} />}
+          <MemberView list={data} onAdd={canAdd ? onAdd : undefined} onAccept={accept} />
+        </>
+      );
+    }
     return org ? (
       <OrgView list={data} onOpen={url.open} onAdd={onAdd} />
     ) : (

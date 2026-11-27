@@ -83,13 +83,27 @@ func (b *Broker) Do(ctx context.Context, ownerID string, req hubproto.SecretsReq
 			return nil, data, err
 		case hubproto.SecretsWrite:
 			v, ok := req.Data[secrets.ValueKey]
-			if !ok || len(req.Data) != 1 {
+			limits, limited := req.Data[secrets.LimitsKey]
+			// One value, and for a secret of the person's list the limits that go with it.
+			if !ok || len(req.Data) != 1 && !(limited && len(req.Data) == 2 && secrets.ValidName(req.Name)) {
 				return nil, nil, refuse(secrets.ReasonEmpty, "write keeps one value")
 			}
-			if len(v) > secrets.MaxValue {
+			if len(v) > secrets.MaxValue || len(limits) > secrets.MaxLimits {
 				return nil, nil, refuse(secrets.ReasonTooLarge, "the value is too large")
 			}
-			return nil, nil, b.KV.Write(ctx, path, map[string]string{secrets.ValueKey: v})
+			keep := map[string]string{secrets.ValueKey: v}
+			if !limited && secrets.ValidName(req.Name) {
+				// A machine of before writes the value alone: the limits others set stay.
+				old, err := b.KV.Read(ctx, path)
+				if err != nil && secrets.ReasonOf(err) != secrets.ReasonNotFound {
+					return nil, nil, err
+				}
+				limits, limited = old[secrets.LimitsKey]
+			}
+			if limited {
+				keep[secrets.LimitsKey] = limits
+			}
+			return nil, nil, b.KV.Write(ctx, path, keep)
 		default:
 			return nil, nil, b.KV.Delete(ctx, path)
 		}
@@ -102,6 +116,13 @@ func (b *Broker) Do(ctx context.Context, ownerID string, req hubproto.SecretsReq
 		return nil, data, err
 	}
 	return nil, nil, refuse(secrets.ReasonFailed, "unknown operation")
+}
+
+// For is the broker as one tenant's machines see it: references only under refs.
+func (b *Broker) For(refs []string) *Broker {
+	c := *b
+	c.RefPrefixes = refs
+	return &c
 }
 
 // RefAllowed says whether a machine may read path as a reference: a valid path under one of RefPrefixes and outside the

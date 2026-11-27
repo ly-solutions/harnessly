@@ -11,6 +11,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/config"
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
 	"github.com/ly-solutions/harnessly/internal/hub/link"
+	"github.com/ly-solutions/harnessly/internal/hub/store"
 	"github.com/ly-solutions/harnessly/internal/hub/store/storetest"
 )
 
@@ -43,6 +44,15 @@ type movingClock struct{ at time.Time }
 func dispatcher(t *testing.T) (*Service, *fakeLinks, *movingClock) {
 	t.Helper()
 	db := storetest.Open(t)
+	u := &store.User{ID: "u1", Email: "u1@example.com"}
+	if err := db.S().CreateUser(context.Background(), u); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"m1", "m-on", "m-off", "m-gone"} {
+		if err := db.S().CreateMachine(context.Background(), &store.Machine{ID: id, Name: id, KeyPub: "k-" + id, CreatedBy: "u1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	links := &fakeLinks{online: map[string]bool{}}
 	clock := &movingClock{at: noon()}
 	s := New(Deps{Config: &config.Config{Automations: true, AutomationsSecret: "s3cret", AutomationsTokenEnv: "HARNESS_AUTOMATION_RESULT_TOKEN"}, DB: db, Links: links, Now: func() time.Time { return clock.at }})
@@ -238,9 +248,6 @@ func TestStartNamesTheTokenVariableFromTheConfig(t *testing.T) {
 func TestRoutineRunPrefersItsOwnMachine(t *testing.T) {
 	s, links, _ := dispatcher(t)
 	ctx := context.Background()
-	if _, err := s.db.Exec(ctx, `INSERT OR IGNORE INTO users (id, email, created_at) VALUES ('u1', 'u1@example.com', 1)`); err != nil {
-		t.Fatal(err)
-	}
 	for i, id := range []string{"m-old", "m-mine"} {
 		if _, err := s.db.Exec(ctx, `INSERT INTO machines (id, name, hostname, os, arch, unix_user, profile, via, key_pub, enc_pub, agent_version, created_at, info, created_by)
 			VALUES (?, ?, 'h', '', '', '', '', '', ?, ?, '', ?, '', 'u1')`, id, id, "k"+id, "e"+id, i+1); err != nil {
@@ -258,5 +265,75 @@ func TestRoutineRunPrefersItsOwnMachine(t *testing.T) {
 	}
 	if got, err := s.machineFor(ctx, Rule{OwnerID: "u1"}); err != nil || got != "m-old" {
 		t.Fatalf("no preference: %q %v", got, err)
+	}
+}
+
+// A rule never starts a chat on a machine that is not its owner's any more, was handed to them and not registered
+// again, or while the owner's account is off.
+func TestRunStaysOffAMachineThatIsNotTheOwnersToUse(t *testing.T) {
+	ctx := context.Background()
+	for name, change := range map[string]func(s *Service) error{
+		"handed to somebody else": func(s *Service) error { return s.db.S().SetMachineOwner(ctx, "m1", "u2") },
+		"handed away and back by an administrator's keys": func(s *Service) error {
+			if _, err := s.db.Exec(ctx, `UPDATE machines SET created_by = 'u2' WHERE id = 'm1'`); err != nil {
+				return err
+			}
+			return s.db.S().SetMachineOwner(ctx, "m1", "u1")
+		},
+		"the owner switched off": func(s *Service) error { _, err := s.db.S().DisableUser(ctx, "u1", noon()); return err },
+	} {
+		for _, named := range []string{"m1", ""} {
+			s, links, _ := dispatcher(t)
+			if err := s.db.S().CreateUser(ctx, &store.User{ID: "u2", Email: "u2@example.com"}); err != nil {
+				t.Fatal(err)
+			}
+			id := queued(t, s, "a", named, "f1")
+			if err := change(s); err != nil {
+				t.Fatal(err)
+			}
+			links.online["m1"] = true
+			if s.Dispatch(ctx) {
+				t.Errorf("%s (rule machine %q): a chat was started", name, named)
+			}
+			if r := statusOf(t, s, id); r.Status != StatusQueued {
+				t.Errorf("%s (rule machine %q): %s", name, named, r.Status)
+			}
+		}
+	}
+}
+
+// A rule that names a machine handed to somebody else goes on running there while its owner may still give that machine
+// tasks, and stops when they may not. Their own machine that waits for them is not run this way, nor is any machine for
+// an account that is off.
+func TestNamedMachineOfAnotherPersonRunsOnlyWithAccess(t *testing.T) {
+	ctx := context.Background()
+	for name, c := range map[string]struct {
+		owner       string
+		access, off bool
+		starts      bool
+	}{
+		"access kept":                {owner: "u2", access: true, starts: true},
+		"no access":                  {owner: "u2"},
+		"their own, not accepted":    {owner: "u1", access: true},
+		"access, account turned off": {owner: "u2", access: true, off: true},
+	} {
+		s, links, _ := dispatcher(t)
+		s.operates = func(_ context.Context, userID string, m store.Machine) bool { return c.access && userID == "u1" }
+		if err := s.db.S().CreateUser(ctx, &store.User{ID: "u2", Email: "u2@example.com"}); err != nil {
+			t.Fatal(err)
+		}
+		id := queued(t, s, "a", "m1", "f1")
+		if _, err := s.db.Exec(ctx, `UPDATE machines SET created_by = ?, keys_by = 'u3' WHERE id = 'm1'`, c.owner); err != nil {
+			t.Fatal(err)
+		}
+		if c.off {
+			if _, err := s.db.S().DisableUser(ctx, "u1", noon()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		links.online["m1"] = true
+		if got := s.Dispatch(ctx); got != c.starts {
+			t.Errorf("%s: started %v, want %v (%s)", name, got, c.starts, statusOf(t, s, id).Status)
+		}
 	}
 }

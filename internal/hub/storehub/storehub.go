@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +43,7 @@ const machineCache = 30 * time.Second
 type Machines interface {
 	MachineByID(ctx context.Context, id string) (store.Machine, error)
 	SpaceBySlug(ctx context.Context, slug string) (store.Space, error)
+	MachinePerson(ctx context.Context, m store.Machine) (store.PersonState, error)
 }
 
 // Admit checks a machine's signed request for a session (link.Dialer.AdmitStore).
@@ -385,6 +387,15 @@ func (s *Store) authorize(r *http.Request, coll string) (filestore.Access, error
 		return filestore.Access{}, err
 	}
 	acc := filestore.Access{Member: memberName(m), Holder: m.ID, Room: s.Room(m.SpaceID, coll)}
+	switch coll {
+	case filestore.KindUploads, filestore.KindFiles, filestore.KindHandoff:
+		// Read by the whole space as before; a path is changed or removed only by the person whose machine wrote it.
+		wrote := s.writers(r.Context(), m, acc.Room)
+		acc.Writes = func(p string) bool {
+			free, own := wrote.path(p)
+			return free || own
+		}
+	}
 	if coll == filestore.KindProfile {
 		room, err := s.ProfileRoom(r.Context(), m.CreatedBy)
 		if err != nil {
@@ -463,6 +474,12 @@ func (s *Store) sessionMachine(r *http.Request) (store.Machine, error) {
 	if m.RevokedAt != nil || m.DisabledAt != nil || m.SpaceID != spaceID {
 		return store.Machine{}, filestore.ErrUnauthorized
 	}
+	// The person's rooms and grants only while the machine's keys may act for them (store.MachinePerson).
+	if st, err := s.db.MachinePerson(r.Context(), m); err != nil {
+		return store.Machine{}, err
+	} else if st != store.PersonOK {
+		m.CreatedBy = ""
+	}
 	return m, nil
 }
 
@@ -494,18 +511,28 @@ func PersonName(userID string) string {
 //   - storage/<app>/user/<person>.json, a person's user area: only their machines;
 //   - storage/<app>/chat/<person>.<chat>.json, a chat's area: only the machines of the person whose chat it is;
 //   - storage/<app>/doc/<project>.json, a document's area: as the design project (seen by who may see it, written by
-//     who may edit it); any other name (a project the hub has no row for, a guest link's area) is the space's;
+//     who may edit it);
+//   - storage/<app>/doc/guest-<id>.json, a guest link's area: the machines of the person whose link it is (or who wrote
+//     it last), and anyone may start one;
+//   - any other document (a project the hub has no row for) is the space's, or with closed unrecorded projects its
+//     writer's;
 //   - storage/<app>/space/area.json: the space's;
 //   - team/state.json and team/archives/<app>/<version>.tgz, the team's apps: read by the space, written only by the
 //     machines of the space's owners;
 //   - guests/<person>/<hash>.json, a person's guest links: only their machines; bundles/<app>/<sum>.tgz, the packages
-//     the links show: the space's;
+//     the links show: the space's; a package is put under its own sum and never replaced or removed;
 //
 // and nothing else is written there. An area is no larger than its scope's limit.
 type appsRules struct {
 	person string
 	view   map[string]Grant
 	owner  bool
+	// closed: a document the hub has no row for is not the space's (HUB_DESIGN_UNRECORDED=closed).
+	closed bool
+	// wrote tells who wrote a path (writers.path), linked whether a guest link of the person bears an id; nil: guest
+	// areas and unrecorded documents are the space's.
+	wrote  func(p string) (free, own bool)
+	linked func(id string) bool
 }
 
 func (a appsRules) sees(p string) bool { return a.may(p, false) }
@@ -538,11 +565,10 @@ func (a appsRules) may(p string, write bool) bool {
 	case appstore.ScopeSpace:
 		return name == "area"
 	case appstore.ScopeDoc:
-		// A guest link's area (guest-<id>) is no project the hub has a row for, so it is the space's; a name that
-		// is a recorded project's goes as the project whatever it looks like.
+		// A name that is a recorded project's goes as the project whatever it looks like.
 		g, known := a.view[name]
 		if !known {
-			return true
+			return a.unrecorded(p, name, write)
 		}
 		if write {
 			return g.Edit
@@ -550,6 +576,19 @@ func (a appsRules) may(p string, write bool) bool {
 		return g.See
 	}
 	return false
+}
+
+// unrecorded rules a document's area the hub has no project row for.
+func (a appsRules) unrecorded(p, name string, write bool) bool {
+	id, guest := strings.CutPrefix(name, "guest-")
+	if a.wrote == nil || !guest && !a.closed {
+		return true
+	}
+	free, own := a.wrote(p)
+	if own || free && write {
+		return true
+	}
+	return guest && a.linked != nil && a.linked(id)
 }
 
 func hex64(v string) bool {
@@ -569,6 +608,11 @@ func hex64(v string) bool {
 // area reads at most appstore.MaxAreaBytes of it, so such an area is refused when read, not served.
 func (a appsRules) admits(req filestore.CommitRequest) error {
 	parts := strings.Split(req.Path, "/")
+	// A package is named by the sum of its archive: only those bytes go under the name, and they stay (a link of
+	// anyone's may show them).
+	if parts[0] == "bundles" && (req.Deleted || req.Sha+".tgz" != parts[len(parts)-1]) {
+		return fmt.Errorf("%s holds the package of that sum and is not removed", req.Path)
+	}
 	if req.Deleted || parts[0] != "storage" || len(parts) != 4 {
 		return nil
 	}
@@ -584,8 +628,10 @@ type roles interface {
 }
 
 func (s *Store) appsFilter(ctx context.Context, m store.Machine, acc *filestore.Access) error {
-	rules := appsRules{person: PersonName(m.CreatedBy)}
+	rules := appsRules{person: PersonName(m.CreatedBy), wrote: s.writers(ctx, m, acc.Room).path,
+		linked: s.guestLinks(ctx, acc.Room, PersonName(m.CreatedBy))}
 	if s.design != nil {
+		rules.closed = s.design.ClosedUnrecorded()
 		view, _, err := s.view(ctx, m)
 		if err != nil {
 			return err
@@ -603,12 +649,61 @@ func (s *Store) appsFilter(ctx context.Context, m store.Machine, acc *filestore.
 	return nil
 }
 
+// guestLinks says whether a guest link the person's machines have put into the room bears an id, a link that ended too:
+// its area stays its maker's. The links are read once per request, when first asked.
+func (s *Store) guestLinks(ctx context.Context, room, person string) func(id string) bool {
+	var once sync.Once
+	ids := map[string]bool{}
+	return func(id string) bool {
+		once.Do(func() {
+			if person == "" {
+				return
+			}
+			rs, err := s.srv.Room(ctx, room)
+			if err != nil {
+				s.log.Warn("store: guest links not read", "room", room, "err", err)
+				return
+			}
+			revs, err := rs.HistoryUnder(ctx, "guests/"+person+"/", maxGuestRevisions)
+			if err != nil {
+				s.log.Warn("store: guest links not read", "room", room, "err", err)
+				return
+			}
+			read := map[string]bool{}
+			for _, e := range revs {
+				if e.Deleted || read[e.Sha] {
+					continue
+				}
+				read[e.Sha] = true
+				rc, err := rs.OpenBlob(ctx, e.Sha)
+				if err != nil {
+					continue
+				}
+				var doc struct {
+					Link struct {
+						ID string `json:"id"`
+					} `json:"link"`
+				}
+				if json.NewDecoder(io.LimitReader(rc, 64<<10)).Decode(&doc) == nil && doc.Link.ID != "" {
+					ids[doc.Link.ID] = true
+				}
+				rc.Close()
+			}
+		})
+		return ids[id]
+	}
+}
+
+// maxGuestRevisions bounds how many of a person's newest guest link revisions are looked through.
+const maxGuestRevisions = 500
+
 // filter limits a machine to the design projects its person has a role in: the files of another person's
 // project never reach a machine that has nothing to do with it, and a write to a project the person may not edit is
 // refused. A person's shelf (.folders/) reaches only the machines it concerns (shelves.go). Any other path outside a
 // project folder is refused, not open (GitHub #188). Projects the hub has no row for are open;
 // with closed unrecorded projects (GitHub #83) the files of a project without a row reach no machine, but a machine may
-// still write into its folder: that is how a new project starts, its owner file records it.
+// still write into a folder holding only what its person's machines wrote: that is how a new project starts,
+// its owner file records it.
 func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Access) error {
 	view, scope, err := s.view(ctx, m)
 	if err != nil {
@@ -619,6 +714,16 @@ func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Acce
 		return err
 	}
 	closed := s.design.ClosedUnrecorded()
+	wrote := s.writers(ctx, m, acc.Room)
+	// takes says whether the machine may write a path of a project the hub has no row for. Closed: while the
+	// folder holds only what the person's machines wrote (a new project is such a folder), or the path is a file of theirs.
+	takes := func(id, p string) bool {
+		if !closed || wrote.folder(id) {
+			return true
+		}
+		_, own := wrote.path(p)
+		return own
+	}
 	acc.Scope = scope + shelfScope
 	acc.Sees = func(p string) bool {
 		if inShelves(p) {
@@ -651,13 +756,27 @@ func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Acce
 		}
 		g, known := view[id]
 		if !known {
-			return true
+			return takes(id, p)
 		}
 		// Who owns a recorded project is the hub's word; its owner file changes only with the owner.
 		if strings.EqualFold(p, id+"/"+filestore.OwnerFile) {
 			return g.Own
 		}
 		return g.Edit
+	}
+	// A lease's key names a project: "<project>/<board>", "ask/<project>/<board>" (a person who sees the project asks
+	// its holder to let go) or "task:pdf/<project>" (work one machine does for all).
+	acc.Leases = func(key string) filestore.LeaseRight {
+		id, ask, ok := leaseProject(key)
+		if !ok {
+			return filestore.LeaseRight{}
+		}
+		g, known := view[id]
+		if !known {
+			own := !closed || wrote.folder(id)
+			return filestore.LeaseRight{See: own, Take: own, Force: own}
+		}
+		return filestore.LeaseRight{See: g.See, Take: g.Edit || ask && g.See, Force: g.Edit}
 	}
 	room := acc.Room
 	acc.Committed = func(ctx context.Context, e filestore.Entry) {
@@ -672,6 +791,16 @@ func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Acce
 		s.record(ctx, m, room, id, e.Sha)
 	}
 	return nil
+}
+
+// leaseProject is the project a design lease's key is about, and whether the lease is an ask to its holder.
+func leaseProject(key string) (id string, ask, ok bool) {
+	if rest, found := strings.CutPrefix(key, "task:pdf/"); found {
+		return rest, false, projectIDRe.MatchString(rest)
+	}
+	rest, ask := strings.CutPrefix(key, "ask/")
+	id, board, ok := strings.Cut(rest, "/")
+	return id, ask, ok && board != "" && projectIDRe.MatchString(id)
 }
 
 // record makes the hub's row for a project whose owner file just reached the store, and forgets the space's views so

@@ -309,6 +309,16 @@ func TestViewLevelReadsAndWritesNothing(t *testing.T) {
 	if r := watcher.Do("POST", "/m/"+f.id+"/headers", map[string]any{}); r.Code != 403 || r.Err() != "view_only" {
 		t.Errorf("a watcher writes: %s", r)
 	}
+	// What hands over files of the machine is closed to a watcher, whatever runtime the machine runs.
+	for _, path := range []string{"/api/v2/conversations/tab-_home/download?path=/x", "/agents/api/v2/file-bytes?path=/x",
+		"/api/platform/file-preview?path=/x", "/api/v2/conversations/tab-1/notebook", "/api/fs/download?root=home"} {
+		if r := watcher.Do("GET", "/m/"+f.id+path, nil); r.Code != 403 || r.Err() != "view_only" {
+			t.Errorf("a watcher reads %s: %s", path, r)
+		}
+		if r := f.owner.Do("GET", "/m/"+f.id+path, nil); r.Code == 403 {
+			t.Errorf("the owner is refused %s: %s", path, r)
+		}
+	}
 	if r := other.Do("GET", "/m/"+f.id+"/headers", nil); r.Code != 403 {
 		t.Errorf("a person not listed: %s", r)
 	}
@@ -342,12 +352,12 @@ func TestViewLevelReadsAndWritesNothing(t *testing.T) {
 	if m := read(); m != "hello" {
 		t.Errorf("first message: %q", m)
 	}
-	for _, m := range []string{`{"type":"timeline:resume"}`, `not json`, `{"type":"timeline:subscribe","sessionId":"s"}`} {
+	for _, m := range []string{`{"type":"timeline:resume"}`, `not json`, `{"type":"timeline:resume","sessionId":"s","Type":"ping"}`, `{"type":"timeline:subscribe","sessionId":"s"}`} {
 		if err := c.Write(ctx, websocket.MessageText, []byte(m)); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
-	if m := read(); m != `got:{"type":"timeline:subscribe","sessionId":"s"}` {
+	if m := read(); m != `got:{"sessionId":"s","type":"timeline:subscribe"}` {
 		t.Errorf("the runtime heard from a watcher: %q", m)
 	}
 }

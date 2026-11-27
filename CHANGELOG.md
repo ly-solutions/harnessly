@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- A machine's keys reach its owner's own data (safe, memory, history, routines and automation runs, app tokens, Claude
+  profile and the person's rooms of the store) only while the owner has accepted them and their account is on
+ . A machine handed to another member from now on waits until the new owner presses «Принять машину» on the
+  machines screen, or registers it again with their own code (`--re-register`). Machines handed over before the upgrade
+  keep working. Leaving a space also revokes the machines whose keys the leaver still holds.
+- An automation rule starts chats only on its owner's own accepted machine, or on a named machine of somebody else that
+  they may still give tasks, and not while the owner's account is off.
+- `vault:` references of the hub's safe are per organization: `HUB_SECRETS_ORG_REF_PREFIXES`. Organizations and spaces
+  that exist at the upgrade keep `HUB_SECRETS_REF_PREFIXES`; organizations made later need an entry.
+- The shared `/hook` of automations and merging or closing merge requests with the hub's token are for operators:
+  administrators, everybody who had a rule at the upgrade, and `HUB_AUTOMATIONS_OPERATORS`.
+
 ### Added
 
 - «Что нового» as slides: one card per feature, leafed to the right by a swipe, the arrows or the arrow keys,

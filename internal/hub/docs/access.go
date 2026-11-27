@@ -82,6 +82,7 @@ func (s *Service) aclRoute(w http.ResponseWriter, r *http.Request, p *auth.Princ
 	}
 	author := ""
 	info := resaccess.Info{}
+	c := s.circleOf(p)
 	if m != nil {
 		info = resaccess.Info{Owner: m.OwnerEmail, OwnerName: m.OwnerName}
 	} else {
@@ -93,7 +94,7 @@ func (s *Service) aclRoute(w http.ResponseWriter, r *http.Request, p *auth.Princ
 			return errNoDoc
 		}
 		if board {
-			info.Owner, info.OwnerName = s.unrecordedBoardOwner(r.Context(), slug, author, p)
+			info.Owner, info.OwnerName = s.unrecordedBoardOwner(r.Context(), slug, author, c)
 		}
 	}
 	rest := []string{}
@@ -109,7 +110,7 @@ func (s *Service) aclRoute(w http.ResponseWriter, r *http.Request, p *auth.Princ
 			return err
 		}
 	}
-	s.access.Serve(w, r, s.actorOf(r.Context(), m, author, p, nil), refOf(slug, m), rest, info, func(v any) (string, error) {
+	s.access.Serve(w, r, s.actorOf(r.Context(), m, author, p, c), refOf(slug, m), rest, info, func(v any) (string, error) {
 		if v == nil {
 			return "", nil
 		}
@@ -336,19 +337,17 @@ func (s *Service) unrecorded(ctx context.Context, slug string) (found, board boo
 }
 
 // unrecordedBoardOwner is who owns a board the hub keeps no record of: the owner of the machine whose agent drew it,
-// or the person asking when the boards service names them its author (it names the person it signed in, by name or
-// address). Anybody else sees the board's access and owns nothing of it.
-func (s *Service) unrecordedBoardOwner(ctx context.Context, slug, author string, p *auth.Principal) (string, string) {
+// or the person asking when the author the boards service names is an address they have proved. A display name is free
+// text anybody sets for themselves, so it owns nothing. Anybody else sees the board's access and owns
+// nothing of it.
+func (s *Service) unrecordedBoardOwner(ctx context.Context, slug, author string, c *circle) (string, string) {
 	if b, err := s.boardBinding(ctx, slug); err == nil && b != nil {
 		if u, ok := s.boardOwner(ctx, b.Owner); ok {
 			return u.Email, displayName(u)
 		}
 	}
-	if p == nil || author == "" {
+	if c.p == nil || author == "" || !c.hasProved(ctx, author) {
 		return "", ""
 	}
-	if strings.EqualFold(author, p.User.Email) || author == displayName(p.User) {
-		return p.User.Email, displayName(p.User)
-	}
-	return "", ""
+	return c.p.User.Email, displayName(c.p.User)
 }

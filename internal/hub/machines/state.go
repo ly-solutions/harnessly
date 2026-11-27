@@ -61,7 +61,7 @@ func (s *Service) bulkLost(l *link.Link, m store.Machine) {
 	}
 	if r, ok := s.history.(interface{ Resync(store.Machine) }); ok && !l.Closed() {
 		s.log.Info("history frames were dropped, telling the agent where the copy stands", "machine", m.ID)
-		r.Resync(m)
+		r.Resync(s.db.S().AsPerson(context.Background(), m))
 	}
 }
 
@@ -225,7 +225,7 @@ func (s *Service) connected(l *link.Link, m store.Machine) {
 		s.design.Connected(m, hello.Features)
 	}
 	if s.history != nil {
-		s.history.Connected(m, hello.Features)
+		s.history.Connected(st.AsPerson(ctx, m), hello.Features)
 	}
 	if !probesFresh(m, m.AgentVersion, s.now()) {
 		_, perr := s.RunPreflight(ctx, m)
@@ -333,16 +333,19 @@ func (s *Service) dispatch(ctx context.Context, l *link.Link, m store.Machine, e
 	case hubproto.EventProjects:
 		var e struct{ Projects hubproto.ProjectsEvent }
 		if s.projects != nil && json.Unmarshal(ev.Raw, &e) == nil {
-			safego.Go("machines projects", func() { s.projects.Event(m, e.Projects) })
+			p := s.db.S().AsPerson(ctx, m)
+			safego.Go("machines projects", func() { s.projects.Event(p, e.Projects) })
 		}
 	case hubproto.EventDesign:
 		var e struct{ Design hubproto.DesignEvent }
 		if s.design != nil && json.Unmarshal(ev.Raw, &e) == nil {
-			safego.Go("machines Event", func() { s.design.Event(m, e.Design) })
+			// In the link's own turn: a project's «created» and «deleted» must be taken in the order the machine sent them.
+			// They are rare (a daily limit), so the link's other events wait a few queries at most.
+			s.design.Event(s.db.S().AsPerson(ctx, m), e.Design)
 		}
 	case hubproto.EventDocPublish, hubproto.EventDocACL, hubproto.EventDocBound, hubproto.EventDocReply:
 		if s.docs != nil {
-			s.docs.Event(l, m, ev)
+			s.docs.Event(l, s.db.S().AsPerson(ctx, m), ev)
 		}
 	case hubproto.EventEnvPropose:
 		if s.proposals != nil {
@@ -377,7 +380,7 @@ func (s *Service) dispatch(ctx context.Context, l *link.Link, m store.Machine, e
 			safego.Go("machines env.own", func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 				defer cancel()
-				res := s.proposals.Own(ctx, m, raw)
+				res := s.proposals.Own(ctx, s.db.S().AsPerson(ctx, m), raw)
 				if res.RequestID == "" {
 					return
 				}
@@ -388,26 +391,26 @@ func (s *Service) dispatch(ctx context.Context, l *link.Link, m store.Machine, e
 		}
 	case hubproto.EventAutomationResult, hubproto.EventAutomationEvent:
 		if s.automations != nil {
-			s.automations.Event(m, ev)
+			s.automations.Event(s.db.S().AsPerson(ctx, m), ev)
 		}
 	case hubproto.EventHistoryEvents:
 		if s.history != nil {
-			s.history.Live(ctx, m, ev.Raw)
+			s.history.Live(ctx, s.db.S().AsPerson(ctx, m), ev.Raw)
 		}
 	case hubproto.EventHistoryBackfill:
 		if s.history != nil {
-			s.history.Backfill(ctx, m, ev.Raw)
+			s.history.Backfill(ctx, s.db.S().AsPerson(ctx, m), ev.Raw)
 		}
 	case hubproto.EventReplBatch:
 		s.replBatch(ctx, l, ev)
 	case hubproto.EventNoticeSlot:
 		if s.slot != nil {
 			// In order, on the link's own reader: a newer list must not be overtaken by an older one.
-			s.slot.Slot(ctx, m, ev.Raw)
+			s.slot.Slot(ctx, s.db.S().AsPerson(ctx, m), ev.Raw)
 		}
 	case hubproto.EventChatWork:
 		if w, ok := s.history.(workSink); ok && s.history != nil {
-			w.Work(ctx, m, ev.Raw)
+			w.Work(ctx, s.db.S().AsPerson(ctx, m), ev.Raw)
 		}
 	case hubproto.EventUsageAvailable:
 		if s.usage != nil {

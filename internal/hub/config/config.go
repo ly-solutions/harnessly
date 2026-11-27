@@ -231,6 +231,9 @@ type Config struct {
 	SafeVault       *vaultkv.Config
 	SafePrefix      string
 	SafeRefPrefixes []string
+	// SafeOrgRefPrefixes are the folders of one tenant, by its key (an organization's id, "space:<id>" for a space
+	// outside any), and "*" those of every tenant (HUB_SECRETS_ORG_REF_PREFIXES).
+	SafeOrgRefPrefixes map[string][]string
 	// AppToken is the platform's token for apps' backends (docs/build-apps/10-auth.md).
 	AppToken AppToken
 	// Warnings are what the hub starts with although its operator should look at it again: the binary logs each at
@@ -302,6 +305,10 @@ type Config struct {
 	AutomationsGitLabURL   string
 	AutomationsGitLabToken string
 	AutomationsMRProjects  []string
+	// AutomationsOperators (HUB_AUTOMATIONS_OPERATORS, lower-cased addresses) are the people who, besides the instance
+	// administrators, act for the deployment: their rules take the events of the shared /hook, and their decision merges
+	// or closes a merge request with the hub's GitLab token. An address counts once its holder has proved it.
+	AutomationsOperators []string
 	// Quotas are the ceilings on what one person or one space may create.
 	Quotas Quotas
 	// ResourceAccess (HUB_RESOURCE_ACCESS=on) puts access to documents on the shared model of access to a resource
@@ -981,6 +988,11 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 			c.AutomationsMRProjects = append(c.AutomationsMRProjects, p)
 		}
 	}
+	for _, e := range strings.Split(get("HUB_AUTOMATIONS_OPERATORS"), ",") {
+		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+			c.AutomationsOperators = append(c.AutomationsOperators, e)
+		}
+	}
 	for _, u := range []struct{ name, v string }{{"HUB_AUTOMATIONS_NOTIFY_URL", c.AutomationsNotifyURL}, {"HUB_AUTOMATIONS_GITLAB_URL", c.AutomationsGitLabURL}} {
 		if u.v != "" && !strings.HasPrefix(u.v, "http://") && !strings.HasPrefix(u.v, "https://") {
 			bad("%s must be an http(s) address", u.name)
@@ -1567,6 +1579,21 @@ func (c *Config) loadSafe(lookup func(string) (string, bool), bad func(string, .
 		bad("HUB_SECRETS_VAULT_PREFIX must be a path like harnessly")
 	}
 	c.SafeRefPrefixes = vaultkv.SplitPrefixes(plain("HUB_SECRETS_REF_PREFIXES"))
+	for _, entry := range strings.Split(plain("HUB_SECRETS_ORG_REF_PREFIXES"), ";") {
+		if entry = strings.TrimSpace(entry); entry == "" {
+			continue
+		}
+		key, list, found := strings.Cut(entry, "=")
+		key, prefixes := strings.TrimSpace(key), vaultkv.SplitPrefixes(list)
+		if !found || key == "" || len(prefixes) == 0 {
+			bad("HUB_SECRETS_ORG_REF_PREFIXES must be <organization id>=<folder>,<folder> entries separated by ';' (\"*\" for every organization)")
+			continue
+		}
+		if c.SafeOrgRefPrefixes == nil {
+			c.SafeOrgRefPrefixes = map[string][]string{}
+		}
+		c.SafeOrgRefPrefixes[key] = append(c.SafeOrgRefPrefixes[key], prefixes...)
+	}
 }
 
 // loadDesignAccess reads HUB_DESIGN_DEFAULT_TEAM_LEVEL, HUB_DESIGN_UNRECORDED and HUB_DESIGN_REGISTER.

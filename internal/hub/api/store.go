@@ -38,6 +38,9 @@ func (h *Hub) newStore(o Options) error {
 		return err
 	}
 	h.Store = st
+	if h.Design != nil {
+		h.Design.UseFolders(st)
+	}
 	return nil
 }
 

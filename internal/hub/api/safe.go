@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/ly-solutions/harnessly/internal/hub/features"
 	"github.com/ly-solutions/harnessly/internal/hub/httpx"
@@ -59,7 +60,15 @@ func (h *Hub) agentSecrets(w http.ResponseWriter, r *http.Request) error {
 	if secrets.ValidSysName(req.Name) && !h.sysRecordOn(ctx, req.Name, m.CreatedBy, m.ID) {
 		return safeError(&secrets.Refusal{Reason: secrets.ReasonDenied})
 	}
-	names, data, err := h.Safe.Do(ctx, m.CreatedBy, req)
+	broker := h.Safe
+	if req.Op == hubproto.SecretsRef {
+		refs, err := h.refPrefixes(ctx, sp)
+		if err != nil {
+			return err
+		}
+		broker = broker.For(refs)
+	}
+	names, data, err := broker.Do(ctx, m.CreatedBy, req)
 	if action, ok := safeAudit[req.Op]; ok {
 		target := req.Name
 		if req.Op == hubproto.SecretsRef {
@@ -113,6 +122,39 @@ func (h *Hub) sysRecordOn(ctx context.Context, name, ownerID, machineID string) 
 		return false
 	}
 	return h.Switches.On(ctx, feature, u.Email, machineID)
+}
+
+// refPrefixes are the folders the machines of a tenant may read as references: its own list and the one for every tenant
+// (HUB_SECRETS_ORG_REF_PREFIXES), and HUB_SECRETS_REF_PREFIXES for the tenants it can mean. That list names no
+// organization. Every organization and every space outside any that was there before the folders became per organization
+// keeps it (store.SafeRefTenant). Besides them: a space outside any organization has it while the hub has one
+// organization at most; an organization has it only on an installation that had no tenant then, as the only or the oldest.
+func (h *Hub) refPrefixes(ctx context.Context, sp store.Space) ([]string, error) {
+	key := sp.OrgID
+	if key == "" {
+		key = "space:" + sp.ID
+	}
+	refs := slices.Concat(h.cfg.SafeOrgRefPrefixes["*"], h.cfg.SafeOrgRefPrefixes[key])
+	st := h.db.S()
+	keys := []string{"space:" + sp.ID}
+	if sp.OrgID != "" {
+		keys = append(keys, sp.OrgID)
+	}
+	shared, upgraded, err := st.SafeRefTenant(ctx, keys...)
+	if err != nil {
+		return nil, err
+	}
+	if !shared && (sp.OrgID == "" || !upgraded) {
+		orgs, err := st.AllOrgs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		shared = len(orgs) <= 1 || sp.OrgID == orgs[0].ID
+	}
+	if shared {
+		refs = append(refs, h.Safe.RefPrefixes...)
+	}
+	return refs, nil
 }
 
 // safeError is the answer to a refusal, its reason as the code (the agent turns it back into the same refusal).

@@ -694,6 +694,16 @@ export const machineSignals = (groups: readonly MachineGroup[], now: number): Ma
   const out: MachineSignal[] = [];
   for (const m of groups.flatMap((g) => g.machines)) {
     const who = m.kind === 'personal' && m.ownerName ? `Владелец — ${m.ownerName}. ` : '';
+    if (m.awaitsOwner && m.mine) {
+      out.push({
+        id: `accept-${m.id}`,
+        machineId: m.id,
+        tone: 'warn',
+        title: `${m.name} ждёт, когда вы её примете`,
+        detail: 'Ваши личные данные на неё пока не приходят.',
+        action: 'Принять машину',
+      });
+    }
     if (m.state === 'disabled') {
       out.push({
         id: `off-${m.id}`,

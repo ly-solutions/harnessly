@@ -46,6 +46,7 @@ import (
 	_ "github.com/ly-solutions/harnessly/internal/connectors/folder"
 	_ "github.com/ly-solutions/harnessly/internal/connectors/imap"
 	"github.com/ly-solutions/harnessly/internal/connectors/mcprecipe"
+	_ "github.com/ly-solutions/harnessly/internal/connectors/obsidian"
 	_ "github.com/ly-solutions/harnessly/internal/connectors/rss"
 	"github.com/ly-solutions/harnessly/internal/connectors/rules"
 	"github.com/ly-solutions/harnessly/internal/connectors/telegram"

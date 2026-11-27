@@ -803,6 +803,18 @@
         }
       ]
     },
+    "automation_operators": {
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "text",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "user_id"
+      ]
+    },
     "automation_rules": {
       "columns": [
         {
@@ -5708,6 +5720,10 @@
         {
           "name": "connected_by",
           "type": "text"
+        },
+        {
+          "name": "keys_by",
+          "type": "text"
         }
       ],
       "primaryKey": [
@@ -7442,6 +7458,18 @@
         "feature",
         "person_email",
         "machine_id"
+      ]
+    },
+    "safe_ref_tenants": {
+      "columns": [
+        {
+          "name": "tenant",
+          "type": "text",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "tenant"
       ]
     },
     "schema_migrations": {

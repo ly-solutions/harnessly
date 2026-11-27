@@ -9,6 +9,7 @@ import TtlPicker, { STEPS } from '@/next/features/designly/access/ttl-picker';
 import { useAction } from '@/next/features/designly/access/use-action';
 import type { IStoreSnapshot } from '@/next/features/designly/api';
 import { t } from '@/next/i18n';
+import ActionError from './action-error';
 
 interface IProps {
   project: string;
@@ -100,11 +101,7 @@ const AccessSnapshot = ({ project, pages = [] }: IProps) => {
           </button>
         )}
       </div>
-      {action.error && (
-        <p className="hx-acc-note" role="alert">
-          {action.error}
-        </p>
-      )}
+      <ActionError message={action.error} className="hx-acc-note" />
     </section>
   );
 };
