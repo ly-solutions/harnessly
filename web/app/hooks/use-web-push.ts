@@ -1,7 +1,7 @@
 // Browser push for agents that finished or wait for an answer: the subscription state, turning it on and off
 // (the runtime keeps subscriptions: /api/push/*), and the events the page raises when a push arrives or is clicked.
 import { create } from 'zustand';
-import { appFetch, prefixAppPath } from '@/lib/app-path';
+import { appFetch, currentMachineId, prefixAppPath } from '@/lib/app-path';
 import { getDeviceId, isMobileDevice } from '@/lib/push-device';
 import { t } from '@/lib/i18n';
 
@@ -28,6 +28,7 @@ const standalone = () =>
   window.matchMedia?.('(display-mode: standalone)').matches ||
   (navigator as Navigator & { standalone?: boolean }).standalone === true;
 const iosBrowser = () => /iPhone|iPad|iPod/.test(navigator.userAgent) && !standalone();
+const android = () => /Android/i.test(navigator.userAgent);
 
 const STEP_TIMEOUT_MS = 15_000;
 
@@ -93,7 +94,13 @@ const saveSubscription = async (sub: PushSubscription): Promise<boolean> => {
   const res = await appFetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ subscription: sub.toJSON(), deviceId: getDeviceId(), mobile: isMobileDevice() }),
+    // machine: the hub drops ?machine= on its way; the runtime keeps it for the buttons of its notifications.
+    body: JSON.stringify({
+      subscription: sub.toJSON(),
+      deviceId: getDeviceId(),
+      mobile: isMobileDevice(),
+      machine: currentMachineId(),
+    }),
   });
   return res.ok;
 };
@@ -153,6 +160,28 @@ export const syncSubscription = async (): Promise<void> => {
   await saveSubscription(sub);
 };
 
+/**
+ * A subscribe() that answered after its timeout is not lost: on Android it can take longer than the tap's
+ * wait (Google's push service slow behind a VPN, a phone waking its radio). It is kept, sent to the runtime, and the
+ * state turns on as if the tap had waited for it.
+ */
+export const adoptLateSubscription = (pending: Promise<PushSubscription>): Promise<boolean> =>
+  pending
+    .then(async (sub) => {
+      const saved = await saveSubscription(sub);
+      reportFailure(
+        'subscribe-late',
+        new Error(
+          saved
+            ? 'subscribe answered after the timeout: kept'
+            : 'subscribe answered after the timeout: the runtime refused it',
+        ),
+      );
+      await refreshPushState();
+      return saved;
+    })
+    .catch(() => false);
+
 /** The failure happens on the phone, where nothing else is logged: the runtime log gets the reason. */
 const reportFailure = (step: string, error: unknown) => {
   const { name, message } = error instanceof Error ? error : { name: 'Unknown', message: String(error) };
@@ -172,6 +201,10 @@ const reportFailure = (step: string, error: unknown) => {
 };
 
 const describeFailure = (step: string, error: unknown): string => {
+  // On Android a subscribe() that hangs is Google's push service (FCM) not answering: no Google services on the
+  // phone, FCM blocked by a VPN or the network, or the app installed by a browser other than Chrome.
+  if (error instanceof PushStepError && error.step === 'subscribe' && android())
+    return t('hooks.useWebPush.subscribeHangsAndroid');
   if (error instanceof PushStepError) return error.message;
   const { name, message } = error instanceof Error ? error : { name: '', message: String(error) };
   if (name === 'NotAllowedError') return t('hooks.useWebPush.notAllowed', { reason: message || name });
@@ -179,12 +212,20 @@ const describeFailure = (step: string, error: unknown): string => {
   return `${step}: ${name ? `${name} - ` : ''}${message}`;
 };
 
+export interface IEnableResult {
+  state: TPushState;
+  error?: string;
+  /** Push may not work on this device at all: the person is pointed at the Telegram bot instead. */
+  telegram?: boolean;
+}
+
 /** Must run straight from a tap, and `subscribe()` must be the first thing it waits for. */
-export const enablePush = async (): Promise<{ state: TPushState; error?: string }> => {
+export const enablePush = async (): Promise<IEnableResult> => {
   if (!supported()) return { state: await refreshPushState() };
   const ready = prepared;
   usePushStore.setState({ busy: true });
   let step = 'prepare';
+  let pending: Promise<PushSubscription> | null = null;
   try {
     if (!ready) {
       await preparePush();
@@ -192,11 +233,8 @@ export const enablePush = async (): Promise<{ state: TPushState; error?: string 
     }
     step = 'subscribe';
     // The permission prompt belongs to subscribe(): asking separately would spend the tap on a separate wait.
-    const sub = await withTimeout(
-      ready.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: ready.key }),
-      step,
-      t('hooks.useWebPush.subscribeHangs'),
-    );
+    pending = ready.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: ready.key });
+    const sub = await withTimeout(pending, step, t('hooks.useWebPush.subscribeHangs'));
     step = 'register';
     if (!(await withTimeout(saveSubscription(sub), step, t('hooks.useWebPush.registerHangs'))))
       throw new PushStepError(step, t('hooks.useWebPush.subscribeFailed', { status: 'rejected' }));
@@ -209,8 +247,11 @@ export const enablePush = async (): Promise<{ state: TPushState; error?: string 
         .catch(() => {});
     }
     reportFailure(error instanceof PushStepError ? error.step : step, error);
+    const late = error instanceof PushStepError && error.step === 'subscribe' && pending !== null;
+    if (late) void adoptLateSubscription(pending as Promise<PushSubscription>);
     const state = await refreshPushState();
-    return { state, error: state === 'denied' ? undefined : describeFailure(step, error) };
+    if (state === 'denied') return { state };
+    return { state, error: describeFailure(step, error), ...(late && android() ? { telegram: true } : {}) };
   } finally {
     usePushStore.setState({ busy: false });
   }

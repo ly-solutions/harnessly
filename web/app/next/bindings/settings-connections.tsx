@@ -1,7 +1,7 @@
 // Settings → Connections on the machine the person has open: the list read when the page opens, every change taken
 // only from the machine's answer (a refused one leaves the list as it was). Its MCP servers are a part of their own
 // under it, read on their own: a machine without them still shows its trackers and wikis.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { pageText } from '@/next/bindings/outcome';
 import {
   checkConnection,
@@ -32,6 +32,7 @@ import {
   type TConnectorOutcome,
 } from '@/next/features/connectors/api';
 import ConnectorsSection from '@/next/features/connectors/connectors-section';
+import DevTracePanel from '@/next/features/devmode/trace-panel';
 import {
   addMcp,
   addOwnService,
@@ -45,9 +46,12 @@ import {
   setMcpEnv,
   setMcpHeader,
   startMcpSignIn,
+  syncMcp,
   type IMcpList,
   type IMcpServer,
 } from '@/next/features/connections/mcp-api';
+import { triggerApi } from '@/next/features/connections/triggers-api';
+import { appConfig } from '@/platform/config';
 import { mcpReasonText, needsPerson, withServer } from '@/next/features/connections/mcp-model';
 import McpSection, { type TSignInStart } from '@/next/features/connections/mcp-section';
 import { reasonText, withConn, withPrimary } from '@/next/features/connections/model';
@@ -180,6 +184,13 @@ const McpPart = ({ machine, item }: { machine: MachineId; item: string | null })
       }}
       onSignIn={signIn}
       onRefresh={refresh}
+      triggers={(server) => triggerApi(machine, server.id, appConfig().hubLink)}
+      onRescan={async () => {
+        const got = mcpOutcome(await syncMcp(machine));
+        if ('error' in got) return got.error;
+        await refresh();
+        return null;
+      }}
       onDescribe={(id, description) => replaced(describeOwnService(machine, id, description))}
       onHeader={(id, header) => replaced(setMcpHeader(machine, id, header))}
       onEnv={(id, env) => replaced(setMcpEnv(machine, id, env))}
@@ -291,29 +302,37 @@ const ConnectorsPart = ({ machine }: { machine: MachineId }) => {
     return null;
   };
 
+  const traceConns = useMemo(
+    () => (state.k === 'ready' ? state.list.connections.map((c) => ({ id: c.id, name: c.name })) : []),
+    [state],
+  );
+
   if (state.k === 'absent') return null;
   return (
-    <ConnectorsSection
-      ruled={state.k === 'ready' ? state.list.ruled : undefined}
-      onRules={loadRules}
-      onSetRule={setRule}
-      catalog={state.k === 'ready' ? state.list.catalog : null}
-      connections={state.k === 'ready' ? state.list.connections : null}
-      failed={state.k === 'failed' ? { reason: state.text, onRetry: retry } : null}
-      onConnect={(input) => replaced(connectConnector(machine, input))}
-      onDiscover={async (input) => {
-        const got = connectorOutcome(await discoverConnector(machine, input));
-        return 'error' in got ? got.error : got.value;
-      }}
-      onCheck={(id) => replaced(checkConnector(machine, id))}
-      onReissue={(id) => replaced(reissueConnector(machine, id))}
-      onRemove={async (id) => {
-        const got = connectorOutcome(await removeConnector(machine, id));
-        if ('error' in got) return got.error;
-        change((all) => all.filter((c) => c.id !== id));
-        return null;
-      }}
-    />
+    <>
+      <ConnectorsSection
+        ruled={state.k === 'ready' ? state.list.ruled : undefined}
+        onRules={loadRules}
+        onSetRule={setRule}
+        catalog={state.k === 'ready' ? state.list.catalog : null}
+        connections={state.k === 'ready' ? state.list.connections : null}
+        failed={state.k === 'failed' ? { reason: state.text, onRetry: retry } : null}
+        onConnect={(input) => replaced(connectConnector(machine, input))}
+        onDiscover={async (input) => {
+          const got = connectorOutcome(await discoverConnector(machine, input));
+          return 'error' in got ? got.error : got.value;
+        }}
+        onCheck={(id) => replaced(checkConnector(machine, id))}
+        onReissue={(id) => replaced(reissueConnector(machine, id))}
+        onRemove={async (id) => {
+          const got = connectorOutcome(await removeConnector(machine, id));
+          if ('error' in got) return got.error;
+          change((all) => all.filter((c) => c.id !== id));
+          return null;
+        }}
+      />
+      <DevTracePanel machine={machine} conns={traceConns} />
+    </>
   );
 };
 

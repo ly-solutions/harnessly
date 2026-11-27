@@ -261,16 +261,74 @@ the loop.
 
 - **Connect.** Settings → Connections → Feeds → «MCP recipe»: the MCP server (a choice of the connected ones) and
   the recipe. The check is a dry run: the tool is called once and the form shows how many things it found and the
-  first one — what the events will look like.
+  first one — what the events will look like. The usual way now is the trigger form below, or trigger_add.
 - **Only reads.** A tool the server marks destructive never runs; one it does not mark read-only is refused unless
   the person allows it in the form.
 - **The answer** is the tool's `structuredContent`, else its first text content read as JSON; paths are dotted
   (`data.items`, `items.0.id`); a time is RFC 3339 or Unix seconds or milliseconds. `{{cursor}}` in a string argument
-  is the greatest value of the field `cursor` seen so far ("" on the first poll).
+  is the greatest value of the field `cursor` seen so far; an argument that is `"{{cursor}}"` alone is left out on the
+  first poll, and `"{{cursor:number}}"` passes it as a number (Mattermost's `since` in milliseconds). The list may be an
+  object of id → thing (Mattermost's `posts`): its values are the things. `filter` ({path: text}) keeps only things
+  whose field contains the text; `mode` (digest, notify, agent) is the trigger's mode the first time the hub sees it
+  (the fact `mode`, read by the hub and not journaled); `via` calls a tool behind a gateway server (below).
 - **Events.** `feed.item`, one per thing not seen before, its id `<trigger>:<thing's id>`, the facts `trigger` and
   `server`. The first poll gives none: it learns what is there, so connecting a service does not pour its past into
   the digest. Every `every` (1m–24h, 10m by default). They go to the hub's journal and the inbox (`feed`) like any
   connector's, and each recipe is a trigger of its own in the catalog (`/events` → «Триггеры»).
+
+### Recipe v2
+
+- **`watch`** (up to 8 dotted paths): a change of one of them on a thing already seen is an event `item.changed`, its
+  facts `changed` (the fields) and `<field>: "was → now"` — a generation's `status: "running → done"`. The memo keeps a
+  hash of each watched value; a short status-like value (letters, digits, `_ . : / -`, at most 32) is kept beside its
+  hash to say «was», a longer one only as its hash («… → now»).
+- **`facts`** (up to 8 paths): put into every event's facts, values clipped at 120 characters, for rules to filter by.
+- **`next`** `{path, arg}`: the next page's cursor in the answer and the argument (or query parameter) it goes in; at
+  most 5 pages a poll. More pages than that: a warning in the trace and on the connection (`warning`, shown in the
+  list), and the rest is read at the next poll — nothing is lost silently. The warning goes away when a poll reads all.
+- **Times** in the cursor compare as times (RFC 3339 of any precision and zone, `2006-01-02 15:04:05`, a date), not as
+  text; numbers as numbers.
+- **An API source**: `path` (and `query`) instead of `tool` — the recipe's connection is an API (transport `api`), the
+  runtime makes a GET to it with the person's keys (`mcpconn.Service.CallAPI`); `{{cursor}}` in the path or a query
+  value is the cursor. Only GET: a recipe never writes.
+- **`script`**: a JavaScript function `(answer, memo) => ({items, memo})` that reshapes each answer when paths are not
+  enough; `items` are then the things (mapped by `id`, `at`, … as usual) and `memo` comes back at the next poll. It runs
+  in `internal/scriptbox`: node under Landlock and seccomp (no sockets, nothing writable, only system and node folders
+  readable, empty environment, `--max-old-space-size=32`, killed after 5 s), the script in a fresh vm context without
+  require, process, timers, fetch or code from strings, with a 200 ms timeout. The runtime makes every call to the
+  service; the script only transforms. A machine without node or Landlock refuses a recipe with a script.
+- **Versions**: `version` counts a trigger's recipes. A change goes through the person: the trigger form, or
+  `trigger_add` with `replace: <connection id>`, whose card says «version N → N+1» and how the script changed (its
+  sha256), and keeps the trigger's cursor and memo (`connectors.Service.Reconfigure`).
+
+### Which tools can be a trigger
+
+- **Classifier, no model** (`internal/mcpconn/triggers.go`): each tool gets a score and its reasons. For: `readOnlyHint`;
+  a name that lists (`list_`, `search_`) or is about what is new (`updates`, `history`, `recent`, `feed`, `unread`…);
+  an argument `since`/`updated_after`/`after`/`cursor` (the best one takes the cursor) or `page`/`limit`; an output
+  schema that is a list of things with an id and a time. Against, and excluded: `destructiveHint`; a name whose verb
+  changes something (`create`, `send`, `post_`, `delete`, `update`, `generate`, `upload`, `edit`, …). A person's name of
+  what it catches comes from the tool's name and description («Новые сообщения в канале»). The reasons go to the
+  developer mode's trace (`mcp:<slug>`, part `classify`).
+- **Gateways** (one MCP server in front of many, with `list_tools` / `call_tool`): unfolded through the list tool;
+  the candidate is the tool behind it, and its recipe has `via` — the call tool and its argument names. The guard
+  judges the tool behind the gateway by what the list says of it, never the call tool.
+- **Draft**: one call of the tool, only when asked, and its answer's shape guesses `items`, `id`
+  (`id`/`uuid`…), `at` (`created_at`/`create_at`/`ts`/`time`…), `title` (`message`/`title`/`name`/`text`…), `actor`
+  (`user_id`/`author`…), `url` (`permalink`/`url`…), `thread`, and the cursor.
+- **Routes** (the page's session): `GET <platform>/mcp/<id>/triggers` → candidates; `POST …/triggers/draft` → a draft
+  recipe and the newest things; `POST …/triggers/try` → the newest things as they will be events; `POST …/triggers` →
+  the trigger made, a connection of `mcp-recipe` (`cmd/runtime/routes_mcp_triggers.go`).
+- **The page**: on an MCP connection in Settings → Connections, chips «Может быть триггером: …»; «Сделать триггером»
+  opens the form (the tool's arguments, a draft from one call, the paths, how often, a filter, the mode), «Проверить»
+  shows three newest things as events, «Сохранить» makes it and links to the hub's `/events?tab=triggers`.
+- **Agents**: the hub's `trigger_add(connection, recipe)` — `candidates: true` lists the tools that fit; `dry_run` runs
+  the recipe once; then the person says yes on a card in the chat (as for `connection_add`), and only then the trigger
+  exists. The hub's guide (step 9) sends agents there instead of handing the person JSON.
+- **Mattermost** (`mattermost-mcp`, `@bryanberger/mattermost-mcp@0.5.0`): `get_channel_posts` is «New messages in a
+  channel»; its draft is `{"tool": "get_channel_posts", "args": {"channel_id": "<channel>", "since":
+  "{{cursor:number}}"}, "items": "posts", "id": "id", "at": "create_at", "actor": "user_id", "title": "message",
+  "thread": "root_id", "cursor": "create_at"}`.
 
 ## Folder (`internal/connectors/folder`)
 
@@ -329,6 +387,27 @@ date (`- [ ] … 📅 2026-12-01` or `due:: …`), facts `path`, `folder`, `vaul
 backlinks among shared notes), `search query=`, `tags`, `links path=`, `changes [since=24h] [limit=]`. No action:
 the agent does not write into the vault.
 
+## Developer mode
+
+Settings → Developer mode (`developerMode` in the machine's settings file, `PATCH /api/config`) turns on a trace of
+the connectors. Computer only: on a phone the section is left out of the list and the panel is never drawn.
+
+- **What is written** (`internal/connectors/trace.go`, a ring of the last 300 lines per connection, in memory): each
+  check (`Service.Check`, `Connect`) and poll (`polling.Watch`) with its time, how many events, their ids and the
+  cursor before and after; a source that stopped and why; each event's raw envelope and its destinations at commit;
+  what each destination (the hub's journal, the inbox, the rules) took at delivery. The MCP recipe adds the tool's
+  arguments, time and answer (clipped at 16 KB), how many things, the new ids, the cursor, and a refusal of its guard
+  with the reason. The key `mcp-sync` lists what is in `mcp-connections.json` (at most once a minute);
+  `connectors.TraceSyncSeen` is the hook the synchronization of the agents' MCP writes to.
+- **Nothing is written while the mode is off** (`Trace.On()` reads the settings file, cached for 2 s).
+- **The trace stays on the machine.** No destination reads it; the services' answers never reach the hub's journal.
+  Only the person's page session reads it (an agent's CLI token is refused):
+  `GET <platform>/connectors/trace[?conn=<id>&limit=N]` → `{on, entries, conns}`, and
+  `GET <platform>/connectors/trace/stream[?conn=<id>]` (SSE, one entry per `data:`).
+- **The page**: a folding panel at the bottom of Settings → Connections (`features/devmode/trace-panel.tsx`) with a
+  filter by connection; a line shows time, level, connection, part and message, and unfolds to its raw JSON. The
+  hub's `/events` page has no panel: it is the hub's, and the trace is a machine's that never goes to the hub.
+
 ## The page
 
 Settings → Connections has a part «Mail, calendars, feeds» drawn from the catalog (`GET <platform>/connectors`):
@@ -336,6 +415,27 @@ cards grouped by kind, a card opens the form of its `Spec.Fields` (a choice is a
 field), the connected ones with «Check» and «Disconnect» and words only when something is wrong. A proposed action is
 a card over the field of the chat that asked (`web/app/next/bindings/connector-actions.tsx`), kept in step by a long
 wait on `<platform>/connector-actions?rev=`. A new connector needs nothing on the page: its `Spec` is enough.
+
+## The push to the person's phone
+
+Every proposal that waits for the person (`Service.OnPropose`) is also a web push (`cmd/runtime/push_approvals.go`):
+title «Send a message · Telegram: Misha?», then the subject, a preview of the text and why. It goes to the phone the
+person used most recently (else to every device), and to none while a device shows the chat with the card;
+`harnessly connector act … --notify <device id>|last|mobile|all|none` picks. The notification has «Send / Don't send»
+buttons where the browser shows them (Android, desktop Chrome; iOS shows none — a tap opens the chat with the card).
+A button posts `/api/push/act {proposal, verb, token}`: the token is random, made for that proposal only, kept in the
+runtime's memory, single-use, gone with the proposal; it is in no proposal JSON and no CLI or MCP answer, only in the
+encrypted push. Once the proposal is answered anywhere, a quiet notification with the outcome replaces it (same tag).
+Trusted and direct sends make no card and no push. The devices (`push-subscriptions.json`) carry a name from the
+browser, when they were stored, seen and last used: `harnessly devices` lists them, `harnessly push send --device …`
+is an agent's own push (6 in 10 minutes).
+
+A device that gets no push from the machine sees, in the chat, a card «Turn on notifications on this device»
+(`web/app/next/bindings/push-offer.tsx`): one tap asks the browser and subscribes (a browser lets a page ask only from a
+tap); «Not now» hides it for a week. It comes back regardless when the chat's agent runs `harnessly push ask [--why]`
+(it waits and prints the devices that subscribed) or proposes a send while no device is subscribed (`pushAsk` and
+`pushDevices` in `<platform>/connector-actions`). A Safari tab on an iPhone is told to add the app to the Home Screen;
+a blocked permission, where to allow it. The system switch of Settings → Notifications subscribes too.
 
 ## The calendar (`caldav`)
 

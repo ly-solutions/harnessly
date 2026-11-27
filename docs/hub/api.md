@@ -486,6 +486,10 @@ The hub never logs request bodies of `…/key`, `…/env`, `…/proxy`, `…/log
 | Path | What |
 | --- | --- |
 | `/m/{machineId}/*` (path mode, on the hub origin) | needs the hub session and membership, and a machine an instance administrator connected (else 403 `machine_untrusted`); otherwise 302 to `/signin?next=…` |
+| `GET /api/machines/{machineId}/browser/ws` | a signed-in person who may open the machine; WebSocket, the machine's browser channel, passed to the machine as `/api/browser/ws`; refused from another site |
+| `GET /design-invites/{token}` | a navigation only: no session sends the person to `/signin?next=…`, a signed-in person is handed to the design access API, which consumes the invite ([design-access.md](design-access.md)) |
+| `GET /api/site-entry` | where a visitor of a team-only site is sent to prove who they are: the hub checks the person is signed in and a member of the site's space, then sends them back to the site with a one-time ticket ([sites.md](sites.md)); present only when sites are on |
+| `GET /api/admin/network`, `PUT /api/admin/network` | an administrator of the installation: read and replace the network policy served at `/dl/network.json`; a policy that is not valid is refused |
 | `https://{machineId}.{HUB_RUNTIME_DOMAIN}/m/{machineId}/*` (subdomain mode) | needs the `__Host-hl_run` cookie of that host (`hl_run` without https); `?hl_ticket=` trades a ticket for it (then 302 without the ticket); without either, 302 to `<publicUrl>/api/machines/<id>/open?redirect=1` |
 
 Everything below the base path goes to the runtime unchanged (HTTP and WebSocket). The hub answers itself only:
@@ -499,6 +503,9 @@ HTML page «Машина не на связи» with status 502.
 | `GET /install` | | `text/x-shellscript`: `deploy/install/install.sh` (from `HUB_DIST_DIR`) with `HARNESSLY_HUB_URL` set to the public URL and, when `HUB_CONTAINER_IMAGE` is set, `HARNESSLY_IMAGE` set to it, on the lines right after the shebang |
 | `GET /dl/manifest.json` | | `{ version, files: { "<name>": { sha256, size } } }`, names `runtime-<os>-<arch>`, `agent-<os>-<arch>` for linux/darwin × amd64/arm64 |
 | `GET /dl/web.json`, `GET /dl/web.tar.gz` | | the machines' page released apart from the runtime: its version, SHA-256 and the archive of `web/dist`, taken from the protected package `web/<version>` and verified (`internal/hub/webpkg`); 404 without `HUB_WEB_PACKAGE_URL` |
+| `GET /dl/release.json`, `GET /dl/release.json.sig` | | the signed release manifest and its signature, served when `HUB_DIST_DIR` holds them (the release makes and signs them, never the hub) |
+| `GET /dl/network.json` | | the deployment's network policy (internal hosts, the company's roots, the proxy) that machines take on their own; 404 when the folder has no `network.json` (a hub of the open internet has none) |
+| `GET /dl/obsidian/{file}` | | the Obsidian plugin's three files and `harnessly-obsidian.zip` (the files in a `harnessly/` folder for `<vault>/.obsidian/plugins`); the plugin reads them to update itself |
 | `GET /dl/{name}` | | the binary (`application/octet-stream`), from `HUB_DIST_DIR` |
 | `POST /agent/register` | `RegisterRequest` | 201 `RegisterResponse` (200 when the machine kept its id, below); 410 `expired`, 400, 429 |
 | `GET /agent/v1` | WebSocket upgrade with the signed `Authorization` header | 101; 401 bad signature/unknown key/old time/replayed nonce; 403 revoked (`forbidden` with `details.reason: "revoked"`; only this, or the close code 4010, stops the agent dialing: a 403 without it, as a proxy may answer, is retried with the usual backoff); 426 agent older than `HUB_MIN_AGENT_VERSION` |

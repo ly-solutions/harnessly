@@ -38,6 +38,11 @@ can answer. A sibling's message is news, not work from the parent: a `wait_conve
 Messages within a team are paced so two agents cannot spin answering each other: at most 6 to one chat and 20 to the
 whole team in 10 minutes; past that the send is refused with `too-often`.
 
+A delegated chat may delegate in turn. Besides its parent, the root of the tree (the chat the person opened) is told
+once for every wait for the person (a question, a permission) and for a limit hit by a descendant deeper than the first
+level, so the person answers in the root. A push from a delegated chat is sent in the root's name and a tap opens the
+root; the root's card of that chat says which chat below waits for an answer.
+
 `broadcast_children` sends one text to every delegated chat at once. A chat at work gets it in its running turn; with
 `deliver: now` (a stop) its turn is interrupted as by Escape — the command it runs in the foreground is stopped, not
 handed to the background — and the message starts its next turn, so nothing more happens before it is read. A free

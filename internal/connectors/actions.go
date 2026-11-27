@@ -32,6 +32,8 @@ const proposalTTL = 30 * time.Minute
 type By struct {
 	Conv  string `json:"conv,omitempty"`
 	Title string `json:"title,omitempty"`
+	// Notify is where the push about the card goes: a device id, last, mobile, all or none; empty for the default.
+	Notify string `json:"notify,omitempty"`
 }
 
 // Pair is one argument as the card shows it, in the action's order.
@@ -52,10 +54,12 @@ type Proposal struct {
 	Why        string `json:"why,omitempty"`
 	Conv       string `json:"conv,omitempty"`
 	// Recipients are whom it reaches, as the trust keys (Action.Recipients); the card offers to trust them.
-	Recipients []string  `json:"recipients,omitempty"`
-	State      string    `json:"state"`
-	Result     string    `json:"result,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
+	Recipients []string `json:"recipients,omitempty"`
+	// Notify is By.Notify: where the push about it goes.
+	Notify    string    `json:"notify,omitempty"`
+	State     string    `json:"state"`
+	Result    string    `json:"result,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type pending struct {
@@ -121,7 +125,7 @@ func (s *Service) Propose(id, action string, args map[string]string, why string,
 		}
 	}
 	p := Proposal{ID: newID("ca"), Connection: conn.ID, Connector: conn.Connector, Name: conn.Name, Action: action,
-		Title: a.Title, Args: pairs, Why: oneLine(why), Conv: by.Conv, Recipients: recipientKeys(a, kept),
+		Title: a.Title, Args: pairs, Why: oneLine(why), Conv: by.Conv, Notify: by.Notify, Recipients: recipientKeys(a, kept),
 		State: Waiting, CreatedAt: s.now().UTC()}
 	if a.Direct {
 		return s.direct(p, kept, "direct"), nil
@@ -147,12 +151,15 @@ func (s *Service) Propose(id, action string, args map[string]string, why string,
 // secret may be in args: they are shown and written to the journal.
 func (s *Service) ProposeRun(name string, title Text, args []Pair, why string, by By, run func(ctx context.Context) (string, error)) Proposal {
 	p := Proposal{ID: newID("ca"), Connection: OwnService, Connector: OwnService, Name: name, Action: "connect", Title: title,
-		Args: args, Why: oneLine(why), Conv: by.Conv, State: Waiting, CreatedAt: s.now().UTC()}
+		Args: args, Why: oneLine(why), Conv: by.Conv, Notify: by.Notify, State: Waiting, CreatedAt: s.now().UTC()}
 	s.mu.Lock()
 	s.expireLocked()
 	s.pending[p.ID] = &pending{p: p, run: run, done: make(chan struct{})}
 	s.mu.Unlock()
 	s.changed()
+	if s.OnPropose != nil {
+		go s.OnPropose(p)
+	}
 	return p
 }
 
@@ -307,6 +314,12 @@ func (s *Service) AnswerTrusting(ctx context.Context, id string) (Proposal, erro
 		return Proposal{}, err
 	}
 	return s.answer(ctx, id, true, "person")
+}
+
+// AnswerVia is the person's yes or no given outside the page: via names where ("push" for a notification's button),
+// for the journal of sends. The caller has checked it is the person (a single-use token of that proposal).
+func (s *Service) AnswerVia(ctx context.Context, id string, approve bool, via string) (Proposal, error) {
+	return s.answer(ctx, id, approve, via)
 }
 
 // answer is Answer as given by: "person" on the page, "relay:<connection>" in a Relay's bound chat.

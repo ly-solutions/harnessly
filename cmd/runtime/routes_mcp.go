@@ -33,7 +33,8 @@ import (
 // and the proxy agents reach them through. Who may call what:
 //
 //	GET|POST <platform>/mcp, POST <platform>/mcp/probe, POST <platform>/mcp/<id>/signin|check,
-//	PUT <platform>/mcp/<id>/header, PATCH|DELETE <platform>/mcp/<id>
+//	PUT <platform>/mcp/<id>/header, PATCH|DELETE <platform>/mcp/<id>, POST <platform>/mcp/sync (the agents' servers),
+//	GET|POST <platform>/mcp/<id>/triggers[/draft|/try] (routes_mcp_triggers.go)
 //	                                     the person's page: a page session, same origin
 //	GET <platform>/mcp/callback          the service's sign-in sends the person's browser back here (a top-level
 //	                                     navigation from another site): a page session, no same-origin check; the
@@ -81,6 +82,7 @@ func mcpFor(d deps) *mcpconn.Service {
 }
 
 func mcpRoutes(d deps, c *core) []gate.Route {
+	agentSyncFor(d) // the agents' own servers into the connections, from the start (HRN-1815)
 	return mcpRoutesOf(d, mcpFor(d), nil, ownServiceConfirmer(d, c))
 }
 
@@ -276,6 +278,25 @@ func mcpRoutesOf(d deps, ms *mcpconn.Service, transport http.RoundTripper, confi
 		case rest == "custom":
 			mcpCustomRoute(w, r, ms, ctxOf)
 			return
+		case rest == "sync":
+			// The page's «Rescan»: the agents' configs read again now.
+			if r.Method != http.MethodPost {
+				notAllowed(w)
+				return
+			}
+			ctx, cancel := ctxOf(r)
+			defer cancel()
+			rep, err := agentSyncFor(d).Run(ctx, true)
+			if err != nil {
+				connJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed"})
+				return
+			}
+			outcomes := rep.Outcomes
+			if outcomes == nil {
+				outcomes = []mcpconn.SyncOutcome{}
+			}
+			connJSON(w, http.StatusOK, map[string]any{"outcomes": outcomes, "new": len(rep.New)})
+			return
 		case rest == "probe":
 			if r.Method != http.MethodPost {
 				notAllowed(w)
@@ -303,6 +324,10 @@ func mcpRoutesOf(d deps, ms *mcpconn.Service, transport http.RoundTripper, confi
 		id, what, _ := strings.Cut(rest, "/")
 		if id == "" {
 			connJSON(w, http.StatusNotFound, map[string]string{"error": "not-found"})
+			return
+		}
+		if what == "triggers" || strings.HasPrefix(what, "triggers/") {
+			mcpTriggersRoute(w, r, d, ms, id, strings.TrimPrefix(strings.TrimPrefix(what, "triggers"), "/"), ctxOf)
 			return
 		}
 		switch what {
@@ -461,7 +486,7 @@ func mcpRoutesOf(d deps, ms *mcpconn.Service, transport http.RoundTripper, confi
 	}
 
 	px := &mcpProxy{d: d, ms: ms, client: mcpProxyClient(transport)}
-	hub := &mcpconn.Hub{S: ms, Results: filepath.Join(os.TempDir(), "harnessly-mcp-results"), Confirm: confirm}
+	hub := &mcpconn.Hub{S: ms, Results: filepath.Join(os.TempDir(), "harnessly-mcp-results"), Confirm: confirm, Triggers: triggerPlanner(d)}
 	return []gate.Route{
 		{Match: func(r *http.Request) bool { return pathIs(r, mcpHubPath) || pathIs(r, "/agents"+mcpHubPath) },
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

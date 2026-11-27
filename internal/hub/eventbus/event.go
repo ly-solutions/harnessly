@@ -62,7 +62,10 @@ type Event struct {
 	// Owner is the hub user the event belongs to; "" is the deployment's own (the shared /hook), seen by its admins and
 	// by the hub's own subscriptions only.
 	Owner string `json:"owner"`
-	Org   string `json:"org,omitempty"`
+	// StartMode is the mode its trigger gets the first time it comes (a recipe's «mode»): digest, notify or
+	// agent; anything else is ModeDigest. A trigger already in the catalog keeps the person's mode. Not journaled.
+	StartMode string `json:"-"`
+	Org       string `json:"org,omitempty"`
 	// Space is the space (tenant) the event belongs to: the space of the machine it came from, or of the connection.
 	Space string `json:"space,omitempty"`
 	// Visibility is who may see the event beyond its owner: VisPerson (nobody; mail, chats, calendar) or VisTeam (the

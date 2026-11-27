@@ -270,7 +270,8 @@ const ConnectorRow = ({ conn, title, leaving, onCheck, onRemove, onReissue, rule
   };
 
   const sub = conn.account !== '' && conn.account !== conn.name ? `${title} · ${conn.account}` : title;
-  const problem = conn.state === CONNECTION_STATE.error ? conn.error || t('next.connectors.failed') : null;
+  const problem =
+    conn.state === CONNECTION_STATE.error ? conn.error || t('next.connectors.failed') : conn.warning || null;
   const showing = conn.shown.length > 0 && seen !== conn.shown;
   return (
     <div className="hx-reveal hx-conn-wrap" data-open={!leaving}>

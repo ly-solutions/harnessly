@@ -12,6 +12,8 @@ package mcprecipe
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/connectors"
 	"github.com/ly-solutions/harnessly/internal/mcpconn"
+	"github.com/ly-solutions/harnessly/internal/scriptbox"
 )
 
 // ID names the connector in every event.
@@ -60,7 +63,37 @@ type Recipe struct {
 	Cursor string `json:"cursor,omitempty"`
 	// Every is how often to poll (Go duration, 1m to 24h; 10m by default).
 	Every string `json:"every,omitempty"`
+	// Via calls Tool through a gateway server's call tool: Tool is the tool behind it.
+	Via *mcpconn.Gateway `json:"via,omitempty"`
+	// Filter keeps only the things whose field (a dotted path) contains the text, case aside; all must match.
+	Filter map[string]string `json:"filter,omitempty"`
+	// Mode is the trigger's mode the first time the hub sees it (digest, notify, agent); the person changes it on /events.
+	Mode string `json:"mode,omitempty"`
+
+	// Watch are fields (dotted paths) whose change on a thing already seen is an event item.changed, with the fact
+	// «was → now». Their hash is kept, and a short value that looks like a status.
+	Watch []string `json:"watch,omitempty"`
+	// Facts are fields put into every event's facts (at most 8, values clipped), for rules to filter by.
+	Facts []string `json:"facts,omitempty"`
+	// Next reads further pages: the path of the next page's cursor in the answer and the argument it goes in.
+	Next *Next `json:"next,omitempty"`
+	// Path and Query make the source an API connection's GET instead of a tool: "{{cursor}}" in them is the cursor.
+	Path  string            `json:"path,omitempty"`
+	Query map[string]string `json:"query,omitempty"`
+	// Script reshapes each answer: a JavaScript function (answer, memo) => ({items, memo}), run in a sandbox with no
+	// network, files or timers (internal/scriptbox). A new script is a new version, confirmed by the person.
+	Script  string `json:"script,omitempty"`
+	Version int    `json:"version,omitempty"`
 }
+
+// Next is how to ask for the next page.
+type Next struct {
+	Path string `json:"path"`
+	Arg  string `json:"arg"`
+}
+
+// EventChanged is the event of a watched field that changed on a thing already seen.
+const EventChanged = "item.changed"
 
 var triggerRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$`)
 
@@ -68,10 +101,26 @@ func (r Recipe) check() error {
 	switch {
 	case !triggerRe.MatchString(r.Trigger) || len(r.Trigger) > 48:
 		return connectors.Sayf("The recipe's trigger: lower-case words with dots, like generation.done")
-	case r.Tool == "":
-		return connectors.Sayf("The recipe names no tool")
+	case r.Tool == "" && r.Path == "":
+		return connectors.Sayf("The recipe names no tool (or path of an API)")
+	case r.Tool != "" && r.Path != "":
+		return connectors.Sayf("The recipe names a tool and a path: one source")
+	case r.Path != "" && r.Via != nil:
+		return connectors.Sayf("The recipe's via is for a tool, not a path")
+	case len(r.Facts) > 8:
+		return connectors.Sayf("The recipe's facts: at most 8 fields")
+	case len(r.Watch) > 8:
+		return connectors.Sayf("The recipe's watch: at most 8 fields")
+	case r.Next != nil && (r.Next.Path == "" || r.Next.Arg == ""):
+		return connectors.Sayf("The recipe's next names the path of the next page's cursor and the argument it goes in")
+	case len(r.Script) > scriptbox.ScriptMax:
+		return connectors.Sayf("The recipe's script is longer than %d bytes", scriptbox.ScriptMax)
 	case r.ID == "":
 		return connectors.Sayf("The recipe names no id field of a thing")
+	case r.Mode != "" && !slices.Contains([]string{"digest", "notify", "agent"}, r.Mode):
+		return connectors.Sayf("The recipe's mode: digest, notify or agent")
+	case r.Via != nil && (r.Via.Call == "" || r.Via.List == "" || r.Via.NameArg == "" || r.Via.ArgsArg == ""):
+		return connectors.Sayf("The recipe's via names the gateway's list and call tools and their arguments")
 	}
 	if r.Every != "" {
 		d, err := time.ParseDuration(r.Every)
@@ -116,7 +165,7 @@ func (conn) Spec() connectors.Spec {
 					{Value: "yes", Label: connectors.T("Allow", "Разрешить")},
 				}},
 		},
-		Events: []string{EventItem},
+		Events: []string{EventItem, EventChanged},
 	}
 }
 
@@ -161,11 +210,25 @@ func (conn) Discover(_ context.Context, _ connectors.Instance, field string) ([]
 	return out, nil
 }
 
-// guard refuses a tool that may change something: destructive always, not marked read-only unless allowed.
-func guard(ctx context.Context, in connectors.Instance, srv mcpconn.Server, tool string) error {
-	specs, err := Service.ToolSpecs(ctx, srv.ID)
-	if err != nil {
-		return err
+// guard refuses a tool that may change something: destructive always, not marked read-only unless allowed. A tool
+// behind a gateway is judged by what the gateway's list says of it, not by the call tool (which may do anything).
+func guard(ctx context.Context, in connectors.Instance, srv mcpconn.Server, tool string, via *mcpconn.Gateway) error {
+	var specs []mcpconn.ToolSpec
+	if via != nil {
+		raw, err := Service.CallTool(ctx, srv.ID, via.List, json.RawMessage("{}"))
+		if err != nil {
+			return connectors.Sayf("%s did not list the tools behind it", srv.Name)
+		}
+		for _, t := range mcpconn.ParseGatewayTools(raw) {
+			if via.Server == "" || t.Server == via.Server {
+				specs = append(specs, t.ToolSpec)
+			}
+		}
+	} else {
+		var err error
+		if specs, err = Service.ToolSpecs(ctx, srv.ID); err != nil {
+			return err
+		}
 	}
 	i := slices.IndexFunc(specs, func(t mcpconn.ToolSpec) bool { return t.Name == tool })
 	if i < 0 {
@@ -179,59 +242,6 @@ func guard(ctx context.Context, in connectors.Instance, srv mcpconn.Server, tool
 		return connectors.Sayf("%s does not mark %q as read-only: allow it in the form only if you know it only reads", srv.Name, tool)
 	}
 	return nil
-}
-
-// thing is one item of the answer, mapped by the recipe.
-type thing struct {
-	id, actor, title, url, thread, cursor string
-	at                                    time.Time
-}
-
-// run calls the tool once and maps the answer.
-func run(ctx context.Context, in connectors.Instance, r Recipe, cursor string) ([]thing, error) {
-	srv, err := server(in.Config["server"])
-	if err != nil {
-		return nil, err
-	}
-	if err := guard(ctx, in, srv, r.Tool); err != nil {
-		return nil, err
-	}
-	args, err := json.Marshal(withCursor(r.Args, cursor))
-	if err != nil {
-		return nil, err
-	}
-	raw, err := Service.CallTool(ctx, srv.ID, r.Tool, args)
-	if err != nil {
-		return nil, connectors.Sayf("%s did not answer the tool %q", srv.Name, r.Tool)
-	}
-	body, err := answer(raw)
-	if err != nil {
-		return nil, err
-	}
-	got := pick(body, r.Items)
-	if got == nil {
-		return nil, nil // an empty answer: nothing there now
-	}
-	list, ok := got.([]any)
-	if !ok {
-		return nil, connectors.Sayf("The answer has no list at %q", r.Items)
-	}
-	var out []thing
-	for _, v := range list {
-		t := thing{id: str(pick(v, r.ID)), actor: str(pick(v, r.Actor)), title: str(pick(v, r.Title)),
-			url: str(pick(v, r.URL)), thread: str(pick(v, r.Thread))}
-		if t.id == "" {
-			continue
-		}
-		if r.At != "" {
-			t.at = when(pick(v, r.At))
-		}
-		if r.Cursor != "" {
-			t.cursor = str(pick(v, r.Cursor))
-		}
-		out = append(out, t)
-	}
-	return out, nil
 }
 
 // answer is the tool's result as data: its structuredContent, else its first text read as JSON.
@@ -308,7 +318,7 @@ func str(v any) string {
 func when(v any) time.Time {
 	switch x := v.(type) {
 	case string:
-		if t, err := time.Parse(time.RFC3339, x); err == nil {
+		if t, ok := parseTime(x); ok {
 			return t
 		}
 		if n, err := strconv.ParseFloat(x, 64); err == nil {
@@ -326,16 +336,58 @@ func when(v any) time.Time {
 }
 
 // withCursor puts the cursor where a string argument says {{cursor}}.
+// withCursor puts the cursor into the arguments. "{{cursor}}" alone is left out on the first poll (no cursor yet),
+// "{{cursor:number}}" passes it as a number (a time in milliseconds, an id) and is left out until there is one.
 func withCursor(args map[string]any, cursor string) map[string]any {
 	out := make(map[string]any, len(args))
 	for k, v := range args {
-		if s, ok := v.(string); ok {
-			out[k] = strings.ReplaceAll(s, "{{cursor}}", cursor)
-		} else {
+		s, ok := v.(string)
+		switch {
+		case !ok:
 			out[k] = v
+		case s == "{{cursor:number}}":
+			if n, err := strconv.ParseFloat(cursor, 64); err == nil {
+				out[k] = n
+			}
+		case s == "{{cursor}}" && cursor == "":
+		default:
+			out[k] = strings.ReplaceAll(s, "{{cursor}}", cursor)
 		}
 	}
 	return out
+}
+
+// listOf is the things of an answer: a list, or an object of id → thing (Mattermost's posts), its values in key order.
+func listOf(v any) ([]any, bool) {
+	switch x := v.(type) {
+	case []any:
+		return x, true
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k, e := range x {
+			if _, obj := e.(map[string]any); !obj {
+				return nil, false
+			}
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		out := make([]any, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, x[k])
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// passes says whether a thing matches the recipe's filter.
+func (r Recipe) passes(v any) bool {
+	for path, want := range r.Filter {
+		if !strings.Contains(strings.ToLower(str(pick(v, path))), strings.ToLower(want)) {
+			return false
+		}
+	}
+	return true
 }
 
 // Check is the dry run of the recipe when the person connects it: the tool is called, the answer mapped, and the form
@@ -345,10 +397,11 @@ func (conn) Check(ctx context.Context, in connectors.Instance) (connectors.Accou
 	if err != nil {
 		return connectors.Account{}, err
 	}
-	things, err := run(ctx, in, r, "")
+	res, err := run(ctx, in, r, "", nil)
 	if err != nil {
 		return connectors.Account{}, err
 	}
+	things := res.things
 	label := fmt.Sprintf("%s · %s: %d now", in.Config["server"], r.Trigger, len(things))
 	if len(things) > 0 && things[0].title != "" {
 		label += " · «" + clip(things[0].title, 60) + "»"
@@ -367,12 +420,44 @@ type memo struct {
 	Cursor string   `json:"cursor"`
 	Seen   []string `json:"seen"` // the newest ids, to tell new things from old without a cursor
 	Primed bool     `json:"primed"`
+	// Watched is, per thing, its watched fields as hashes (and a short status-like value, to say «was»).
+	Watched map[string]map[string]string `json:"watched,omitempty"`
+	// Script is the recipe's script's own memo.
+	Script json.RawMessage `json:"script,omitempty"`
 }
 
 const seenMax = 1000
 
-// Poll calls the tool and gives the things not seen before as events. The first poll gives none: it learns what is
-// there already, so connecting a service does not pour its past into the digest.
+// statusLike is a value short and plain enough to keep as it is, to say «was → now»: a status, a stage, a number.
+var statusLike = regexp.MustCompile(`^[\p{L}\p{N}_. :/-]{1,32}$`)
+
+// watchMark is what the memo keeps of a watched value: its hash, and the value itself when it is status-like.
+func watchMark(v string) string {
+	sum := sha256.Sum256([]byte(v))
+	h := hex.EncodeToString(sum[:6])
+	if statusLike.MatchString(v) {
+		return h + "=" + v
+	}
+	return h
+}
+
+// wasOf is the value a mark kept, or "…" when only its hash is.
+func wasOf(mark string) string {
+	if _, v, ok := strings.Cut(mark, "="); ok {
+		return v
+	}
+	return "…"
+}
+
+func sameMark(a, b string) bool {
+	ha, _, _ := strings.Cut(a, "=")
+	hb, _, _ := strings.Cut(b, "=")
+	return ha == hb
+}
+
+// Poll asks the source and gives the things not seen before as events, and item.changed for a watched field that
+// changed. The first poll gives none: it learns what is there already, so connecting a service does not pour its past
+// into the digest.
 func (conn) Poll(ctx context.Context, in connectors.Instance, from connectors.Cursor) ([]connectors.Event, connectors.Cursor, error) {
 	r, err := recipeOf(in)
 	if err != nil {
@@ -382,33 +467,115 @@ func (conn) Poll(ctx context.Context, in connectors.Instance, from connectors.Cu
 	if in.Load != nil {
 		_ = in.Load(&m)
 	}
-	things, err := run(ctx, in, r, m.Cursor)
+	before := m.Cursor
+	res, err := run(ctx, in, r, m.Cursor, m.Script)
 	if err != nil {
 		return nil, from, err
+	}
+	things := res.things
+	m.Script = res.memo
+	if in.Warn != nil {
+		if res.capped {
+			in.Warn(fmt.Sprintf("More than %d pages at once: the rest is read at the next poll", pageMax))
+		} else {
+			in.Warn("")
+		}
 	}
 	seen := map[string]bool{}
 	for _, id := range m.Seen {
 		seen[id] = true
 	}
+	if m.Watched == nil {
+		m.Watched = map[string]map[string]string{}
+	}
+	base := func() map[string]string {
+		facts := map[string]string{"trigger": r.Trigger, "server": in.Config["server"]}
+		if r.Mode != "" {
+			facts["mode"] = r.Mode // the trigger's first mode in the hub's catalog
+		}
+		return facts
+	}
 	var events []connectors.Event
+	changed := 0
 	for _, t := range things {
+		marks := map[string]string{}
+		for f, v := range t.watch {
+			marks[f] = watchMark(v)
+		}
 		if seen[t.id] {
+			old := m.Watched[t.id]
+			var fields []string
+			for f, mark := range marks {
+				if prev, ok := old[f]; ok && !sameMark(prev, mark) {
+					fields = append(fields, f)
+				}
+			}
+			if len(marks) > 0 {
+				m.Watched[t.id] = marks
+			}
+			if len(fields) == 0 || !m.Primed {
+				continue
+			}
+			slices.Sort(fields)
+			facts := base()
+			for k, v := range t.facts {
+				facts[k] = v
+			}
+			var key []string
+			for _, f := range fields {
+				facts[f] = wasOf(old[f]) + " → " + clip(t.watch[f], factMax)
+				key = append(key, strings.SplitN(marks[f], "=", 2)[0])
+			}
+			facts["changed"] = strings.Join(fields, ",")
+			events = append(events, connectors.Event{Type: EventChanged, ID: r.Trigger + ":" + t.id + ":" + strings.Join(key, "."),
+				At: t.at, Actor: t.actor, Title: t.title, URL: t.url, Thread: t.thread, Facts: facts})
+			changed++
 			continue
 		}
 		seen[t.id] = true
 		m.Seen = append(m.Seen, t.id)
+		if len(marks) > 0 {
+			m.Watched[t.id] = marks
+		}
 		if t.cursor != "" && later(t.cursor, m.Cursor) {
 			m.Cursor = t.cursor
 		}
 		if !m.Primed {
 			continue
 		}
+		facts := base()
+		for k, v := range t.facts {
+			facts[k] = v
+		}
 		events = append(events, connectors.Event{Type: EventItem, ID: r.Trigger + ":" + t.id, At: t.at, Actor: t.actor,
-			Title: t.title, URL: t.url, Thread: t.thread, Facts: map[string]string{"trigger": r.Trigger, "server": in.Config["server"]}})
+			Title: t.title, URL: t.url, Thread: t.thread, Facts: facts})
+	}
+	if connectors.Trace.On() {
+		fresh := make([]string, 0, len(events))
+		for _, ev := range events {
+			fresh = append(fresh, ev.ID)
+		}
+		line := fmt.Sprintf("%d things, %d new, %d changed", len(things), len(fresh)-changed, changed)
+		if !m.Primed {
+			line = fmt.Sprintf("first poll learned %d things, no events", len(things))
+		}
+		trace(in, connectors.TraceInfo, line, map[string]any{"things": len(things), "new": fresh,
+			"cursorBefore": before, "cursorAfter": m.Cursor, "primed": m.Primed, "capped": res.capped})
 	}
 	m.Primed = true
 	if len(m.Seen) > seenMax {
 		m.Seen = m.Seen[len(m.Seen)-seenMax:]
+	}
+	if len(m.Watched) > seenMax {
+		keep := map[string]bool{}
+		for _, id := range m.Seen {
+			keep[id] = true
+		}
+		for id := range m.Watched {
+			if !keep[id] {
+				delete(m.Watched, id)
+			}
+		}
 	}
 	if in.Store != nil {
 		if err := in.Store(m); err != nil {
@@ -418,10 +585,15 @@ func (conn) Poll(ctx context.Context, in connectors.Instance, from connectors.Cu
 	return events, from, nil
 }
 
-// later says a is after b: numbers as numbers, the rest (RFC 3339 times, ids) as text.
+// later says a is after b: times as times (RFC 3339 of any precision and zone), numbers as numbers, the rest as text.
 func later(a, b string) bool {
 	if b == "" {
 		return true
+	}
+	if x, ok := parseTime(a); ok {
+		if y, ok := parseTime(b); ok {
+			return x.After(y)
+		}
 	}
 	x, e1 := strconv.ParseFloat(a, 64)
 	y, e2 := strconv.ParseFloat(b, 64)
@@ -431,10 +603,32 @@ func later(a, b string) bool {
 	return a > b
 }
 
+// timeLayouts are the written times a cursor may be.
+var timeLayouts = []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z0700", "2006-01-02T15:04:05.999999999",
+	"2006-01-02 15:04:05.999999999Z07:00", "2006-01-02 15:04:05.999999999", "2006-01-02"}
+
+func parseTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if len(s) < 10 || s[4] != '-' {
+		return time.Time{}, false
+	}
+	for _, l := range timeLayouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 func clip(s string, n int) string {
 	r := []rune(strings.TrimSpace(s))
 	if len(r) <= n {
 		return string(r)
 	}
 	return string(r[:n]) + "…"
+}
+
+// trace writes to the developer mode's trace of the connection.
+func trace(in connectors.Instance, level, line string, data any) {
+	connectors.Trace.Add(in.ID, "recipe", level, line, data)
 }

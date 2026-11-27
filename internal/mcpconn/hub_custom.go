@@ -149,7 +149,10 @@ func (h *Hub) connectionAdd(ctx context.Context, raw json.RawMessage) map[string
 	return h.answered(ans)
 }
 
-func (h *Hub) answered(ans ConfirmAnswer) map[string]any {
+func (h *Hub) answered(ans ConfirmAnswer) map[string]any { return h.answeredAs("connection_add", ans) }
+
+// answeredAs is the person's answer for the agent that called tool.
+func (h *Hub) answeredAs(tool string, ans ConfirmAnswer) map[string]any {
 	switch ans.State {
 	case "done":
 		return textResult(ans.Result, false)
@@ -160,7 +163,7 @@ func (h *Hub) answered(ans ConfirmAnswer) map[string]any {
 	case "failed":
 		return textResult("The person agreed but it did not work: "+ans.Result, true)
 	}
-	return textResult(fmt.Sprintf("waiting: the person has a card in this chat. Call connection_add again with proposal=%q to keep waiting (no other arguments).", ans.ID), false)
+	return textResult(fmt.Sprintf("waiting: the person has a card in this chat. Call %s again with proposal=%q to keep waiting (no other arguments).", tool, ans.ID), false)
 }
 
 // madeLine tells an agent what the yes made and what is left to do.
@@ -184,7 +187,7 @@ func madeLine(srv Server) string {
 
 // recipeHint is the step an MCP service without events is offered (docs/connectors.md «MCP recipe»): its
 // updates reach the digest by a poll recipe.
-const recipeHint = " If the person wants its updates (new results, messages, statuses) in their digest or notices, offer a poll recipe: guide step 9."
+const recipeHint = " If the person wants its updates (new results, messages, statuses) in their digest or notices, make it a trigger with trigger_add (guide step 9)."
 
 // planWhy is a failed plan in words an agent can act on (never the service's own words: they may carry a key).
 func planWhy(err error) string {
@@ -222,5 +225,5 @@ const customGuide = `Connecting a service of the person's own, step by step
 6b. When a secret ask says "ready" for a service that was made without its key: connection_add with id, keys_only true and keys[] naming the secrets (no card: the person agreed to the service already). It copies the values, tries them and says whether the service works.
 7. After "Made …": the service is a connection like any other. Look at it with connections(query) or manage(check), use it with call / api_request. An app names it in its manifest as connections: [{"id": "custom-<slug>"}].
 8. To change a service you made, give its id again with the new arguments (same card); a key you do not name stays as it is. To remove one the person uses Settings → Connections.
-9. Updates of an MCP service into the digest (it has no webhooks, only tools). Find a tool that lists things (jobs, messages, records) and only reads: tool_schema shows its annotations; one not marked readOnlyHint the person must allow, one marked destructiveHint never. Call it once to see the answer's shape. Write a recipe: {"trigger": "<what happened, e.g. generation.done>", "tool": "<tool>", "args": {… "{{cursor}}" where it takes a since/after …}, "items": "<dotted path to the list>", "id": "<field>", "at": "<time field>", "title": "<field>", "url": "<field>", "cursor": "<time or id field>", "every": "10m"}. Never a tool that creates, sends or spends. Give the person the recipe and the way: Settings → Connections → Feeds → «MCP recipe», server <slug>, recipe <the JSON>; its check runs the recipe once and shows what it found. From then on the machine polls by itself and every new thing is an event of the journal and the digest (docs/connectors.md, «MCP recipe»).
+9. Updates of an MCP service into the digest, a notice or the agent (it has no webhooks, only tools): make a trigger with trigger_add. trigger_add with connection and candidates true lists the tools that can be one (read-only, they list things), with reasons and the arguments to fill; a gateway server's tools behind it come with their via. Call the chosen tool once (call) to see the answer's shape. Write the recipe: {"trigger": "<what happened, e.g. message.new>", "tool": "<tool>", "args": {… "{{cursor}}" where it takes a since/after, "{{cursor:number}}" when that is a number …}, "items": "<dotted path to the list>", "id": "<field>", "at": "<time field>", "title": "<field>", "actor": "<field>", "url": "<field>", "cursor": "<time or id field>", "every": "10m", "mode": "digest|notify|agent"}. More when it is needed: "watch": [fields like status] gives an event item.changed «was → now» when they change on a thing seen; "facts": [up to 8 fields] go into the event for rules; "next": {"path": "<next page's cursor in the answer>", "arg": "<argument>"} reads up to 5 pages; "path" and "query" make an API connection's GET the source instead of a tool; "script": a JS function (answer, memo) => ({items, memo}) reshapes an awkward answer in a sandbox (no network, files or timers). To change a trigger, trigger_add with replace: <its connection id> — a new version the person confirms. Never a tool that creates, sends or spends. trigger_add with dry_run true runs it once and shows the newest things as they will be events; then trigger_add with the same arguments and why: the person confirms on a card in this chat ("waiting": call again with proposal=<id>). Do not hand the person the JSON to paste. From then on the machine polls by itself, every new thing is an event of the journal (docs/connectors.md, «MCP recipe»), and the person changes its mode on /events → Triggers.
 `

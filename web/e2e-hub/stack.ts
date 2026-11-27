@@ -113,7 +113,7 @@ export interface Stack {
     seed?: (dataDir: string) => void;
     /** The runtime's settings beyond the common ones. */
     runtimeEnv?: Record<string, string>;
-  }) => Promise<{ machineId: string; basePath: string; dataDir: string }>;
+  }) => Promise<{ machineId: string; basePath: string; dataDir: string; runtimePort: number }>;
   /** Switches the machine off: its agent and runtime go, the hub and its copy stay. */
   stopMachine: () => Promise<void>;
   /** Freezes the machine's runtime (SIGSTOP) or lets it go on: a machine whose agent is on but answers nothing. */
@@ -327,7 +327,7 @@ export async function startStack(name: CellName, extraEnv: Record<string, string
     machineProcs.push(
       spawnLogged(agentBin, [], { ...menv, AGENT_PORT: String(ag), RUNTIME_PORT: String(rt) }, logs.agent),
     );
-    return { machineId: mf.machineId, basePath: mf.runtimeBasePath, dataDir };
+    return { machineId: mf.machineId, basePath: mf.runtimeBasePath, dataDir, runtimePort: rt };
   };
 
   const hangRuntime = (hung: boolean) => {

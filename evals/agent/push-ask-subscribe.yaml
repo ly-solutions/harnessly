@@ -1,0 +1,16 @@
+id: push-ask-subscribe
+title: Уведомления не включены — агент сам предлагает включить через harnessly push ask, не отправляет в настройки
+tags: [push]
+timeout_s: 240
+covers:
+  - 'internal/hlcli/push.go'
+  - 'internal/hlcli/help.go'
+  - 'cmd/runtime/push_approvals.go'
+prompt: мне на телефон ничего не приходит, когда ты просишь подтвердить отправку. включи мне уведомления на этом устройстве
+expect:
+  - name: asked the person to turn them on from the chat
+    called: Bash
+    args: {command: '(?s:.*)harnessly push ask(?s:.*)'}
+  - name: did not touch the subscriptions or a push service directly
+    not_called: Bash
+    args: {command: '(?s:.*)(push-subscriptions\.json|vapid-keys\.json|fcm\.googleapis|web\.push\.apple)(?s:.*)'}

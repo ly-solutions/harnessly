@@ -22,6 +22,7 @@ package main
 //	POST   /api/cli/connectors/read                       {connection, tool, args} → {text}
 //	POST   <platform>/connector-webhook                    {connection, path, header, body}: a request the hub passed on
 //	                                                      from a webhook's address (the machine agent) → {status}
+//	GET    <platform>/connectors/trace[/stream]          the developer mode's trace (routes_connector_trace.go)
 //	POST   /api/cli/connectors/act                        {connection, action, args, why, wait, id} → {proposal}
 
 import (
@@ -58,6 +59,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/locale"
 	"github.com/ly-solutions/harnessly/internal/notifybots"
+	"github.com/ly-solutions/harnessly/internal/push"
 	"github.com/ly-solutions/harnessly/internal/sameorigin"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
@@ -169,6 +171,15 @@ func connectorRefusal(w http.ResponseWriter, err error) {
 
 func connectorRoutes(d deps, c *core) []gate.Route {
 	svc := connectorsFor(d)
+	// A proposal is a push to the person's devices with its buttons.
+	var sender *push.Sender
+	if c != nil {
+		sender = c.push
+	}
+	approvalPushes := newApprovals(sender, svc, func(conv string) string { return secretIdentity(c, conv).Title })
+	if sender != nil {
+		svc.OnPropose = approvalPushes.propose
+	}
 	rulesCore.Store(c)
 	ruleEngine := rulesFor(d, svc)
 	telegram.SetHooks(telegramHooks(d, c))
@@ -340,7 +351,10 @@ func connectorRoutes(d deps, c *core) []gate.Route {
 				after, _ := strconv.ParseUint(v, 10, 64)
 				svc.WaitRev(r.Context(), after, 25*time.Second)
 			}
-			secretJSON(w, http.StatusOK, map[string]any{"proposals": svc.Proposals(), "rev": strconv.FormatUint(svc.Rev(), 10)})
+			// pushAsk: the chats whose agent asks the person to turn notifications on; pushDevices: how many devices get
+			// them, so a chat with a card offers to turn them on when none does.
+			secretJSON(w, http.StatusOK, map[string]any{"proposals": svc.Proposals(), "rev": strconv.FormatUint(svc.Rev(), 10),
+				"pushAsk": approvalPushes.asking(), "pushDevices": approvalPushes.deviceCount()})
 			return
 		}
 		id, verb, _ := strings.Cut(rest, "/")
@@ -499,13 +513,17 @@ func connectorRoutes(d deps, c *core) []gate.Route {
 				Wait       float64           `json:"wait"`
 				// ID is the proposal a repeated request keeps waiting on.
 				ID string `json:"id"`
+				// Notify is where the push about the card goes (a device id, last, mobile, all, none).
+				Notify string `json:"notify"`
 			}
 			if !read(w, r, &b) {
 				return
 			}
 			wait := max(min(time.Duration(b.Wait*float64(time.Second)), connectorActWaitMax), 0)
 			if b.ID == "" {
-				p, err := svc.Propose(b.Connection, b.Action, b.Args, b.Why, byOf(r))
+				by := byOf(r)
+				by.Notify = b.Notify
+				p, err := svc.Propose(b.Connection, b.Action, b.Args, b.Why, by)
 				if err != nil {
 					connectorRefusal(w, err)
 					return
@@ -524,14 +542,18 @@ func connectorRoutes(d deps, c *core) []gate.Route {
 		}
 	}
 
-	return []gate.Route{
+	pushed := pushRoutes(d, approvalPushes, func(r *http.Request) string { conv, _ := callers.of(r); return conv })
+
+	// The developer mode's trace first: its paths are under the connections' own.
+	pushed = append(connectorTraceRoutes(d), pushed...)
+	return append(pushed, []gate.Route{
 		{Match: func(r *http.Request) bool { _, ok := under(r, base); return pathIs(r, base) || ok }, Handler: http.HandlerFunc(page)},
 		{Match: func(r *http.Request) bool { _, ok := under(r, actionsBase); return pathIs(r, actionsBase) || ok }, Handler: http.HandlerFunc(actions)},
 		{Match: func(r *http.Request) bool { return pathIs(r, sendsBase) }, Handler: http.HandlerFunc(sends)},
 		{Match: func(r *http.Request) bool { return pathIs(r, trustedBase) }, Handler: http.HandlerFunc(trusted)},
 		{Match: func(r *http.Request) bool { return pathIs(r, platformAPI+"/connector-webhook") }, Handler: http.HandlerFunc(incoming)},
 		{Match: func(r *http.Request) bool { _, ok := under(r, cliBase); return pathIs(r, cliBase) || ok }, Handler: http.HandlerFunc(cli)},
-	}
+	}...)
 }
 
 // telegramChatLink is the address of a chat of this machine on its hub, the same the hub gives its chats

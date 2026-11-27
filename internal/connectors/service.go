@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -35,8 +37,10 @@ type Conn struct {
 	Secrets []string `json:"secrets,omitempty"`
 	Account string   `json:"account,omitempty"`
 	// State of the last check or run: "ok" or "error", with Error in words.
-	State     string    `json:"state"`
-	Error     string    `json:"error,omitempty"`
+	State string `json:"state"`
+	Error string `json:"error,omitempty"`
+	// Warning is what its source said the person should know while it works (Instance.Warn).
+	Warning   string    `json:"warning,omitempty"`
 	CheckedAt time.Time `json:"checkedAt,omitzero"`
 	CreatedAt time.Time `json:"createdAt"`
 	// LastEventAt is when its source last gave an event.
@@ -91,6 +95,9 @@ func New(dir string, secrets Secrets, client *http.Client) *Service {
 	s.runner = newRunner(s)
 	return s
 }
+
+// Touch moves the revision the page's card waits on: something it shows beside the proposals changed.
+func (s *Service) Touch() { s.changed() }
 
 func (s *Service) changed() {
 	s.watchMu.Lock()
@@ -489,7 +496,9 @@ func (s *Service) Connect(ctx context.Context, connector, name string, values ma
 		return Conn{}, err
 	}
 	conn := Conn{ID: newID("cx"), Connector: sp.ID, Kind: sp.Kind, Name: strings.TrimSpace(name), Config: config, CreatedAt: s.now().UTC()}
+	began := time.Now()
 	acc, err := c.Check(ctx, s.instance(conn, secret))
+	traceCheck(conn.ID, acc, err, time.Since(began))
 	if err != nil {
 		return Conn{}, err
 	}
@@ -528,6 +537,57 @@ func (s *Service) Connect(ctx context.Context, connector, name string, values ma
 	s.withNext(ctx, &conn)
 	conn.Shown = revealed(c, s.instance(conn, secret), secret)
 	return conn, nil
+}
+
+// Reconfigure gives a connection new values of its non-secret fields (a recipe's new version): they are
+// checked against the service like a new connection's, and kept only when the check passes. Its source starts again
+// with the new values; its cursor and memo stay. Secret fields are not changed here.
+func (s *Service) Reconfigure(ctx context.Context, id string, values map[string]string) (Conn, error) {
+	conn, c, err := s.open(id)
+	if err != nil {
+		return Conn{}, err
+	}
+	sp := c.Spec()
+	merged := map[string]string{}
+	for k, v := range conn.Config {
+		merged[k] = v
+	}
+	// The secret fields stay in the safe: the form sees them as given, with a mark that is not a value.
+	const kept = "\x00kept"
+	for _, f := range sp.Fields {
+		if f.Secret || f.Generate {
+			merged[f.ID] = kept
+		}
+	}
+	for k, v := range values {
+		merged[k] = v
+	}
+	config, secret, err := form(sp, merged)
+	if err != nil {
+		return Conn{}, err
+	}
+	for id, v := range secret {
+		if v != kept && !slices.ContainsFunc(sp.Fields, func(f Field) bool { return f.ID == id && f.Generate }) {
+			return Conn{}, fmt.Errorf("%w: secret fields are not changed here", ErrBadArgs)
+		}
+	}
+	next := conn
+	next.Config = config
+	began := time.Now()
+	acc, err := c.Check(ctx, s.instance(next, nil))
+	traceCheck(id, acc, err, time.Since(began))
+	if err != nil {
+		return Conn{}, err
+	}
+	out, err := s.update(id, func(x *Conn) {
+		x.Config, x.Account, x.State, x.Error, x.CheckedAt = config, acc.Label, StateOK, "", s.now().UTC()
+	})
+	if err != nil {
+		return Conn{}, err
+	}
+	s.runner.start(out)
+	s.changed()
+	return out, nil
 }
 
 // Reissue makes new values of a connection's generated secrets (a webhook's key) and keeps the others: the old values
@@ -595,7 +655,9 @@ func (s *Service) Check(ctx context.Context, id string) (Conn, error) {
 	if err != nil {
 		return Conn{}, err
 	}
+	began := time.Now()
 	acc, cerr := c.Check(ctx, s.instance(conn, nil))
+	traceCheck(id, acc, cerr, time.Since(began))
 	out, err := s.update(id, func(x *Conn) {
 		x.CheckedAt = s.now().UTC()
 		if cerr != nil {
@@ -628,6 +690,7 @@ func (s *Service) Rename(id, name string) (Conn, error) {
 // Remove stops a connection's source and forgets it, its secrets and its cursor. The journal of sends stays.
 func (s *Service) Remove(id string) error {
 	s.runner.stop(id)
+	Trace.Forget(id)
 	s.mu.Lock()
 	list, err := s.read()
 	if err != nil {
@@ -756,4 +819,18 @@ func (s *Service) Start(ctx context.Context, deliver ...Destination) {
 func (s *Service) WaitStopped() {
 	s.runner.sources.Wait()
 	s.runner.relays.Wait()
+}
+
+// traceCheck writes a check of a connection to the developer mode's trace.
+func traceCheck(id string, acc Account, err error, took time.Duration) {
+	if !Trace.On() {
+		return
+	}
+	data := map[string]any{"ms": took.Milliseconds(), "account": acc.Label}
+	if err != nil {
+		data["error"] = sayOf(err)
+		Trace.Add(id, "check", TraceError, "check failed: "+sayOf(err), data)
+		return
+	}
+	Trace.Add(id, "check", TraceInfo, "check ok: "+acc.Label, data)
 }

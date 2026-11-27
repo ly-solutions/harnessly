@@ -72,5 +72,6 @@ client id in values and the client secret in the Secret.
 
 ## Not here
 
-A second replica, a rolling update and autoscaling are not supported (docs/hub/architecture.md, "Not in this version").
-Upgrades replace the pod: the machines' links drop and come back by themselves within seconds.
+Several replicas and a rolling update need Postgres (`database.postgres.enabled`, or `database.external`) and
+`HUB_SECRET_KEY` in the Secret (docs/hub/replicas.md); on the SQLite file the hub runs one replica and an upgrade
+replaces the pod: the machines' links drop and come back by themselves within seconds. Autoscaling is not supported.

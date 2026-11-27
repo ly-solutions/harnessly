@@ -413,11 +413,19 @@ func isNavigation(r *http.Request) bool {
 // another origin could show the machine under its own buttons and have the person click through (clickjacking), so
 // only Sec-Fetch-Dest: document passes. Without Fetch Metadata the Origin header says the same for the requests that
 // carry one, and frameHeaders closes the rest.
+//
+// The app's service worker (web/public/sw.js) answers the app's pages and fetches them itself; that fetch keeps the
+// navigation's mode and has no destination (Sec-Fetch-Dest: empty). No page can make such a request: a navigate mode is
+// the browser's own, and only the worker of the hub's origin sees the navigations to the hub. So a navigation with no
+// destination is a whole page opened through the hub's worker — a link to a chat from another site — and
+// passes as a document does; a frame is still closed by frameHeaders.
+func pageDest(dest string) bool { return dest == "document" || dest == "empty" }
+
 func refuseCrossSite(w http.ResponseWriter, r *http.Request) bool {
 	if !sameorigin.CrossSite(r) {
 		return false
 	}
-	if isNavigation(r) && r.Header.Get("Sec-Fetch-Mode") == "navigate" && r.Header.Get("Sec-Fetch-Dest") == "document" {
+	if isNavigation(r) && r.Header.Get("Sec-Fetch-Mode") == "navigate" && pageDest(r.Header.Get("Sec-Fetch-Dest")) {
 		return false
 	}
 	httpx.WriteError(w, r, httpx.ErrCrossSite)

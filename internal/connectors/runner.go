@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -152,7 +153,19 @@ func (r *runner) watch(ctx context.Context, c Conn, conn Connector, src Watcher)
 			return
 		}
 		in := r.s.instance(cur, nil)
+		in.Warn = func(msg string) {
+			got, err := r.s.Get(c.ID)
+			if err != nil || got.Warning == msg {
+				return
+			}
+			if msg != "" {
+				Trace.Add(c.ID, "source", TraceWarn, "warning: "+msg, nil)
+			}
+			_, _ = r.s.update(c.ID, func(x *Conn) { x.Warning = msg })
+			r.s.changed()
+		}
 		from := r.load(c.ID).Cursor
+		Trace.Add(c.ID, "source", TraceInfo, "source started", map[string]any{"connector": sp.ID, "cursor": from})
 		err = watchSafe(ctx, src, in, from, func(events []Event, next Cursor) error {
 			return r.commit(sp, in, cur.Account, events, next)
 		})
@@ -161,6 +174,7 @@ func (r *runner) watch(ctx context.Context, c Conn, conn Connector, src Watcher)
 		}
 		if err != nil {
 			r.log.Warn("connector source stopped", "connection", c.ID, "connector", sp.ID, "error", err)
+			Trace.Add(c.ID, "source", TraceError, "source stopped: "+sayOf(err), map[string]any{"restartIn": r.restart.String()})
 			_, _ = r.s.update(c.ID, func(x *Conn) { x.State, x.Error = StateError, sayOf(err) })
 			r.s.changed()
 		}
@@ -191,9 +205,11 @@ func (r *runner) commit(sp Spec, in Instance, account string, events []Event, ne
 		env, err := seal(sp, in, account, ev, now)
 		if err != nil {
 			r.log.Warn("connector event refused", "connection", in.ID, "connector", sp.ID, "error", err)
+			Trace.Add(in.ID, "commit", TraceWarn, "event refused: "+err.Error(), map[string]any{"id": ev.ID, "type": ev.Type})
 			continue
 		}
 		if seen[env.Fingerprint] {
+			Trace.Add(in.ID, "commit", TraceInfo, "event already emitted, dropped", map[string]any{"id": ev.ID, "fingerprint": env.Fingerprint})
 			continue
 		}
 		seen[env.Fingerprint] = true
@@ -206,6 +222,13 @@ func (r *runner) commit(sp Spec, in Instance, account string, events []Event, ne
 		}
 		if len(to) > 0 {
 			st.Outbox = append(st.Outbox, outItem{Envelope: env, To: to, Since: now})
+		}
+		if Trace.On() {
+			where := "no destination wants it"
+			if len(to) > 0 {
+				where = "to " + strings.Join(to, ", ")
+			}
+			Trace.Add(in.ID, "commit", TraceInfo, env.Type+" "+ev.ID+": "+where, map[string]any{"to": to, "envelope": env})
 		}
 		fresh++
 	}
@@ -284,6 +307,7 @@ func (r *runner) deliver(ctx context.Context, id string) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			r.log.Info("connector events wait for a destination", "connection", id, "to", d.Name(), "left", len(batch)-len(got), "error", err)
 		}
+		traceDeliver(id, d.Name(), batch, got, err)
 		set := map[string]bool{}
 		for _, f := range got {
 			set[f] = true
@@ -326,4 +350,18 @@ func watchSafe(ctx context.Context, src Watcher, in Instance, from Cursor, emit 
 		}
 	}()
 	return src.Watch(ctx, in, from, emit)
+}
+
+// traceDeliver writes what a destination took (the hub's journal, the inbox, the rules) and what waits for it.
+func traceDeliver(id, to string, batch []Envelope, got []string, err error) {
+	if !Trace.On() {
+		return
+	}
+	data := map[string]any{"to": to, "sent": len(batch), "taken": got}
+	if err != nil {
+		data["error"] = err.Error()
+		Trace.Add(id, "deliver", TraceWarn, fmt.Sprintf("%s took %d of %d, the rest waits: %v", to, len(got), len(batch), err), data)
+		return
+	}
+	Trace.Add(id, "deliver", TraceInfo, fmt.Sprintf("%s took %d of %d", to, len(got), len(batch)), data)
 }

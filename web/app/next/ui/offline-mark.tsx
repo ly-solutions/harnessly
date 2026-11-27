@@ -11,9 +11,11 @@ interface IOfflineMarkProps {
   word?: string;
   /** «chip»: the glyph on a soft round, to be seen at a glance (beside the workspace's name). */
   tone?: 'quiet' | 'chip';
+  /** Another glyph than «no network» (the laptop of «this computer»). */
+  icon?: string;
 }
 
-const OfflineMark = ({ label, word, tone = 'quiet' }: IOfflineMarkProps) => (
+const OfflineMark = ({ label, word, tone = 'quiet', icon = 'wifi-off' }: IOfflineMarkProps) => (
   <Tooltip label={label}>
     <span
       data-tone={tone}
@@ -22,7 +24,7 @@ const OfflineMark = ({ label, word, tone = 'quiet' }: IOfflineMarkProps) => (
       aria-label={label}
       tabIndex={-1}
     >
-      <Icon name="wifi-off" size="sm" />
+      <Icon name={icon} size="sm" />
       {word && <span className="hx-offmark__word">{word}</span>}
     </span>
   </Tooltip>

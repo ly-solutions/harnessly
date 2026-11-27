@@ -51,6 +51,7 @@ export const SETTINGS_SECTIONS = [
   'extensions',
   'plugins',
   'beta',
+  'developer',
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 

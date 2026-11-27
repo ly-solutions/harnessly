@@ -194,7 +194,12 @@ const inShell = (client) => {
 const conversationUrl = (message) =>
   message.tabId ? `${BASE}?open=${encodeURIComponent(message.tabId)}` : BASE;
 
-const countedKind = (kind) => kind && kind !== 'test' && kind !== 'release';
+const countedKind = (kind) => kind && kind !== 'test' && kind !== 'release' && kind !== 'settled';
+
+// An action waiting for the person's yes is always a system notification, with «Send / Don't send» where
+// the browser shows buttons (iOS shows none: a tap opens the chat with the card). «settled» replaces it quietly with
+// the outcome once it is answered anywhere.
+const alwaysShown = (kind) => kind === 'test' || kind === 'approval' || kind === 'settled';
 
 const updateBadge = async () => {
   if (!self.navigator?.setAppBadge) return;
@@ -215,7 +220,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       // A person looking at the app gets an in-page notice. WebKit requires a visible notification for every push.
-      if (!isWebKit && message.kind !== 'test') {
+      if (!isWebKit && !alwaysShown(message.kind)) {
         const focused = (await windows()).find(
           (c) => isTop(c) && c.focused && c.visibilityState === 'visible',
         );
@@ -224,14 +229,23 @@ self.addEventListener('push', (event) => {
           return;
         }
       }
+      const quiet = message.kind === 'settled';
+      const actions = Array.isArray(message.actions)
+        ? message.actions
+            .filter((a) => a && typeof a.action === 'string' && typeof a.title === 'string')
+            .slice(0, 2)
+            .map((a) => ({ action: a.action, title: a.title }))
+        : [];
       await self.registration.showNotification(message.title || '', {
         body: message.body || '',
         icon: ICON,
         badge: ICON,
         tag: message.tag || undefined,
-        renotify: Boolean(message.tag) && message.kind !== 'test',
-        requireInteraction: message.kind === 'question',
+        renotify: Boolean(message.tag) && message.kind !== 'test' && !quiet,
+        silent: quiet,
+        requireInteraction: message.kind === 'question' || message.kind === 'approval',
         timestamp: typeof message.at === 'number' ? message.at : Date.now(),
+        ...(actions.length ? { actions } : {}),
         data: message,
       });
       await updateBadge();
@@ -244,15 +258,59 @@ self.addEventListener('message', (event) => {
   event.waitUntil(
     (async () => {
       const shown = await self.registration.getNotifications();
-      shown.forEach((n) => n.close());
-      await self.navigator?.clearAppBadge?.();
+      // An action still waiting for a yes stays: its buttons answer it, and the chat with its card may not be open.
+      shown.filter((n) => n.data?.kind !== 'approval').forEach((n) => n.close());
+      await updateBadge();
     })(),
   );
 });
 
+// A button of an action's notification answers it with the proposal's single-use token, through the machine the
+// subscription came from; then a short notification says what happened (a failure leads to the chat on a tap).
+const answerFromNotification = async (message, verb) => {
+  const results = message.results || {};
+  let title = results.failed || 'Failed — open the chat';
+  let body = message.title || '';
+  try {
+    const query = message.machine ? `?machine=${encodeURIComponent(message.machine)}` : '';
+    const res = await fetch(`${BASE}api/push/act${query}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ proposal: message.proposal, verb, token: message.token }),
+    });
+    const answer = await res.json().catch(() => ({}));
+    if (res.ok && answer.state === 'done') title = results.approve || 'Sent';
+    else if (res.ok && answer.state === 'declined') title = results.decline || 'Not sent';
+    else if (answer.result) body = answer.result;
+  } catch {
+    // The network failed: the card in the chat still waits.
+  }
+  await self.registration.showNotification(title, {
+    body,
+    icon: ICON,
+    badge: ICON,
+    tag: message.tag || undefined,
+    silent: true,
+    timestamp: Date.now(),
+    data: { kind: 'settled', tabId: message.tabId, workspaceId: message.workspaceId, tag: message.tag },
+  });
+  await updateBadge();
+};
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const message = event.notification.data || {};
+
+  if (
+    message.kind === 'approval' &&
+    (event.action === 'approve' || event.action === 'decline') &&
+    message.token &&
+    message.proposal
+  ) {
+    event.waitUntil(answerFromNotification(message, event.action));
+    return;
+  }
 
   // A release push reloads every open window of the app onto the new build.
   if (message.kind === 'release') {

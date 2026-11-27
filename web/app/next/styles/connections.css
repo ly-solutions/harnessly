@@ -600,3 +600,170 @@ html[data-theme='dark'] .hx-conn-glyph[data-mcp='posthog'] {
     animation: none;
   }
 }
+
+/* «Rescan» of the agents' own MCP servers. */
+.hx-mcp-rescan {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 12px;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+
+.hx-mcp-rescan__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.hx-mcp-rescan__btn {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-sm);
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.hx-mcp-rescan__btn:hover:not(:disabled) {
+  background: var(--hx-bg-hover);
+}
+
+.hx-mcp-rescan__btn:focus-visible {
+  outline: 2px solid var(--hx-focus);
+  outline-offset: 1px;
+}
+
+.hx-mcp-rescan__btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* «Может быть триггером» and the form of a trigger on an MCP connection's page. */
+.hx-trg__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.hx-trg__lead {
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+
+.hx-trg__chip {
+  padding: 3px 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: 999px;
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-size: var(--hx-text-sm);
+  cursor: pointer;
+}
+
+.hx-trg__chip:hover,
+.hx-trg__chip[aria-pressed='true'] {
+  background: var(--hx-bg-hover);
+}
+
+.hx-trg__chip:focus-visible {
+  outline: 2px solid var(--hx-focus);
+  outline-offset: 1px;
+}
+
+.hx-trg__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.hx-trg__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hx-trg__paths {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-md);
+}
+
+.hx-trg__filter {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.hx-trg__modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.hx-trg__mode,
+.hx-trg__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-sm);
+}
+
+.hx-trg__tool,
+.hx-trg__note {
+  margin: 0;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+}
+
+.hx-trg__samples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hx-trg__sample {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border-radius: var(--hx-radius-sm);
+  background: var(--hx-bg-hover);
+}
+
+.hx-trg__sample-title {
+  overflow: hidden;
+  color: var(--hx-fg-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hx-trg__sample-meta {
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-xs);
+}
+
+.hx-trg__ok {
+  margin: 0;
+  color: var(--hx-fg-1);
+}
+
+.hx-trg__script {
+  font-family: var(--hx-font-mono);
+  font-size: var(--hx-text-xs);
+}

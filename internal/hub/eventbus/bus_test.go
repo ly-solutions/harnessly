@@ -416,3 +416,22 @@ func TestCatalogOfTriggers(t *testing.T) {
 		t.Fatalf("off before the first: %v", err)
 	}
 }
+
+// A recipe's mode is its trigger's first mode; the person's change wins after that.
+func TestTriggerStartMode(t *testing.T) {
+	b, _ := newBus(t)
+	ctx := context.Background()
+	ev := func(id, mode string) Event {
+		return Event{Owner: "u1", Type: "feed.item", Source: "mcp-recipe", Connection: "c1", Ext: id, StartMode: mode, Via: []string{ViaConnector}}
+	}
+	e, _, err := b.Append(ctx, ev("a", ModeNotify))
+	if err != nil || b.ModeOf(ctx, e) != ModeNotify {
+		t.Fatalf("first: %v %s", err, b.ModeOf(ctx, e))
+	}
+	if e, _, err = b.Append(ctx, ev("b", ModeAgent)); err != nil || b.ModeOf(ctx, e) != ModeNotify {
+		t.Fatalf("a later start mode changed the trigger: %v %s", err, b.ModeOf(ctx, e))
+	}
+	if e, _, err = b.Append(ctx, Event{Owner: "u1", Type: "feed.item", Source: "mcp-recipe", Connection: "c2", Ext: "c", StartMode: ModeOff, Via: []string{ViaConnector}}); err != nil || b.ModeOf(ctx, e) != ModeDigest {
+		t.Fatalf("off is never a start mode: %v %s", err, b.ModeOf(ctx, e))
+	}
+}

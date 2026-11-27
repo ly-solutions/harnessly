@@ -147,7 +147,8 @@ func (cfg Config) allowedFields() []string {
 	return []string{"appTheme", "terminalTheme", "customCSS", "dangerouslySkipPermissions", "claudeShowTerminal", "gitAskProvider",
 		"noteSummaryProvider", "editorUrl", "editorPreset", "authPassword", "notificationsEnabled", "toastOnCompleteEnabled",
 		"toastDuration", "toastPositionDesktop", "toastPositionMobile", "locale", "fontSize", "lineHeight", "lineHeightCustom",
-		"terminalKeyBar", "systemResourcesEnabled", "networkAccess", cfg.LayoutKey, "voiceSettings", "uiVersion"}
+		"terminalKeyBar", "systemResourcesEnabled", "networkAccess", cfg.LayoutKey, "voiceSettings", "uiVersion",
+		"developerMode"}
 }
 
 var (
@@ -339,6 +340,8 @@ func (cfg Config) patchConfig(r *http.Request, raw any) (int, any, http.Header) 
 		{"toastPositionDesktop", "toastPositionDesktop is invalid.", func(v any) bool { return oneOf(v, toastPositions...) }},
 		{"toastPositionMobile", "toastPositionMobile is invalid.", func(v any) bool { return oneOf(v, toastPositions...) }},
 		{"uiVersion", "uiVersion must be one of: legacy, next.", func(v any) bool { return oneOf(v, uiVersions...) }},
+		// The developer mode: the connectors' trace is kept on the machine only while it is on.
+		{"developerMode", "developerMode must be a boolean.", func(v any) bool { _, ok := v.(bool); return ok }},
 		{"toastDuration", "toastDuration must be a number between 1000 and 60000.", func(v any) bool {
 			n, ok := v.(float64)
 			return ok && !math.IsInf(n, 0) && n >= 1000 && n <= 60000

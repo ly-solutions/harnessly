@@ -14,6 +14,7 @@ import {
 } from '@/next/features/connectors/api';
 import { t } from '@/next/i18n';
 import type { MachineId } from '@/next/protocol/v2';
+import { PushOffer } from '@/next/bindings/push-offer';
 import { Button } from '@/next/ui/button';
 import { usePresence } from '@/next/ui/presence';
 import '@/next/styles/settings-changes.css';
@@ -25,10 +26,16 @@ const CARD_EXIT_MS = 180;
 const RETRY_MS = 5_000;
 
 const NONE: readonly IConnectorProposal[] = [];
+const NO_ASKS: Readonly<Record<string, string>> = {};
 
 /** The proposals waiting on a machine, read by revision where the transport can afford held requests. */
 const useConnectorProposals = (machine: MachineId) => {
-  const [read, setRead] = useState<{ machine: MachineId; list: readonly IConnectorProposal[] } | null>(null);
+  const [read, setRead] = useState<{
+    machine: MachineId;
+    list: readonly IConnectorProposal[];
+    pushAsk: Readonly<Record<string, string>>;
+    pushDevices: number;
+  } | null>(null);
   const [nudge, setNudge] = useState(0);
   useEffect(() => {
     const shortPoll = usesHttp1();
@@ -47,7 +54,13 @@ const useConnectorProposals = (machine: MachineId) => {
         timer = window.setTimeout(() => void step(), RETRY_MS);
         return;
       }
-      if (rev !== res.value.rev) setRead({ machine, list: res.value.proposals });
+      if (rev !== res.value.rev)
+        setRead({
+          machine,
+          list: res.value.proposals,
+          pushAsk: res.value.pushAsk,
+          pushDevices: res.value.pushDevices,
+        });
       rev = res.value.rev;
       if (shortPoll) timer = window.setTimeout(() => void step(), SHORT_POLL_MS);
       else void step();
@@ -66,13 +79,19 @@ const useConnectorProposals = (machine: MachineId) => {
   const settle = useCallback(
     (id: string) => {
       setRead((was) =>
-        was?.machine === machine ? { machine, list: was.list.filter((p) => p.id !== id) } : was,
+        was?.machine === machine ? { ...was, list: was.list.filter((p) => p.id !== id) } : was,
       );
       setNudge((n) => n + 1);
     },
     [machine],
   );
-  return { list: read?.machine === machine ? read.list : NONE, settle };
+  const mine = read?.machine === machine ? read : null;
+  return {
+    list: mine ? mine.list : NONE,
+    pushAsk: mine ? mine.pushAsk : NO_ASKS,
+    pushDevices: mine ? mine.pushDevices : -1,
+    settle,
+  };
 };
 
 interface ICardProps {
@@ -181,13 +200,25 @@ export const ConnectorActions = ({ machine, conversation }: IConnectorActionsPro
     return res.value.state === 'failed' ? res.value.result : null;
   };
 
-  if (card.value === null) return null;
+  // The offer to turn notifications on: only where the machine sends push at all.
+  const asked = proposals.pushAsk[conversation];
+  const forSend = proposal !== null && proposals.pushDevices === 0;
+  const reason = asked !== undefined ? `ask:${asked}` : forSend ? `send:${proposal.id}` : '';
+  const offer =
+    proposals.pushDevices < 0 ? null : (
+      <PushOffer key={conversation} reason={reason} why={asked ?? ''} forSend={forSend} />
+    );
+
+  if (card.value === null) return offer;
   return (
-    <ConnectorActionCard
-      key={card.value.id}
-      proposal={card.value}
-      closing={card.state === 'closing'}
-      onAnswer={onAnswer}
-    />
+    <>
+      {offer}
+      <ConnectorActionCard
+        key={card.value.id}
+        proposal={card.value}
+        closing={card.state === 'closing'}
+        onAnswer={onAnswer}
+      />
+    </>
   );
 };

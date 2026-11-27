@@ -1,0 +1,20 @@
+id: push-to-phone
+title: Пуш человеку на телефон — harnessly devices и harnessly push send --device, не в обход рантайма
+tags: [push, connectors]
+timeout_s: 240
+covers:
+  - 'internal/hlcli/push.go'
+  - 'internal/hlcli/help.go'
+  - 'internal/hlcli/connectors.go'
+  - 'cmd/runtime/push_approvals.go'
+prompt: пришли мне пуш на телефон, которым я последним пользовался, что сборка готова — и больше ничего не делай
+expect:
+  - name: sent the push through harnessly
+    called: Bash
+    args: {command: '(?s:.*)harnessly push send(?s:.*)'}
+  - name: picked the phone, not every device
+    called: Bash
+    args: {command: '(?s:.*)harnessly push send(?s:.*)--device[ =]+(mobile|last|[A-Za-z0-9_-]{6,})(?s:.*)'}
+  - name: did not post to a push service or the subscriptions file directly
+    not_called: Bash
+    args: {command: '(?s:.*)(push-subscriptions\.json|fcm\.googleapis|web\.push\.apple|/api/push/act)(?s:.*)'}

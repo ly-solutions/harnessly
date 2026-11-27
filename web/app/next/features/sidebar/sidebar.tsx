@@ -91,6 +91,7 @@ import MenuPanel, { MenuRoot, useMenuActions } from '@/next/ui/menu-panel';
 import { toast } from '@/next/ui/toast';
 import ProductSwitcher from '@/next/features/sidebar/product-switcher';
 import OfflineMark from '@/next/ui/offline-mark';
+import LocalMark from '@/next/features/sidebar/local-mark';
 import { useOffline } from '@/next/offline/net';
 import useDrag, { EDGE, afterTouchClick } from '@/next/ui/use-drag';
 import MachineAlert from '@/next/features/sidebar/machine-alert';
@@ -1238,6 +1239,7 @@ const Sidebar = ({
           <span className="hx-brand__name">{brand}</span>
         )}
         {offline && <OfflineMark label={t('next.offline.hint')} tone="chip" />}
+        <LocalMark />
         <span className="hx-spacer" />
         <button
           type="button"

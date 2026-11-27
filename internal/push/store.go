@@ -25,6 +25,15 @@ type Subscription struct {
 	} `json:"keys"`
 	DeviceID string `json:"deviceId,omitempty"`
 	Mobile   *bool  `json:"mobile,omitempty"`
+	// Name is the device as the person knows it, from its browser («iPhone · Safari»).
+	Name string `json:"name,omitempty"`
+	// Via is the machine the page reached this runtime through (its ?machine=): a notification's buttons answer the
+	// same way. Empty when the page talks to the runtime directly.
+	Via string `json:"via,omitempty"`
+	// CreatedAt, LastSeen (the page last registered) and LastActive (the person last looked at the app on it), RFC 3339.
+	CreatedAt  string `json:"createdAt,omitempty"`
+	LastSeen   string `json:"lastSeen,omitempty"`
+	LastActive string `json:"lastActive,omitempty"`
 }
 
 // Store reads and edits the subscriptions file and remembers which devices are on screen. Every writer of this process
@@ -36,6 +45,10 @@ type Store struct {
 
 	mu      sync.Mutex
 	visible map[string]time.Time
+	// looking is the chat each visible device shows, as its page last said.
+	looking map[string]string
+	// activeKept is when a device's lastActive was last written to the file.
+	activeKept map[string]time.Time
 }
 
 func (s *Store) now() time.Time {
@@ -134,12 +147,29 @@ func (s *Store) write(items []any) error {
 	return nil
 }
 
-// Add stores a browser's subscription ({endpoint, keys} as the browser gave them) with the device that made it. A
-// device subscribing again replaces its earlier subscription; an unchanged record is not written again (every page
-// load registers).
+// Add stores a browser's subscription ({endpoint, keys} as the browser gave them) with the device that made it.
 func (s *Store) Add(endpoint string, keys any, deviceID string, mobile *bool) error {
+	return s.AddDevice(endpoint, keys, deviceID, mobile, DeviceInfo{})
+}
+
+// DeviceInfo is what the subscribe request says of its device besides its id.
+type DeviceInfo struct {
+	// UserAgent names the device (DeviceName).
+	UserAgent string
+	// Via is the ?machine= the page reached the runtime through.
+	Via string
+}
+
+// seenEvery: a page load of an unchanged device writes lastSeen no oftener than this.
+const seenEvery = time.Hour
+
+// AddDevice stores a subscription as Add, with the device's name and the times it was seen. A device subscribing again
+// replaces its earlier subscription and keeps when it was first stored and last active; an unchanged record is not
+// written again within seenEvery (every page load registers).
+func (s *Store) AddDevice(endpoint string, keys any, deviceID string, mobile *bool, info DeviceInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now().UTC()
 	stored := jsvalue.NewObject("endpoint", endpoint, "keys", keys)
 	if deviceID != "" {
 		stored.Set("deviceId", deviceID)
@@ -147,25 +177,52 @@ func (s *Store) Add(endpoint string, keys any, deviceID string, mobile *bool) er
 	if mobile != nil {
 		stored.Set("mobile", *mobile)
 	}
-	current := s.items()
-	for _, it := range current {
-		if jsvalue.Equal(it, stored) {
-			return nil
-		}
+	if name := DeviceName(info.UserAgent); name != "" {
+		stored.Set("name", name)
 	}
+	if info.Via != "" {
+		stored.Set("via", info.Via)
+	}
+	current := s.items()
+	var prev *jsvalue.Object
 	subs := make([]any, 0, len(current)+1)
 	for _, it := range current {
 		o, _ := it.(*jsvalue.Object)
+		same := false
 		if e, ok := endpointOf(it); ok && e == endpoint {
-			continue
+			same = true
 		}
 		if deviceID != "" && o != nil {
 			if d, ok := o.Get("deviceId"); ok && d == deviceID {
-				continue
+				same = true
 			}
+		}
+		if same {
+			if prev == nil && o != nil {
+				prev = o
+			}
+			continue
 		}
 		subs = append(subs, it)
 	}
+	created := now.Format(time.RFC3339)
+	if prev != nil && prev.String("createdAt") != "" {
+		created = prev.String("createdAt")
+	}
+	stored.Set("createdAt", created)
+	if prev != nil {
+		if a := prev.String("lastActive"); a != "" {
+			stored.Set("lastActive", a)
+		}
+		// Unchanged and seen lately: nothing to write.
+		if seen, err := time.Parse(time.RFC3339, prev.String("lastSeen")); err == nil && now.Sub(seen) < seenEvery {
+			stored.Set("lastSeen", prev.String("lastSeen"))
+			if jsvalue.Equal(prev, stored) {
+				return nil
+			}
+		}
+	}
+	stored.Set("lastSeen", now.Format(time.RFC3339))
 	return s.write(append(subs, stored))
 }
 
@@ -186,13 +243,37 @@ func (s *Store) DeviceEndpoints() []any {
 }
 
 // MarkVisible: the device shows the app now.
-func (s *Store) MarkVisible(deviceID string) {
+func (s *Store) MarkVisible(deviceID string) { s.MarkLooking(deviceID, "") }
+
+// activeEvery: a device on screen writes its lastActive to the file no oftener than this.
+const activeEvery = 2 * time.Minute
+
+// MarkLooking: the device shows the app now, with the chat conv open (empty: none, or the page did not say). The
+// device's lastActive is kept in the file.
+func (s *Store) MarkLooking(deviceID, conv string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.visible == nil {
-		s.visible = map[string]time.Time{}
+		s.visible, s.looking, s.activeKept = map[string]time.Time{}, map[string]string{}, map[string]time.Time{}
 	}
-	s.visible[deviceID] = s.now()
+	now := s.now()
+	s.visible[deviceID] = now
+	s.looking[deviceID] = conv
+	if now.Sub(s.activeKept[deviceID]) < activeEvery {
+		return
+	}
+	s.activeKept[deviceID] = now
+	items := s.items()
+	changed := false
+	for _, it := range items {
+		if o, ok := it.(*jsvalue.Object); ok && o.String("deviceId") == deviceID && deviceID != "" {
+			o.Set("lastActive", now.UTC().Format(time.RFC3339))
+			changed = true
+		}
+	}
+	if changed {
+		_ = s.write(items)
+	}
 }
 
 // MarkHidden: the device hid the app.
@@ -200,6 +281,7 @@ func (s *Store) MarkHidden(deviceID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.visible, deviceID)
+	delete(s.looking, deviceID)
 }
 
 // Visible are the devices seen on screen within VisibilityTTL.

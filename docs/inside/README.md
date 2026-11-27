@@ -88,7 +88,7 @@ read again on every ask; a local section with a built-in id adds pages to it. Se
 
 ## Deeper
 
-- [Architecture of the runtime](../architecture.md): the gate and its two modes, the core, tmux, the repository.
+- [Architecture](../architecture.md): the hub, the agent and the runtime, the gate and its two modes, the core, tmux, the repository.
 - [Slices](../slices.md): switching routes per machine, the shadow comparison.
 - [The hub](../hub/architecture.md) and [its contract](../hub/api.md).
 - [The design engine](../design-engine.md) and [design pages](../design-pages.md).

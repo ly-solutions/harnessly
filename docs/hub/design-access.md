@@ -29,7 +29,7 @@ and response shapes as before. The hub checks that the person may open the machi
 
 ## A library in the hub's store
 
-With the hub's store on (`HUB_STORE`, [store](store.md)) a project is the space's, not one machine's: its rows are
+With the hub's store ([store](store.md), always on) a project is the space's, not one machine's: its rows are
 found under whichever machine of the space recorded it, the access dialog of any machine of the space changes the same
 rows, and every machine of the space gets the snapshot again after a change. The store gives a machine only the projects
 its person has a role in and takes its writes only to those they may edit.
@@ -110,7 +110,7 @@ Making a link: a live link is made even when the project is not in the store yet
 sync has put the project there); a pinned link needs the project in the store, since it pins one of its revisions, and
 answers `409 not_published` otherwise. The owner's own checks (may a link be made, the apps' check, a static snapshot's
 capture) still ask the machine when it is on; a guest never does. So a runtime that fails `harnessly doctor share`
-(gVisor and other sandboxes, SHR-204) does not stop a link while the store is on (GitHub #187): the runtime itself
+(gVisor and other sandboxes, SHR-204) does not stop a link (GitHub #187): the runtime itself
 still serves no guest path, and the guest reads the store's copy. Only without a store, where the machine would serve
 the guest, does such a runtime answer `409 share_unsafe_runtime` with what to run instead. A static snapshot is the
 exception: it is captured on the machine, so an unsafe runtime refuses it either way.
@@ -163,7 +163,6 @@ level, a team grant and the space level stay inside their space.
 
 - The project is a card of its own in the person's library under a machine of their own space, named by its card key.
   It is read from the hub's store of the owner's space only: neither the person's machine nor the owner's takes part.
-  Without a file store no project crosses spaces.
 - It opens read-only, whatever role the owner gave: writes through the hub answer `403`, and the access view shows the
   role `view` without the project's people, invitations or settings.
 - A revocation closes it at once, and the library's long poll wakes on a grant or a revocation in any space.
@@ -227,7 +226,7 @@ each project with what moved, each pair with its machine or why not. The agents 
 | `HUB_DESIGN_PLATFORM_API` | hub | Platform prefix of the runtimes, default `/api/platform` |
 | `HUB_DESIGN_DEFAULT_TEAM_LEVEL` | `none` | Team level of a newly recorded project: `none`, `view`, `comment` or `edit` |
 | `HUB_DESIGN_UNRECORDED` | `closed` on a new installation, `open` on an older one | `closed`: a stored project the hub has no row for goes to no other machine and only to its machine's person |
-| `HUB_DESIGN_REGISTER` | off | `dry-run` or `apply`: at start, give every stored project without a row an owner and report personal vs team. Needs `HUB_STORE` |
+| `HUB_DESIGN_REGISTER` | off | `dry-run` or `apply`: at start, give every stored project without a row an owner and report personal vs team. |
 | `HUB_DESIGN_IMPORT_GATEWAY` | hub | `dry-run` or `apply`: the move from the gateway at start; with `HUB_DESIGN_IMPORT_GATEWAY_URL` (its Postgres), `_SPACE`, `_TEAMS`, `_MACHINES`, `_DEFAULT_MACHINE` |
 | `AGENT_RUNTIME_PLATFORM_API` | machine | Where the agent reaches the runtime's platform API (default `<runtime>/api/platform`) |
 

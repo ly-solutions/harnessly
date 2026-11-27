@@ -23,6 +23,7 @@ let stack: Stack;
 let context: BrowserContext;
 let page: Page;
 let chatUrl = '';
+let laptop = { machineId: '', runtimePort: 0 };
 
 test.beforeAll(async () => {
   test.setTimeout(600_000);
@@ -69,7 +70,8 @@ test('1. a person signs in, connects a machine and makes a chat', async ({ brows
     profile: 'full',
     confirmFull: true,
   });
-  const { machineId } = await stack.registerMachine({ code: reg.code, name: 'laptop-box' });
+  laptop = await stack.registerMachine({ code: reg.code, name: 'laptop-box' });
+  const { machineId } = laptop;
   await expect
     .poll(
       async () =>
@@ -187,4 +189,51 @@ test('4. the network comes back without a reload, and the message goes', async (
   });
   expect(await page.evaluate(() => (window as unknown as { __hxStay?: number }).__hxStay)).toBe(1);
   await shot(page, 'back');
+});
+
+// the machine runs on this very computer (its runtime listens on the loopback the browser sees). The install
+// opens the app with ?this-computer=…; then, without the hub, the app goes on there: the whole app, agents included.
+test('5. the install opens the app, and this computer is paired by itself', async () => {
+  await page.goto(`${stack.hub}/agents/?this-computer=${laptop.machineId}&port=${laptop.runtimePort}`);
+  await expect(page.getByText(/This computer is connected|Этот компьютер подключён/).first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page).not.toHaveURL(/this-computer=/);
+});
+
+test('6. without the hub, the app opens on this computer and its agent answers', async () => {
+  const hubOrigin = new URL(stack.hub).origin;
+  // The hub is out of reach; the loopback of this computer is not.
+  await context.route(
+    (url) => url.origin === hubOrigin,
+    (route) => route.abort('internetdisconnected'),
+  );
+  await page.goto(chatUrl);
+  await page.waitForURL((u) => u.hostname === '127.0.0.1' && u.port === String(laptop.runtimePort), {
+    timeout: 60_000,
+  });
+  await expect(page).not.toHaveURL(/hx-local/, { timeout: 20_000 });
+  await expect(page.getByText('Fake agent reply: hello before the flight').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.locator('.hx-brand .hx-offmark[data-tone="chip"]')).toBeVisible();
+  await shot(page, 'this-computer');
+  const box = page.getByRole('textbox').last();
+  await box.fill('working on the laptop');
+  await box.press('Enter');
+  await expect(page.getByText('Fake agent reply: working on the laptop').first()).toBeVisible({
+    timeout: 90_000,
+  });
+});
+
+test('7. the hub is back: the way back leads to the same chat there', async () => {
+  await context.unrouteAll({ behavior: 'ignoreErrors' });
+  const back = page.locator('.hx-local-back');
+  await expect(back).toBeVisible({ timeout: 60_000 });
+  await back.click();
+  await page.waitForURL((u) => u.origin === new URL(stack.hub).origin, { timeout: 30_000 });
+  expect(new URL(page.url()).pathname).toBe(new URL(chatUrl).pathname);
+  await expect(page.getByText('Fake agent reply: working on the laptop').first()).toBeVisible({
+    timeout: 60_000,
+  });
 });

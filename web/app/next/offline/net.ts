@@ -84,15 +84,15 @@ const plan = () => {
   if (!netStore.get().online) timer = env.setTimeout(() => void checkNet(), PROBE_EVERY_MS);
 };
 
-/** Asks the server now; a second call while one is under way waits for it. */
+/**
+ * Asks the server now; a second call while one is under way waits for it. A browser that says «offline» is not taken
+ * at its word either: Android keeps navigator.onLine false after a VPN or network switch while requests go through,
+ * and the pill then stayed for good — «Проверить» included. Only the server's silence keeps the device offline.
+ */
 export function checkNet(): Promise<void> {
   const e = env;
   if (!e) return Promise.resolve();
-  if (!e.browserOnline()) {
-    setOnline(false);
-    plan();
-    return Promise.resolve();
-  }
+  if (!e.browserOnline()) setOnline(false);
   probing ??= e
     .reach()
     .then((ok) => {

@@ -94,9 +94,11 @@ type Server struct {
 	Problem string `json:"problem,omitempty"`
 	Tools   []Tool `json:"tools,omitempty"`
 	// Custom marks the person's own service: CatalogID is custom-<slug> and this is its description.
-	Custom    *CustomMeta `json:"custom,omitempty"`
-	CreatedAt time.Time   `json:"createdAt"`
-	CheckedAt time.Time   `json:"checkedAt,omitzero"`
+	Custom *CustomMeta `json:"custom,omitempty"`
+	// Agent marks a server taken from an agent's own config (agentsync.go).
+	Agent     *AgentOrigin `json:"agent,omitempty"`
+	CreatedAt time.Time    `json:"createdAt"`
+	CheckedAt time.Time    `json:"checkedAt,omitzero"`
 }
 
 // ProbeResult is what a pasted URL turned out to be.

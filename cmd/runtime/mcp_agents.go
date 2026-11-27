@@ -31,13 +31,17 @@ const mcpHubName = "harnessly-hub"
 // besides the hub: a few servers cost little context, a hundred would fill it, and then the hub alone finds them.
 const mcpDirectMax = 40
 
-// mcpDirect is the servers agents get as their own MCP servers: every enabled one with tools, unless together they
-// have more tools than mcpDirectMax. An API has no tools of its own: only the hub reaches it.
-func mcpDirect(list []mcpconn.Server) []mcpconn.Server {
+// mcpDirect is the servers an agent ("claude" or "codex") gets as its own MCP servers: every enabled one with tools
+// that the agent's own config does not have already, unless together they have more tools than mcpDirectMax. An API has no tools of its own: only the hub reaches it.
+func mcpDirect(list []mcpconn.Server, agent string) []mcpconn.Server {
 	var out []mcpconn.Server
 	n := 0
 	for _, srv := range list {
 		if srv.Slug == "" || srv.ID == "" || srv.Transport == mcpconn.API {
+			continue
+		}
+		// A server the agent has in its own config already: it would get it twice. The hub still reaches it.
+		if srv.HasAgent(agent) {
 			continue
 		}
 		n += len(srv.Tools)
@@ -71,7 +75,7 @@ func mcpClaudeConfig(enabled func() []mcpconn.Server, runtimeMCP, dir string) fu
 		}
 		servers := map[string]any{mcpHubName: map[string]any{"type": "http", "url": base + mcpHubPath, "headers": headers}}
 		allow := []string{"mcp__" + mcpHubName}
-		for _, srv := range mcpDirect(list) {
+		for _, srv := range mcpDirect(list, "claude") {
 			name := mcpAgentServerName(srv)
 			servers[name] = map[string]any{"type": "http", "url": base + mcpProxyPath + url.PathEscape(srv.ID), "headers": headers}
 			allow = append(allow, "mcp__"+name)
@@ -164,7 +168,7 @@ func mcpCodexServers(enabled func() []mcpconn.Server, own codex.MCP, port int) f
 		}
 		list := enabled()
 		out := []codex.MCP{{Server: mcpHubName, URL: codex.MCPURL(port, mcpHubPath), TokenHeader: own.TokenHeader, TokenEnv: own.TokenEnv}}
-		for _, srv := range mcpDirect(list) {
+		for _, srv := range mcpDirect(list, "codex") {
 			out = append(out, codex.MCP{Server: mcpAgentServerName(srv), URL: codex.MCPURL(port, mcpProxyPath+url.PathEscape(srv.ID)),
 				TokenHeader: own.TokenHeader, TokenEnv: own.TokenEnv})
 		}

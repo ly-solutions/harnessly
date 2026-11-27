@@ -67,6 +67,11 @@ func machineBusEvent(m store.Machine, kind, fingerprint string, ev map[string]an
 		for k, v := range f {
 			e.Facts[k] = fmt.Sprint(v)
 		}
+		// A recipe's mode is its trigger's first mode, not a fact of the event.
+		if e.Source == "mcp-recipe" {
+			e.StartMode = e.Facts["mode"]
+			delete(e.Facts, "mode")
+		}
 	}
 	return e
 }

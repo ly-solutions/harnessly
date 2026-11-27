@@ -303,7 +303,7 @@ gh attestation verify oci://ghcr.io/ly-solutions/harnessly:latest --repo ly-solu
 | [Render kit](docs/render-kit.md) | pinned Chrome, ffmpeg and fonts; `harnessly doctor render` |
 | [Design pages](docs/design-pages.md) | the page model of a design project and the page commands |
 | [Integrations](docs/integrations.md) | boards, artifacts and the agent skills |
-| [Architecture](docs/architecture.md) | the runtime gate, the core, tmux, the machine agent, the repository layout |
+| [Architecture](docs/architecture.md) | the hub, the machine agent and the runtime: what runs where, the runtime gate, the core, tmux, the repository layout |
 | [Slices](docs/slices.md) | the slices of routes and switching them per machine |
 | [The hub](docs/hub/deploy.md) | [deploy](docs/hub/deploy.md), [connecting a machine](docs/hub/machine.md), [architecture](docs/hub/architecture.md), [API](docs/hub/api.md) |
 | [Changelog](CHANGELOG.md) | what changed in each version |

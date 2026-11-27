@@ -576,6 +576,7 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 	f.Add(voiceRouteRoutes(d)...)
 	f.Add(spaceDirRoutes(d)...)
 	f.Add(inboxTriageRoutes(d, ref.c.agents.gpt)...)
+	f.Add(localRoutes(d, cfg.Listen)...)
 	f.Add(backgroundRoutes(d)...)
 	f.Add(searchRoutes(d)...)
 	f.Add(uiAgentRoutes(d)...)

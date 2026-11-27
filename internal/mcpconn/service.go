@@ -79,6 +79,8 @@ type stored struct {
 	Version int            `json:"version"`
 	Servers []Server       `json:"servers"`
 	Clients []registration `json:"clients,omitempty"`
+	// Dismissed are the agents' servers (AgentOrigin.Key) the person removed: a sync does not make them again.
+	Dismissed []string `json:"agentDismissed,omitempty"`
 }
 
 func (s *Service) readAll() (stored, error) {
@@ -626,6 +628,14 @@ func (s *Service) Remove(id string) error {
 	f, err := s.readAll()
 	if err != nil {
 		return err
+	}
+	for _, x := range f.Servers {
+		if x.ID == id && x.Agent != nil && x.Agent.Key != "" && !slices.Contains(f.Dismissed, x.Agent.Key) {
+			f.Dismissed = append(f.Dismissed, x.Agent.Key)
+			if x.Agent.Template != "" {
+				f.Dismissed = append(f.Dismissed, "tpl:"+x.Agent.Template)
+			}
+		}
 	}
 	f.Servers = slices.DeleteFunc(f.Servers, func(x Server) bool { return x.ID == id })
 	return s.writeAll(f)

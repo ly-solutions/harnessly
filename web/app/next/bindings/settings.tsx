@@ -37,11 +37,14 @@ import { TakesPage } from '@/next/bindings/settings-takes';
 import { PluginsPage } from '@/next/bindings/settings-plugins';
 import { ExtensionsPage, useHasExtensions } from '@/next/features/app-views/slot-pages';
 import SettingsShell from '@/next/features/settings/settings-shell';
+import DevSection from '@/next/features/devmode/dev-section';
 import { t } from '@/next/i18n';
 import type { MachineId } from '@/next/protocol/v2';
 import { goTo, ROUTE, type SettingsSection } from '@/next/routes/routes';
+import { TELEGRAM_BOTS_ID } from '@/next/stores/push-offer';
 import { useMachine } from '@/next/stores/machines';
 import usePendingList from '@/next/ui/use-pending-list';
+import { usePhone } from '@/next/ui/use-media';
 
 /** The catalog's keys of the runtime's settings, which «Основные» shows (cmd/runtime/routes_settingsctl.go). */
 const RUNTIME_KEY = 'runtime.';
@@ -80,6 +83,8 @@ const SettingsScreen = ({ machine, section, connect, item, name, onOpenDrawer }:
   const pending = usePendingList();
   const changes = useSettingChanges(machine, now);
   const hasExtensions = useHasExtensions(machine);
+  // The developer mode is a computer's: a phone's list leaves it out.
+  const phone = usePhone();
   const pages = useAgentPages(machine, {
     claude: active === 'claude' || active === 'accounts' || active === 'skills',
     codex: active === 'codex' || active === 'accounts' || active === 'skills',
@@ -107,7 +112,9 @@ const SettingsScreen = ({ machine, section, connect, item, name, onOpenDrawer }:
     body = (
       <>
         <NoticesPage />
-        <NotifyBotsPage machine={machine} />
+        <div id={TELEGRAM_BOTS_ID}>
+          <NotifyBotsPage machine={machine} />
+        </div>
         <AsksSettingsPage machine={machine} />
       </>
     );
@@ -162,6 +169,7 @@ const SettingsScreen = ({ machine, section, connect, item, name, onOpenDrawer }:
   else if (active === 'extensions') body = <ExtensionsPage machine={machine} />;
   else if (active === 'plugins') body = <PluginsPage />;
   else if (active === 'beta') body = <BetaPage />;
+  else if (active === 'developer') body = <DevSection machine={machine} />;
   else body = <AppsPage machine={machine} />;
 
   return (
@@ -169,7 +177,10 @@ const SettingsScreen = ({ machine, section, connect, item, name, onOpenDrawer }:
       section={active}
       pageOpen={section !== null}
       lead={lead}
-      hidden={hasExtensions ? [] : ['extensions']}
+      hidden={[
+        ...(hasExtensions ? [] : (['extensions'] as const)),
+        ...(phone ? (['developer'] as const) : []),
+      ]}
       changed={changedSections}
       onPick={(next) => goTo({ kind: ROUTE.settings, section: next })}
       onBack={() =>

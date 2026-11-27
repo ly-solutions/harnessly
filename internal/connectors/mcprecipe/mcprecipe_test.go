@@ -109,3 +109,50 @@ func TestPickAndWhen(t *testing.T) {
 		t.Fatal("later")
 	}
 }
+
+func TestRecipeWritesTheTrace(t *testing.T) {
+	old := connectors.Trace
+	connectors.Trace = connectors.NewTracer(50)
+	defer func() { connectors.Trace = old }()
+	f := &fakeMCP{specs: []mcpconn.ToolSpec{{Name: "list_jobs", Annotations: &mcpconn.ToolAnnotations{ReadOnlyHint: yes()}}},
+		jobs: []map[string]any{{"id": 1, "done_at": "2026-11-21T09:00:00Z", "prompt": "a cat"}}}
+	Service = f
+	defer func() { Service = nil }()
+	in, _ := instance()
+	ctx := context.Background()
+	c := conn{}
+	// Off: nothing is kept.
+	if _, _, err := c.Poll(ctx, in, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := connectors.Trace.Recent("c1", 0); len(got) != 0 {
+		t.Fatalf("written while off: %+v", got)
+	}
+	connectors.Trace.SetEnabled(func() bool { return true })
+	f.jobs = append(f.jobs, map[string]any{"id": 2, "done_at": "2026-11-21T10:00:00Z", "prompt": "a dog"})
+	if _, _, err := c.Poll(ctx, in, ""); err != nil {
+		t.Fatal(err)
+	}
+	got := connectors.Trace.Recent("c1", 0)
+	if len(got) != 2 {
+		t.Fatalf("entries: %+v", got)
+	}
+	call, poll := string(got[0].Data), string(got[1].Data)
+	if !strings.Contains(got[0].Message, "2 items") || !strings.Contains(call, `"since":"2026-11-21T09:00:00Z"`) ||
+		!strings.Contains(call, `"answer"`) || !strings.Contains(call, `"ms"`) {
+		t.Fatalf("call: %s %s", got[0].Message, call)
+	}
+	if !strings.Contains(poll, `"new":["generation.done:2"]`) || !strings.Contains(poll, `"cursorBefore":"2026-11-21T09:00:00Z"`) ||
+		!strings.Contains(poll, `"cursorAfter":"2026-11-21T10:00:00Z"`) {
+		t.Fatalf("poll: %s", poll)
+	}
+	// A refusal of the guard is written with its reason.
+	f.specs[0].Annotations = &mcpconn.ToolAnnotations{DestructiveHint: yes()}
+	if _, _, err := c.Poll(ctx, in, ""); err == nil {
+		t.Fatal("destructive tool polled")
+	}
+	last := connectors.Trace.Recent("c1", 1)[0]
+	if last.Level != connectors.TraceWarn || !strings.Contains(last.Message, "guard refused") || !strings.Contains(string(last.Data), "destructive") {
+		t.Fatalf("guard: %+v %s", last, last.Data)
+	}
+}

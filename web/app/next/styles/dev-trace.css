@@ -1,0 +1,148 @@
+/* The developer mode's trace panel (features/devmode/trace-panel.tsx): a bar at the bottom of the page that
+   unfolds to the lines of the trace. Computer only: the component is never drawn on a phone. */
+.hx-dtr {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: 16px;
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-md);
+  background: var(--hx-bg-window);
+  font-size: var(--hx-text-xs);
+}
+
+.hx-dtr__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.hx-dtr[data-open] .hx-dtr__head {
+  border-bottom: 1px solid var(--hx-border);
+}
+
+.hx-dtr__fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--hx-radius-sm);
+  background: none;
+  color: var(--hx-fg-1);
+  font: inherit;
+  font-weight: var(--hx-weight-semibold);
+  cursor: pointer;
+}
+
+.hx-dtr__fold:hover,
+.hx-dtr__clear:hover {
+  background: var(--hx-bg-hover);
+}
+
+.hx-dtr__fold:focus-visible,
+.hx-dtr__clear:focus-visible,
+.hx-dtr__filter:focus-visible,
+.hx-dtr__line:focus-visible {
+  outline: 2px solid var(--hx-focus);
+  outline-offset: 1px;
+}
+
+.hx-dtr__count {
+  color: var(--hx-fg-3);
+  font-weight: var(--hx-weight-medium);
+}
+
+.hx-dtr__filter,
+.hx-dtr__clear {
+  padding: 2px 8px;
+  border: 1px solid var(--hx-border);
+  border-radius: var(--hx-radius-sm);
+  background: none;
+  color: var(--hx-fg-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.hx-dtr__filter {
+  max-width: 220px;
+}
+
+.hx-dtr__body {
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.hx-dtr__empty {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--hx-fg-3);
+}
+
+.hx-dtr__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--hx-font-mono);
+}
+
+.hx-dtr__line {
+  display: grid;
+  grid-template-columns: 92px 44px minmax(60px, 140px) 64px 1fr;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 12px;
+  border: 0;
+  background: none;
+  color: var(--hx-fg-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hx-dtr__line:disabled {
+  cursor: default;
+}
+
+.hx-dtr__line:not(:disabled):hover {
+  background: var(--hx-bg-hover);
+}
+
+.hx-dtr__time,
+.hx-dtr__part {
+  color: var(--hx-fg-3);
+}
+
+.hx-dtr__conn,
+.hx-dtr__msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hx-dtr__msg {
+  color: var(--hx-fg-1);
+}
+
+.hx-dtr__row[data-level='warn'] .hx-dtr__level {
+  color: var(--hx-warning);
+}
+
+.hx-dtr__row[data-level='error'] .hx-dtr__level,
+.hx-dtr__row[data-level='error'] .hx-dtr__msg {
+  color: var(--hx-danger);
+}
+
+.hx-dtr__json {
+  margin: 0 12px 6px;
+  padding: 8px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: var(--hx-radius-sm);
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

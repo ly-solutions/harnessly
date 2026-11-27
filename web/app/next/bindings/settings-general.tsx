@@ -25,6 +25,7 @@ import { applyMachineUpdate, loadUpdateInfo, type TUpdateInfo } from '@/next/fea
 import { machineRows } from '@/next/features/settings/machines';
 import { ObjectActions } from '@/next/features/app-views/slot-pages';
 import MachinesSection from '@/next/features/settings/machines-section';
+import ThisComputerCard from '@/next/features/settings/this-computer-card';
 import { loadRuntimeSettings, saveRuntimeSettings, signOut } from '@/next/features/settings/api';
 import { useEffect, useState } from 'react';
 import { locale, t } from '@/next/i18n';
@@ -420,6 +421,9 @@ export const MachinesPage = ({ now, pending }: IMachinesPageProps) => {
         busy={new Set(waiting.keys())}
         onMakeMain={(id) => void run(id, t('next.settings.failed'), () => savePerson({ defaultMachine: id }))}
         below={(row) => <MachineMoveCard machine={row.id} name={row.name} online={row.online} />}
+      />
+      <ThisComputerCard
+        machines={(rows ?? []).filter((row) => row.online).map((row) => ({ id: row.id, name: row.name }))}
       />
       {(rows ?? []).map((row) => (
         <ObjectActions

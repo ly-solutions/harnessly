@@ -8,6 +8,7 @@ import { usePillWidth } from '@/next/ui/use-pill-width';
 import { createPortal } from 'react-dom';
 import { secondsToRetry } from '@/next/stores/connection';
 import { checkNet, useOffline } from '@/next/offline/net';
+import { openThisComputer, useThisComputer } from '@/next/offline/this-computer';
 import { ROLLOUT, useRollout } from '@/next/features/rollout/rollout';
 import type { Connection } from '@/next/protocol/v2';
 import Icon, { type TIconName } from '@/next/ui/icon';
@@ -97,6 +98,8 @@ const ConnectionBanner = ({ connection, machineName, onRetryNow, graceMs = LOSS_
   // The device itself is offline: that is said at once and alone, without a machine's countdown; what is on
   // screen is what the device kept, and the messages wait in the outbox.
   const offline = useOffline();
+  // Offline with a machine on this computer: the whole app is a click away, on the loopback.
+  const here = useThisComputer() !== null;
   const away = offline || trouble !== null;
   // Once the connection was lost, the way back is shown too: «Подключаемся», then «Снова на связи» for a moment.
   const [lost, setLost] = useState(false);
@@ -157,6 +160,14 @@ const ConnectionBanner = ({ connection, machineName, onRetryNow, graceMs = LOSS_
         <Icon name={ICON[value.net]} size="sm" className="hx-net__icon" />
         <span className="hx-net__text">{value.text}</span>
         {value.sub && <span className="hx-net__sub">{value.sub}</span>}
+        {offline && here && (
+          <button type="button" className="hx-net__now" onClick={() => openThisComputer()}>
+            <span className="hx-net__now-long">{t('next.thisComputer.open')}</span>
+            <span className="hx-net__now-short" aria-hidden="true">
+              {t('next.thisComputer.openShort')}
+            </span>
+          </button>
+        )}
         {value.canRetry && (
           <button
             type="button"

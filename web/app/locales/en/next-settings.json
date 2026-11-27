@@ -685,5 +685,20 @@
   "next.settings.general.folders.peek": "Show live chats in a closed folder",
   "next.settings.general.folders.peek.hint": "A chat at work or waiting for your look, opened today, stays visible under its closed folder.",
   "next.settings.general.folders.suggest": "Suggest a folder for a chat",
-  "next.settings.general.folders.suggest.hint": "After a few prompts the app offers to put a chat without a folder into the fitting one."
+  "next.settings.general.folders.suggest.hint": "After a few prompts the app offers to put a chat without a folder into the fitting one.",
+  "next.settings.section.developer": "Developer mode",
+  "next.settings.lead.developer": "Detailed logs of the connections and triggers, on this computer only",
+  "next.devmode.group": "Developer mode",
+  "next.devmode.switch": "Logs of connections and triggers",
+  "next.devmode.switch.hint": "Connections shows a panel at the bottom: each check and poll, the arguments, the time, new ids, the cursor, refusals and errors, the raw event and where it went",
+  "next.devmode.foot": "Kept on this machine only, in a ring of the last lines; the services' answers never go to the hub. Not shown on a phone.",
+  "next.devmode.refused": "The machine did not take the change. Try again.",
+  "next.devmode.panel": "Developer log",
+  "next.devmode.filter": "Connection",
+  "next.devmode.all": "All connections",
+  "next.devmode.clear": "Clear",
+  "next.devmode.empty": "Nothing yet: lines appear with the next check or poll.",
+  "next.devmode.failed": "The log was not read from the machine.",
+  "next.devmode.sync": "MCP synchronization",
+  "next.devmode.new": "New connection"
 }

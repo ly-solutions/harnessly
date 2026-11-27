@@ -162,7 +162,7 @@ The store reuses the hub's database and bucket settings and has none of its own 
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `HUB_STORE` | `on` | `off`: no store, no capability, no routes; machines keep their data as before |
+| `HUB_STORE` | `on` | Always on since HRN-1795: `off` stops the hub at start, remove the variable |
 | `HUB_STORE_DIR` | `<HUB_DATA_DIR>/store` | the SQLite databases and, without S3, the blobs |
 | `HUB_STORE_DATABASE_URL` | the hub's database | another database for the revisions, `sqlite:///folder` or `postgres://…`. A Postgres named here is read in the layout of a design-sync center (`ds_rooms`, `r_*`) |
 | `HUB_STORE_S3_ENDPOINT` | not set | a bucket of the store's own, with `HUB_STORE_S3_REGION`, `HUB_STORE_S3_BUCKET`, `HUB_STORE_S3_PREFIX`, `HUB_STORE_S3_ACCESS_KEY`, `HUB_STORE_S3_SECRET_KEY` (path style): a design-sync center's blobs, while the hub's other files stay on its disk |

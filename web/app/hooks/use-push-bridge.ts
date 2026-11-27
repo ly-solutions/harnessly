@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { homeFetch, prefixAppPath } from '@/lib/app-path';
 import { getDeviceId } from '@/lib/push-device';
+import { LOOKING_CHANGED_EVENT, getLookingAt } from '@/next/stores/looking-at';
 import { createVisibilityReporter, trackVisibility } from '@/lib/visibility-report';
 import {
   PUSH_NAV_CACHE,
@@ -13,17 +14,20 @@ import {
 import {
   OPEN_CONVERSATION_EVENT,
   PUSH_MESSAGE_EVENT,
+  enablePush,
   preparePush,
   refreshPushState,
   syncSubscription,
+  usePushStore,
 } from '@/hooks/use-web-push';
+import { PUSH_ENABLE_EVENT, setPushOfferState, type IPushEnableDetail } from '@/next/stores/push-offer';
 
 /** The server holds back push for a device it saw looking at the app: it is told when that changes. */
 const sendVisibility = (visible: boolean) => {
   void homeFetch('/api/push/visibility', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceId: getDeviceId(), visible }),
+    body: JSON.stringify({ deviceId: getDeviceId(), visible, conversation: visible ? getLookingAt() : null }),
     keepalive: true,
   }).catch(() => {});
 };
@@ -115,8 +119,29 @@ const usePushBridge = (): void => {
       });
     }
 
+    // The current interface reads the push state and turns push on through these (next/stores/push-offer.ts).
+    setPushOfferState(usePushStore.getState().state);
+    cleanups.push(usePushStore.subscribe((s) => setPushOfferState(s.state)));
+    const onEnable = (event: Event) => {
+      const detail = (event as CustomEvent<IPushEnableDetail>).detail;
+      if (detail) detail.taken = true;
+      // Called inside the tap's dispatch: subscribe() is the first thing enablePush waits for.
+      void enablePush().then(
+        (result) => detail?.done(result),
+        () => detail?.done({ state: usePushStore.getState().state }),
+      );
+    };
+    window.addEventListener(PUSH_ENABLE_EVENT, onEnable);
+    cleanups.push(() => window.removeEventListener(PUSH_ENABLE_EVENT, onEnable));
+
     const stop = trackVisibility(createVisibilityReporter(sendVisibility), { window, document });
+    // Another chat opened while the app is on screen: the server learns it at once, not at the next ping.
+    const onLooking = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) sendVisibility(true);
+    };
+    window.addEventListener(LOOKING_CHANGED_EVENT, onLooking);
     cleanups.push(() => {
+      window.removeEventListener(LOOKING_CHANGED_EVENT, onLooking);
       stop();
       sendVisibility(false);
     });

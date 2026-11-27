@@ -445,7 +445,8 @@ func TestRemoveKeepsTheOtherRecordsAsWritten(t *testing.T) {
 // Add and Remove from many goroutines go through one lock: no subscription is lost to a concurrent write.
 func TestAddReplacesTheDeviceAndKeepsEveryWrite(t *testing.T) {
 	dir := t.TempDir()
-	st := &Store{Dir: dir}
+	at := time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)
+	st := &Store{Dir: dir, Now: func() time.Time { return at }}
 	keys := jsvalue.NewObject("p256dh", "P", "auth", "A")
 	yes := true
 	if err := st.Add("https://push.example/1", keys, "laptop", nil); err != nil {
@@ -454,7 +455,7 @@ func TestAddReplacesTheDeviceAndKeepsEveryWrite(t *testing.T) {
 	if err := st.Add("https://push.example/2", keys, "laptop", &yes); err != nil {
 		t.Fatal(err)
 	}
-	want := "[\n  {\n    \"endpoint\": \"https://push.example/2\",\n    \"keys\": {\n      \"p256dh\": \"P\",\n      \"auth\": \"A\"\n    },\n    \"deviceId\": \"laptop\",\n    \"mobile\": true\n  }\n]"
+	want := "[\n  {\n    \"endpoint\": \"https://push.example/2\",\n    \"keys\": {\n      \"p256dh\": \"P\",\n      \"auth\": \"A\"\n    },\n    \"deviceId\": \"laptop\",\n    \"mobile\": true,\n    \"createdAt\": \"2026-11-27T10:00:00Z\",\n    \"lastSeen\": \"2026-11-27T10:00:00Z\"\n  }\n]"
 	if got, _ := os.ReadFile(filepath.Join(dir, SubscriptionsFile)); string(got) != want {
 		t.Fatalf("%s", got)
 	}

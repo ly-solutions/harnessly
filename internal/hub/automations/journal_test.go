@@ -85,3 +85,17 @@ func TestAgentForEvent(t *testing.T) {
 		t.Fatal("an outside event took the bus's source")
 	}
 }
+
+// A recipe's «mode» fact is its trigger's first mode, not a fact of the journal.
+func TestRecipeModeIsTheStartMode(t *testing.T) {
+	e := machineBusEvent(store.Machine{ID: "m1", CreatedBy: "u1"}, "feed", "f1", map[string]any{"type": "feed.item", "connector": "mcp-recipe",
+		"connection": "c1", "id": "x", "facts": map[string]any{"trigger": "message.new", "mode": "notify"}})
+	if e.StartMode != "notify" || e.Facts["mode"] != "" || e.Facts["trigger"] != "message.new" {
+		t.Fatalf("%+v", e)
+	}
+	other := machineBusEvent(store.Machine{ID: "m1", CreatedBy: "u1"}, "feed", "f2", map[string]any{"type": "feed.item", "connector": "rss",
+		"facts": map[string]any{"mode": "notify"}})
+	if other.StartMode != "" || other.Facts["mode"] != "notify" {
+		t.Fatalf("not a recipe: %+v", other)
+	}
+}

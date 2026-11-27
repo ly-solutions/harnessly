@@ -29,6 +29,7 @@ harnessly installer
   --hub URL          the hub's address (default: the one this script was served by)
   --image IMAGE      the machine image of the container profile (default: the hub's)
   --check            check this machine (system, tools, hub, CA, Docker) and install nothing
+  --no-browser       on a desktop, do not open harnessly at the end (it opens this computer's page by default)
   --ca-file FILE     PEM file with your company's CA certificates: downloads and every component trust it
                      (SSL_CERT_FILE, NODE_EXTRA_CA_CERTS ...)
   --proxy URL        HTTP(S) proxy for downloads and for every component
@@ -101,6 +102,7 @@ parse_args() {
 	IMAGE=${HARNESSLY_IMAGE:-}
 	HUB_URL=${HARNESSLY_HUB_URL:-}
 	CHECK=0
+	BROWSER=${HARNESSLY_OPEN_BROWSER:-1}
 	CA_FILE=${HARNESSLY_CA_FILE:-}
 	PROXY=${HARNESSLY_PROXY:-${HTTPS_PROXY:-${https_proxy:-}}}
 	NO_PROXY_EXTRA=${HARNESSLY_NO_PROXY:-}
@@ -123,6 +125,7 @@ parse_args() {
 		--re-register) REREGISTER=1 ;;
 		--update) UPDATE=1 ;;
 		--check) CHECK=1 ;;
+		--no-browser) BROWSER=0 ;;
 		-h | --help)
 			usage
 			exit 0
@@ -775,6 +778,26 @@ done_message() {
 		"Управление: harnessly-agent status | off | on. Удалить: curl -fsSL $HUB_URL/install | $_sh -s -- --uninstall --profile $PROFILE"
 }
 
+# open_this_computer opens the workspace in the person's browser when this is their own desktop: the address
+# names this machine and its port, and the page makes it «this computer» by itself — without a network it then opens
+# this machine's runtime on the loopback. A server, an SSH session or --no-browser opens nothing; the line is printed.
+open_this_computer() {
+	[ "$DRY" = 0 ] || return 0
+	_mid=$(json_field "$(rp "$DATA_DIR/machine.json")" machineId)
+	case $_mid in '' | *[!a-z0-9]*) return 0 ;; esac
+	case $RUNTIME_PORT in '' | *[!0-9]*) return 0 ;; esac
+	_url="$HUB_URL/agents/?this-computer=$_mid&port=$RUNTIME_PORT"
+	say "This computer in harnessly (works without a network too): $_url" \
+		"Этот компьютер в harnessly (работает и без сети): $_url"
+	[ "$BROWSER" = 1 ] || return 0
+	[ -z "${SSH_CONNECTION:-}" ] || return 0
+	if [ "$OS" = darwin ]; then
+		open "$_url" >/dev/null 2>&1 || true
+	elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then
+		xdg-open "$_url" >/dev/null 2>&1 &
+	fi
+}
+
 # --- browser and design tools (optional) ----------------------------------------------------------------------------
 # The design library drives a headless Chromium; video exports use ffmpeg. The fullscreen remote browser uses the same
 # Chrome plus Xvfb, x11vnc and websockify. The agent browser reuses Chrome and Xvfb with a private pipe;
@@ -1289,6 +1312,7 @@ install_full() {
 	save_manifest
 	wait_linked
 	done_message
+	open_this_computer
 }
 
 # --- the network: CA, proxy --------------------------------------------------------------------------------------

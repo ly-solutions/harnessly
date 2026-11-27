@@ -82,6 +82,8 @@ export interface IConnectorConn {
   account: string;
   state: string;
   error: string;
+  /** What its source says the person should know while it works (a recipe with more pages than it reads). */
+  warning: string;
   /** The step the person still has to do (a Telegram bot's pairing link), null when there is none. */
   next: IConnectorStep | null;
   /** What the person sees once, right after a connect or a reissue: the address, a generated secret. */
@@ -222,6 +224,7 @@ export const readConnectorConn = (v: unknown): IConnectorConn => {
     account: optStr(o.account, 'account'),
     state: str(o.state, 'state'),
     error: optStr(o.error, 'error'),
+    warning: optStr(o.warning, 'warning'),
     next: readStep(o.next),
     shown: list(o.shown, 'shown', (v) => {
       const so = obj(v, 'shown');
@@ -292,9 +295,21 @@ const readChoices = orRefusal((o) =>
     return { value: str(co.value, 'choice.value'), label: word(co.label, 'choice.label') };
   }),
 );
+/** The chats whose agent asks to turn notifications on (harnessly push ask), each with why. */
+const readPushAsk = (v: unknown): Readonly<Record<string, string>> => {
+  if (v === undefined || v === null) return {};
+  const o = obj(v, 'pushAsk');
+  const out: Record<string, string> = {};
+  for (const [conv, ask] of Object.entries(o)) out[conv] = optStr(obj(ask, 'pushAsk.item').why, 'why');
+  return out;
+};
+
 const readProposals = orRefusal((o) => ({
   proposals: list(o.proposals, 'proposals', readProposal),
   rev: optStr(o.rev, 'rev'),
+  pushAsk: readPushAsk(o.pushAsk),
+  /** How many devices get the machine's notifications; -1 when push is off there (or the runtime is older). */
+  pushDevices: typeof o.pushDevices === 'number' ? o.pushDevices : -1,
 }));
 const readAnswered = orRefusal((o) => readProposal(o.proposal));
 

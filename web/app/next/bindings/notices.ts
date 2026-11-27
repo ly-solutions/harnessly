@@ -19,6 +19,7 @@ import { t } from '@/next/i18n';
 import { routePath, ROUTE } from '@/next/routes/routes';
 import { activeMachineStore } from '@/next/stores/machines';
 import { startNoticesSync } from '@/next/stores/notices-sync';
+import { setLookingAt } from '@/next/stores/looking-at';
 import { convsLoadedStore, useConversationList } from '@/next/stores/conversations';
 import {
   clearChatNotices,
@@ -152,6 +153,7 @@ export const useNotices = ({ person, currentId, onOpenChat }: INoticesOptions) =
   const settleTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(settleTimer.current), []);
   const current = useRef(currentId);
+  useEffect(() => setLookingAt(currentId), [currentId]);
   const open = useRef(onOpenChat);
   // Before the effects below, which read them.
   useEffect(() => {
