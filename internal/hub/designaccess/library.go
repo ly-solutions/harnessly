@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
@@ -20,7 +21,7 @@ import (
 // space). The projects are the ones the person has a role in, as design access has it, in the shape the machine's
 // v2 library gives them (wire.DesignArtifact); the shelves are the person's own layout file in `.folders/`. What only
 // the machine knows — the library server's port, the chats that drew a project, the agents and claims on it, its
-// checks, the pins — is not there, and `missing` names it.
+// pins — is not there, and `missing` names it; the checks and the format's release come from the records.
 
 // LibraryItem is a project of a space's library as the store has it at its newest revision (Rev).
 type LibraryItem struct {
@@ -36,6 +37,9 @@ type LibraryItem struct {
 type LibraryBoard struct {
 	Title string `json:"title"`
 	Path  string `json:"path"`
+	// W and H are the board's own size when the project says it: the render worker draws its picture at it.
+	W int `json:"w,omitempty"`
+	H int `json:"h,omitempty"`
 }
 
 // Coverer is the part of a Viewer that gives the cover pictures kept in the store (designview.View).
@@ -85,8 +89,12 @@ type storeArtifact struct {
 	Role         string         `json:"role,omitempty"`
 	AccessSource string         `json:"accessSource,omitempty"`
 	AccessUntil  *time.Time     `json:"accessUntil,omitempty"`
-	// WorkMachine is the machine whose folder holds the working copy (hub-design-owner).
+	// WorkMachine is the machine whose folder holds the working copy.
 	WorkMachine string `json:"workMachine,omitempty"`
+	// Check and Release are what the working copy's machine last said of the project in its record, in the
+	// machine's shape: the card shows them with the machine off.
+	Check   *filestore.RecordCheck   `json:"check,omitempty"`
+	Release *filestore.RecordRelease `json:"release,omitempty"`
 }
 
 type storeFolder struct {
@@ -109,8 +117,9 @@ type storeLibrary struct {
 	Missing []string `json:"missing"`
 }
 
-// libraryMissing: the library server (its port and the boards' pages), the chats, the agents and claims, the checks, the pins.
-var libraryMissing = []string{"server", "chats", "agents", "checks", "pins"}
+// libraryMissing: the library server (its port and the boards' pages), the chats, the agents and claims, the pins. The
+// checks and the format's release come from the projects' records.
+var libraryMissing = []string{"server", "chats", "agents", "pins"}
 
 const storeLibraryPath = "/design/store-library"
 
@@ -135,8 +144,9 @@ func (s *Service) libraryRoute(w http.ResponseWriter, r *http.Request, u store.U
 // storeLibraryOf is the person's library and shelves as the hub's store has them (the store-library answer).
 func (s *Service) storeLibraryOf(ctx context.Context, u store.User, m store.Machine, keys bool) (storeLibrary, error) {
 	lister, ok := s.view.(Librarian)
+	// A machine outside a space (the local one before an admin claims it) keeps its library to itself.
 	if m.SpaceID == "" {
-		return storeLibrary{}, fail("store_off", "Хранилище дизайнов не подключено")
+		return storeLibrary{}, fail("not_found", "Библиотеки этой машины нет на хабе")
 	}
 	if !ok {
 		return s.grantedLibrary(ctx, u, m, keys)
@@ -255,6 +265,7 @@ func (s *Service) storeLibraryOf(ctx context.Context, u store.User, m store.Mach
 			out.Artifacts = append(out.Artifacts, a)
 		}
 	}
+	s.attachRecordFacts(ctx, spaceID, out.Artifacts)
 	// Projects other spaces shared with the person by name (foreign.go), for a page that reads card keys.
 	if keys {
 		far, err := s.foreignLibrary(ctx, u, m)
@@ -475,4 +486,22 @@ func (s *Service) mayOpen(ctx context.Context, u store.User, m store.Machine, id
 		return f.Role != "", nil
 	}
 	return false, nil
+}
+
+// attachRecordFacts gives each project the outcome of its last check and its format's release from the record its
+// machine keeps in the store: a library read with the machine off shows the same badges as with it on.
+func (s *Service) attachRecordFacts(ctx context.Context, spaceID string, arts []storeArtifact) {
+	if s.records == nil {
+		return
+	}
+	for i := range arts {
+		if ctx.Err() != nil {
+			return
+		}
+		rec, ok, err := s.records(ctx, spaceID, arts[i].ID)
+		if err != nil || !ok {
+			continue
+		}
+		arts[i].Check, arts[i].Release = rec.Check, rec.Release
+	}
 }

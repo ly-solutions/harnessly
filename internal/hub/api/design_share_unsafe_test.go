@@ -76,23 +76,3 @@ func TestDesignShareFailsClosedOnAnUnsafeRuntime(t *testing.T) {
 		}
 	}
 }
-
-// GitHub #187: without the store the machine serves the guest itself, so a runtime that fails the share probe still
-// gets no link, and the owner is told what to run instead.
-func TestDesignShareWithoutAStoreStaysOffOnAnUnsafeRuntime(t *testing.T) {
-	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_SHARE_URL", "http://"+shareHost), hubtest.Env("HUB_STORE", "off"))
-	owner := s.SignIn("owner@example.com")
-	space, _ := owner.NewSpace("Studio")
-	a, _ := designMachineWithProbe(t, s, owner, space, func(string) design.ShareFSReport {
-		return design.ShareFSReport{Steps: []design.ShareFSStep{{ID: "dotdot", Code: design.ShareFSDotDot}}, Hint: design.ShareFSHint}
-	})
-	base := "/m/" + a.MachineID + "/api/platform/design/access"
-	created(a, "shop", "owner@example.com")
-	s.Eventually("the project recorded", func() bool {
-		role, ok := snapshotFor(a, "owner@example.com", "shop")
-		return ok && role == "owner"
-	})
-	if r := owner.Do("POST", base+"/shop/shares", map[string]any{"rights": "view", "version": "latest"}); r.Code != 409 || !strings.Contains(r.String(), "share_unsafe_runtime") || !strings.Contains(r.String(), "harnessly doctor share") {
-		t.Fatalf("a latest link on an unsafe runtime without a store: %s", r)
-	}
-}

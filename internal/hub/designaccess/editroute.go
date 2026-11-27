@@ -46,7 +46,7 @@ func editNeed(route, method string) (string, bool) {
 }
 
 func (s *Service) serveEdit(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine) bool {
-	if s.view == nil || m.SpaceID == "" {
+	if !s.storeServes(m) {
 		return false
 	}
 	match := editPath.FindStringSubmatch(strings.TrimPrefix(r.URL.EscapedPath(), "/m/"+m.ID))

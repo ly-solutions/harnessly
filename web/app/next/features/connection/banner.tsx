@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePillWidth } from '@/next/ui/use-pill-width';
 import { createPortal } from 'react-dom';
 import { secondsToRetry } from '@/next/stores/connection';
+import { checkNet, useOffline } from '@/next/offline/net';
 import { ROLLOUT, useRollout } from '@/next/features/rollout/rollout';
 import type { Connection } from '@/next/protocol/v2';
 import Icon, { type TIconName } from '@/next/ui/icon';
@@ -93,12 +94,16 @@ const ConnectionBanner = ({ connection, machineName, onRetryNow, graceMs = LOSS_
   // While the hub says an update is under way its own pill explains the losses; a refusal that needs the person still shows.
   const updating = useRollout() !== ROLLOUT.idle;
   const trouble = down && (loud || (late && !updating)) ? down : null;
+  // The device itself is offline: that is said at once and alone, without a machine's countdown; what is on
+  // screen is what the device kept, and the messages wait in the outbox.
+  const offline = useOffline();
+  const away = offline || trouble !== null;
   // Once the connection was lost, the way back is shown too: «Подключаемся», then «Снова на связи» for a moment.
   const [lost, setLost] = useState(false);
   const [back, setBack] = useState(false);
-  if (trouble && !lost) setLost(true);
-  if (trouble && back) setBack(false);
-  if (!trouble && lost && connection?.k === 'live') {
+  if (away && !lost) setLost(true);
+  if (away && back) setBack(false);
+  if (!away && lost && connection?.k === 'live') {
     setLost(false);
     setBack(true);
   }
@@ -108,22 +113,26 @@ const ConnectionBanner = ({ connection, machineName, onRetryNow, graceMs = LOSS_
     return () => clearTimeout(timer);
   }, [back]);
 
-  const now = useSecond(trouble?.k === 'offline');
-  const seconds = trouble ? secondsToRetry(trouble, now) : null;
+  const now = useSecond(!offline && trouble?.k === 'offline');
+  const seconds = trouble && !offline ? secondsToRetry(trouble, now) : null;
 
   let net: TNet | null = null;
-  if (trouble) net = NET.lost;
+  if (away) net = NET.lost;
   else if (lost) net = NET.retry;
   else if (back) net = NET.back;
 
   let text = '';
-  if (trouble?.k === 'stale') text = t('next.connection.stale', { machine: machineName });
+  if (offline) text = t('next.offline.pill');
+  else if (trouble?.k === 'stale') text = t('next.connection.stale', { machine: machineName });
   else if (trouble?.k === 'offline') text = t(WHY[trouble.cause], { machine: machineName });
   else if (net === NET.retry) text = t('next.connection.retrying');
   else if (net === NET.back) text = t('next.connection.back');
 
   const canRetry =
-    trouble?.k === 'stale' || trouble?.cause === 'network' || trouble?.cause === 'machine-unreachable';
+    offline ||
+    trouble?.k === 'stale' ||
+    trouble?.cause === 'network' ||
+    trouble?.cause === 'machine-unreachable';
   const sub = seconds !== null ? t('next.connection.retryIn', { s: seconds }) : null;
 
   const pill = useMemo<IPill | null>(
@@ -153,13 +162,20 @@ const ConnectionBanner = ({ connection, machineName, onRetryNow, graceMs = LOSS_
             type="button"
             className="hx-net__now"
             disabled={isBusy(retry.phase)}
-            aria-label={t('next.connection.now')}
-            onClick={() => retry.run('retry', async () => onRetryNow())}
+            aria-label={offline ? t('next.offline.check') : t('next.connection.now')}
+            onClick={() =>
+              retry.run('retry', async () => {
+                if (offline) await checkNet();
+                else onRetryNow();
+              })
+            }
           >
             {/* On a very narrow screen the button says it shorter, so it never leaves the pill. */}
-            <span className="hx-net__now-long">{t('next.connection.now')}</span>
+            <span className="hx-net__now-long">
+              {offline ? t('next.offline.check') : t('next.connection.now')}
+            </span>
             <span className="hx-net__now-short" aria-hidden="true">
-              {t('next.connection.nowShort')}
+              {offline ? t('next.offline.check') : t('next.connection.nowShort')}
             </span>
           </button>
         )}

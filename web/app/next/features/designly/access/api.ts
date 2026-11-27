@@ -15,6 +15,24 @@ export const ROLE = {
   view: 'view',
 } as const;
 export type TRole = (typeof ROLE)[keyof typeof ROLE];
+
+/** What a person may do with an object: the hub's one table «role × action» (resaccess/can.go). */
+export type TAction = 'view' | 'comment' | 'edit' | 'share' | 'general' | 'transfer';
+export type TCan = Partial<Record<TAction, boolean>>;
+
+const EDITS = new Set<string>([ROLE.owner, ROLE.manage, ROLE.edit]);
+
+/** The buttons ask the hub's table; a hub without `can` yet is answered by the role and «may share». */
+export const mayDo = (
+  a: { role: string | null; canManage: boolean; can?: TCan },
+  action: TAction,
+): boolean => {
+  const said = a.can?.[action];
+  if (said !== undefined) return said;
+  if (action === 'share' || action === 'general') return a.canManage;
+  if (action === 'edit') return a.role !== null && EDITS.has(a.role);
+  return a.role !== null;
+};
 export type TGrantRole = Exclude<TRole, 'owner'>;
 export type TInviteRole = 'view' | 'comment' | 'edit';
 export type TTeamLevel = 'none' | 'view' | 'comment' | 'edit';
@@ -64,6 +82,8 @@ export interface IProjectAccess {
   ownerName: string;
   team: TTeamLevel;
   canManage: boolean;
+  /** The hub's table for this person (absent from an older hub): read it through mayDo. */
+  can?: TCan;
   editorsCanShare: boolean;
   request: IAccessRequest | null;
   people?: IPerson[];

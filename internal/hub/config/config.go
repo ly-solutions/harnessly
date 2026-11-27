@@ -207,7 +207,7 @@ type Config struct {
 	Storage string
 	S3      SitesS3
 	// Store (internal/filestore, docs/hub/store.md): the revisions and contents of the spaces' collections, which the
-	// machines sync with. On unless HUB_STORE=off.
+	// machines sync with. Always on.
 	Store StoreConfig
 	// DesignImport moves the designs' access from a cluster's gateway into the hub at start (HRN-880,
 	// docs/hub/design-access.md): HUB_DESIGN_IMPORT_GATEWAY=dry-run|apply.
@@ -391,6 +391,9 @@ type Config struct {
 	// replica gives them without putting the project into a folder of its own. Off: every replica lays the
 	// revision out, as before.
 	DesignDerived bool
+	// RenderToken (HUB_RENDER_TOKEN) is the bearer token of the hub's render worker (docs/hub/render-worker.md):
+	// with it the hub queues the pictures of boards whose machine is off and the worker draws them. Empty: no queue.
+	RenderToken string
 	// AppsGuestURL (HUB_APPS_GUEST_URL) is the origin of the guest links to apps (docs/hub/apps-guest-host.md): it serves
 	// /apps/guest/<token>/ and nothing else, so a guest's view never runs next to the hub's session. Empty: the links
 	// are served on the hub's own origin only when the hub is on this machine (localhost, a loopback address: local
@@ -506,7 +509,6 @@ type DesignImportConfig struct {
 }
 
 type StoreConfig struct {
-	Off bool
 	// DatabaseURL is the store's metadata: sqlite:///folder or postgres://… . Set by HUB_STORE_DATABASE_URL, it is a
 	// database of the store's own (a design-sync center's database opens as it is); unset, the store shares the hub's
 	// Postgres under PGPrefix, or keeps SQLite in Dir next to a SQLite hub.
@@ -1125,6 +1127,10 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 		}
 		c.DesignShareURL = strings.TrimRight(u, "/")
 	}
+	c.RenderToken = strings.TrimSpace(os.Getenv("HUB_RENDER_TOKEN"))
+	if c.RenderToken != "" && len(c.RenderToken) < 32 {
+		bad("HUB_RENDER_TOKEN must be at least 32 characters")
+	}
 	switch strings.ToLower(def("HUB_DESIGN_DERIVED", "off")) {
 	case "on", "true", "1", "yes":
 		c.DesignDerived = true
@@ -1619,9 +1625,6 @@ func (c *Config) loadDesignAccess(get func(string) string, bad func(string, ...a
 	switch v := strings.ToLower(strings.TrimSpace(get("HUB_DESIGN_REGISTER"))); v {
 	case "", "off":
 	case "dry-run", "apply":
-		if c.Store.Off {
-			bad("HUB_DESIGN_REGISTER reads the store's libraries: it needs the store (HUB_STORE on)")
-		}
 		d.Register = v
 	default:
 		bad("HUB_DESIGN_REGISTER must be off, dry-run or apply")
@@ -1692,14 +1695,15 @@ func validRoomName(room string) bool {
 	return true
 }
 
-// loadStore reads HUB_STORE_*: the store reuses the hub's database and bucket unless told otherwise.
+// loadStore reads HUB_STORE_*: the store reuses the hub's database and bucket unless told otherwise. The hub always
+// has it: HUB_STORE=off, the mode where machines kept their designs to themselves, is gone.
 func (c *Config) loadStore(get func(string) string, def func(string, string) string, bad func(string, ...any)) {
 	switch strings.ToLower(def("HUB_STORE", "on")) {
 	case "on", "true", "1", "yes":
 	case "off", "false", "0", "no":
-		c.Store.Off = true
+		bad("HUB_STORE=off is gone: the hub always keeps the store (HRN-1795); remove the variable")
 	default:
-		bad("HUB_STORE must be on or off")
+		bad("HUB_STORE must be on")
 	}
 	c.Store.Dir = def("HUB_STORE_DIR", filepath.Join(c.DataDir, "store"))
 	c.Store.MaxUpload = 0

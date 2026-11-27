@@ -49,7 +49,7 @@ func origin(dialURL string) (string, error) {
 // the hub again with growing pauses, and the loops that wait for the store wait for the connection (Link.Ready).
 var ErrNotConnected = errors.New("the hub gave this machine no store session")
 
-// errNoStore is a hub that answers and has no store: an older hub, or HUB_STORE=off.
+// errNoStore is a hub that answers and has no store: an older hub.
 var errNoStore = errors.New("the hub has no store")
 
 // HubHasStore asks the hub's GET /api/capabilities whether it keeps a store. errNoStore when it answers without one.

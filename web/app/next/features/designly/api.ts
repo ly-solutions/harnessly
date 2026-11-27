@@ -74,16 +74,6 @@ export interface IStoreLibrary {
   layout: ILibraryLayout;
 }
 
-/**
- * The hub runs without a design store (HUB_STORE off): its refusal of the store's reads says so by its code, so a page
- * does not promise a copy that will never arrive (GitHub #82).
- */
-export const storeIsOff = (failure: unknown): boolean => {
-  // A RuntimeError's body, read by shape: the refusal is the hub's JSON as it came.
-  const body = typeof failure === 'object' && failure !== null && 'body' in failure ? failure.body : null;
-  return typeof body === 'object' && body !== null && 'code' in body && body.code === 'store_off';
-};
-
 /** The hub answers it under any machine of the space, on or off; a runtime with no hub answers 404 (no copy). */
 export const fetchStoreLibrary = async (m: MachineId, signal?: AbortSignal): Promise<IStoreLibrary> => {
   type TRaw = { metadataOnly?: boolean; artifacts?: unknown; layout?: Partial<ILibraryLayout> };
@@ -244,24 +234,6 @@ export const withCard = (query: string, card?: string): string => {
   params.set('card', card);
   return `?${params}`;
 };
-
-/** The hub's index of a project's boards, of one holder's copy when the card is named. */
-export const storeIndexHref = (id: string, card?: string) =>
-  gatewayPath(`/design/store/${encodeURIComponent(id)}/index.json${withCard('', card)}`);
-
-/** A private snapshot the owner left for readers while their machine is offline (GitHub #180): when it was taken and
- *  its boards, in order. The pictures come from `storeSnapshotImageHref`. */
-export interface IStoreSnapshot {
-  capturedAt: string;
-  expiresAt: string;
-  boards: { n: number; title: string }[];
-}
-
-export const storeSnapshotHref = (id: string, card?: string) =>
-  gatewayPath(`/design/store/${encodeURIComponent(id)}/snapshot${withCard('', card)}`);
-
-export const storeSnapshotImageHref = (id: string, n: number, card?: string) =>
-  gatewayPath(`/design/store/${encodeURIComponent(id)}/snapshot/img/${n}${withCard('', card)}`);
 
 /** The board at one revision of the store: a newer revision is another address, so the frame loads again. The hub
  *  finds the machine by the project, so the address names none. A video's scene asks

@@ -8,8 +8,8 @@ import { dropConversationMessages } from '@/next/stores/messages';
 import type { ConvId } from '@/next/protocol/v2';
 
 export const MEMORY_CHATS = 12;
-export const STORED_CHATS = 6;
-export const STORED_TURNS = 3;
+export const STORED_CHATS = 12;
+export const STORED_TURNS = 6;
 
 /** Most recent first. */
 let recent: ConvId[] = [];

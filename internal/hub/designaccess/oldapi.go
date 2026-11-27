@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ly-solutions/harnessly/internal/hub/resaccess"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
@@ -61,6 +62,7 @@ func (t *txn) view(p project, email string) (map[string]any, folded, error) {
 	out := map[string]any{
 		"role": nullStr(f.Role), "owner": nullStr(p.Owner), "ownerName": p.OwnerName, "team": p.TeamLevel,
 		"teamInvites": true, "canManage": f.CanManage, "editorsCanShare": p.EditorsCanShare, "request": nil,
+		"can": resaccess.CanAll(f.Role, p.EditorsCanShare),
 	}
 	own, err := t.requests(p.ID, normEmail(email), "open")
 	if err != nil {
@@ -188,7 +190,8 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 	}
 	if method == http.MethodGet && n == 1 {
 		if !stored {
-			return map[string]any{"role": roleEdit, "owner": nil, "ownerName": "", "team": roleEdit, "canManage": false, "editorsCanShare": false, "request": nil}, 200, nil
+			return map[string]any{"role": roleEdit, "owner": nil, "ownerName": "", "team": roleEdit, "canManage": false, "editorsCanShare": false, "request": nil,
+				"can": resaccess.CanAll(roleEdit, false)}, 200, nil
 		}
 		v, f, err := t.view(p, email)
 		if err != nil {
@@ -198,7 +201,8 @@ func (s *Service) oldRoute(r *http.Request, u store.User, m store.Machine, parts
 			// Another space's project (foreign.go): read-only, its sharing is not this person's to manage.
 			// Only what a reader sees: never the project's people or invitations.
 			return map[string]any{"role": foreignRole(f.Role), "owner": v["owner"], "ownerName": v["ownerName"], "team": levelNone,
-				"teamInvites": false, "canManage": false, "editorsCanShare": false, "request": nil}, 200, nil
+				"teamInvites": false, "canManage": false, "editorsCanShare": false, "request": nil,
+				"can": resaccess.CanAll(foreignRole(f.Role), false)}, 200, nil
 		}
 		if f.Role == "" {
 			v["owner"] = nil

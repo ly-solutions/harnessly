@@ -17,12 +17,13 @@ import (
 	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/storelink"
+	"github.com/ly-solutions/harnessly/internal/wire"
 )
 
 // The records of the library's entities (a project, a design system, a video, a deck) go into the store on
 // every change and once when the machine connects: under a hub it is the hub's copy that stays when this machine is off,
-// on a runtime of its own it is the embedded store. The hub's row of a project is filled from them under the switch
-// hub-design-owner; the runtime writes them whatever the switch says. GET <platform>/design/records-check answers
+// on a runtime of its own it is the embedded store. The hub's row of a project is filled from them (for
+// everyone, no switch). GET <platform>/design/records-check answers
 // whether the store has as many as the machine (designrec.Report).
 
 // libraryRecords is what the machine's library says of each project, in the shape the store keeps it.
@@ -33,6 +34,7 @@ func libraryRecords(d deps) []filestore.Record {
 	// it under hub-apps-catalog, and without it they were sites to the hub.
 	appDocs := apps.Open(d.DataDir).DocKinds()
 	arts := lib.ListArtifacts()
+	releases := lib.Releases()
 	out := make([]filestore.Record, 0, len(arts))
 	for _, a := range arts {
 		if a == nil || a.ID == "" {
@@ -49,9 +51,53 @@ func libraryRecords(d deps) []filestore.Record {
 				r.Preview = ""
 			}
 		}
+		// the library's facts of the project that only this machine works out, for the hub to show with the
+		// machine off.
+		r.Check = recordCheck(lib.CheckSummaryOf(a.ID))
+		if releases != nil {
+			r.Release = recordRelease(lib.ProjectReleaseOf(a.ID, releases))
+		}
 		out = append(out, r)
 	}
 	return out
+}
+
+func recordCheck(c *design.CheckSummary) *filestore.RecordCheck {
+	if c == nil {
+		return nil
+	}
+	out := filestore.RecordCheck{FinishedAt: c.FinishedAt, Done: c.Done, Total: c.Total, Broken: c.Broken, Warnings: c.Warnings}
+	if c.Failure != nil {
+		f := *c.Failure
+		if r := []rune(f); len(r) > 500 {
+			f = string(r[:500])
+		}
+		out.Failure = &f
+	}
+	return &out
+}
+
+func recordRelease(p *design.ProjectRelease) *filestore.RecordRelease {
+	if p == nil {
+		return nil
+	}
+	return &filestore.RecordRelease{Current: p.Current, Pinned: p.Pinned, Upgrade: p.Upgrade}
+}
+
+// wireCheck and wireRelease give the library's card the same facts the records carry to the hub.
+func wireCheck(c *filestore.RecordCheck) *wire.DesignCheck {
+	if c == nil {
+		return nil
+	}
+	return &wire.DesignCheck{FinishedAt: c.FinishedAt, Done: c.Done, Total: c.Total, Broken: c.Broken, Warnings: c.Warnings,
+		Failure: c.Failure}
+}
+
+func wireRelease(r *filestore.RecordRelease) *wire.DesignRelease {
+	if r == nil {
+		return nil
+	}
+	return &wire.DesignRelease{Current: r.Current, Pinned: r.Pinned, Upgrade: r.Upgrade}
 }
 
 // recordsSession is the running writer of the records, for the check's route.
@@ -65,9 +111,23 @@ var recordsLive atomic.Pointer[recordsSession]
 // startRecords writes all records once the store is there, then again a moment after the library changes (and every five
 // minutes, in case a change went unseen); it returns when ctx ends. The first push is followed by the check, whose result
 // goes to the journal.
-func startRecords(ctx context.Context, l *storelink.Link, source func() []filestore.Record, watch func(func()) func(), covers func(context.Context, *designrec.Syncer)) {
+//
+// blocked runs the apps' checks of the share trigger on a project: with it, each record carries the verdict
+// of the checks at the project's revision in the store (share_verdicts.go); nil writes none.
+func startRecords(ctx context.Context, l *storelink.Link, library func() []filestore.Record, watch func(func()) func(), covers func(context.Context, *designrec.Syncer), blocked func(context.Context, string) bool) {
 	if err := l.Ready(ctx, 10*time.Minute); err != nil {
 		return
+	}
+	source := library
+	var verdicts *shareVerdicts
+	verdictKick := make(chan struct{}, 1)
+	if blocked != nil {
+		verdicts = newShareVerdicts(linkVerdicts{l: l}, blocked)
+		source = func() []filestore.Record {
+			recs := library()
+			verdicts.attach(recs)
+			return recs
+		}
 	}
 	sess := &recordsSession{s: &designrec.Syncer{Author: "runtime", Clients: func(kind string) designrec.Store { return l.Client(kind) }}, source: source}
 	recordsLive.Store(sess)
@@ -94,12 +154,19 @@ func startRecords(ctx context.Context, l *storelink.Link, source func() []filest
 		agent.Log("info", "design records: the store has what the machine has", agent.F{K: "entities", V: len(source())})
 	}
 	kick := make(chan struct{}, 1)
+	poke := func(c chan struct{}) {
+		select {
+		case c <- struct{}{}:
+		default:
+		}
+	}
+	if verdicts != nil {
+		go verdicts.run(ctx, library, verdictKick, func() { poke(kick) })
+	}
 	if watch != nil {
 		if stop := watch(func() {
-			select {
-			case kick <- struct{}{}:
-			default:
-			}
+			poke(kick)
+			poke(verdictKick)
 		}); stop != nil {
 			defer stop()
 		}
@@ -150,7 +217,7 @@ func designRecordsRoutes() []gate.Route {
 		w.Header().Set("Cache-Control", "no-store")
 		if sess == nil {
 			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"error":"store_off"}`))
+			_, _ = w.Write([]byte(`{"error":"records_not_started"}`))
 			return
 		}
 		rep, err := sess.s.Reconcile(r.Context(), sess.source())

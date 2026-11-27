@@ -93,6 +93,15 @@ type Store struct {
 	mu       sync.Mutex
 	machines map[string]cachedMachine
 	views    map[string]cachedView
+	// records are the parsed records by the content they were read from (Record): a library read asks every
+	// project's, and a record changes far less often than it is read.
+	records map[string]filestore.Record
+
+	// observers hear every write the store takes (Observe): the search index, the bus's revision.committed.
+	observers []func(spaceID, kind, path string, deleted bool)
+	// nudges are closed when a space's roles change (AccessChanged): the held changes requests of its machines look
+	// at their scope again.
+	nudges map[string]chan struct{}
 }
 
 type cachedView struct {
@@ -124,12 +133,9 @@ type Options struct {
 	Kits Kits
 }
 
-// Open opens the configured drivers. Nil, nil when the store is off.
+// Open opens the configured drivers.
 func Open(ctx context.Context, o Options) (*Store, error) {
 	cfg := o.Config
-	if cfg.Store.Off {
-		return nil, nil
-	}
 	if len(o.Key) < 16 {
 		return nil, errors.New("store: no session key")
 	}
@@ -254,6 +260,11 @@ func (s *Store) CoversRoom(ctx context.Context, spaceID string) (*filestore.Stor
 // ThumbsRoom is a space's thumbs collection as the hub reads it itself.
 func (s *Store) ThumbsRoom(ctx context.Context, spaceID string) (*filestore.Store, error) {
 	return s.srv.Room(ctx, s.Room(spaceID, filestore.KindThumbs))
+}
+
+// KitsRoom is a space's kits collection as the hub reads it itself: the kits' reads with the machine off.
+func (s *Store) KitsRoom(ctx context.Context, spaceID string) (*filestore.Store, error) {
+	return s.srv.Room(ctx, s.Room(spaceID, filestore.KindKits))
 }
 
 // AppsRoom is a space's apps collection as the hub reads it itself: the guest links it serves.
@@ -705,6 +716,26 @@ const maxGuestRevisions = 500
 // still write into a folder holding only what its person's machines wrote: that is how a new project starts,
 // its owner file records it.
 func (s *Store) filter(ctx context.Context, m store.Machine, acc *filestore.Access) error {
+	// Held before the view is read: a role changed while it is read still nudges the request (filestore.Access.Nudge).
+	held := s.nudge(m.SpaceID)
+	acc.Nudge = func() <-chan struct{} {
+		if ch := held; ch != nil {
+			held = nil
+			return ch
+		}
+		return s.nudge(m.SpaceID)
+	}
+	acc.Rescope = func(ctx context.Context) string {
+		_, scope, err := s.view(ctx, m)
+		if err != nil {
+			return acc.Scope
+		}
+		_, shelfScope, err := s.shelves(ctx, m, acc.Room)
+		if err != nil {
+			return acc.Scope
+		}
+		return scope + shelfScope
+	}
 	view, scope, err := s.view(ctx, m)
 	if err != nil {
 		return err
@@ -879,6 +910,35 @@ func (s *Store) view(ctx context.Context, m store.Machine) (map[string]Grant, st
 	s.views[m.ID] = cachedView{v: v, scope: scope, at: s.now()}
 	s.mu.Unlock()
 	return v, scope, nil
+}
+
+// AccessChanged says a role of the space was given, changed or taken (on this replica or, through the relay, another):
+// the cached views are dropped and the space's machines that hold a changes request look at their scope at once, so a
+// project shared with someone reaches their machine within a round trip, not after the wait and the cache (GitHub #193).
+func (s *Store) AccessChanged(spaceID string) {
+	s.forgetViews(spaceID)
+	s.mu.Lock()
+	ch := s.nudges[spaceID]
+	delete(s.nudges, spaceID)
+	s.mu.Unlock()
+	if ch != nil {
+		close(ch)
+	}
+}
+
+// nudge is the channel AccessChanged closes for the space.
+func (s *Store) nudge(spaceID string) <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.nudges == nil {
+		s.nudges = map[string]chan struct{}{}
+	}
+	ch := s.nudges[spaceID]
+	if ch == nil {
+		ch = make(chan struct{})
+		s.nudges[spaceID] = ch
+	}
+	return ch
 }
 
 // forgetViews drops the cached views of a space's machines (all of them: the cache is small).

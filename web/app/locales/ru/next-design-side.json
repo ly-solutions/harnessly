@@ -66,6 +66,7 @@
   "next.ds.comments.place": "Место или блок",
   "next.ds.comments.failed": "Комментарий не сохранился",
   "next.ds.comments.toAgent": "Комментарий отправлен агенту",
+  "next.ds.comments.toAgentQueued": "Машина выключена: комментарий ждёт её и уйдёт агенту, когда она включится",
   "next.ds.pages.search": "Найти страницу",
   "next.ds.pages.none": "Ничего не нашлось",
   "next.ds.pages.changed": "Менял агент в этом чате",

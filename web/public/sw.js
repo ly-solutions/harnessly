@@ -1,5 +1,6 @@
 // Web push for the agent app: shows a notification for a push, brings the clicked conversation to the front and
-// keeps the app icon badge honest. The offline reader has a separate versioned cache.
+// keeps the app icon badge honest. It also keeps the app itself for a device without a network: the files
+// of the build, and the last page the server gave, so that offline the same app opens and draws what it kept.
 // The worker lives next to the app (its directory is its scope), so the same file serves any base path.
 
 const BASE = new URL('./', self.location.href).pathname;
@@ -9,21 +10,74 @@ const PUSH_NAV_KEY = `${BASE}_push-pending`;
 const isWebKit =
   /AppleWebKit/.test(self.navigator.userAgent) && !/Chrome|Chromium|Edg\//.test(self.navigator.userAgent);
 
+// The build writes the list of its files here (vite.offline.ts); a development page has none and keeps nothing.
 const offline = /* offline manifest */ null;
-const cachePrefix = 'hx-reader:' + encodeURIComponent(BASE) + ':';
-const readerCache = cachePrefix + offline?.version;
-const readerFiles = new Set(offline?.files.map((file) => BASE + file));
-const readerUrl = new URL(BASE + 'offline.html', self.location.origin).href;
+const cachePrefix = 'hx-app:' + encodeURIComponent(BASE) + ':';
+const appCache = cachePrefix + offline?.version;
+// The page as the server last gave it (its settings are in it): one per base, replaced by every page that loads.
+const pageCache = cachePrefix + 'page';
+const pageKey = new URL(BASE, self.location.origin).href;
+const appFiles = new Set(offline?.files.map((file) => BASE + file));
+const coreFiles = new Set(offline?.core.map((file) => BASE + file));
+// How long a page waits on the network before the kept one opens: a network that hangs must not keep the app blank.
+const PAGE_WAIT_MS = 6000;
+// Caches of older workers: the reader of before and builds that are gone.
+const ours = (name) => name === appCache || name === pageCache || !name.startsWith(cachePrefix);
+const stale = (name) => name.startsWith('hx-reader:') || !ours(name);
+/** A file's name without the build's hash: the same view under the next version has the same stem. */
+const stemOf = (path) => path.replace(/-[A-Za-z0-9_-]{8}(\.[a-z0-9]+)$/i, '$1');
+
+/** Runs `work` over the items, a few at a time. */
+const inTurns = async (items, work, at = 6) => {
+  const queue = [...items];
+  await Promise.all(
+    Array.from({ length: at }, async () => {
+      for (let item = queue.shift(); item !== undefined; item = queue.shift()) await work(item);
+    }),
+  );
+};
+
+/**
+ * The install: the core of this build, and the views the person used under the builds kept before (by the stem of
+ * their names). A file an older cache has under the same name is taken from there, not from the network.
+ */
+const keepBuild = async () => {
+  const cache = await caches.open(appCache);
+  const older = [];
+  for (const name of await caches.keys())
+    if (
+      name !== appCache &&
+      name !== pageCache &&
+      (name.startsWith(cachePrefix) || name.startsWith('hx-reader:'))
+    )
+      older.push(await caches.open(name));
+  const usedStems = new Set();
+  for (const old of older)
+    for (const req of await old.keys()) usedStems.add(stemOf(new URL(req.url).pathname));
+  const keep = async (path, must) => {
+    if (await cache.match(path)) return;
+    for (const old of older) {
+      const hit = await old.match(path);
+      if (hit) return cache.put(path, hit);
+    }
+    try {
+      // A build's file never changes under its name: the browser's own cache of the page that just loaded serves it.
+      const res = await fetch(new Request(path, { redirect: 'error' }));
+      if (!res.ok) throw new Error(`${path}: ${res.status}`);
+      await cache.put(path, res);
+    } catch (e) {
+      if (must) throw e;
+    }
+  };
+  await inTurns(coreFiles, (path) => keep(path, true));
+  const used = [...appFiles].filter((path) => !coreFiles.has(path) && usedStems.has(stemOf(path)));
+  await inTurns(used, (path) => keep(path, false));
+};
 
 self.addEventListener('install', (event) =>
   event.waitUntil(
     (async () => {
-      if (offline) {
-        const cache = await caches.open(readerCache);
-        await cache.addAll(
-          [...readerFiles].map((path) => new Request(path, { cache: 'reload', redirect: 'error' })),
-        );
-      }
+      if (offline) await keepBuild();
       await self.skipWaiting();
     })(),
   ),
@@ -31,31 +85,79 @@ self.addEventListener('install', (event) =>
 self.addEventListener('activate', (event) =>
   event.waitUntil(
     (async () => {
-      for (const name of await caches.keys())
-        if (name.startsWith(cachePrefix) && name !== readerCache) await caches.delete(name);
+      for (const name of await caches.keys()) if (stale(name)) await caches.delete(name);
       await self.clients.claim();
     })(),
   ),
 );
+
+/** A page of the app (not its API, not a file): what the server answers with index.html. */
+const isAppPage = (request, url) => {
+  if (request.mode !== 'navigate' || request.destination !== 'document') return false;
+  const route = url.pathname.slice(BASE.length);
+  return !/^(?:api|_|apps)\b/.test(route) && !/\.[a-z0-9]+$/i.test(route) && route !== 'sw.js';
+};
+
+const offlinePage = () =>
+  new Response(
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Offline</title><body style="font:16px system-ui;padding:32px;background:#111;color:#ddd">' +
+      '<p>Нет сети, а сохранённой копии приложения ещё нет. Откройте его один раз в сети.</p>' +
+      '<p>No network, and the app has not been saved on this device yet. Open it once online.</p>',
+    { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+  );
+
+/** Network first; the kept page when the network fails or hangs. A good page from the network is kept for next time. */
+const appPage = async (request) => {
+  const cache = await caches.open(pageCache);
+  const network = fetch(request).then(async (res) => {
+    const html = res.headers.get('content-type')?.includes('text/html');
+    if (res.ok && html && !res.redirected) await cache.put(pageKey, res.clone());
+    return res;
+  });
+  let timer;
+  const late = new Promise((resolve) => {
+    timer = setTimeout(resolve, PAGE_WAIT_MS);
+  });
+  try {
+    const res = await Promise.race([network, late]);
+    if (res) return res;
+  } catch {
+    // No network: the kept page below.
+  } finally {
+    clearTimeout(timer);
+  }
+  const kept = await cache.match(pageKey);
+  if (kept) return kept;
+  return network.catch(offlinePage);
+};
+
+/** A file of the build: it never changes under its name, so the kept one is the one. */
+const buildFile = async (request) => {
+  const cache = await caches.open(appCache);
+  const kept = await cache.match(request, { ignoreSearch: true });
+  if (kept) return kept;
+  const res = await fetch(request);
+  if (res.ok && res.type === 'basic') await cache.put(request, res.clone()).catch(() => undefined);
+  return res;
+};
+
 self.addEventListener('fetch', (event) => {
   if (!offline || event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || !url.pathname.startsWith(BASE)) return;
-  if (readerFiles.has(url.pathname) && !url.search) {
-    event.respondWith(
-      caches
-        .open(readerCache)
-        .then(async (cache) => (await cache.match(event.request)) ?? fetch(event.request)),
-    );
+  // A check of the network (offline/net.ts) asks the network alone.
+  if (url.searchParams.has('probe')) return;
+  if (appFiles.has(url.pathname) || url.pathname.startsWith(BASE + 'assets/')) {
+    event.respondWith(buildFile(event.request));
     return;
   }
-  const route = url.pathname.slice(BASE.length);
-  if (
-    event.request.mode === 'navigate' &&
-    event.request.destination === 'document' &&
-    /^(?:|c\/[^/]+|designly(?:\/(?!invite$)[^/]+)?)$/.test(route)
-  )
-    event.respondWith(fetch(event.request).catch(() => Response.redirect(readerUrl)));
+  if (isAppPage(event.request, url)) event.respondWith(appPage(event.request));
+});
+
+// The page signs a person out: the kept page (it carries their machine's settings) goes with them.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'hx-forget-page') event.waitUntil(caches.delete(pageCache));
 });
 
 const windows = () => self.clients.matchAll({ type: 'window', includeUncontrolled: true });

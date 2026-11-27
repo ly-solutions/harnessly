@@ -460,6 +460,7 @@ func (l *Library) ImportProject(o ImportOptions) (ImportResult, error) {
 		}
 		return ImportResult{}, err
 	}
+	l.pushToStore(o.ID)
 	return ImportResult{ID: o.ID, Title: shown, Dir: target, Boards: len(boards), Dropped: dropped}, nil
 }
 

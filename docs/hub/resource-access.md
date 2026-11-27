@@ -13,6 +13,20 @@ A resource is `(kind, id)`: `doc` with the document's slug, `design` with `<mach
 - **Subjects**: a person (a role with an optional end date), a team (a role, and `can_share`: edit and share is manage), a guest
   (a link), and the team level (what everybody of the owner's team has: none, view, comment, edit).
 - **Rights**: view, comment, edit; manage and owner on top. An administrator of the installation manages everything.
+- **One table** (`resaccess/can.go`): who may view, comment, edit, share, set general access, delete or hand
+  over, for every kind. The views give it to the page as `can`, and the buttons read nothing else:
+
+  | Role | view | comment | edit | share | general | transfer |
+  |---|---|---|---|---|---|---|
+  | view | ✓ | | | | | |
+  | comment | ✓ | ✓ | | | | |
+  | edit | ✓ | ✓ | ✓ | when the owner lets editors share | | |
+  | manage | ✓ | ✓ | ✓ | ✓ | ✓ | |
+  | owner | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+  Whoever may share may edit. The steward (the lead of the home team, the administrator of its organization, the owner
+  of a space for its implicit team) is a manager by this rule, so «Поделиться» and «Редактировать» never disagree.
+  `TestRoleActionMatrix` is the table cell by cell, `TestWhoSharesEdits` checks every shape of the fold against it.
 - **Requests**: a person who has no access asks once; an open request is shown, not doubled; a refusal blocks a new one for 24 hours.
 - **Log**: every change is written to `resource_access_log`.
 - **Guest links**: the token is shown once (the hub keeps its hash), rights are view or comment, optional expiry and pinned version.
@@ -72,8 +86,8 @@ old kit read only the rows of that space.
 ## General access
 
 «Общий доступ → Все, у кого есть ссылка» opens a document or a board to anyone at one address, without an account and
-whether any machine is on: `PUT /access/{kind}/{id}/general {level}` with `none`, `view` or `comment`, whoever may make
-a guest link. It is a guest link marked `general`, not listed among the links, its token kept sealed (`token_enc`, the
+whether any machine is on: `PUT /access/{kind}/{id}/general {level}` with `none`, `view` or `comment`, by a manager or
+the owner (an editor the owner lets share makes links, but not this one). It is a guest link marked `general`, not listed among the links, its token kept sealed (`token_enc`, the
 hub's link key, internal/hub/linkseal) so the dialog copies the address again; switched off it is revoked and kept, on
 again the same address opens. When the hub's key changed the old address is revoked and a new one made. UI kits have no
 general access.

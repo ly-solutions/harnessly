@@ -25,6 +25,7 @@ type Bus struct {
 	mu       sync.RWMutex
 	handlers map[string]Handler
 	wake     chan struct{}
+	sig      signals // the hub's own signals and this replica's followers (signals.go)
 }
 
 // DefaultRetention is how long an event stays in the journal by default.
@@ -119,6 +120,7 @@ func (b *Bus) Append(ctx context.Context, e Event) (Event, bool, error) {
 		return got, true, err
 	}
 	b.Wake()
+	b.grown()
 	return e, false, nil
 }
 
@@ -229,7 +231,10 @@ func (b *Bus) Sweep(ctx context.Context) (int64, error) {
 		keep = DefaultRetention
 	}
 	before := store.Ms(b.now().Add(-keep))
-	var total int64
+	total, err := b.sweepSignals(ctx)
+	if err != nil {
+		return total, err
+	}
 	for {
 		res, err := b.db.Exec(ctx, `DELETE FROM bus_events WHERE seq IN (SELECT seq FROM bus_events WHERE received_at < ? ORDER BY seq LIMIT 1000)`, before)
 		if err != nil {

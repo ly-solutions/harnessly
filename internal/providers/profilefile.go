@@ -179,11 +179,11 @@ func SetCodexLogins(list []Preset) {
 }
 
 // SetCustom replaces the profiles made of the providers the person added by hand: the whole list, as the registry has
-// it now. A profile that is not of Claude Code, has no model or an id that is no profile id is left out.
+// it now. A profile that is not of Claude Code (a local model's one of Codex is the exception), has no model or an id that is no profile id is left out.
 func SetCustom(list []Preset) {
 	kept := make([]Preset, 0, len(list))
 	for _, p := range list {
-		if !wire.ValidProfileID(p.ID) || p.Via != wire.ProviderClaude || len(p.Models) == 0 {
+		if !wire.ValidProfileID(p.ID) || (p.Via != wire.ProviderClaude && !(p.Via == wire.ProviderCodex && p.Local)) || len(p.Models) == 0 {
 			continue
 		}
 		p.Custom = true

@@ -2,6 +2,9 @@
 // library below — the machine's designs as cards with their pictures. A tile switches the kind in place: the field,
 // its text and its files stay, «Настройки» offers what the kind has. Scrolled, the field goes up and the library's row
 // sticks. A card opens the design; a brief sent starts a project and its agent, and the design opens with that chat.
+import OfflineMark from '@/next/ui/offline-mark';
+import { useOffline } from '@/next/offline/net';
+import { useKeptDesigns } from '@/next/offline/kept';
 import { TOUR_ORDER } from '@/next/features/tour/tracks';
 import { startTour, tourFactGroup } from '@/next/stores/tour';
 import { registerLibraryControl } from '@/next/stores/library-view';
@@ -118,6 +121,10 @@ export interface IDesignCard extends Pick<
   appKind?: string;
   /** For a site that is a document of an app's type (made of Sinopia's site): the type's name, its label. */
   appLabel?: string;
+  /** Boards its last check found broken; absent when none or never checked (a fact the hub keeps). */
+  broken?: number;
+  /** A newer stable release the project may move to. */
+  upgrade?: string;
 }
 
 /** What the field sends: the brief with what its kind adds. */
@@ -556,11 +563,17 @@ const cardSub = (card: IDesignCard, now: number): string => {
   if (card.drawing) return t('next.designly.drawingShort');
   if (card.kind === DESIGN_KIND.scene3d) return `${t('next.designly.kinds.scene3d')} · ${ago}`;
   const units = `${plural(card.boards, `next.designly.units.${card.kind}`)} · ${ago}`;
-  return card.appLabel ? `${card.appLabel} · ${units}` : units;
+  return [
+    card.appLabel ? `${card.appLabel} · ${units}` : units,
+    ...(card.broken ? [t('next.designly.cardBroken', { n: card.broken })] : []),
+    ...(card.upgrade ? [t('next.designly.cardUpgrade', { release: card.upgrade })] : []),
+  ].join(' · ');
 };
 
 interface IDesignCardProps {
   card: IDesignCard;
+  /** Offline, and this device keeps no copy of it: the card says so. */
+  notKept?: boolean;
   index: number;
   now: number;
   pinning: boolean;
@@ -669,6 +682,7 @@ const CardMenu = ({
 const DesignCard = memo(
   ({
     card,
+    notKept = false,
     index,
     now,
     pinning,
@@ -754,7 +768,11 @@ const DesignCard = memo(
         <span className="hx-dl-card__text">
           <span className="hx-dl-card__title">{card.title}</span>
           <span className="hx-dl-card__sub">
-            <Icon name={designIcon(card)} size="sm" />
+            {notKept ? (
+              <OfflineMark label={t('next.offline.notKept')} />
+            ) : (
+              <Icon name={designIcon(card)} size="sm" />
+            )}
             {cardSub(card, now)}
           </span>
           {(card.accessSource || card.role) && (
@@ -792,6 +810,8 @@ const DesignlyHome = ({
   pack,
   notice = null,
 }: IDesignlyHomeProps) => {
+  const offline = useOffline();
+  const keptDesigns = useKeptDesigns(offline);
   const [pinning, setPinning] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [query, setQuery] = useState('');
@@ -1158,6 +1178,7 @@ const DesignlyHome = ({
                   <DesignCard
                     key={card.cardKey ? `${card.id}~${card.cardKey}` : card.id}
                     card={card}
+                    notKept={offline && keptDesigns !== null && !keptDesigns.has(card.id)}
                     index={i}
                     now={now}
                     pinning={pinning === card.id}

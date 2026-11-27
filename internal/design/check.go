@@ -930,6 +930,16 @@ func (l *Library) AttachChecks(artifacts []*Artifact) {
 	}
 }
 
+// CheckSummaryOf is the outcome of the project's last check, nil when it was never checked: the machine puts it into
+// the project's record, and the hub's library shows it with the machine off.
+func (l *Library) CheckSummaryOf(id string) *CheckSummary {
+	_, r := l.ReadCheckReport(id)
+	if r == nil {
+		return nil
+	}
+	return checkSummary(r)
+}
+
 // AgentShot is a shot as an agent reads it: the screenshot as a file it can open.
 type AgentShot = CheckShot
 

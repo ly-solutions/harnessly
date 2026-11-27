@@ -135,6 +135,9 @@ func (s *Service) peopleChanged(orgID, spaceID, userID string, lost bool) {
 	if s.onPeople != nil && userID != "" {
 		s.onPeople(userID)
 	}
+	if s.onAccess != nil && spaceID != "" {
+		s.onAccess(spaceID, userID)
+	}
 	if s.bus == nil {
 		return
 	}

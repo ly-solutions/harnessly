@@ -41,7 +41,8 @@ func TestSearchWithoutHubUsesTheEmbeddedIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	var hits []map[string]any
-	for i := 0; i < 20 && len(hits) == 0; i++ {
+	// The index is built in the background, slower on a loaded runner: wait up to ten seconds.
+	for i := 0; i < 100 && len(hits) == 0; i++ {
 		hits = ask("лендинг")
 		time.Sleep(100 * time.Millisecond)
 	}

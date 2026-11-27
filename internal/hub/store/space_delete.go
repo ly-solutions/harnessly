@@ -47,6 +47,8 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"resource_guest_links", bySpace},
 	{"bus_events", bySpace}, // a space's team events go with it; its members' own events without a space stay theirs
 	{"design_derived", bySpace},
+	{"design_edit_leases", bySpace},
+	{"design_render_jobs", bySpace},
 	{"search_docs", bySpace},
 	{"chat_shares", bySpace},
 	{"resource_access_log", bySpace},
@@ -58,6 +60,7 @@ var SpaceCascade = []SpaceCascadeStep{
 	{"board_bindings", bySpace},
 
 	// Designs are projects of the space's machines.
+	{"design_agent_comments", byMachine},
 	{"design_private_snapshot_pages", byMachine},
 	{"design_private_snapshots", byMachine},
 	{"design_static_pages", `link_id IN (SELECT id FROM design_share_links WHERE ` + byMachine + `)`},

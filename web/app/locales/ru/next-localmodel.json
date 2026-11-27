@@ -1,0 +1,21 @@
+{
+  "next.localModel.title": "Локальная модель",
+  "next.localModel.lead": "Модель, которая работает на этом компьютере: без интернета и без ключа. Запустите Ollama, LM Studio, llama.cpp или vLLM — и она появится здесь.",
+  "next.localModel.none": "На этом компьютере сервер не найден (Ollama :11434, LM Studio :1234, llama.cpp :8080, vLLM :8000). Запустите его и нажмите «Обновить» или впишите адрес ниже.",
+  "next.localModel.notFound": "По адресу {address} никто не отвечает. Проверьте адрес и что сервер запущен.",
+  "next.localModel.noModels": "Ни одной модели не загружено",
+  "next.localModel.more": {
+    "one": "и ещё {n}",
+    "few": "и ещё {n}",
+    "many": "и ещё {n}",
+    "other": "и ещё {n}"
+  },
+  "next.localModel.connect": "Подключить",
+  "next.localModel.connected": "Подключено",
+  "next.localModel.refresh": "Обновить",
+  "next.localModel.address": "Адрес сервера",
+  "next.localModel.addressPlaceholder": "Другой адрес: http://192.168.1.20:11434",
+  "next.localModel.hint": "Только этот компьютер и частные сети (192.168.x.x, 10.x.x.x). Для работы агента нужна большая модель для кода — от 30B параметров (например, Qwen3-Coder): маленькие теряют нить и путают инструменты. Дайте модели контекст не меньше 32 тысяч токенов — у Ollama он по умолчанию меньше.",
+  "next.localModel.accountName": "Локальная модель · {name}",
+  "next.localModel.smallContext": "Модель запущена с контекстом {n} токенов — для агента мало, одни его инструкции занимают больше. Запустите сервер с контекстом 32768 и выше (Ollama: OLLAMA_CONTEXT_LENGTH=32768)."
+}

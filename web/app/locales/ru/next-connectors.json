@@ -21,6 +21,7 @@
   "next.connectors.ask.lead": "Агент просит отправить от вашего имени",
   "next.connectors.ask.yes": "Отправить",
   "next.connectors.ask.no": "Не отправлять",
+  "next.connectors.ask.trust": "Дальше отправлять {who} без подтверждения",
   "next.connectors.discover": "Найти",
   "next.connectors.reissue": "Перевыпустить",
   "next.connectors.reissueSure": "Перевыпустить секрет «{name}»? Старый перестанет работать сразу, сервису нужно будет дать новый.",

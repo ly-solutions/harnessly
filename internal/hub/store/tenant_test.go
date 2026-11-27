@@ -25,7 +25,7 @@ var noSpace = map[string]string{
 	"team_members": "team", "invite_team": "invite", "invite_uses": "invite", "limit_rules": "scope",
 	"catalog_items": "organization", "env_entries": "scope", "env_groups": "scope", "env_presets": "scope", "env_apply_pending": "scope",
 	// A machine, whose row names the space.
-	"machine_access": "machine", "machine_debug_openings": "machine", "machine_budgets": "machine", "machine_cards": "machine", "machine_projects": "machine", "machine_env": "machine",
+	"design_agent_comments": "machine", "machine_access": "machine", "machine_debug_openings": "machine", "machine_budgets": "machine", "machine_cards": "machine", "machine_projects": "machine", "machine_env": "machine",
 	"machine_builders": "machine", "machine_hw": "machine", "machine_links": "machine", "machine_managed": "machine", "machine_metrics_5m": "machine", "machine_provider_limits": "machine",
 	"machine_ops": "machine", "machine_resources": "machine", "machine_resource_conflicts": "machine", "machine_trust": "machine", "agent_connections": "machine",
 	"migration_objects": "machine", "migration_runs": "machine", "env_state": "machine", "offline_chats": "machine",

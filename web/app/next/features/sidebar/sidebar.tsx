@@ -90,6 +90,8 @@ import type { NavSettings } from '@/next/stores/me';
 import MenuPanel, { MenuRoot, useMenuActions } from '@/next/ui/menu-panel';
 import { toast } from '@/next/ui/toast';
 import ProductSwitcher from '@/next/features/sidebar/product-switcher';
+import OfflineMark from '@/next/ui/offline-mark';
+import { useOffline } from '@/next/offline/net';
 import useDrag, { EDGE, afterTouchClick } from '@/next/ui/use-drag';
 import MachineAlert from '@/next/features/sidebar/machine-alert';
 import useRailTip, { opensRail } from '@/next/features/sidebar/use-rail-tip';
@@ -1184,6 +1186,7 @@ const Sidebar = ({
     sections.apps.length === 0 &&
     sections.days.length === 0;
 
+  const offline = useOffline();
   const pinnedCount = (chats ?? []).filter((chat) => chat.pinned).length;
   const skeletonRows = favRowsBefore ?? pinnedCount;
   const favoritesWait = sections !== null && !layoutKnown && skeletonRows > 0;
@@ -1234,6 +1237,7 @@ const Sidebar = ({
         ) : (
           <span className="hx-brand__name">{brand}</span>
         )}
+        {offline && <OfflineMark label={t('next.offline.hint')} tone="chip" />}
         <span className="hx-spacer" />
         <button
           type="button"

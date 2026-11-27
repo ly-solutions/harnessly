@@ -1,7 +1,7 @@
 // The versions of a project's kit and of the project itself, over the machine's design routes (kitversions_routes.go):
 // the kit's draft and its published versions, the project's pin on a version, and the project's history points.
-import { platformPath } from '@/next/core/net/machine';
-import { postJson, runtimeJson } from '@/next/core/net/runtime-json';
+import { gatewayPath, platformPath } from '@/next/core/net/machine';
+import { hubJson, postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import type { MachineId } from '@/next/protocol/v2';
 
 type TPath = `/${string}`;
@@ -159,26 +159,95 @@ export const KIT_DRAFT_VERSION = 'draft';
 export const discardKitDraft = (m: MachineId, kit: string) =>
   runtimeJson<null>(m, kitPath('/draft'), postJson({ kit, action: 'discard' }));
 
-export const fetchProjectHistory = (m: MachineId, artifact: string, signal?: AbortSignal) =>
-  runtimeJson<IProjectHistory>(m, projectPath(`/versions?${q({ artifact })}`), { signal, cache: 'no-store' });
+/**
+ * Where the versions come from: the machine that has the project, or the hub's store (designaccess
+ * versions.go) when the page shows the store's copy, the hub's snapshot, or the machine is not answering. The hub
+ * answers in the machine's shape, so the panel takes either.
+ */
+export interface IVersionsVia {
+  /** Read from the hub's store; absent: from the machine. */
+  hub?: boolean;
+  /** The holder's card key of a project another space shared (the library's cardKey). */
+  card?: string;
+}
+
+/** The panel reads the store when the page shows the store's copy (a revision of it, or the hub's snapshot). */
+export const versionsVia = (
+  page: { storeRev: number | null; snapshot: boolean },
+  card?: string,
+): IVersionsVia => (page.storeRev !== null || page.snapshot ? { hub: true, card } : {});
+
+const storeRoot = (id: string) => `/design/store/${encodeURIComponent(id)}` as TPath;
+const withCard = (path: string, card?: string) =>
+  card ? `${path}${path.includes('?') ? '&' : '?'}card=${encodeURIComponent(card)}` : path;
+
+export const fetchProjectHistory = (
+  m: MachineId,
+  artifact: string,
+  signal?: AbortSignal,
+  via?: IVersionsVia,
+) =>
+  via?.hub
+    ? hubJson<IProjectHistory>(withCard(`${storeRoot(artifact)}/versions`, via.card) as TPath, {
+        signal,
+        cache: 'no-store',
+      })
+    : runtimeJson<IProjectHistory>(m, projectPath(`/versions?${q({ artifact })}`), {
+        signal,
+        cache: 'no-store',
+      });
 
 export const saveProjectVersion = (m: MachineId, artifact: string, name: string) =>
   runtimeJson<INamedVersion>(m, projectPath('/versions'), postJson({ artifact, name }));
 
-export const fetchProjectDiff = (m: MachineId, artifact: string, revision: string, signal?: AbortSignal) =>
-  runtimeJson<IProjectDiff>(m, projectPath(`/versions/diff?${q({ artifact, revision })}`), {
-    signal,
-    cache: 'no-store',
-  });
+export const fetchProjectDiff = (
+  m: MachineId,
+  artifact: string,
+  revision: string,
+  signal?: AbortSignal,
+  via?: IVersionsVia,
+) =>
+  via?.hub
+    ? hubJson<IProjectDiff>(
+        withCard(`${storeRoot(artifact)}/v/${encodeURIComponent(revision)}/diff`, via.card) as TPath,
+        { signal, cache: 'no-store' },
+      )
+    : runtimeJson<IProjectDiff>(m, projectPath(`/versions/diff?${q({ artifact, revision })}`), {
+        signal,
+        cache: 'no-store',
+      });
 
-export const restoreProjectVersion = (m: MachineId, artifact: string, revision: string) =>
-  runtimeJson<{ revision: string }>(m, projectPath('/versions/restore'), postJson({ artifact, revision }));
+export const restoreProjectVersion = (
+  m: MachineId,
+  artifact: string,
+  revision: string,
+  via?: IVersionsVia,
+) =>
+  via?.hub
+    ? hubJson<{ revision: string }>(
+        withCard(`${storeRoot(artifact)}/restore`, via.card) as TPath,
+        postJson({ version: revision }),
+      )
+    : runtimeJson<{ revision: string }>(
+        m,
+        projectPath('/versions/restore'),
+        postJson({ artifact, revision }),
+      );
 
 const encodeSegments = (p: string) => p.split('/').map(encodeURIComponent).join('/');
 
 /** A page of the project as it was at a version of its history: read only, with its kit then. */
 export const versionPageHref = (origin: string, id: string, revision: string, page: string): string =>
   `${origin.replace(/\/+$/, '')}/a/${id}/r/${revision}/${encodeSegments(page.split('?')[0] ?? page)}`;
+
+/** A page of the project at a version of the hub's store, read only (designaccess versions.go `v/<version>/f/`). */
+export const storeVersionPageHref = (id: string, revision: string, page: string, card?: string): string =>
+  gatewayPath(
+    withCard(
+      `${storeRoot(id)}/v/${encodeURIComponent(revision)}/f/${encodeSegments(page.split('?')[0] ?? page)}`,
+      card,
+    ) as TPath,
+  );
 
 /** A page of the project on another version of its kit, to look before taking it. */
 export const kitPreviewHref = (origin: string, id: string, version: string, page: string): string =>

@@ -69,8 +69,4 @@ func TestStoreMigrateBackupGC(t *testing.T) {
 			t.Errorf("%v: exit %d, want 2", bad, code)
 		}
 	}
-	hub = env(map[string]string{"HUB_PUBLIC_URL": "http://127.0.0.1:8080", "HUB_DATA_DIR": data, "HUB_STORE": "off"})
-	if code, out := do("check-config"); code != 0 || !strings.Contains(out, "store          off") {
-		t.Fatalf("check-config, off: %d %s", code, out)
-	}
 }

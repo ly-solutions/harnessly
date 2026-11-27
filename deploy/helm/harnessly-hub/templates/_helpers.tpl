@@ -177,3 +177,8 @@ podAntiAffinity:
   {{- end }}
 {{- end }}
 {{- end }}
+
+{{/* The Secret of the render worker's token (renderWorker.existingSecret, else one the chart makes). */}}
+{{- define "hub.renderSecretName" -}}
+{{- default (printf "%s-render" (include "hub.fullname" .) | trunc 63 | trimSuffix "-") .Values.renderWorker.existingSecret }}
+{{- end }}

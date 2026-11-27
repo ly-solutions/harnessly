@@ -46,10 +46,6 @@ func TestBoardPictureFromTheStoreKeepsAccess(t *testing.T) {
 		w := httptest.NewRecorder()
 		return w, r.svc.ServeMachine(w, req, u, m)
 	}
-	if _, served := ask(r.ownerU, r.owner, "artifact=secret&board=Home.dc.html&v=1", ""); served {
-		t.Fatal("served with the switch off")
-	}
-	r.svc.ownerOn = func(context.Context, string, string) bool { return true }
 	w, served := ask(r.ownerU, r.owner, "artifact=secret&board=Home.dc.html&v=1", "")
 	if !served || w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Body.String() != "\xff\xd8home" ||
 		w.Header().Get("Cache-Control") != "private, no-cache" || w.Header().Get("ETag") == "" {

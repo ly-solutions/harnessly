@@ -2,6 +2,7 @@
 // ссылка» with a level (смотреть / комментировать). On, the resource opens to anyone at its one address, without an
 // account and whether the owner's machine is on or not; the dialog's «Копировать ссылку» copies that address.
 import { useState } from 'react';
+import { mayDo } from '@/next/features/designly/access/api';
 import { canLabel } from '@/next/features/designly/access/labels';
 import type { IResourceSection } from '@/next/features/designly/access/resource-people';
 import { putGeneral, type TGeneralLevel } from '@/next/features/designly/access/resource-api';
@@ -22,6 +23,8 @@ export const ResourceGeneral = (props: IResourceSection) => {
   const set = (level: TGeneralLevel) =>
     void action.run('general', async () => onNext(await putGeneral(target, level)));
   const scope = t('next.access.general.scope');
+  // «Anyone with the link» is a manager's: an editor the owner lets share invites, but does not open it to all.
+  const mayGeneral = mayDo(view, 'general');
   return (
     <section className="hx-acc-sec" data-section="general">
       <h3 className="hx-acc-sec__title">{t('next.access.general.title')}</h3>
@@ -31,7 +34,7 @@ export const ResourceGeneral = (props: IResourceSection) => {
             <Icon name={on ? 'globe' : 'lock'} size="sm" />
           </span>
           <span className="hx-acc-row__who">
-            {view.canManage ? (
+            {mayGeneral ? (
               <Popover
                 open={open}
                 onOpenChange={setOpen}
@@ -87,7 +90,7 @@ export const ResourceGeneral = (props: IResourceSection) => {
           </span>
           {on &&
             general.level !== 'none' &&
-            (view.canManage ? (
+            (mayGeneral ? (
               <RoleMenu
                 label={scope}
                 role={general.level}

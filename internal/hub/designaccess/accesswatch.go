@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/hub/store"
@@ -16,7 +17,8 @@ import (
 // learn of them until its slow timer, or never while the timer was off.
 //
 // What is watched is cheap: a few counts and newest times over the space's access tables and the person's own teams
-// (accessStamp). It is read every grantedPoll on every replica, so a change made through any replica wakes the page.
+// (accessStamp). A change of the space's roles wakes the poll at once on every replica (SpaceChanged over the relay); the
+// stamp is read every grantedPoll for what no event tells of: the person's own teams and spaces.
 // A grant that runs out by time changes no row: the person's whole access is folded again every accessRefold, and its
 // digest (what the page shows of it) decides whether the library moved.
 
@@ -152,4 +154,34 @@ func (s *Service) grantedRev(ctx context.Context, u store.User, m store.Machine)
 		return 0, err
 	}
 	return s.viewRev(u, m, fmt.Sprintf("%d\x00%s", int64(-1), digest)), nil
+}
+
+// spaceNudges are the channels closed when a space's roles change: one per space someone waits on, made anew
+// after each change.
+type spaceNudges struct {
+	mu sync.Mutex
+	ch map[string]chan struct{}
+}
+
+func (n *spaceNudges) on(spaceID string) <-chan struct{} {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch == nil {
+		n.ch = map[string]chan struct{}{}
+	}
+	c, ok := n.ch[spaceID]
+	if !ok {
+		c = make(chan struct{})
+		n.ch[spaceID] = c
+	}
+	return c
+}
+
+func (n *spaceNudges) wake(spaceID string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if c, ok := n.ch[spaceID]; ok {
+		close(c)
+		delete(n.ch, spaceID)
+	}
 }

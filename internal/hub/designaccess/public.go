@@ -113,6 +113,9 @@ func (s *Service) dropTokens() {
 	}
 }
 
+// guestToken is the machine's short token the hub reads design-public of a live machine with: only for the hub's own
+// questions while the owner makes a link (askMachine, captureStatic). A guest never gets one: the guest's
+// token is the hub's link token, and every guest read is served from the store (readStore).
 func (s *Service) guestToken(ctx context.Context, machine string, req hubproto.DesignPublicTokenRequest) (hubproto.DesignPublicToken, error) {
 	key := fmt.Sprintf("%s\x00%s\x00%s\x00%v\x00%t\x00%q", machine, req.Project, req.Rev, req.Pin, req.Capture, req.Pages)
 	now := s.now()
@@ -232,6 +235,10 @@ func readAll(res *http.Response, max int64) ([]byte, error) {
 //	unsafeRuntime      store: made; no store:   store: made; no store:        refused: the machine renders, and
 //	                   refused                  refused                       it serves no guest path
 //	share_blocked      refused                  refused                       refused
+//
+// a machine that is off on a hub with the store is not errMachineGone
+// to a live or pinned link: the verdict it left in the project's record for the newest revision decides (ok or
+// share_blocked), and with none for that revision the link is refused as share_unchecked.
 
 // errMachineGone is a machine that is off or did not answer the question about a link.
 var errMachineGone = errors.New("the owner's machine did not answer")
@@ -272,17 +279,26 @@ func blocked() *Error {
 		"что они нашли, — исправьте это и создайте ссылку снова")
 }
 
-// askChecks asks only for the apps' checks, where a machine that is off lets the link be made anyway: one the hub knows
-// to be off is not waited for.
+// askChecks asks only for the apps' checks: one the hub knows to be off is not waited for. A machine that does not
+// answer lets the link be made anyway (errMachineGone), unless it is off and the hub reads the verdict it left in the
+// project's record (verdict.go): then that verdict, or share_unchecked when none speaks for the newest revision.
 func (s *Service) askChecks(ctx context.Context, m store.Machine, project string) error {
-	if s.reg != nil && s.reg.Get(m.ID) == nil {
-		return errMachineGone
+	err := errMachineGone
+	online := s.reg == nil || s.reg.Get(m.ID) != nil
+	if online {
+		_, err = s.askMachine(ctx, m, project, "__share")
 	}
-	_, err := s.askMachine(ctx, m, project, "__share")
+	// Only a machine that is off is answered for by its verdict: one that is on but answered otherwise (an older runtime
+	// without the probe, a timeout) lets the link through as before, or a person on an older runtime could share nothing.
+	if errors.Is(err, errMachineGone) && !online && s.verdictsOn(m) {
+		return s.storedVerdict(ctx, m, project)
+	}
 	return err
 }
 
-// storeServes is a hub whose guests read the project from its store, never from the owner's machine.
+// storeServes: the hub's store holds the machine's projects, and guests read them from there, never from the owner's
+// machine. The hub always has the store; a machine outside a space (the local one before an admin
+// claims it) has nothing in it, and a Service with no view is one of the unit tests.
 func (s *Service) storeServes(m store.Machine) bool { return s.view != nil && m.SpaceID != "" }
 
 // shareGate decides a link that is not pinned. With the store a guest never reads the runtime's files, so a runtime
@@ -312,7 +328,7 @@ func (s *Service) pin(ctx context.Context, m store.Machine, project string) (str
 		if head <= 0 {
 			return "", fail("not_published", "Проект ещё не опубликован на хабе: дождитесь, пока он синхронизируется, и повторите")
 		}
-		if err := s.askChecks(ctx, m, project); isCode(err, shareBlocked) {
+		if err := s.askChecks(ctx, m, project); isCode(err, shareBlocked) || isCode(err, shareUnchecked) {
 			return "", err
 		}
 		return storerev.ID(head), nil

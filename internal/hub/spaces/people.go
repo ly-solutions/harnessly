@@ -18,6 +18,9 @@ func (s *Service) peopleChanged(ctx context.Context, spaceID, kind, userID strin
 	if s.people != nil && userID != "" {
 		s.people(userID)
 	}
+	if s.access != nil && kind == events.KindMembers && spaceID != "" {
+		s.access(spaceID, userID)
+	}
 	if s.orgBus == nil {
 		return
 	}

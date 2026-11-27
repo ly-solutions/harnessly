@@ -10,15 +10,11 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
-// HRN-1419, stage 2 of «the hub is the source of truth». With the switch hub-design-owner on, the hub owns a design
-// project's own facts — its name, kind, preview, kit, team and the machine that holds the working copy — in
-// design_projects. A machine's runtime writes them as it changes them (a record in the store's systems, decks and
-// videos collections, storehub/entities.go) and the hub keeps them when the machine is off or gone: the library lists
-// every recorded project from these rows, with the store's files when it has them, and never from a snapshot the machine
-// would replace the whole list with.
-
-// OwnerSwitch is the rollout switch of the hub owning the design facts.
-const OwnerSwitch = "hub-design-owner"
+// HRN-1419, stage 2 of «the hub is the source of truth». The hub owns a design project's own facts — its name, kind,
+// preview, kit, team and the machine that holds the working copy — in design_projects. A machine's runtime writes them
+// as it changes them (a record in the store's systems, decks and videos collections, storehub/entities.go) and the hub
+// keeps them when the machine is off or gone: the library lists every recorded project from these rows, with the
+// store's files when it has them, and never from a snapshot the machine would replace the whole list with.
 
 // Meta is what a machine says of a project: set fields replace the stored ones, At (Unix ms) orders two writers.
 type Meta struct {
@@ -44,17 +40,9 @@ var appKindRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}(\.[a-z][a-z0-9-]{0,39}
 
 func metaKind(k string) bool { return metaKinds[k] || appKindRe.MatchString(k) }
 
-// OwnerOn says whether the hub owns the design facts for the person the machine runs for.
-func (s *Service) OwnerOn(ctx context.Context, m store.Machine) bool {
-	if s.ownerOn == nil {
-		return false
-	}
-	u, err := s.db.S().UserByID(ctx, m.CreatedBy)
-	if err != nil {
-		return false
-	}
-	return s.ownerOn(ctx, normEmail(u.Email), m.ID)
-}
+// OwnerOn says whether the hub owns the design facts of the machine's projects: always, for a machine of a space on a
+// hub with the store (the switch hub-design-owner is gone, the hub owns them for everyone).
+func (s *Service) OwnerOn(_ context.Context, m store.Machine) bool { return s.storeServes(m) }
 
 // RecordMeta keeps what a machine (by MetaByMachine) or the hub says of a recorded project. A project the hub has no row
 // for is not recorded by this: access is recorded by design events. A record older than the stored facts changes nothing.
@@ -195,10 +183,10 @@ const takeWorkPath = "/design/store-work-machine"
 // machine is off, the person opens the project to edit it on a live machine of theirs, and the hub records that machine
 // as the working-copy machine. The files unfold from the store onto it by the library's own folder sync, which every
 // machine of a hub runs; the machine's `design` collection is the project, the folder only a copy. Only a person who may
-// edit the project can move it, and only with the switch hub-design-owner on.
+// edit the project can move it.
 func (s *Service) TakeWork(ctx context.Context, u store.User, m store.Machine, project string) error {
 	if !s.OwnerOn(ctx, m) {
-		return fail("store_off", "Хаб пока не хранит рабочую копию дизайнов")
+		return fail("no_space", "Машина не в пространстве: её проекты не хранятся на хабе")
 	}
 	if !projectIDRe.MatchString(project) {
 		return fail("bad_project", "Неверный проект")

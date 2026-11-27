@@ -9,6 +9,7 @@
 // an explicit union with the moment of the next try, for the banner «Нет связи · через N с · Сейчас».
 
 import { batch } from '@/next/core/store';
+import { noteNoAnswer, onBackOnline } from '@/next/offline/net';
 import type { Clock } from '@/next/core/clock';
 import {
   parseServerFrame,
@@ -80,7 +81,11 @@ export const browserEnv: Env = {
     if (typeof window === 'undefined') return () => {};
     if (event === 'online') {
       window.addEventListener('online', fn);
-      return () => window.removeEventListener('online', fn);
+      const stopBack = onBackOnline(fn);
+      return () => {
+        window.removeEventListener('online', fn);
+        stopBack();
+      };
     }
     const onVis = () => {
       if (document.visibilityState === 'visible') fn();
@@ -540,6 +545,7 @@ export class RealtimeClient {
     const now = this.o.clock.now();
     // Without a probe every failure is the network's; the probe tells a sleeping machine from a dead link.
     const cause: OfflineCause = this.endCause ?? 'network';
+    if (cause === 'network') noteNoAnswer();
     if (cause === 'unauthorized') {
       this.setConn({ k: 'offline', retryAt: Number.POSITIVE_INFINITY, cause });
       return;

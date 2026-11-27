@@ -38,7 +38,7 @@ func extProfile(p extproviders.Provider) (providers.Preset, bool) {
 		return providers.Preset{}, false
 	}
 	out := providers.Preset{ID: extProfileID(p.ID), Label: p.Name, Vendor: wire.VendorOwn, Via: wire.ProviderClaude,
-		BaseURL: p.BaseURL, Host: p.Host(), KeyRef: p.KeyRef, Custom: true, Env: map[string]string{}, SecretEnv: map[string]string{}}
+		BaseURL: p.BaseURL, Host: p.Host(), KeyRef: p.KeyRef, Custom: true, Local: p.Preset == extproviders.PresetLocal, Env: map[string]string{}, SecretEnv: map[string]string{}}
 	name := func(id string) string { return id }
 	if p.Proxied() {
 		// The proxy holds the provider's key (through the runtime's relay): the profile names none.
@@ -55,6 +55,10 @@ func extProfile(p extproviders.Provider) (providers.Preset, bool) {
 			label = m.ID
 		}
 		pm := providers.Model{ID: id, Label: label, Window: m.Window}
+		if pm.Window == 0 && p.Preset == extproviders.PresetLocal {
+			// Claude Code takes a model it does not know for one of a million tokens; a local one has far less.
+			pm.Window = extproviders.LocalWindow
+		}
 		for _, e := range m.Efforts {
 			pm.Efforts = append(pm.Efforts, wire.Effort(e))
 		}
@@ -97,6 +101,50 @@ func extProfile(p extproviders.Provider) (providers.Preset, bool) {
 		}
 		out.Small, out.Test = out.Models[0].ID, out.Models[0].ID
 	}
+	return out, true
+}
+
+// localCodexProfileID is the id of the Codex profile of a local model: the Claude Code one's, ended with «-codex».
+func localCodexProfileID(provider string) string {
+	if id := "x-" + provider + "-codex"; wire.ValidProfileID(id) {
+		return id
+	}
+	sum := sha256.Sum256([]byte(provider))
+	return "x-" + hex.EncodeToString(sum[:])[:12] + "-codex"
+}
+
+// localCodexProfile is the profile a Codex chat starts on a local model: Codex's own custom provider at the server's
+// OpenAI-compatible /v1 (Ollama, LM Studio, llama.cpp and vLLM all serve it), with the server's models as they are named
+// there and no key. ok is false for a provider that is no local model or has no model a launch would take.
+func localCodexProfile(p extproviders.Provider) (providers.Preset, bool) {
+	if p.Preset != extproviders.PresetLocal || (!p.ClaudeCLI() && !p.Proxied()) {
+		return providers.Preset{}, false
+	}
+	base := strings.TrimRight(p.BaseURL, "/")
+	if p.ClaudeCLI() {
+		// The Anthropic-compatible address is the root of the server: its OpenAI-compatible one is under /v1.
+		base = strings.TrimSuffix(base, "/v1") + "/v1"
+	}
+	out := providers.Preset{ID: localCodexProfileID(p.ID), Label: p.Name, Vendor: wire.VendorOwn, Via: wire.ProviderCodex,
+		BaseURL: base, Host: p.Host(), Custom: true, Local: true}
+	for _, m := range p.Models {
+		if !agents.IsProfileModelID(m.ID) {
+			continue
+		}
+		label := m.Label
+		if label == "" {
+			label = m.ID
+		}
+		window := m.Window
+		if window == 0 {
+			window = extproviders.LocalWindow
+		}
+		out.Models = append(out.Models, providers.Model{ID: m.ID, Label: label, Window: window})
+	}
+	if len(out.Models) == 0 {
+		return providers.Preset{}, false
+	}
+	out.Small, out.Test = out.Models[0].ID, out.Models[0].ID
 	return out, true
 }
 
@@ -185,6 +233,9 @@ func syncExtProfiles(svc *extproviders.Service, store *providers.Store) {
 		// while another account was the default.
 		pr.Unlisted = main
 		out = append(out, pr)
+		if cp, ok := localCodexProfile(p); ok {
+			out = append(out, cp)
+		}
 	}
 	providers.SetBacked(backing)
 	providers.SetCustom(out)

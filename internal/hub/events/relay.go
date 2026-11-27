@@ -38,6 +38,8 @@ const (
 	relayOrgKick    = "ok"
 	// relayNotices is a person's notices event: the bell's news, reads and switches, and a machine's slot.
 	relayNotices = "n"
+	// relayAccess says a space's design roles changed (GitHub #193): every replica wakes the machines it holds.
+	relayAccess = "da"
 )
 
 // relayMsg is one thing a replica tells the others.
@@ -71,6 +73,7 @@ type Relay struct {
 	// notices takes a person's notices event of another replica (nil until Notices).
 	noticesMu sync.Mutex
 	notices   func(person string, data json.RawMessage)
+	access    func(spaceID string)
 }
 
 // NewRelay makes the relay of the replica called id. Any of the buses may be nil. Nothing moves until Run.
@@ -123,6 +126,17 @@ func (r *Relay) Notices(deliver func(person string, data json.RawMessage)) (send
 	r.noticesMu.Unlock()
 	return func(person string, data json.RawMessage) {
 		r.send(relayMsg{Bus: relayNotices, User: person, Data: data})
+	}
+}
+
+// Access joins the replicas' news of changed roles in a space: deliver hears another replica's, and the returned send
+// tells the others of this one's.
+func (r *Relay) Access(deliver func(spaceID string)) (send func(spaceID string)) {
+	r.noticesMu.Lock()
+	r.access = deliver
+	r.noticesMu.Unlock()
+	return func(spaceID string) {
+		r.send(relayMsg{Bus: relayAccess, Key: spaceID})
 	}
 }
 
@@ -226,6 +240,13 @@ func (r *Relay) receive(payload string) {
 	case relayOrgKick:
 		if r.org != nil {
 			r.org.kick(m.Key, m.User)
+		}
+	case relayAccess:
+		r.noticesMu.Lock()
+		deliver := r.access
+		r.noticesMu.Unlock()
+		if deliver != nil && m.Key != "" {
+			deliver(m.Key)
 		}
 	case relayNotices:
 		r.noticesMu.Lock()

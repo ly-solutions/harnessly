@@ -57,6 +57,20 @@ func (l Launcher) Codex(profile string) (agents.CodexProfile, error) {
 		return agents.CodexProfile{Home: p.Home}, nil
 	}
 	prefix := "model_providers." + p.ID + "."
+	if p.Local {
+		// A server of the person's own: Codex's custom provider at its OpenAI-compatible /v1, no key, no variable for one.
+		args := []string{
+			"-c", prefix + "name=" + strconv.Quote(p.Label),
+			"-c", prefix + "base_url=" + strconv.Quote(p.BaseURL),
+			"-c", prefix + `wire_api="responses"`,
+			"-c", "model_provider=" + strconv.Quote(p.ID),
+		}
+		// Codex knows no window of a model it has no metadata of; the smallest of the server's models is the safe one.
+		if w := p.smallestWindow(); w > 0 {
+			args = append(args, "-c", "model_context_window="+strconv.Itoa(w))
+		}
+		return agents.CodexProfile{Args: args}, nil
+	}
 	if r := l.Relay; p.Relayed && r != nil && r.Base != "" && r.Header != "" && r.TokenEnv != "" {
 		// No key in Codex's environment at all: the relay puts the credential on each request.
 		return agents.CodexProfile{Args: []string{
@@ -143,4 +157,15 @@ func (l Launcher) ClaudeMCPExcluded(profile string) []string {
 		return nil
 	}
 	return p.ExcludeMCP
+}
+
+// smallestWindow is the smallest context window the preset's models are known to have; 0 when none is known.
+func (p Preset) smallestWindow() int {
+	w := 0
+	for _, m := range p.Models {
+		if m.Window > 0 && (w == 0 || m.Window < w) {
+			w = m.Window
+		}
+	}
+	return w
 }

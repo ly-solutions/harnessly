@@ -74,7 +74,7 @@ func (s *Service) ServeHome(w http.ResponseWriter, r *http.Request, u store.User
 		lib, err := s.storeLibraryOf(ctx, u, m, wire.CapsOf(r).DesignKey)
 		if err == nil && lib.MetadataOnly && len(lib.Artifacts) == 0 {
 			// An empty grants index cannot replace the slow machine's home.
-			err = fail("store_off", "Хранилище дизайнов не подключено")
+			err = fail("not_found", "Библиотеки ещё нет в хранилище")
 		}
 		stored <- fromStore{lib, err}
 	}()

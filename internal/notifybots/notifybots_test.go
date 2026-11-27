@@ -368,6 +368,10 @@ func TestToHTML(t *testing.T) {
 		"[MR](https://x.y/a?b=1&c=2)":      `<a href="https://x.y/a?b=1&amp;c=2">MR</a>`,
 		"```go\nfmt.Println(\"<x>\")\n```": "<pre>fmt.Println(&#34;&lt;x&gt;&#34;)</pre>",
 		"unclosed ``` fence":               "unclosed ``` fence",
+		"> цитата\n> вторая\nпосле":        "<blockquote>цитата\nвторая</blockquote>\nпосле",
+		">> скрыто\n> ещё":                 "<blockquote expandable>скрыто\nещё</blockquote>",
+		"__курсив__ и ||спойлер||":         "<i>курсив</i> и <tg-spoiler>спойлер</tg-spoiler>",
+		"a > b":                            "a &gt; b",
 	} {
 		if got := ToHTML(in); got != want {
 			t.Errorf("%q: got %q, want %q", in, got, want)

@@ -90,7 +90,7 @@ export const useSiteComments = (
     (c: ISiteComment) => {
       if (!c.agent || chat === null) return;
       tellAgent(machine, project, c.id, chat).then(
-        () => toast(t('next.ds.comments.toAgent')),
+        (queued) => toast(t(queued ? 'next.ds.comments.toAgentQueued' : 'next.ds.comments.toAgent')),
         (e: unknown) => failed(e),
       );
     },

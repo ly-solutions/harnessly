@@ -670,7 +670,32 @@
         "touchedBy": {"type": "array", "items": {"type": "string", "pattern": "^tab-"}},
         "owner": {"$ref": "#/$defs/DesignOwner"},
         "role": {"$ref": "#/$defs/DesignRole"},
-        "appKind": {"$ref": "#/$defs/DesignAppKind"}
+        "appKind": {"$ref": "#/$defs/DesignAppKind"},
+        "check": {"$ref": "#/$defs/DesignCheck"},
+        "release": {"$ref": "#/$defs/DesignRelease"}
+      }
+    },
+    "DesignCheck": {
+      "type": "object",
+      "required": ["finishedAt", "done", "total", "broken", "warnings", "failure"],
+      "additionalProperties": false,
+      "properties": {
+        "finishedAt": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+        "done": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0},
+        "broken": {"type": "integer", "minimum": 0},
+        "warnings": {"type": "integer", "minimum": 0},
+        "failure": {"oneOf": [{"type": "string"}, {"type": "null"}]}
+      }
+    },
+    "DesignRelease": {
+      "type": "object",
+      "required": ["current", "pinned", "upgrade"],
+      "additionalProperties": false,
+      "properties": {
+        "current": {"type": "string"},
+        "pinned": {"type": "boolean"},
+        "upgrade": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]}
       }
     },
     "DesignAppKind": {

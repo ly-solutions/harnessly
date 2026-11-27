@@ -406,3 +406,20 @@ func (l *Library) kitMissingAt(project, version, projectRoot string) func(abs st
 		return l.kitFileAt(project, version, strings.Split(filepath.ToSlash(rel), "/"))
 	}
 }
+
+// KitPinIn is the kit a project of the library in libraryDir is pinned to, read from its folder without a Library (the
+// hub's views lay out the pinned kit before they make the project's library).
+func KitPinIn(libraryDir, project string) (KitPin, bool) {
+	if !IsLibraryID(project) {
+		return KitPin{}, false
+	}
+	o, ok := readSmallJSON(filepath.Join(libraryDir, project, MetaDirname, MetaProjectFile))
+	if !ok {
+		return KitPin{}, false
+	}
+	pin := parseKitPin(get(o, kitPinKey))
+	if pin == nil || pin.ID == "" {
+		return KitPin{}, false
+	}
+	return *pin, true
+}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
@@ -339,5 +340,35 @@ func TestHomeInOneAnswerIsBehindItsSwitch(t *testing.T) {
 	}
 	if asked != normEmail(r.ownerU.Email)+" "+r.owner.ID {
 		t.Fatalf("the switch was asked for %q", asked)
+	}
+}
+
+// the card of a project shows its last check and its format's release with the machine off, from the record
+// the machine left in the store.
+func TestLibraryFromTheStoreShowsRecordFacts(t *testing.T) {
+	ctx := context.Background()
+	r := newSpaceRig(t, true)
+	if done, err := r.svc.registerCreated(ctx, r.owner, "shared", r.ownerU.Email); err != nil || !done {
+		t.Fatalf("registerCreated: %v %v", done, err)
+	}
+	r.svc.UseView(&fakeLibrary{items: []LibraryItem{{ID: "shared", Title: "Сайт", UpdatedAt: 2000, Kind: "site", Rev: 7}}})
+	up := "r2"
+	r.svc.UseVerdicts(func(_ context.Context, _, id string) (filestore.Record, bool, error) {
+		return filestore.Record{ID: id, Title: "Сайт", Kind: "project",
+			Check:   &filestore.RecordCheck{Done: 3, Total: 3, Broken: 1},
+			Release: &filestore.RecordRelease{Current: "r1", Pinned: true, Upgrade: &up}}, true, nil
+	})
+	lib := askLibrary(t, r, r.ownerU, r.owner)
+	if len(lib.Artifacts) != 1 {
+		t.Fatalf("library: %+v", lib.Artifacts)
+	}
+	a := lib.Artifacts[0]
+	if a.Check == nil || a.Check.Broken != 1 || a.Release == nil || a.Release.Upgrade == nil || *a.Release.Upgrade != "r2" {
+		t.Fatalf("the record's facts are not on the card: %+v %+v", a.Check, a.Release)
+	}
+	for _, m := range lib.Missing {
+		if m == "checks" {
+			t.Fatal("the checks are still said to be the machine's alone")
+		}
 	}
 }

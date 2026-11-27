@@ -5,6 +5,7 @@ import { batch, createStore, useStore } from '@/next/core/store';
 import { gatewayPath } from '@/next/core/net/machine';
 import { getPage, getPageIfChanged, type PageOutcome } from '@/next/core/net/http';
 import { connectionStore } from '@/next/stores/connection';
+import { keepRead, keptRead, onReadsRestored } from '@/next/stores/kept-reads';
 import { convsCachedStore, convsLoadedStore } from '@/next/stores/conversations';
 import { FROM_CENTRAL, mergeConversation, veilConversation } from '@/next/stores/conversation-merge';
 import {
@@ -95,6 +96,7 @@ export function forgetCentralList(): void {
 
 /** A new session starts from nothing: the copy is on again only by the cluster's word to it. */
 export function resetCentral(): void {
+  answered = false;
   forgetCentralList();
   centralStore.set(NONE);
 }
@@ -130,8 +132,28 @@ export async function refreshCentral(remerge = false): Promise<void> {
   if (!res.value.enabled && centralStore.get().enabled) return;
   remergeOwed = false;
   held = res.tag ? { tag: res.tag, value: res.value } : null;
+  answered = true;
   applyCentral(res.value);
+  // Kept on the device: offline, or before the hub answers, the sidebar draws the person's chats from it.
+  keepRead(KEPT, res.value);
 }
+
+const KEPT = 'central-list';
+/** The hub answered this page: what the device kept gives way for good. */
+let answered = false;
+
+/** The list the last page kept, drawn until the hub's own answer comes (and offline, instead of it). */
+function seedKept(): void {
+  if (answered) return;
+  const raw = keptRead<unknown>(KEPT);
+  if (raw === undefined) return;
+  try {
+    applyCentral(parseCentral.list(raw));
+  } catch {
+    // A kept answer this page cannot read is no answer.
+  }
+}
+onReadsRestored(seedKept);
 
 function applyCentral(list: CentralList): void {
   const { enabled, machines, conversations, moved = [], others = [] } = list;

@@ -1,0 +1,93 @@
+/* The offline mark (ui/offline-mark.tsx): quiet on a row, a soft chip beside the workspace's name. */
+.hx-offmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--hx-fg-3);
+  animation: hx-offmark-in 240ms ease-out both;
+}
+.hx-offmark:focus {
+  outline: none;
+}
+.hx-offmark--word {
+  height: 20px;
+  padding: 0 7px 0 6px;
+  border-radius: 999px;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+  font-size: 12px;
+  line-height: 20px;
+}
+.hx-offmark__word {
+  white-space: nowrap;
+}
+@keyframes hx-offmark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-offmark {
+    animation: none;
+  }
+}
+
+/* A design opened offline (features/designly/offline-design.tsx). */
+.hx-offdesign {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--hx-bg-app);
+}
+.hx-offdesign--none {
+  align-items: center;
+  justify-content: center;
+}
+.hx-offdesign__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--hx-border);
+  font-size: 13px;
+  animation: hx-offmark-in 240ms ease-out both;
+}
+.hx-offdesign__title {
+  font-weight: 500;
+  color: var(--hx-fg-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.hx-offdesign__note {
+  color: var(--hx-fg-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.hx-offdesign__frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+/* Beside the workspace's name: the glyph on a soft round, the word is in its hint and in the pill of a chat. */
+.hx-offmark[data-tone='chip'] {
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--hx-bg-hover);
+  color: var(--hx-fg-2);
+}
+.hx-brand .hx-offmark {
+  margin-left: 2px;
+}

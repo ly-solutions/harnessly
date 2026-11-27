@@ -11,6 +11,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/analytics"
 	"github.com/ly-solutions/harnessly/internal/hub/searchsync"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -29,6 +30,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/buildinfo"
 	"github.com/ly-solutions/harnessly/internal/hub/config"
 	"github.com/ly-solutions/harnessly/internal/hub/designaccess"
+	"github.com/ly-solutions/harnessly/internal/hub/designrender"
 	"github.com/ly-solutions/harnessly/internal/hub/dist"
 	"github.com/ly-solutions/harnessly/internal/hub/docs"
 	"github.com/ly-solutions/harnessly/internal/hub/efficiency"
@@ -126,6 +128,9 @@ type Options struct {
 
 // Hub is the assembled hub.
 type Hub struct {
+	// rolesChanged wakes a space's machines and pages on this replica and the others (Sinopia's OnAccessChanged); nil
+	// without a store.
+	rolesChanged func(spaceID string)
 	// search keeps the hub's search index up to date from the store's writes; nil without a store.
 	search  *searchsync.Sync
 	Handler http.Handler
@@ -171,6 +176,8 @@ type Hub struct {
 	Bus *eventbus.Bus
 	// Design is who may see and change a machine's designs, and the guest links to them.
 	Design *designaccess.Service
+	// Render is the queue of the design pictures the hub's render worker draws; nil without HUB_RENDER_TOKEN.
+	Render *designrender.Service
 	// Notices keeps the person's notices in the hub's database, behind the switch hub-notices.
 	Notices *noticehub.Service
 	// TbotJoin gives the machines the join tokens of their Teleport identities once the person approved.
@@ -195,7 +202,7 @@ type Hub struct {
 	Safe *hubsafe.Broker
 	// appTokens signs the platform's token for apps' backends (apptoken.go); nil when HUB_APP_TOKEN=off.
 	appTokens *appTokens
-	// Store keeps the spaces' collections the machines sync with (docs/hub/store.md); nil when HUB_STORE=off.
+	// Store keeps the spaces' collections the machines sync with (docs/hub/store.md); nil only in tests that build the API without one.
 	Store *storehub.Store
 	// Migration is the journal of the move of the machines' data into the store (docs/migrations); nil with
 	// the store off.
@@ -285,6 +292,7 @@ func New(o Options) (*Hub, error) {
 	h.Spaces = spaces.New(spaces.Deps{
 		Config: cfg, DB: db, Auth: h.Auth, Mailer: o.Mailer, Events: h.Events, Limiter: o.Limiter, Log: log, Now: o.Now,
 		OnMemberGone: func(spaceID, userID string) { px.Kick(spaceID, userID) },
+		OnAccess:     h.accessChanged,
 		OnMachineGone: func(m store.Machine) {
 			if h.Machines != nil {
 				h.Machines.Revoked(m)
@@ -330,7 +338,7 @@ func New(o Options) (*Hub, error) {
 	if h.appTokens != nil && o.Now != nil {
 		h.appTokens.signer.SetClock(o.Now)
 	}
-	h.Orgs = orgs.New(orgs.Deps{Config: cfg, DB: db, Auth: h.Auth, Limiter: o.Limiter, Log: log, Now: o.Now, LimitsChanged: limitsChanged, Rates: rb, Features: h.Features, Rollout: h.Switches, Events: h.OrgEvents, PeopleChanged: h.Fleet.TouchUser,
+	h.Orgs = orgs.New(orgs.Deps{Config: cfg, DB: db, Auth: h.Auth, Limiter: o.Limiter, Log: log, Now: o.Now, LimitsChanged: limitsChanged, Rates: rb, Features: h.Features, Rollout: h.Switches, Events: h.OrgEvents, PeopleChanged: h.Fleet.TouchUser, AccessChanged: h.accessChanged,
 		MemberGone: func(spaceID, userID string) { px.Kick(spaceID, userID) },
 		MachineGone: func(m store.Machine) {
 			if h.Machines != nil {
@@ -449,15 +457,12 @@ func New(o Options) (*Hub, error) {
 		LinkKey: linkKey, Notice: notice,
 		Bell: func(ctx context.Context, machineID, to, key, title, text, link string) {
 			h.Notices.Ring(ctx, machineID, to, key, title, text, link)
-		}, Shared: !cfg.Store.Off, Kits: kitAccess(cfg, db, o),
+		}, Shared: true, Kits: kitAccess(cfg, db, o),
 		TeamLevel: cfg.DesignAccess.TeamLevel, ClosedUnrecorded: closedUnrecorded, TrustedProxies: cfg.TrustedProxies,
 		Opens: (&machaccess.Checker{Config: cfg, DB: db, Authz: h.Spaces.Authz, IsAdmin: h.Auth.IsInstanceAdmin, Log: log,
 			Switches: h.Switches, Now: o.Now}).Opens,
 		HomeOn: func(ctx context.Context, email, machineID string) bool {
 			return h.Switches != nil && h.Switches.On(ctx, designaccess.HomeSwitch, email, machineID)
-		},
-		OwnerOn: func(ctx context.Context, email, machineID string) bool {
-			return h.Switches != nil && h.Switches.On(ctx, designaccess.OwnerSwitch, email, machineID)
 		},
 	})
 	func() {
@@ -477,6 +482,8 @@ func New(o Options) (*Hub, error) {
 	}})
 	if cfg.EventBus {
 		h.Bus = eventbus.New(db, log, o.Now)
+		// Sinopia says its changes of access on the bus; the pages' polls of a space wake on them on every replica.
+		h.Design.UseBus(h.Bus)
 		h.Bus.Retention = cfg.EventBusRetention
 	}
 	// Who may give a machine tasks, as the proxy decides it: a member of its space the access list lets that far.
@@ -559,6 +566,8 @@ func New(o Options) (*Hub, error) {
 		deliver = h.Notices.Relay(send)
 	}
 	px = proxy.New(proxy.Deps{Config: cfg, DB: db, Auth: h.Auth, Spaces: h.Spaces, Reg: h.Registry, Tickets: h.Tickets, Log: log, Now: o.Now, Design: noticehub.Chain{h.Notices, h.Design}, Features: h.Features, Workspace: o.Workspace, History: cfg.History, VoiceTakes: cfg.VoiceTakes, Fleet: h.Fleet, Switches: h.Switches, SlotKey: slotKey, Rollout: h.Rollout.ServeState})
+	// a comment to the agent kept while the machine was off goes on as its author once the machine is back.
+	h.Design.UseForward(px.ForwardAs)
 	// A person whose sessions were all ended at once holds nothing open: neither the live streams of their spaces nor
 	// what they had open on the machines.
 	h.Auth.OnSessionsEnded(func(userID string) {
@@ -635,6 +644,49 @@ func New(o Options) (*Hub, error) {
 			appsView = AppsView(h.Store, cfg.DataDir, log)
 		}
 		h.newSearch(designV, appsView)
+		// GitHub #193: a role given in a space reaches its machines at once, on every replica, not after the long poll
+		// and the views' cache ran out.
+		changed := func(spaceID string) { h.Store.AccessChanged(spaceID); h.Design.SpaceChanged(spaceID) }
+		h.rolesChanged = changed
+		if h.relay != nil {
+			send := h.relay.Access(changed)
+			h.rolesChanged = func(spaceID string) { changed(spaceID); send(spaceID) }
+		}
+		h.Design.OnAccessChanged(h.rolesChanged)
+		if h.Bus != nil {
+			// the store journals its writes (revision.committed) and wakes its machines on access.changed.
+			h.Store.UseBus(h.Bus)
+		}
+		// the pictures of the boards of a machine that is off are drawn by the hub's render worker.
+		if designV != nil {
+			h.Render = designrender.New(h.db, func(ctx context.Context, spaceID string) (designrender.Room, error) {
+				return h.Store.ThumbsRoom(ctx, spaceID)
+			}, func(j designrender.Job) string {
+				at := int64(0)
+				if j.Kind == designrender.KindPage {
+					at = j.Rev
+				}
+				return h.Design.RenderLocation(j.MachineID, j.OwnerID, j.Prefix, j.Project, j.Board, at)
+			}, cfg.RenderToken, o.Now, log)
+			h.Render.UseCovers(func(ctx context.Context, spaceID string) (designrender.Room, error) {
+				return h.Store.CoversRoom(ctx, spaceID)
+			})
+			// The board check and the exports of a machine that is off run on a copy of the project from the store.
+			if b, ok := designV.(interface {
+				Bundle(ctx context.Context, spaceID, project string, rev int64, w io.Writer) error
+			}); ok {
+				h.Render.UseBundles(b.Bundle)
+			}
+			if h.Render != nil {
+				h.Design.UseRenderQueue(renderQueue{h.Render})
+			}
+		}
+		// a machine that is off answers for the apps' checks by the verdict it left in the project's record.
+		h.Design.UseVerdicts(h.Store.Record)
+		// with the machine off the hub answers the kits' reads and publishing a site, and keeps comments for the agent.
+		if h.Sites != nil {
+			h.Design.UseSites(designSites{h})
+		}
 	}
 
 	var page http.Handler
@@ -711,6 +763,11 @@ func New(o Options) (*Hub, error) {
 	if h.Store != nil {
 		h.Store.Mount(mux)
 		h.Migration.Mount(mux)
+	}
+	if h.Render != nil {
+		mux.Handle("POST "+designrender.ClaimPath, httpx.Handler(h.Render.ServeClaim))
+		mux.Handle("POST "+designrender.DonePath, httpx.Handler(h.Render.ServeDone))
+		mux.Handle("GET "+designrender.BundlePath, httpx.Handler(h.Render.ServeBundle))
 	}
 	// Nothing under /internal/ is for the outside: the replicas' hop has a listener of its own (Internal).
 	mux.Handle("/internal/", http.NotFoundHandler())
@@ -984,7 +1041,17 @@ func (h *Hub) Run(ctx context.Context) {
 		if _, err := h.Bus.Subscribe(ctx, eventbus.Subscription{Owner: "", Consumer: "modes", Name: "catalog"}, eventbus.FromEnd); err != nil {
 			h.log.Warn("event bus: the subscription of trigger modes not made", "error", err)
 		}
+		// the leader's worker sends the new access snapshot to a space's machines whichever part of the hub
+		// changed it; every replica follows the signals for its own held polls.
+		h.Bus.Consume(designaccess.SignalConsumer, func(ctx context.Context, _ eventbus.Subscription, e eventbus.Event) error {
+			return h.Design.HandleSignal(ctx, e)
+		})
+		if _, err := h.Bus.Subscribe(ctx, eventbus.Subscription{Owner: "", Consumer: designaccess.SignalConsumer, Name: "access",
+			Filter: eventbus.Filter{Types: []string{eventbus.TypeAccessChanged}}}, eventbus.FromEnd); err != nil {
+			h.log.Warn("event bus: the subscription of the access snapshots not made", "error", err)
+		}
 		safego.Go("event bus", func() { h.lead.Lead(ctx, "event bus", h.Bus.Run) })
+		safego.Go("event bus tail", func() { h.Bus.Tail(ctx) })
 	}
 	if h.Ext != nil {
 		safego.Go("extensions", func() { h.Ext.Run(ctx, ext.CheckEvery) })
@@ -1298,4 +1365,65 @@ func isLoopbackHost(hostport string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// accessChanged hears that the members, teams or roles of a space changed outside Sinopia: with the bus it is
+// said there as access.changed (the space's machines get their new snapshot and scope, its pages read the library
+// again, on every replica); without it the space's machines and pages are woken over the relay.
+func (h *Hub) accessChanged(spaceID, userID string) {
+	if spaceID == "" {
+		return
+	}
+	if h.Bus != nil && h.Design != nil {
+		h.Design.AccessChanged(spaceID, "", userID)
+		return
+	}
+	if h.rolesChanged != nil {
+		h.rolesChanged(spaceID)
+	}
+}
+
+// renderQueue is the render worker's queue as the design access service asks it.
+type renderQueue struct{ s *designrender.Service }
+
+func (q renderQueue) WantCover(ctx context.Context, j designaccess.RenderJob) error {
+	return q.s.Want(ctx, designrender.Job{SpaceID: j.SpaceID, MachineID: j.MachineID, OwnerID: j.OwnerID, Prefix: j.Prefix,
+		Project: j.Project, Board: j.Board, Kind: designrender.KindCover, Rev: j.Rev, BoardW: j.BoardW, BoardH: j.BoardH})
+}
+
+func (q renderQueue) DrawPage(ctx context.Context, j designaccess.RenderJob) ([]byte, error) {
+	return q.s.Page(ctx, designrender.Job{SpaceID: j.SpaceID, MachineID: j.MachineID, OwnerID: j.OwnerID, Prefix: j.Prefix,
+		Project: j.Project, Board: j.Board, Kind: designrender.KindPage, Rev: j.Rev, BoardW: j.BoardW, BoardH: j.BoardH})
+}
+
+func (q renderQueue) Works() bool { return q.s.Works() }
+
+func (q renderQueue) RunWork(ctx context.Context, kind string, j designaccess.RenderJob) (designaccess.Work, error) {
+	wk, err := q.s.Run(ctx, designrender.Job{SpaceID: j.SpaceID, MachineID: j.MachineID, OwnerID: j.OwnerID, Prefix: j.Prefix,
+		Project: j.Project, Board: j.Board, Kind: kind, Rev: j.Rev})
+	return accessWork(wk), err
+}
+
+func (q renderQueue) LastWork(ctx context.Context, spaceID, project, kind string) (designaccess.Work, bool, error) {
+	wk, ok, err := q.s.Last(ctx, spaceID, project, kind)
+	return accessWork(wk), ok, err
+}
+
+func (q renderQueue) WorkOf(ctx context.Context, spaceID, project, kind, id string) (designaccess.Work, bool, error) {
+	wk, ok, err := q.s.WorkOf(ctx, spaceID, project, kind, id)
+	return accessWork(wk), ok, err
+}
+
+func (q renderQueue) OpenResult(ctx context.Context, spaceID, sha string) (io.ReadCloser, error) {
+	return q.s.OpenResult(ctx, spaceID, sha)
+}
+
+func accessWork(wk designrender.Work) designaccess.Work {
+	return designaccess.Work{ID: wk.ID, Args: wk.Board, State: wk.State, Error: wk.Error, Result: wk.Result,
+		Disposition: wk.Disposition, Created: wk.Created, Updated: wk.Updated}
+}
+
+func (q renderQueue) WantThumb(ctx context.Context, j designaccess.RenderJob) error {
+	return q.s.Want(ctx, designrender.Job{SpaceID: j.SpaceID, MachineID: j.MachineID, OwnerID: j.OwnerID, Prefix: j.Prefix,
+		Project: j.Project, Board: j.Board, Kind: designrender.KindThumb, Rev: j.Rev, BoardW: j.BoardW, BoardH: j.BoardH})
 }

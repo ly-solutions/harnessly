@@ -20,6 +20,7 @@ func Hub(st *storehub.Store, db *store.DB, derived bool, dataDir string, app fs.
 		Rooms:  func(ctx context.Context, spaceID string) (Room, error) { return st.DesignRoom(ctx, spaceID) },
 		Covers: func(ctx context.Context, spaceID string) (PictureRoom, error) { return st.CoversRoom(ctx, spaceID) },
 		Thumbs: func(ctx context.Context, spaceID string) (PictureRoom, error) { return st.ThumbsRoom(ctx, spaceID) },
+		Kits:   func(ctx context.Context, spaceID string) (Room, error) { return st.KitsRoom(ctx, spaceID) },
 		Dir:    filepath.Join(dataDir, "design-view"), GuestApp: app, Log: log,
 	})
 	if v == nil {

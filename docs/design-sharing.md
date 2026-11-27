@@ -27,8 +27,7 @@ kept an hour when every check holds and a minute when one fails, so a fixed runt
 While a check fails, what depends on the machine is **closed**, never weakened:
 
 - the runtime answers every guest read 503 with `X-Design-Share-Refused: share_unsafe_runtime`;
-- on a hub without a store (`HUB_STORE=off`) the hub makes no link: the owner's dialog gets 409 `share_unsafe_runtime`
-  with what to run instead. With the store on, links are made and served from the store as above.
+- the hub always has the store: links are made and served from the store as above.
 
 Run the same check by hand, on the machine, as the runtime's user:
 

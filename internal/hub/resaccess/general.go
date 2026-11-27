@@ -16,10 +16,11 @@ const (
 	sealTable    = "resource_guest_links"
 )
 
-// generalLink is the resource's general link, on or off, with its sealed address; false when it never had one.
+// generalLink is the resource's general link, on or off, with its sealed address; false when it never had one. The live
+// one wins: a link replaced after a key change is made in the same second as its successor.
 func (t *txn) generalLink(ref Ref) (link, string, bool, error) {
 	l, err := scanLink(t.q.QueryRow(t.ctx, `SELECT `+linkCols+` FROM resource_guest_links l WHERE l.kind = ? AND l.id = ? AND COALESCE(l.space_id, '') = ?
-		AND l.general = 1 ORDER BY l.created_at DESC, l.link_id LIMIT 1`, ref.Kind, ref.ID, ref.Space))
+		AND l.general = 1 ORDER BY CASE WHEN l.revoked_at IS NULL THEN 0 ELSE 1 END, l.created_at DESC, l.link_id LIMIT 1`, ref.Kind, ref.ID, ref.Space))
 	if errors.Is(err, sql.ErrNoRows) {
 		return link{}, "", false, nil
 	}
@@ -87,7 +88,7 @@ func (s *Service) setGeneral(t *txn, ref Ref, actor, level, target string) error
 	return t.log(ref, actor, "link_general", made.ID, map[string]any{"rights": level})
 }
 
-// generalRoute is PUT …/general {level}: whoever may make a guest link may set it.
+// generalRoute is PUT …/general {level}: a manager or the owner sets it (can.go: an editor who may share may not).
 func (s *Service) generalRoute(r *http.Request, ref Ref, actor string, info Info, change func(func(*txn) error) (any, int, error)) (any, int, error) {
 	b, err := readBody(r)
 	if err != nil {

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/ly-solutions/harnessly/internal/renderworker"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -52,6 +53,10 @@ func init() { host.Build = agent.BuildVersion }
 // subcommand handles browser-host, web export and sandbox-exec before the runtime starts serving.
 // Unknown arguments retain their previous meaning to the server.
 func subcommand(args []string) (bool, error) {
+	if len(args) > 0 && args[0] == "render-worker" {
+		// the hub's worker that draws the design pictures of machines that are off.
+		return true, renderworker.Main(args[1:])
+	}
 	if len(args) > 0 && args[0] == "browser-host" {
 		return true, host.Main(args[1:])
 	}

@@ -159,6 +159,7 @@ func (s *Service) viewIn(t *txn, p project, stored bool, email string) (map[stri
 		"resource": map[string]any{"kind": "design", "id": p.ID, "subkind": "design", "title": p.ID},
 		"stored":   stored, "role": shownRole(f.Role), "until": iso(f.Until), "canManage": f.CanManage, "manager": manager,
 		"steward": f.Steward, "owner": nil, "homeTeam": nil, "editorsCanShare": p.EditorsCanShare, "myRequest": nil,
+		"can": resaccess.CanAll(f.Role, p.EditorsCanShare),
 	}
 	if p.Owner != "" {
 		var known any
@@ -721,10 +722,7 @@ func (s *Service) createLink(r *http.Request, m store.Machine, email, project st
 	var pages []staticPage
 	switch {
 	case in.Static:
-		in.Rev, err = s.pinCapture(ctx, m, project)
-		if err == nil {
-			pages, err = s.captureStatic(ctx, m.ID, project, in)
-		}
+		in.Rev, pages, err = s.capture(ctx, m, project, in)
 	case in.Version == "pinned":
 		in.Rev, err = s.pin(ctx, m, project)
 	default:

@@ -24,6 +24,8 @@ type Service struct {
 	Secrets Secrets
 	// Probe asks a provider; nil is a Prober of its own.
 	Probe *Prober
+	// Local looks for local model servers; nil is a Discoverer of its own.
+	Local *Discoverer
 	// OnChange is told after the registry changed: what happened ("created", "updated", "removed") to which provider.
 	OnChange func(what string, before, after *Provider)
 }
@@ -33,6 +35,15 @@ func (s *Service) prober() *Prober {
 		return s.Probe
 	}
 	return &Prober{}
+}
+
+// Discover looks for the local model servers of this machine and, when custom is an address, for one there too.
+func (s *Service) Discover(ctx context.Context, custom string) (LocalFound, error) {
+	d := s.Local
+	if d == nil {
+		d = &Discoverer{}
+	}
+	return d.Discover(ctx, custom)
 }
 
 func (s *Service) changed(what string, before, after *Provider) {
@@ -93,11 +104,16 @@ func (s *Service) Create(in Input) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	base, err := CleanURL(in.BaseURL)
+	clean := CleanURL
+	if in.Preset == PresetLocal {
+		// A local model is on this machine or a private network, and takes no key.
+		clean, in.Key = CleanLocalURL, ""
+	}
+	base, err := clean(in.BaseURL)
 	if err != nil {
 		return View{}, err
 	}
-	if !in.API.Valid() {
+	if !in.API.Valid() || in.Preset == PresetLocal && in.API == APIHiggsfield {
 		return View{}, refuse(ReasonBadAPI)
 	}
 	if !validPreset(in.Preset) {
@@ -197,7 +213,11 @@ func (s *Service) Update(id string, patch Patch) (View, error) {
 			p.Name = name
 		}
 		if patch.BaseURL != nil {
-			base, err := CleanURL(*patch.BaseURL)
+			clean := CleanURL
+			if p.Preset == PresetLocal {
+				clean = CleanLocalURL
+			}
+			base, err := clean(*patch.BaseURL)
 			if err != nil {
 				return err
 			}

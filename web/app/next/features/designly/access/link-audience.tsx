@@ -64,8 +64,8 @@ const LinkAudience = (props: ILinkAudienceProps) => {
     });
   };
   return (
-    <section className="hx-acc-card" data-section="team">
-      <div className="hx-acc-card__h">
+    <section className="hx-acc-panel" data-section="team">
+      <div className="hx-acc-panel__h">
         <Icon name="globe" size="sm" />
         <b>{t('next.access.audience.title')}</b>
       </div>
@@ -83,7 +83,7 @@ const LinkAudience = (props: ILinkAudienceProps) => {
           </button>
         ))}
       </div>
-      <p className="hx-acc-card__hint">{t(`next.access.audience.${at}.hint`)}</p>
+      <p className="hx-acc-panel__hint">{t(`next.access.audience.${at}.hint`)}</p>
     </section>
   );
 };

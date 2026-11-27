@@ -35,3 +35,8 @@ ingress:
       hosts: ["*.run.example.net"]
     - secretName: hub-sites-tls
       hosts: ["*.sites.example.org"]
+
+renderWorker:
+  enabled: true
+  image:
+    tag: v0.16.481

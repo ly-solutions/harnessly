@@ -20,7 +20,7 @@ Every space has its own collections; a machine reaches only the ones of the spac
 | `handoff` | what one machine passes to another |
 | `resume` | one room per person (`resume-<user id>`), not per space: each machine's sealed snapshots of its chats, read only by the person's own machines, 403 to anyone else ([resume.md](resume.md)) |
 | `apps` | the files of a space's apps: their storage areas under `storage/` (docs/apps.md); a machine sees only its own person's user and chat areas; the team's apps (`team/`), the guest links (`guests/<person>/`) and their packages (`bundles/`) |
-| `projects`, `systems`, `videos`, `decks` | the records of a library's entities: one small JSON file `<project id>.json` per project (`projects`: a site or anything not named below), design system, video or deck, `{id, title, kind, preview, kit, machine, at}`. They follow the access of the project they name: a person's machine sees and writes only the records of projects open to them. With the switch `hub-design-owner` the hub also takes each committed record into the project's row (`design_projects`: title, kind, preview, kit, working-copy machine) unless the hub has a newer edit of its own. The files of the entity stay in `design`. The runtime keeps the same records in its own store, with or without a hub (see «Who owns a design entity») |
+| `projects`, `systems`, `videos`, `decks` | the records of a library's entities: one small JSON file `<project id>.json` per project (`projects`: a site or anything not named below), design system, video or deck, `{id, title, kind, preview, kit, machine, at}`. They follow the access of the project they name: a person's machine sees and writes only the records of projects open to them. The hub also takes each committed record into the project's row (`design_projects`: title, kind, preview, kit, working-copy machine) unless the hub has a newer edit of its own. The files of the entity stay in `design`. The runtime keeps the same records in its own store, with or without a hub (see «Who owns a design entity») |
 
 A shelf (`.folders/<person>.json`) names a person's projects and folders, so it is not shared with the space: it
 reaches the machines of that person and the machines whose access names them, by person or team. A shared machine that
@@ -32,8 +32,7 @@ A collection is a room of the store named `<collection>-<space id>`.
 
 ## How a machine reaches it
 
-1. The runtime reads the hub's `GET /api/capabilities`. Without the capability `store` (an older hub, or
-   `HUB_STORE=off`) it keeps its data as before and asks again every ten minutes.
+1. The runtime reads the hub's `GET /api/capabilities`. Without the capability `store` (an older hub) it keeps its data as before and asks again every ten minutes.
 2. It asks for a session with `POST /agent/store`, signed with the machine's own Ed25519 key, the same key it dials the
    hub with (`machine.json`). Nobody hands out a token: a machine that is revoked, switched off or moved to another
    space loses the store within thirty seconds, with its session still in hand.
@@ -258,38 +257,35 @@ database and files are apart. Running it again copies only what is new.
 
 ## Who owns a design entity
 
-HRN-1419, switch `hub-design-owner` (off by default). A design project, a system, a video, a deck are the hub's: the
+HRN-1419; for everyone since HRN-1795, the switch `hub-design-owner` is gone. A design project, a system, a video, a deck are the hub's: the
 facts that name them (title, kind, preview, the kit they are built on, the team, the machine whose folder holds the
 working copy now) are columns of `design_projects` (migration 0069, columns are nullable, a row made before reads as
 kind = `subkind` and working copy = the machine it is under). A machine writes a record of them into the collections
 above on every change; the hub takes it only if it is not older than what the hub has, so a machine's old snapshot does not overwrite a newer
-edit made in the hub. With the switch on, the library of the hub (`GET <platform>/design/store-library`) lists a recorded
-project whether or not its machine is on and whether or not the store has its files. With it off the library lists
-what the store has files of, as before. A runtime without a hub keeps the records in its embedded store (SQLite or
+edit made in the hub. The library of the hub (`GET <platform>/design/store-library`) lists a recorded
+project whether or not its machine is on and whether or not the store has its files. A runtime without a hub keeps the records in its embedded store (SQLite or
 Postgres, `RUNTIME_STORE_DB`) and always serves them.
 
 ### The runtime writes the records
 
 A runtime puts a record of every library entity into the store once the store is ready: all of them at connect, then a few
 seconds after each change of the library and every five minutes (an entity whose record has not changed is skipped).
-It does so with a hub and without one, whatever the switch `hub-design-owner` says; the switch only decides whether
-the hub's library reads the rows the records fill. After the first push the runtime checks that the store has as many
+It does so with a hub and without one. After the first push the runtime checks that the store has as many
 as the machine and logs the answer (`design records: …`). `GET /api/platform/design/records-check` on the runtime gives the same check
 at any time: `{OK, Counts, Missing, Extra}`, where `OK` means nothing the machine has is missing in the store.
 
 ### Editing with the owner machine off
 
-`POST /api/platform/design/store-work-machine` `{"project": "<id>"}`, through a live machine of the person, with the switch
-`hub-design-owner` on: the hub records that machine as the project's working-copy machine (`workMachine` in the store
+`POST /api/platform/design/store-work-machine` `{"project": "<id>"}`, through a live machine of the person: the hub records that machine as the project's working-copy machine (`workMachine` in the store
 library). The files are already in the hub's `design` collection, and the machine's library folder sync unfolds them onto its disk;
 the person edits there and every save goes back to the store. Only a person with the edit role (or above) can move the working copy;
-a viewer, an unrecorded project or a hub with the switch off gets an error and nothing changes.
+a viewer or an unrecorded project gets an error and nothing changes.
 
 ### Covers
 
 The cover of a project (the first shot of its last check) is kept apart from the design's revisions, in the `covers` collection:
 `<project id>.jpg`, at most 1 MB, with the access of the project (the same filter as the records). A runtime puts it there
-together with the records, under a hub and without one. With the switch `hub-design-owner` the hub's library points the card's
+together with the records, under a hub and without one. The hub's library points the card's
 `cover` at `GET /api/platform/design/store-cover?project=<id>&v=<sha>`, which gives the picture only to a person who may open the
 project (a closed project answers 404 like a missing cover). The hub reads a cover by its path
 (`Current` + blob) and lists them by the collection's changes.
@@ -300,7 +296,7 @@ The picture of a board the library card shows is drawn by the machine into `.thu
 each board goes to the `thumbs` collection: `<project id>/<first 16 hex of sha1(board path)>.jpg`, at most 1 MB, with the access
 of the project. A runtime pushes them with the covers (on a library change and every 5 minutes), reads a file only when its
 name changed and writes it only when its bytes did; it draws nothing for the store. A machine that is on answers
-`GET /api/<platform>/design/library/thumb` itself, as before. While it is off and the switch `hub-design-owner` is on, the hub
+`GET /api/<platform>/design/library/thumb` itself, as before. While it is off, the hub
 answers that route from the store: the picture only to a person who may open the project, `Cache-Control: private, no-cache`
 with an `ETag`, 404 with `no-store` when there is none. The picture may be of an earlier version of the board; pictures of
 deleted boards stay in the collection.

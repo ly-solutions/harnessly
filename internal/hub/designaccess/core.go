@@ -64,11 +64,10 @@ var statusOf = map[string]int{
 	"share_unsafe_runtime": 409,
 	// the apps' checks on the owner's machine keep the project from being shared as it is.
 	"share_blocked": 409,
+	// the owner's machine is off and no verdict of the apps' checks speaks for the project as it is now.
+	"share_unchecked": 409,
 	// a link pinned to a version needs the project in the hub's store, which has nothing of it yet.
 	"not_published": 409,
-	// The hub runs without a design store (HUB_STORE off): nothing will ever arrive there, which a page tells apart
-	// from a store that has no copy yet or could not be read (GitHub #82). 404, as before, for older pages.
-	"store_off": 404,
 }
 
 func asError(err error) (*Error, bool) {

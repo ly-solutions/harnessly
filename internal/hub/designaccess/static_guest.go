@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/hub/store"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
+	"github.com/ly-solutions/harnessly/internal/storerev"
 )
 
 // StaticPrefix addresses immutable snapshots on the Hub. It never reaches a runtime.
@@ -49,7 +51,33 @@ func cleanStaticPage(raw []byte) (string, error) {
 	return base64.StdEncoding.EncodeToString(b.Bytes()), nil
 }
 
-func (s *Service) captureStatic(ctx context.Context, machine, project string, in shareInput) ([]staticPage, error) {
+// capture pins the version a snapshot of the pages is drawn at and draws them. With the store and the hub's render
+// worker the version is the store's head, the boards are listed from the store at it and the worker draws
+// each one there: the owner's machine takes no part and may be off. A hub without a worker asks the owner's machine,
+// which draws them from its working copy.
+func (s *Service) capture(ctx context.Context, m store.Machine, project string, in shareInput) (string, []staticPage, error) {
+	pd, ok := s.render.(PageDrawer)
+	if !ok || !s.storeServes(m) || m.CreatedBy == "" {
+		rev, err := s.pinCapture(ctx, m, project)
+		if err != nil {
+			return "", nil, err
+		}
+		in.Rev = rev
+		pages, err := s.captureFromMachine(ctx, m.ID, project, in)
+		return rev, pages, err
+	}
+	rev, err := s.pin(ctx, m, project)
+	if err != nil {
+		return "", nil, err
+	}
+	at, _ := storerev.Of(rev)
+	in.Rev = rev
+	pages, err := s.captureFromStore(ctx, m, project, at, in, pd)
+	return rev, pages, err
+}
+
+// captureFromMachine asks the owner's machine for the index of the boards and the picture of each.
+func (s *Service) captureFromMachine(ctx context.Context, machine, project string, in shareInput) ([]staticPage, error) {
 	req := hubproto.DesignPublicTokenRequest{Project: project, Rev: in.Rev, Capture: true, Pages: in.Pages}
 	unavailable := fail("unavailable", "Снимок страниц не получился: машина владельца не дорисовала все страницы. Попробуйте ещё раз, а если повторится — выберите меньше страниц")
 	get := func(segments []string, limit int64) ([]byte, error) {
@@ -73,9 +101,57 @@ func (s *Service) captureStatic(ctx context.Context, machine, project string, in
 	if err != nil {
 		return nil, err
 	}
+	return drawStatic(raw, in, unavailable, func(b staticBoard) ([]byte, error) {
+		return get([]string{"__raster", fmt.Sprintf("%x", sha256.Sum256([]byte(b.Path)))}, maxStaticPage)
+	})
+}
+
+// captureFromStore lists the boards of the project at the revision from the store and has the render worker draw each.
+func (s *Service) captureFromStore(ctx context.Context, m store.Machine, project string, at int64, in shareInput, pd PageDrawer) ([]staticPage, error) {
+	req := hubproto.DesignPublicTokenRequest{Project: project, Rev: in.Rev, Pages: in.Pages}
+	unavailable := fail("unavailable", "Снимок страниц не получился: не все страницы нарисовались. Попробуйте ещё раз, а если повторится — выберите меньше страниц")
+	res, _, err := s.readStore(ctx, m, req, at, nil, nil, nil)
+	if err != nil {
+		s.log.Warn("design snapshot: the store did not list the boards", "project", project, "error", err)
+		return nil, unavailable
+	}
+	if res.StatusCode != http.StatusOK {
+		res.Body.Close()
+		return nil, unavailable
+	}
+	raw, err := readAll(res, maxIndex)
+	if err != nil {
+		return nil, unavailable
+	}
+	prefix := s.prefixOf(m.ID)
+	// A worker that is down or busy does not keep the owner waiting past this.
+	ctx, cancel := context.WithTimeout(ctx, captureWait)
+	defer cancel()
+	return drawStatic(raw, in, unavailable, func(b staticBoard) ([]byte, error) {
+		pic, err := pd.DrawPage(ctx, RenderJob{SpaceID: m.SpaceID, MachineID: m.ID, OwnerID: m.CreatedBy, Prefix: prefix,
+			Project: project, Board: b.Path, Rev: at, BoardW: b.W, BoardH: b.H})
+		if err != nil {
+			s.log.Warn("design snapshot: the render worker did not draw a page", "project", project, "error", err)
+			return nil, unavailable
+		}
+		return pic, nil
+	})
+}
+
+// captureWait is how long the render worker may take over all the pages of one snapshot.
+var captureWait = 2 * time.Minute
+
+// staticBoard is a board of the index a snapshot is drawn from.
+type staticBoard struct {
+	Path, Title string
+	W, H        int
+}
+
+// drawStatic checks the index of the boards (raw) against the pages asked for and draws each board by raster.
+func drawStatic(raw []byte, in shareInput, unavailable error, raster func(staticBoard) ([]byte, error)) ([]staticPage, error) {
 	var index struct {
 		Kind   *string
-		Boards []struct{ Path, Title string }
+		Boards []staticBoard
 	}
 	if json.Unmarshal(raw, &index) != nil || index.Kind != nil || len(index.Boards) == 0 || len(index.Boards) > maxStaticBoards {
 		return nil, unavailable
@@ -92,7 +168,7 @@ func (s *Service) captureStatic(ctx context.Context, machine, project string, in
 			return nil, unavailable
 		}
 		seen[b.Path] = true
-		raw, err := get([]string{"__raster", fmt.Sprintf("%x", sha256.Sum256([]byte(b.Path)))}, maxStaticPage)
+		raw, err := raster(b)
 		if err != nil {
 			return nil, err
 		}

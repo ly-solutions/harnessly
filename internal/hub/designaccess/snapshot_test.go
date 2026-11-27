@@ -58,30 +58,21 @@ func warm(s *Service, machine string, req hubproto.DesignPublicTokenRequest) {
 	s.tokens[key] = cachedToken{tok: hubproto.DesignPublicToken{Token: "t", Header: "X-T"}, until: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}
 }
 
-// GitHub #180: with the Store off, A publishes a private snapshot, goes offline, and B (granted) reads only that.
-func TestPrivateSnapshotServesAGrantedReaderWhileTheOwnerIsOffline(t *testing.T) {
+// GitHub #180: the owner publishes a private snapshot of a project and removes it; only the owner may. HRN-1795: the
+// hub always has the store, which a granted reader reads while the owner's machine is off, so the snapshot is no longer
+// served through the store's routes.
+func TestPrivateSnapshotIsPublishedByTheOwnerOnly(t *testing.T) {
 	ctx := context.Background()
-	r := newSpaceRig(t, false)
-	for _, u := range []store.User{r.ownerU, r.mateU, r.strangeU} {
-		if err := r.db.S().CreateIdentity(ctx, &store.Identity{UserID: u.ID, Provider: "test", Subject: u.ID, Email: u.Email, EmailVerified: true}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	r := newSpaceRig(t, true)
+	r.svc.UseView(fakeView{head: 7})
 	if _, err := r.svc.registerCreated(ctx, r.owner, "site", r.ownerU.Email); err != nil {
 		t.Fatal(err)
 	}
-	grant := func() {
-		t.Helper()
-		if err := r.svc.write(ctx, r.owner, func(tx *txn) error {
-			if err := tx.setTeam("site", r.ownerU.Email, levelNone); err != nil {
-				return err
-			}
-			return tx.grant("site", r.ownerU.Email, r.mateU.Email, roleView, ttl{none: true}, false)
-		}); err != nil {
-			t.Fatal(err)
-		}
+	if err := r.svc.write(ctx, r.owner, func(tx *txn) error {
+		return tx.grant("site", r.ownerU.Email, r.mateU.Email, roleView, ttl{none: true}, false)
+	}); err != nil {
+		t.Fatal(err)
 	}
-	grant()
 	owner := &fakeOwner{online: true}
 	r.svc.reg = link.NewRegistry()
 	r.svc.transport = func(string) http.RoundTripper { return owner }
@@ -96,87 +87,45 @@ func TestPrivateSnapshotServesAGrantedReaderWhileTheOwnerIsOffline(t *testing.T)
 		r.svc.ServeMachine(w, req, u, m)
 		return w
 	}
-	// Only the owner publishes; a reader (even with a grant) cannot.
+	var got struct {
+		Snapshot *struct {
+			CapturedAt string
+			Boards     []struct{ N int }
+		}
+	}
+	read := func() {
+		t.Helper()
+		got.Snapshot = nil
+		w := call(http.MethodGet, "access/design/site/snapshot", r.ownerU, r.owner, "")
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+			t.Fatalf("read: %d %s", w.Code, w.Body.String())
+		}
+	}
 	if w := call(http.MethodPut, "access/design/site/snapshot", r.mateU, r.mate, `{"pages":["a.html","b.html"]}`); w.Code == http.StatusOK {
 		t.Fatalf("a reader published: %d %s", w.Code, w.Body.String())
-	}
-	if w := call(http.MethodGet, "design/store/site/snapshot", r.mateU, r.mate, ""); w.Code == http.StatusOK {
-		t.Fatalf("a snapshot before anyone published: %s", w.Body.String())
 	}
 	if w := call(http.MethodPut, "access/design/site/snapshot", r.ownerU, r.owner, `{"pages":["a.html","b.html"]}`); w.Code != http.StatusOK {
 		t.Fatalf("publish: %d %s", w.Code, w.Body.String())
 	}
-	// Publishing made no grant: the stranger still has nothing.
-	if w := call(http.MethodGet, "design/store/site/snapshot", r.strangeU, r.stranger, ""); w.Code != http.StatusNotFound {
-		t.Fatalf("an ungranted account: %d %s", w.Code, w.Body.String())
+	if read(); got.Snapshot == nil || len(got.Snapshot.Boards) != 2 || got.Snapshot.CapturedAt == "" {
+		t.Fatalf("published: %+v", got.Snapshot)
 	}
-	// While the owner machine answers, a reader is sent to the live project, never to the snapshot.
-	if w := call(http.MethodGet, "design/store/site/snapshot", r.mateU, r.mate, ""); w.Code == http.StatusOK || !strings.Contains(w.Body.String(), `"live"`) {
-		t.Fatalf("snapshot while live: %d %s", w.Code, w.Body.String())
-	}
-	owner.online = false
-	w := call(http.MethodGet, "design/store/site/snapshot", r.mateU, r.mate, "")
-	if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "private, no-store" {
-		t.Fatalf("offline read: %d %v %s", w.Code, w.Header(), w.Body.String())
-	}
-	var meta struct {
-		CapturedAt string
-		Boards     []struct {
-			N     int
-			Title string
-		}
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &meta); err != nil || len(meta.Boards) != 2 || meta.CapturedAt == "" {
-		t.Fatalf("meta: %v %s", err, w.Body.String())
-	}
-	img := call(http.MethodGet, "design/store/site/snapshot/img/1", r.mateU, r.mate, "")
-	if img.Code != http.StatusOK || img.Header().Get("Content-Type") != "image/jpeg" || img.Header().Get("Cache-Control") != "private, no-store" {
-		t.Fatalf("image: %d %v", img.Code, img.Header())
-	}
-	if _, err := jpeg.Decode(img.Body); err != nil {
-		t.Fatal(err)
-	}
-	// Signed-out readers and ungranted accounts get nothing, the old image address included.
-	if w := call(http.MethodGet, "design/store/site/snapshot/img/1", r.strangeU, r.stranger, ""); w.Code != http.StatusNotFound {
-		t.Fatalf("ungranted image: %d", w.Code)
-	}
-	if w := call(http.MethodGet, "design/store/site/snapshot/img/9", r.mateU, r.mate, ""); w.Code != http.StatusNotFound {
-		t.Fatalf("a board that is not in the snapshot: %d", w.Code)
-	}
-	// Revoking the reader stops the old image address at once, and removing the snapshot does not revoke anyone.
-	if err := r.svc.write(ctx, r.owner, func(tx *txn) error { return tx.revoke("site", r.ownerU.Email, r.mateU.Email, false) }); err != nil {
-		t.Fatal(err)
-	}
-	if w := call(http.MethodGet, "design/store/site/snapshot/img/1", r.mateU, r.mate, ""); w.Code == http.StatusOK {
-		t.Fatalf("an image after the grant was revoked: %d", w.Code)
-	}
-	grant()
-	if w := call(http.MethodGet, "design/store/site/snapshot/img/1", r.mateU, r.mate, ""); w.Code != http.StatusOK {
-		t.Fatalf("a regranted reader: %d", w.Code)
+	// The store's routes do not serve it: a reader reads the project itself.
+	if w := call(http.MethodGet, "design/store/site/snapshot", r.mateU, r.mate, ""); w.Code == http.StatusOK {
+		t.Fatalf("the store served a snapshot: %s", w.Body.String())
 	}
 	if w := call(http.MethodDelete, "access/design/site/snapshot", r.ownerU, r.owner, ""); w.Code != http.StatusOK {
 		t.Fatalf("remove: %d %s", w.Code, w.Body.String())
 	}
-	if w := call(http.MethodGet, "design/store/site/snapshot/img/1", r.mateU, r.mate, ""); w.Code != http.StatusNotFound {
-		t.Fatalf("an image after the snapshot was removed: %d", w.Code)
-	}
-	if w := call(http.MethodGet, "design/store/site/snapshot", r.mateU, r.mate, ""); !strings.Contains(w.Body.String(), "no_snapshot") {
-		t.Fatalf("no snapshot, owner offline: %d %s", w.Code, w.Body.String())
-	}
-	if err := r.svc.write(ctx, r.owner, func(tx *txn) error {
-		_, err := tx.upsertMember("site", r.ownerU.Email, r.mateU.Email, roleView, nil, "")
-		return err
-	}); err != nil {
-		t.Logf("grant still there: %v", err)
+	if read(); got.Snapshot != nil {
+		t.Fatalf("removed: %+v", got.Snapshot)
 	}
 	// A snapshot lives only its term.
-	owner.online = true
 	if w := call(http.MethodPut, "access/design/site/snapshot", r.ownerU, r.owner, `{"pages":["a.html","b.html"],"ttl":"1h"}`); w.Code != http.StatusOK {
 		t.Fatalf("publish again: %d %s", w.Code, w.Body.String())
 	}
-	owner.online = false
 	r.svc.now = func() time.Time { return time.Date(2026, 11, 9, 11, 0, 0, 0, time.UTC) }
-	if w := call(http.MethodGet, "design/store/site/snapshot/img/1", r.mateU, r.mate, ""); w.Code != http.StatusNotFound {
-		t.Fatalf("an image after the snapshot expired: %d", w.Code)
+	if read(); got.Snapshot != nil {
+		t.Fatalf("expired: %+v", got.Snapshot)
 	}
 }

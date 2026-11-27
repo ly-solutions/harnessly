@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/ly-solutions/harnessly/internal/hub/resaccess"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
@@ -20,7 +21,7 @@ const generalTitle = "Все, у кого есть ссылка"
 func (t *txn) generalRow(id string) (shareRow, bool, error) {
 	scope, args := t.linkScope(id)
 	r, err := scanShare(t.q.QueryRow(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE `+scope+` AND l.general = 1
-		ORDER BY l.created_at DESC, l.id LIMIT 1`, args...))
+		ORDER BY CASE WHEN l.revoked_at IS NULL THEN 0 ELSE 1 END, l.created_at DESC, l.id LIMIT 1`, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return shareRow{}, false, nil
 	}
@@ -93,7 +94,7 @@ func (t *txn) setGeneral(id, actor, level string) (string, error) {
 	return token, t.writeLog(id, actor, "share.general", row.ID, map[string]any{"rights": level})
 }
 
-// generalRoute is PUT …/general {level}: who may make a link may set it; the apps' checks stop it as any live link.
+// generalRoute is PUT …/general {level}: a manager or the owner sets it (resaccess/can.go); the apps' checks stop it as any live link.
 func (s *Service) generalRoute(r *http.Request, m store.Machine, email, project string) (any, int, error) {
 	ctx := r.Context()
 	if s.shareURL == "" {
@@ -117,6 +118,21 @@ func (s *Service) generalRoute(r *http.Request, m store.Machine, email, project 
 			if e != nil {
 				return e
 			}
+			return fail("forbidden", deniedManageAny)
+		}
+		// An editor the owner lets share invites and makes links, but «anyone with the link» is a manager's (can.go).
+		p, e := t.getProject(project, false)
+		if e != nil {
+			return e
+		}
+		if p == nil {
+			return fail("forbidden", deniedManageAny)
+		}
+		f, e := t.fold(*p, email)
+		if e != nil {
+			return e
+		}
+		if !resaccess.Can(f.Role, false, resaccess.ActGeneral) {
 			return fail("forbidden", deniedManageAny)
 		}
 		_, err := t.setGeneral(project, email, level)

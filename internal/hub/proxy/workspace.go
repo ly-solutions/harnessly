@@ -448,8 +448,9 @@ func (p *pageRecorder) Flush() {}
 // storeFilePath is a file of a project in the hub's store (designaccess team.go): <base>/api/<name>/design/store/<id>/f/….
 var storeFilePath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/f/.`)
 
-// storeKeyedPath is the same file at the board's keyed address (designaccess filekey.go): <id>/k/<key>/f/….
-var storeKeyedPath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/k/[0-9a-z]+\.[0-9a-z]+\.[A-Za-z0-9_-]+(?:\.[0-9a-f]+)?/f/.`)
+// storeKeyedPath is the same file at the board's keyed address (designaccess filekey.go): <id>/k/<key>/f/…, or of a
+// version of the project, <id>/k/<key>/v/<version>/f/… (a snapshot's page the render worker draws).
+var storeKeyedPath = regexp.MustCompile(`^` + workspaceBase + `/api/[A-Za-z0-9_-]+/design/store/[^/]+/k/[0-9a-z]+\.[0-9a-z]+\.[A-Za-z0-9_-]+(?:\.[0-9a-f]+)?/(?:v/[0-9a-f]{1,40}/)?f/.`)
 
 // KeyedFiles is the design service's side of a board's keyed address: whose live key a request for a file there
 // carries, "" when it carries none.

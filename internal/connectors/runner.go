@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -152,7 +153,7 @@ func (r *runner) watch(ctx context.Context, c Conn, conn Connector, src Watcher)
 		}
 		in := r.s.instance(cur, nil)
 		from := r.load(c.ID).Cursor
-		err = src.Watch(ctx, in, from, func(events []Event, next Cursor) error {
+		err = watchSafe(ctx, src, in, from, func(events []Event, next Cursor) error {
 			return r.commit(sp, in, cur.Account, events, next)
 		})
 		if ctx.Err() != nil {
@@ -315,4 +316,14 @@ func (r *runner) deliver(ctx context.Context, id string) {
 	if err := r.save(id, st); err != nil {
 		r.log.Warn("connector state not written", "connection", id, "error", err)
 	}
+}
+
+// watchSafe runs a source, a panic of it becoming its error: one broken connection stops, the runtime does not.
+func watchSafe(ctx context.Context, src Watcher, in Instance, from Cursor, emit Emit) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("connector source panicked: %v", p)
+		}
+	}()
+	return src.Watch(ctx, in, from, emit)
 }

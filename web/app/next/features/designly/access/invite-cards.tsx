@@ -91,24 +91,29 @@ const InviteCards = (props: IInviteCardsProps) => {
       if (next) props.onNext(next);
     });
   return (
-    <section className="hx-acc-card" data-section="invites">
-      <div className="hx-acc-card__h">
+    <section className="hx-acc-panel" data-section="invites">
+      <div className="hx-acc-panel__h">
         <Icon name="link" size="sm" />
         <b>{t('next.access.invites.title')}</b>
         <span className="hx-spacer" />
-        <button type="button" className="hx-acc-add" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <button
+          type="button"
+          className="hx-acc-panel__add"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
           <Icon name="plus" size="sm" />
           {t('next.access.invites.new')}
         </button>
       </div>
-      {invites.length === 0 && !open && <p className="hx-acc-card__hint">{t('next.access.invites.none')}</p>}
+      {invites.length === 0 && !open && <p className="hx-acc-panel__hint">{t('next.access.invites.none')}</p>}
       {invites.map((i) => (
         <div key={i.id} className="hx-acc-link">
           <div className="hx-acc-link__t">
             <b>{i.title}</b>
             <span className="hx-acc-badge">{canLabel(i.role)}</span>
           </div>
-          <div className="hx-acc-card__hint">
+          <div className="hx-acc-panel__hint">
             {untilLabel(i.expiresAt) ?? ''}
             {i.maxUses !== null && ` · ${t('next.access.invites.used', { n: i.uses, max: i.maxUses })}`}
           </div>

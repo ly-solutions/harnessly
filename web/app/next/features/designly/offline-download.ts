@@ -11,9 +11,9 @@ async function save(machine: MachineId, artifact: string, title: string, revisio
   const write = copyWriter();
   if (!write) throw new Error(t('next.offline.account'));
   if (revision !== undefined) {
-    const person = owner(offlineBase);
+    const person = owner(offlineBase());
     if (!person) return;
-    const db = await shelf(offlineBase, person);
+    const db = await shelf(offlineBase(), person);
     try {
       const req = db
         .transaction('copies')
@@ -47,7 +47,7 @@ export function preloadDesign(machine: MachineId, artifact: string, title: strin
     return;
   void navigator.locks
     .request(
-      'hx-offline-design:' + JSON.stringify([offlineBase, machine, artifact]),
+      'hx-offline-design:' + JSON.stringify([offlineBase(), machine, artifact]),
       { ifAvailable: true },
       async (lock) => {
         if (lock) await save(machine, artifact, title, revision);
@@ -63,12 +63,6 @@ export function offlineDownload(machine: MachineId, artifact: string, title: str
       label: t('next.offline.save'),
       pick: () =>
         void save(machine, artifact, title).catch((e) => toast(String(e.message ?? e), { tone: 'error' })),
-    },
-    {
-      id: 'offline-library',
-      icon: 'files',
-      label: t('next.offline.library'),
-      pick: () => window.open(offlineBase + 'offline.html', '_blank', 'noopener'),
     },
   ];
 }

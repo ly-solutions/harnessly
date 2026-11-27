@@ -883,6 +883,25 @@ export interface DesignArtifact {
   cardKey?: string;
   /** The app's document type the project is (made of Sinopia's site): its label; absent for Sinopia's own projects. */
   appKind?: DesignAppKind;
+  /** The last check of its boards and the vendor release it is on: facts the hub keeps, so the card has them with the
+   *  machine off. Absent before the first check, and the release from a runtime without releases. */
+  check?: DesignCheck;
+  release?: DesignRelease;
+}
+/** The last check of a project's boards; finishedAt is null while it runs. */
+export interface DesignCheck {
+  finishedAt: Ms | null;
+  done: number;
+  total: number;
+  broken: number;
+  warnings: number;
+  failure: string | null;
+}
+/** The vendor release a project is on; upgrade names a newer stable one it may move to. */
+export interface DesignRelease {
+  current: string;
+  pinned: boolean;
+  upgrade: string | null;
 }
 /** An app's document type as a project of the library carries it. */
 export interface DesignAppKind {
@@ -2722,6 +2741,15 @@ const designRole = oneOf(DESIGN_ROLES);
 const designBoard: Decoder<DesignBoard> = object({ title: id, path: id });
 const designOwner: Decoder<DesignOwner> = object({ name: id, me: bool });
 const designAppKind: Decoder<DesignAppKind> = object({ id, title: str, app: id, appName: str });
+const designCheck: Decoder<DesignCheck> = object({
+  finishedAt: nullable(ms),
+  done: int,
+  total: int,
+  broken: int,
+  warnings: int,
+  failure: nullable(str),
+});
+const designRelease: Decoder<DesignRelease> = object({ current: str, pinned: bool, upgrade: nullable(str) });
 const designArtifact: Decoder<DesignArtifact> = object(
   {
     id,
@@ -2743,6 +2771,8 @@ const designArtifact: Decoder<DesignArtifact> = object(
     accessUntil: str,
     cardKey: str,
     appKind: designAppKind,
+    check: designCheck,
+    release: designRelease,
   },
 );
 const madeTaskRef: Decoder<MadeTaskRef> = object({

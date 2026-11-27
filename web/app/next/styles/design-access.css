@@ -26,7 +26,7 @@
 .hx-acc-foot {
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px 16px;
+  padding: 12px 24px 20px;
 }
 /* the refusal of the last action, between the body that scrolls and the foot, so it is always in sight. */
 .hx-acc-err {
@@ -41,7 +41,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: -4px;
+  margin-left: -10px;
 }
 .hx-acc-foot__gear {
   width: 32px;
@@ -1651,7 +1651,7 @@ button.hx-acc-set:focus-visible,
 }
 
 /* «Кто откроет по ссылке» and «Ссылки-приглашения» as cards, the new link's form inside its card. */
-.hx-acc-card {
+.hx-acc-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1660,18 +1660,18 @@ button.hx-acc-set:focus-visible,
   border-radius: 14px;
   background: color-mix(in srgb, var(--hx-bg-app) 50%, transparent);
 }
-.hx-acc-card__h {
+.hx-acc-panel__h {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: var(--hx-text-sm);
 }
-.hx-acc-card__h .hx-icon {
+.hx-acc-panel__h .hx-icon {
   width: 14px;
   height: 14px;
   color: var(--hx-fg-3);
 }
-.hx-acc-card__hint {
+.hx-acc-panel__hint {
   margin: 0;
   color: var(--hx-fg-2);
   font-size: var(--hx-text-xs);
@@ -1715,7 +1715,7 @@ button.hx-acc-set:focus-visible,
 .hx-acc-seg--auto {
   width: auto;
 }
-.hx-acc-add {
+.hx-acc-panel__add {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1729,7 +1729,7 @@ button.hx-acc-set:focus-visible,
   font-size: var(--hx-text-xs);
   cursor: pointer;
 }
-.hx-acc-add[aria-expanded='true'] {
+.hx-acc-panel__add[aria-expanded='true'] {
   background: var(--hx-bg-active);
 }
 .hx-acc-link {

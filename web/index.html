@@ -105,9 +105,182 @@
         if (p) document.documentElement.dataset.palette = p;
       } catch (e) {}
     </script>
+    <style>
+      /* The boot screen: drawn with the first frame, before any script, and gone once the app has drawn (below). */
+      #hl-boot {
+        --b-bg: #fcfbf7;
+        --b-ink: #14161a;
+        --b-dot: #a8d400;
+        --b-glow: rgba(168, 212, 0, 0.16);
+        --b-track: rgba(20, 22, 26, 0.08);
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: grid;
+        place-items: center;
+        background: var(--b-bg);
+        transition:
+          opacity 0.32s ease,
+          visibility 0s linear 0.32s;
+      }
+      .dark #hl-boot {
+        --b-bg: #0b0b0d;
+        --b-ink: #f2f2ee;
+        --b-dot: #d4ff3a;
+        --b-glow: rgba(212, 255, 58, 0.11);
+        --b-track: rgba(242, 242, 238, 0.08);
+      }
+      html:has(#hl-boot:not(.out)) body {
+        background: var(--b-bg, inherit);
+      }
+      #hl-boot .b-stage {
+        position: relative;
+        display: grid;
+        justify-items: center;
+        gap: 36px;
+      }
+      #hl-boot .b-glow {
+        position: absolute;
+        left: 50%;
+        top: 46px;
+        width: 360px;
+        height: 360px;
+        margin: -180px 0 0 -180px;
+        border-radius: 50%;
+        background: radial-gradient(closest-side, var(--b-glow), transparent);
+        animation: hl-b-breathe 3.6s ease-in-out infinite;
+        pointer-events: none;
+      }
+      #hl-boot svg {
+        position: relative;
+        width: 92px;
+        height: auto;
+        overflow: visible;
+        animation: hl-b-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+      }
+      #hl-boot .b-h {
+        fill: var(--b-ink);
+      }
+      #hl-boot .b-dot {
+        fill: var(--b-dot);
+        transform-box: fill-box;
+        transform-origin: center;
+        filter: drop-shadow(0 0 14px var(--b-dot));
+        animation: hl-b-pulse 1.4s ease-in-out 0.5s infinite;
+      }
+      #hl-boot .b-bar {
+        position: relative;
+        width: 112px;
+        height: 2px;
+        border-radius: 2px;
+        overflow: hidden;
+        background: var(--b-track);
+        animation: hl-b-fade 0.5s ease 0.6s both;
+      }
+      #hl-boot .b-bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 45%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, var(--b-dot), transparent);
+        animation: hl-b-slide 1.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+      }
+      #hl-boot.out {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #hl-boot.out svg {
+        transform: scale(1.06);
+        transition: transform 0.32s ease;
+      }
+      @keyframes hl-b-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.94);
+        }
+      }
+      @keyframes hl-b-fade {
+        from {
+          opacity: 0;
+        }
+      }
+      @keyframes hl-b-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.22);
+          opacity: 0.85;
+        }
+      }
+      @keyframes hl-b-breathe {
+        0%,
+        100% {
+          transform: scale(0.9);
+          opacity: 0.7;
+        }
+        50% {
+          transform: scale(1.08);
+          opacity: 1;
+        }
+      }
+      @keyframes hl-b-slide {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(225%);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #hl-boot *,
+        #hl-boot *::after {
+          animation: none !important;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="hl-boot" aria-hidden="true">
+      <div class="b-stage">
+        <div class="b-glow"></div>
+        <svg viewBox="250 300 525 425" xmlns="http://www.w3.org/2000/svg">
+          <path
+            class="b-h"
+            transform="translate(235.1 712.2)"
+            d="M29.12 -400.4H135.72V0H29.12ZM244.4 -305.76Q287.56 -305.76 317.46 -288.6Q347.36 -271.44 363.48 -240.24Q379.6 -209.04 379.6 -166.4V0H273V-150.8Q273 -184.08 256.1 -201.76Q239.2 -219.44 207.48 -219.44Q185.64 -219.44 169.26 -210.08Q152.88 -200.72 144.3 -183.56Q135.72 -166.4 135.72 -143L102.44 -160.16Q108.68 -207.48 128.96 -239.98Q149.24 -272.48 179.14 -289.12Q209.04 -305.76 244.4 -305.76Z"
+          />
+          <circle class="b-dot" cx="715.6" cy="668" r="44.2" />
+        </svg>
+        <div class="b-bar"></div>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      // The boot screen leaves when the app has drawn its first element into #root (the sign-in, the shell, the docs).
+      (function () {
+        var boot = document.getElementById('hl-boot');
+        var root = document.getElementById('root');
+        if (!boot || !root) return;
+        var done = function () {
+          if (!root.firstElementChild) return false;
+          obs.disconnect();
+          requestAnimationFrame(function () {
+            boot.classList.add('out');
+            setTimeout(function () {
+              boot.remove();
+            }, 400);
+          });
+          return true;
+        };
+        var obs = new MutationObserver(done);
+        obs.observe(root, { childList: true });
+      })();
+    </script>
     <script type="module" src="./app/main.tsx"></script>
   </body>
 </html>

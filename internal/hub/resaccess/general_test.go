@@ -69,3 +69,21 @@ func TestGeneralAccess(t *testing.T) {
 
 	call(t, s, owner, "PUT", "general", `{"level":"edit"}`, 400)
 }
+
+// HRN-1791, the table of can.go: an editor the owner lets share invites people, but «anyone with the link» is a
+// manager's; a manager sets it. The view tells the page the same through «can».
+func TestGeneralAccessIsAManagers(t *testing.T) {
+	s := newService(t)
+	s.Seal = linkseal.New([]byte("0123456789abcdef0123456789abcdef"))
+	ed := proved("ed@example.com")
+	call(t, s, owner, "PUT", "people/ed@example.com", `{"role":"edit"}`, 200)
+	call(t, s, owner, "PUT", "settings", `{"editorsCanShare":true}`, 200)
+	v := call(t, s, ed, "GET", "", "", 200)
+	can, _ := v["can"].(map[string]any)
+	if v["canManage"] != true || can["share"] != true || can["edit"] != true || can["general"] != false {
+		t.Fatalf("an editor who may share: canManage %v, can %v", v["canManage"], can)
+	}
+	call(t, s, ed, "PUT", "general", `{"level":"view"}`, 403)
+	call(t, s, owner, "PUT", "people/ed@example.com", `{"role":"manage"}`, 200)
+	call(t, s, ed, "PUT", "general", `{"level":"view"}`, 200)
+}

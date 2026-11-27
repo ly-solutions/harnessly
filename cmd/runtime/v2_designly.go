@@ -553,6 +553,7 @@ func (d *v2Designly) Library(ctx context.Context) (wire.DesignLibrary, error) {
 		return n
 	}
 	now := time.Now()
+	releases := lib.Releases()
 	// A document of a type an app adds is opened in the app's editor, not listed as a site, a deck or a video; one of a
 	// type made of Sinopia's own site is a site with the app's label.
 	var appDocs map[string]string
@@ -582,6 +583,10 @@ func (d *v2Designly) Library(ctx context.Context) (wire.DesignLibrary, error) {
 			AppKind: appKind}
 		if a.Cover != nil && *a.Cover != "" {
 			item.Cover = a.Cover
+		}
+		item.Check = wireCheck(recordCheck(lib.CheckSummaryOf(a.ID)))
+		if releases != nil {
+			item.Release = wireRelease(recordRelease(lib.ProjectReleaseOf(a.ID, releases)))
 		}
 		if owner, ok := part.owner, part.owned; ok {
 			item.Owner = &wire.DesignOwner{Name: owner.Name, Me: owner.Mine(me)}

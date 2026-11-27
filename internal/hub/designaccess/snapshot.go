@@ -3,16 +3,12 @@ package designaccess
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ly-solutions/harnessly/internal/hub/store"
-	"github.com/ly-solutions/harnessly/internal/hubproto"
 )
 
 // A private snapshot is what a project's owner leaves for readers who already hold a grant while the owner machine is
@@ -115,11 +111,7 @@ func (s *Service) snapshotRoute(r *http.Request, m store.Machine, email, project
 	if err != nil {
 		return nil, 0, err
 	}
-	rev, err := s.pinCapture(ctx, m, project)
-	if err != nil {
-		return nil, 0, err
-	}
-	shots, err := s.captureStatic(ctx, m.ID, project, shareInput{Rev: rev, Pages: pages})
+	rev, shots, err := s.capture(ctx, m, project, shareInput{Pages: pages})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -146,60 +138,4 @@ func (s *Service) snapshotRoute(r *http.Request, m store.Machine, email, project
 	}
 	meta, err := s.snapshotMeta(ctx, m, project)
 	return map[string]any{"snapshot": meta}, 200, err
-}
-
-// readSnapshot answers a reader who already passed the project reader's grant check (storeRoute). The page is told
-// "live" while the owner machine answers, so a snapshot never stands in for a live read, denied or not.
-func (s *Service) readSnapshot(w http.ResponseWriter, r *http.Request, m store.Machine, project, rest string) error {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		return fail("bad_request", "Метод не поддерживается")
-	}
-	ctx := r.Context()
-	w.Header().Set("Cache-Control", "private, no-store")
-	if rest == "" {
-		if s.reg != nil {
-			if res, err := s.machineFetch(ctx, m.ID, hubproto.DesignPublicTokenRequest{Project: project}, nil, nil); err == nil {
-				res.Body.Close()
-				return fail("live", "Машина владельца включена: откройте проект, он свежее снимка")
-			}
-		}
-		meta, err := s.snapshotMeta(ctx, m, project)
-		if err != nil {
-			return err
-		}
-		if meta == nil {
-			return fail("no_snapshot", "Машина владельца выключена, а снимок проекта никто не публиковал. Попросите владельца включить машину или опубликовать снимок")
-		}
-		h := w.Header()
-		h.Set("Content-Type", "application/json; charset=utf-8")
-		h.Set("X-Content-Type-Options", "nosniff")
-		w.WriteHeader(http.StatusOK)
-		return json.NewEncoder(w).Encode(meta)
-	}
-	kind, num, _ := strings.Cut(rest, "/")
-	n, err := strconv.Atoi(num)
-	if kind != "img" || err != nil || n < 0 || strconv.Itoa(n) != num {
-		return fail("not_found", "Файл не найден")
-	}
-	var encoded string
-	err = s.db.QueryRow(ctx, `SELECT g.jpeg FROM design_private_snapshot_pages g JOIN design_private_snapshots h ON h.machine_id=g.machine_id AND h.project_id=g.project_id
-    WHERE g.machine_id=? AND g.project_id=? AND g.position=? AND h.expires_at>?`, m.ID, project, n, ms(s.now())).Scan(&encoded)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fail("not_found", "Файл не найден")
-	}
-	if err != nil {
-		return err
-	}
-	raw, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return err
-	}
-	h := w.Header()
-	h.Set("Content-Type", "image/jpeg")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Length", strconv.Itoa(len(raw)))
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(raw)
-	}
-	return nil
 }

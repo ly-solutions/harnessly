@@ -414,3 +414,26 @@ func (brokenConn) Spec() Spec {
 	return Spec{ID: "broken", Kind: Feed, Title: T("x", ""), Fields: []Field{{ID: "pw", Type: FieldPassword, Label: T("pw", "")}}}
 }
 func (brokenConn) Check(context.Context, Instance) (Account, error) { return Account{}, nil }
+
+func TestTrustedRecipientsSkipTheCard(t *testing.T) {
+	keys := recipientKeys(Action{Recipients: []string{"to", "cc"}}, map[string]string{"to": "Анна <Anna@X.ru>, @Bob", "cc": "anna@x.ru"})
+	if len(keys) != 2 || keys[0] != "anna@x.ru" || keys[1] != "bob" {
+		t.Fatalf("keys = %v", keys)
+	}
+	if recipientKeys(Action{}, map[string]string{"to": "a@b"}) != nil {
+		t.Fatal("an action without recipients is never trusted")
+	}
+	s := New(t.TempDir(), nil, nil)
+	if s.allTrusted("cx1", keys) {
+		t.Fatal("nothing trusted yet")
+	}
+	if err := s.Trust("cx1", []string{"anna@x.ru"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.allTrusted("cx1", keys) || !s.allTrusted("cx1", []string{"anna@x.ru"}) || s.allTrusted("cx2", []string{"anna@x.ru"}) {
+		t.Fatal("trust is per recipient and per connection, and every recipient must be trusted")
+	}
+	if err := s.Untrust("cx1", "Anna@x.ru"); err != nil || s.allTrusted("cx1", []string{"anna@x.ru"}) {
+		t.Fatalf("untrust: %v", err)
+	}
+}

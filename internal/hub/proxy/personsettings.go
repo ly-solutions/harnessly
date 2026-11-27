@@ -91,7 +91,7 @@ func (s *Service) lookBlobs() wire.LookBlobs {
 			}
 			return
 		}
-		if st := s.cfg.Store; !st.Off && st.S3.Endpoint != "" {
+		if st := s.cfg.Store; st.S3.Endpoint != "" {
 			if b, err := sites.NewS3Blobs(sites.S3Config{Endpoint: st.S3.Endpoint, Region: st.S3.Region, Bucket: st.S3.Bucket,
 				Prefix: storeLooksPrefix(st.S3.Prefix), AccessKey: st.S3.AccessKey, SecretKey: st.S3.SecretKey}); err == nil {
 				s.looks = b

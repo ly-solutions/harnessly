@@ -41,7 +41,7 @@ func (s *Service) libraryChanges(w http.ResponseWriter, r *http.Request, u store
 		since = 0
 	}
 	if m.SpaceID == "" || (stored && waiter == nil) {
-		s.writeError(w, fail("store_off", "Хранилище дизайнов не подключено"))
+		s.writeError(w, fail("not_found", "Библиотеки этой машины нет на хабе"))
 		return
 	}
 	s.watchView(w, r, u, m, waiter, since)
@@ -58,9 +58,20 @@ func (s *Service) watchView(w http.ResponseWriter, r *http.Request, u store.User
 	head := int64(-1)
 	rev := int64(-1)
 	for {
+		// A change of the space's roles ends this step at once (SpaceChanged); the poll stays for what no event tells of:
+		// the person's own teams and spaces and a grant that ran out by time.
+		nudge := s.spaces.on(m.SpaceID)
 		if waiter != nil {
-			// Returns at once the first time (nothing is past -1); after that when the files move, or after a poll.
+			// Returns at once the first time (nothing is past -1); after that when the files move, a role changes, or after
+			// a poll.
 			step, stop := context.WithTimeout(ctx, grantedPoll)
+			go func() {
+				select {
+				case <-nudge:
+					stop()
+				case <-step.Done():
+				}
+			}()
 			h, err := waiter.WaitLibrary(step, m.SpaceID, head)
 			stop()
 			if err != nil {
@@ -70,7 +81,9 @@ func (s *Service) watchView(w http.ResponseWriter, r *http.Request, u store.User
 				s.writeError(w, err)
 				return
 			}
-			head = h
+			if h > head {
+				head = h
+			}
 		}
 		if ctx.Err() != nil && rev >= 0 {
 			// The wait ended: the view as last read.
@@ -97,6 +110,7 @@ func (s *Service) watchView(w http.ResponseWriter, r *http.Request, u store.User
 		if waiter == nil {
 			select {
 			case <-ctx.Done():
+			case <-nudge:
 			case <-time.After(grantedPoll):
 			}
 		}
@@ -121,8 +135,9 @@ func (s *Service) endedWait(w http.ResponseWriter, r *http.Request, ctx context.
 	return true
 }
 
-// grantedPoll is how often the hub looks again at a person's grants while it holds a poll.
-var grantedPoll = 3 * time.Second
+// grantedPoll is how often the hub looks again at a person's grants while it holds a poll. A change of a space's roles
+// wakes the poll at once (SpaceChanged); this look is for the person's own teams and spaces.
+var grantedPoll = 15 * time.Second
 
 // grantedRevs is the revision a person's granted library has now, per person and space. A revision is a clock reading
 // taken when the library's content was first seen to differ, so it only grows, also across a restart of the hub.

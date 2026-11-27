@@ -6,6 +6,7 @@ import '@/next/styles/order';
 
 import { useEffect } from 'react';
 import { offlineBase } from '@/next/offline/client';
+import { startNet } from '@/next/offline/net';
 import Shell, { type IShellProps } from '@/next/bindings/shell';
 import { bootNext, shutdownNext } from '@/next/boot';
 import { installPhoneFocusGuard } from '@/next/ui/phone-focus-guard';
@@ -17,10 +18,12 @@ const NextEntry = (props: IShellProps) => {
     void bootNext();
     if (import.meta.env.PROD && 'serviceWorker' in navigator)
       void navigator.serviceWorker
-        .register(offlineBase + 'sw.js', { scope: offlineBase })
+        .register(offlineBase() + 'sw.js', { scope: offlineBase() })
         .catch(() => undefined);
     return () => void shutdownNext();
   }, []);
+  // Whether the device reaches the server: offline the page draws what it kept and says so.
+  useEffect(() => startNet(), []);
   // A sheet on the phone never raises the keyboard by itself: only a tap on its field does.
   useEffect(() => installPhoneFocusGuard(), []);
   return <Shell {...props} />;

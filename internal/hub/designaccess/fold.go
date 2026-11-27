@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/hub/resaccess"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
@@ -17,8 +18,8 @@ import (
 // role manage.
 //
 // Who runs the access (canManage): the owner; manage; an editor when the project lets editors share; and for a team
-// project (its home team has a level) the home team's lead and the admin of its organization — the steward — without a
-// role of their own in it.
+// project (its home team has a level) the home team's lead and the admin of its organization — the steward — who is
+// lifted to manage: whoever may share may edit (resaccess/can.go).
 
 // project is a stored project row.
 type project struct {
@@ -93,7 +94,15 @@ func foldAccess(p project, m *member, grants []teamGrant, person personTeams, ho
 		offer(m.Role, source, m.Expires)
 	}
 	f.Steward = teamOn && p.HomeTeam != "" && (person.teams[p.HomeTeam].lead || (homeOrg != "" && person.admin[homeOrg]))
-	f.CanManage = f.Steward || f.Role == roleManage || (f.Role == roleEdit && p.EditorsCanShare)
+	if f.Steward && rank(f.Role) < rank(roleManage) {
+		// Whoever runs the access may change the project (resaccess/can.go): the steward is a manager, for
+		// good, and the «Поделиться» window and «Редактировать» read the same role.
+		if f.Source == "" {
+			f.Source = "team"
+		}
+		f.Role, f.Until = roleManage, nil
+	}
+	f.CanManage = resaccess.Can(f.Role, p.EditorsCanShare, resaccess.ActShare)
 	return f
 }
 

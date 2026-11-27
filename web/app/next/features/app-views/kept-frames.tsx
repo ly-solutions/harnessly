@@ -12,6 +12,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -25,6 +26,11 @@ import type { ConvId, MachineId } from '@/next/protocol/v2';
 import { chatPaneOf, chatPanes } from '@/next/stores/pane-state';
 import { keptBudget } from '@/next/features/shell/kept-budget';
 import BrowserTab from '@/next/bindings/browser-tab';
+import ObjectShare, { objectAddress, type TShareKind } from '@/next/features/app-main/object-share';
+import type { IHostAction } from '@/next/features/app-views/bridge';
+import { BOARDS_APP } from '@/next/features/pane/board-link';
+import { DOCS_APP } from '@/platform/router';
+import { t } from '@/next/i18n';
 import type { IPlace } from '@/next/features/pane/place';
 import type { TTab } from '@/next/features/pane/pane-tabs';
 
@@ -283,6 +289,9 @@ const KeptBrowser = ({ frame }: { frame: IKeptFrame }) => {
   );
 };
 
+/** What «Поделиться» shares in the pane's boards and documents: the same dialog as in the app's own window. */
+const SHARE_KIND: Readonly<Record<string, TShareKind>> = { [BOARDS_APP]: 'board', [DOCS_APP]: 'artifact' };
+
 // What each kept view has open inside itself: a board the person went to in the view, so the view opens it
 // again when its frame starts anew (a new version of the app, the slot taken back) rather than its home.
 const openInFrame = new Map<string, string>();
@@ -308,6 +317,26 @@ const KeptFrame = ({ frame }: { frame: IKeptFrame }) => {
     },
     [frame.key],
   );
+  // The pane draws no bar of its own over a board or a document: the view shows the host's «Поделиться» in its own
+  // bar (hl.host.actions), and it shares what the view has open now.
+  const kind = SHARE_KIND[frame.app];
+  const openNow = useRef(opens);
+  useLayoutEffect(() => {
+    openNow.current = opens;
+  }, [opens]);
+  const [sharing, setSharing] = useState<{ kind: TShareKind; slug: string } | null>(null);
+  const handlers = useMemo(() => {
+    if (!kind) return undefined;
+    const actions: readonly IHostAction[] = [{ id: 'share', label: t('next.appmain.share'), icon: 'share' }];
+    return {
+      hostActions: () => actions,
+      hostRun: (id: string) => {
+        const slug = openNow.current;
+        if (id === 'share' && slug) setSharing({ kind, slug });
+      },
+    };
+  }, [kind]);
+  const onShareObject = useCallback((slug: string) => kind && setSharing({ kind, slug }), [kind]);
   const box = useBoxOf(frame.slot);
   const ref = useRef<HTMLDivElement>(null);
   const shown = frame.slot !== null && box.left !== OUT.left;
@@ -344,10 +373,24 @@ const KeptFrame = ({ frame }: { frame: IKeptFrame }) => {
             reloadToken={frame.reload}
             key={asked ?? ''}
             data={opens ? { object: opens } : undefined}
+            handlers={handlers}
+            onShareObject={kind ? onShareObject : undefined}
             onPublish={onPublish}
           />
         </ConsentStage>
       )}
+      {sharing &&
+        createPortal(
+          <ObjectShare
+            key={`${sharing.kind}:${sharing.slug}`}
+            kind={sharing.kind}
+            slug={sharing.slug}
+            open
+            onClose={() => setSharing(null)}
+            fallbackLink={objectAddress(sharing.kind, sharing.slug)}
+          />,
+          document.body,
+        )}
     </div>
   );
 };

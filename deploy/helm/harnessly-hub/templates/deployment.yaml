@@ -307,6 +307,14 @@ spec:
                   name: {{ include "hub.appSecretName" (dict "root" . "key" "boards") }}
                   key: token
             {{- end }}
+            {{- if .Values.renderWorker.enabled }}
+            # The worker that draws the design pictures of machines that are off claims its jobs with this token.
+            - name: HUB_RENDER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hub.renderSecretName" . }}
+                  key: token
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

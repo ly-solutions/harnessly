@@ -121,6 +121,8 @@ export interface IConnectorProposal {
   args: readonly IConnectorPair[];
   why: string;
   conv: string;
+  /** Whom it reaches, as trust keys; empty when the action cannot be trusted. */
+  recipients: readonly string[];
   state: string;
   result: string;
 }
@@ -253,6 +255,10 @@ export const readProposal = (v: unknown): IConnectorProposal => {
     }),
     why: optStr(o.why, 'why'),
     conv: optStr(o.conv, 'conv'),
+    recipients:
+      o.recipients === undefined || o.recipients === null
+        ? []
+        : list(o.recipients, 'recipients', (r) => str(r, 'recipient')),
     state: str(o.state, 'state'),
     result: optStr(o.result, 'result'),
   };
@@ -339,11 +345,15 @@ export const loadConnectorProposals = (machine: MachineId, rev: string) =>
 export const ANSWER_VERB = { approve: 'approve', decline: 'decline' } as const;
 export type TAnswerVerb = (typeof ANSWER_VERB)[keyof typeof ANSWER_VERB];
 
-/** The person's yes or no: a yes runs the action exactly as shown. */
-export const answerConnectorProposal = (machine: MachineId, id: string, verb: TAnswerVerb) =>
+/** The person's yes or no: a yes runs the action exactly as shown; trust also lets the agent reach its recipients
+ * without a card from now on. */
+export const answerConnectorProposal = (machine: MachineId, id: string, verb: TAnswerVerb, trust = false) =>
   sendPage(
     'POST',
-    path(machine, `/connector-actions/${encodeURIComponent(id)}/${verb}`),
+    path(
+      machine,
+      `/connector-actions/${encodeURIComponent(id)}/${verb}${trust && verb === 'approve' ? '?trust=1' : ''}`,
+    ),
     readAnswered,
     CHECK_TIMEOUT_MS,
   );

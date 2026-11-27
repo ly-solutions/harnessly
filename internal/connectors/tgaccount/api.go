@@ -11,10 +11,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gotd/td/telegram/message/entity"
+	"github.com/gotd/td/telegram/message/html"
 	"github.com/gotd/td/telegram/updates"
 	"github.com/gotd/td/tg"
 
 	"github.com/ly-solutions/harnessly/internal/connectors"
+	"github.com/ly-solutions/harnessly/internal/notifybots"
 )
 
 func newManager(d tg.UpdateDispatcher, path string) *updates.Manager {
@@ -372,6 +375,10 @@ func (accountConn) Act(ctx context.Context, in connectors.Instance, action strin
 	if text == "" {
 		return connectors.Result{}, connectors.Sayf("text: required")
 	}
+	text, entities, err := styled(text, args["format"])
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	if utf8.RuneCountInString(text) > textMax {
 		return connectors.Result{}, connectors.Sayf("text: at most %d characters in one message", textMax)
 	}
@@ -392,7 +399,7 @@ func (accountConn) Act(ctx context.Context, in connectors.Instance, action strin
 	defer cancel()
 	b := bookOf(in)
 	var out connectors.Result
-	err := withAPI(ctx, in, func(ctx context.Context, api *tg.Client) error {
+	err = withAPI(ctx, in, func(ctx context.Context, api *tg.Client) error {
 		var peer tg.InputPeerClass = &tg.InputPeerSelf{}
 		var id int64
 		if action == "send" {
@@ -402,6 +409,9 @@ func (accountConn) Act(ctx context.Context, in connectors.Instance, action strin
 			}
 		}
 		req := &tg.MessagesSendMessageRequest{Peer: peer, Message: text, RandomID: randomID(), NoWebpage: false}
+		if len(entities) > 0 {
+			req.SetEntities(entities)
+		}
 		if reply > 0 {
 			req.SetReplyTo(&tg.InputReplyToMessage{ReplyToMsgID: reply})
 		}
@@ -417,6 +427,27 @@ func (accountConn) Act(ctx context.Context, in connectors.Instance, action strin
 		return nil
 	})
 	return out, err
+}
+
+// styled turns the text into what Telegram sends. By default (format "markdown") it is the same markdown-ish text
+// the Telegram bot takes (notifybots.ToHTML: **bold**, __italic__, `code`, [links](…), ||spoilers||, "> " quotes,
+// ">> " quotes that open on a tap); "html" is Telegram HTML as written; "plain" sends it as it is.
+func styled(text, format string) (string, []tg.MessageEntityClass, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "plain", "text":
+		return text, nil, nil
+	case "", "markdown", "md":
+		text = notifybots.ToHTML(text)
+	case "html":
+	default:
+		return "", nil, connectors.Sayf("format: markdown (the default), html or plain")
+	}
+	var eb entity.Builder
+	if err := html.HTML(strings.NewReader(text), &eb, html.Options{}); err != nil {
+		return "", nil, connectors.Sayf("text: not Telegram HTML: %v", err)
+	}
+	plain, ents := eb.Complete()
+	return plain, ents, nil
 }
 
 // countNote keeps the hourly limit of notes to Saved Messages.

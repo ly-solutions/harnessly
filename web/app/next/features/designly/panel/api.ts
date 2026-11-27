@@ -188,9 +188,17 @@ export const resolveSiteComment = async (m: MachineId, artifact: string, id: str
 export const reactSiteComment = async (m: MachineId, artifact: string, id: string, react: string) =>
   must(readSiteComment(await runtimeJson(m, site('/comments'), jsonInit('PATCH', { artifact, id, react }))));
 
-/** The comment that calls @harnessly goes to the agent of the chat: the person's own machine is asked. */
-export const tellAgent = (m: MachineId, artifact: string, id: string, chat: string) =>
-  runtimeJson(m, site('/comments/agent'), postJson({ artifact, id, chat }));
+/** The comment that calls @harnessly goes to the agent of the chat: the person's own machine is asked. While it is off
+ *  the hub keeps the comment and hands it on when the machine is back: true then, the comment waits. */
+export const tellAgent = async (
+  m: MachineId,
+  artifact: string,
+  id: string,
+  chat: string,
+): Promise<boolean> => {
+  const got = await runtimeJson<unknown>(m, site('/comments/agent'), postJson({ artifact, id, chat }));
+  return typeof got === 'object' && got !== null && (got as { queued?: unknown }).queued === true;
+};
 
 // ---- the boards' shared settings
 

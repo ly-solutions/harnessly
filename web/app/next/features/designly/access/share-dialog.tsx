@@ -12,7 +12,6 @@ import InviteCards from '@/next/features/designly/access/invite-cards';
 import { useGuestLinks } from '@/next/features/designly/access/use-guest-links';
 import AccessLinks from '@/next/features/designly/access/access-links';
 import AccessLog, { warmLog } from '@/next/features/designly/access/access-log';
-import AccessSnapshot from '@/next/features/designly/access/access-snapshot';
 import AccessPeople from '@/next/features/designly/access/access-people';
 import AccessRequests from '@/next/features/designly/access/access-requests';
 import AccessTransfer from '@/next/features/designly/access/access-transfer';
@@ -317,10 +316,7 @@ const ShareDialog = ({
                   </div>
                   {v === SUB_VIEW.log && <AccessLog project={project} />}
                   {v === SUB_VIEW.links && (
-                    <>
-                      <AccessLinks {...section} pages={pages} guestRights={guestRights} />
-                      {access.role === 'owner' && <AccessSnapshot project={project} pages={pages} />}
-                    </>
+                    <AccessLinks {...section} pages={pages} guestRights={guestRights} />
                   )}
                   {v === SUB_VIEW.transfer && <AccessTransfer {...section} onDone={() => go(null)} />}
                 </Still>

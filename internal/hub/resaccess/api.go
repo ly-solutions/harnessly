@@ -124,7 +124,8 @@ func (t *txn) view(ref Ref, a Actor, info Info) (map[string]any, error) {
 		f = folded{Role: roleManage, CanManage: true, Steward: true}
 	}
 	out := map[string]any{"role": nullStr(f.Role), "owner": nil, "ownerName": r.OwnerName, "team": r.TeamLevel, "canManage": f.CanManage,
-		"steward": f.Steward, "editorsCanShare": r.EditorsCanShare, "stored": r.Stored, "request": nil, "until": iso(f.Until)}
+		"steward": f.Steward, "editorsCanShare": r.EditorsCanShare, "stored": r.Stored, "request": nil, "until": iso(f.Until),
+		"can": CanAll(f.Role, r.EditorsCanShare)}
 	if f.Role != "" || f.CanManage {
 		out["owner"] = nullStr(r.Owner)
 	}
@@ -452,6 +453,9 @@ func (s *Service) route(r *http.Request, a Actor, ref Ref, rest []string, info I
 		return change(func(t *txn) error { return t.revokeAll(ref, email) })
 
 	case method == http.MethodPut && section == "general" && n == 1:
+		if !Can(role, false, ActGeneral) {
+			return nil, 0, fail("forbidden", deniedManage)
+		}
 		return s.generalRoute(r, ref, email, info, change)
 
 	case section == "shares":

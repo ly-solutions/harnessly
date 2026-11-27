@@ -78,17 +78,18 @@ const useConnectorProposals = (machine: MachineId) => {
 interface ICardProps {
   proposal: IConnectorProposal;
   closing: boolean;
-  onAnswer: (proposal: IConnectorProposal, verb: TAnswerVerb) => Promise<string | null>;
+  onAnswer: (proposal: IConnectorProposal, verb: TAnswerVerb, trust: boolean) => Promise<string | null>;
 }
 
 const ConnectorActionCard = ({ proposal, closing, onAnswer }: ICardProps) => {
   const [busy, setBusy] = useState<TAnswerVerb | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [trust, setTrust] = useState(false);
   const answer = async (verb: TAnswerVerb) => {
     if (busy !== null) return;
     setBusy(verb);
     setFailure(null);
-    const refused = await onAnswer(proposal, verb);
+    const refused = await onAnswer(proposal, verb, trust);
     setBusy(null);
     setFailure(refused);
   };
@@ -112,6 +113,17 @@ const ConnectorActionCard = ({ proposal, closing, onAnswer }: ICardProps) => {
           ))}
         </dl>
         {proposal.why !== '' && <span className="hx-setask__why">{proposal.why}</span>}
+        {proposal.recipients.length > 0 && (
+          <label className="hx-cx-trust">
+            <input
+              type="checkbox"
+              checked={trust}
+              disabled={busy !== null}
+              onChange={(e) => setTrust(e.currentTarget.checked)}
+            />
+            <span>{t('next.connectors.ask.trust', { who: proposal.recipients.join(', ') })}</span>
+          </label>
+        )}
       </div>
       {failure && (
         <p className="hx-setask__fail" role="alert">
@@ -153,8 +165,12 @@ export const ConnectorActions = ({ machine, conversation }: IConnectorActionsPro
   const proposal = proposals.list.find((p) => p.conv === conversation) ?? null;
   const card = usePresence(proposal, CARD_EXIT_MS);
 
-  const onAnswer = async (asked: IConnectorProposal, verb: TAnswerVerb): Promise<string | null> => {
-    const res = await answerConnectorProposal(machine, asked.id, verb);
+  const onAnswer = async (
+    asked: IConnectorProposal,
+    verb: TAnswerVerb,
+    trust: boolean,
+  ): Promise<string | null> => {
+    const res = await answerConnectorProposal(machine, asked.id, verb, trust);
     if (!('ok' in res)) return pageText(res);
     if (isConnectorRefusal(res.value)) {
       // Answered elsewhere or out of time: the list read again takes the card away.

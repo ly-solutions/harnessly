@@ -308,6 +308,8 @@ var presets = []Preset{
 		Models: []Model{{ID: "glm-5.3", Label: "GLM 5.3"}, {ID: "glm-5.3-flash", Label: "GLM 5.3 Flash"}}},
 	// A media provider: video and pictures (internal/mediagen). Its key is the key ID and the secret, "id:secret".
 	{ID: "higgsfield", Name: "Higgsfield", BaseURL: HiggsfieldBase, API: APIHiggsfield, KeyURL: "https://console.higgsfield.ai", Models: HiggsfieldModels()},
+	// A server on the person's own machine (local.go): no key, its address found by a discovery, never typed into a form.
+	{ID: PresetLocal, Name: "Локальная модель", API: APIOpenAI},
 	{ID: PresetCustom, Name: "Свой адрес", API: APIOpenAI},
 }
 

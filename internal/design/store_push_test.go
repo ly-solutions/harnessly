@@ -55,3 +55,22 @@ func TestStorePushSendsTheProjectToTheStore(t *testing.T) {
 	default:
 	}
 }
+
+// a new project reaches the store when it is made, before any page asks.
+func TestCreatedProjectIsPushedToTheStore(t *testing.T) {
+	l := accessLibrary(t, t.TempDir())
+	got := make(pushed, 2)
+	l.UseStorePusher(got)
+	p, err := l.CreateProject("Landing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-got:
+		if id != p.ID {
+			t.Fatalf("pushed %q, made %q", id, p.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the new project was not pushed")
+	}
+}

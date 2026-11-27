@@ -104,23 +104,6 @@ func TestTheJournalOfAMachinesMove(t *testing.T) {
 	}
 }
 
-// A hub with the store off keeps no journal, and says so in its capabilities.
-func TestNoJournalWithTheStoreOff(t *testing.T) {
-	s := hubtest.New(t, hubtest.Env("HUB_STORE", "off"))
-	if s.Hub.Migration != nil {
-		t.Fatal("a journal with HUB_STORE=off")
-	}
-	var doc struct {
-		Capabilities []struct{ ID, Status string } `json:"capabilities"`
-	}
-	s.Browser().Do("GET", "/api/capabilities", nil).JSON(&doc)
-	for _, c := range doc.Capabilities {
-		if c.ID == hubproto.MigrationCapability && c.Status == "on" {
-			t.Fatal("the journal is on with the store off")
-		}
-	}
-}
-
 func must(t *testing.T, r hubtest.Resp) hubtest.Resp {
 	t.Helper()
 	if r.Code != http.StatusOK {
