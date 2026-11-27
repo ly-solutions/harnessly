@@ -1000,3 +1000,9 @@ a{color:#1c1b19;font-weight:600}
 </style></head>
 <body><main><h1>%s</h1><p>%s</p><a href="%s">Вернуться в harnessly</a></main></body></html>
 `
+
+// ForwardAs sends a request the hub made itself to the machine as the person u, the way their own would go (HRN-1799:
+// a comment to the agent kept while the machine was off). path is the runtime's, without /m/<id>.
+func (s *Service) ForwardAs(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine) {
+	s.forward(w, r, u, m)
+}

@@ -1,3 +1,5 @@
+import ChatOffline from '@/next/features/sidebar/chat-offline';
+import type { ConvId } from '@/next/protocol/v2';
 import { memo, useState, type KeyboardEvent } from 'react';
 import { openLookEditor } from '@/next/features/looks/store';
 import Icon from '@/next/ui/icon';
@@ -277,6 +279,7 @@ const ChatRow = ({
         </button>
       )}
       <span className="hx-item__end">
+        <ChatOffline conv={chat.id as ConvId} />
         {voice && <MiniWave look={voice.look} />}
         {showMenu && menuMount === MENU_MOUNT.none && (
           <button

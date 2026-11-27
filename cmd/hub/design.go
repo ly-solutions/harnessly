@@ -89,7 +89,7 @@ func runDesign(ctx context.Context, args []string, lookup func(string) (string, 
 		return exitCode(err)
 	}
 	defer db.Close()
-	svc := designaccess.New(designaccess.Deps{DB: db, Log: log, Shared: !cfg.Store.Off, TeamLevel: cfg.DesignAccess.TeamLevel,
+	svc := designaccess.New(designaccess.Deps{DB: db, Log: log, Shared: true, TeamLevel: cfg.DesignAccess.TeamLevel,
 		ClosedUnrecorded: cfg.DesignAccess.ClosedUnrecorded})
 	rep, linked, err := moveDesigns(ctx, svc, d)
 	fmt.Fprint(stdout, rep.Summary())

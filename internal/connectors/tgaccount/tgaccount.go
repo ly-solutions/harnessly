@@ -129,11 +129,12 @@ func (accountConn) Spec() connectors.Spec {
 		Actions: []connectors.Action{
 			{Name: "send", Summary: "write a message as the person, after their yes",
 				Title: connectors.T("Write in Telegram as you", "Написать в Telegram от вашего имени"),
-				Args: []connectors.Arg{chat, {Name: "text", Required: true},
-					{Name: "reply", Summary: "the id of the message to answer"}}},
+				Args: []connectors.Arg{chat, {Name: "text", Required: true}, {Name: "format", Summary: "markdown (default): **bold**, __italic__, `code`, [text](https://…), ||spoiler||, lines starting \"> \" are a quote and \">> \" on its first line makes it open on a tap; html: Telegram HTML; plain: as written"},
+					{Name: "reply", Summary: "the id of the message to answer"}},
+				Recipients: []string{"chat"}},
 			{Name: "note", Direct: true, Summary: "write to the person's own Saved Messages, at once and without a card",
 				Title: connectors.T("Write to my Saved Messages", "Написать мне в «Избранное»"),
-				Args:  []connectors.Arg{{Name: "text", Required: true}}},
+				Args:  []connectors.Arg{{Name: "text", Required: true}, {Name: "format", Summary: "markdown (default): **bold**, __italic__, `code`, [text](https://…), ||spoiler||, lines starting \"> \" are a quote and \">> \" on its first line makes it open on a tap; html: Telegram HTML; plain: as written"}}},
 		},
 		Inbox: "telegram",
 	}

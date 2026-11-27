@@ -394,3 +394,28 @@ antiAffinity:
   # Pending.
   required: false
   topologyKey: kubernetes.io/hostname
+
+# The worker that draws the gallery pictures of design boards whose machine is off (HRN-1798,
+# docs/hub/render-worker.md): it takes jobs from the hub, opens each board from the hub's store in a headless Chrome and
+# gives the picture back. It runs the `runtime render-worker` command of the runtime image (the one with Chrome).
+renderWorker:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/ly-solutions/harnessly
+    # -- A runtime release that has `render-worker` (v0.16.481 or later). Required when enabled.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # -- The hub's address the worker calls and opens boards at; empty: the hub's Service in this release.
+  hubUrl: ""
+  # -- A Secret with the key `token` (at least 32 characters), shared by the hub and the worker. Empty: the chart
+  # makes one and keeps it across upgrades.
+  existingSecret: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      memory: 1Gi
+  nodeSelector: {}
+  tolerations: []

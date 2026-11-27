@@ -2,7 +2,13 @@
 // answers to. The shapes are the gateway's (its access types). A gateway that does not know the route
 // yet answers nothing usable: `fetchView` says null and the caller keeps the older dialog. Every change waits for the
 // gateway and answers with the resource's fresh view.
-import { AccessError, send, type ILogEntry, type TTtlValue } from '@/next/features/designly/access/api';
+import {
+  AccessError,
+  send,
+  type ILogEntry,
+  type TCan,
+  type TTtlValue,
+} from '@/next/features/designly/access/api';
 import { t } from '@/next/i18n';
 
 export type TShareRole = 'view' | 'comment' | 'edit';
@@ -59,6 +65,8 @@ export interface IResourceView {
   role: 'owner' | TShareRole | null;
   until: string | null;
   canManage: boolean;
+  /** The hub's table for this person (absent from an older hub): read it through mayDo. */
+  can?: TCan;
   /** Runs the access fully: the team's access, «may share», those who may. */
   manager: boolean;
   /** The home team's lead or its organization's admin. */

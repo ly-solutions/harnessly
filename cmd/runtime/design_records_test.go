@@ -24,7 +24,10 @@ func TestRecordsReachTheEmbeddedStore(t *testing.T) {
 	recs := []filestore.Record{{ID: "shop", Title: "Shop", Kind: "site", At: 1}, {ID: "kit-a", Title: "Kit", Kind: "ds", At: 2}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { defer close(done); startRecords(ctx, l, func() []filestore.Record { return recs }, nil, nil) }()
+	go func() {
+		defer close(done)
+		startRecords(ctx, l, func() []filestore.Record { return recs }, nil, nil, nil)
+	}()
 	deadline := time.Now().Add(20 * time.Second)
 	var body string
 	for time.Now().Before(deadline) {

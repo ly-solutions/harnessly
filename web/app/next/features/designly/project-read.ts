@@ -7,12 +7,7 @@ import { useEffect, useRef } from 'react';
 import { platformPath } from '@/next/core/net/machine';
 import { postJson, runtimeJson } from '@/next/core/net/runtime-json';
 import { WordedError } from '@/next/core/net/worded';
-import {
-  storeIsOff,
-  type IDesign,
-  type IDesignLibrary,
-  type IStoreLibrary,
-} from '@/next/features/designly/api';
+import { type IDesign, type IDesignLibrary, type IStoreLibrary } from '@/next/features/designly/api';
 import type { MachineId } from '@/next/protocol/v2';
 
 export const PROJECT_FROM = { machine: 'machine', store: 'store' } as const;
@@ -27,28 +22,28 @@ export const AWAY = {
   absentNoCopy: 'absentNoCopy',
   /** The machine answered without the project and the store could not be read. */
   absentUnreadable: 'absentUnreadable',
-  /** The machine did not answer and the hub keeps no store (HUB_STORE off): only the machine can give it. */
-  silentStoreOff: 'silentStoreOff',
-  /** The machine answered without the project and the hub keeps no store: nothing will bring it here (GitHub #82). */
-  absentStoreOff: 'absentStoreOff',
   /** The machine refused the person outright (403): the project is on a machine they may not open (GitHub #82). */
   machineDenied: 'machineDenied',
 } as const;
 export type TAway = (typeof AWAY)[keyof typeof AWAY];
 
 /** Reasons nothing on this page can change: the card stays as it is and the library is not read again. */
-export const awayIsFinal = (why: TAway | null): boolean =>
-  why === AWAY.absentStoreOff || why === AWAY.machineDenied;
+export const awayIsFinal = (why: TAway | null): boolean => why === AWAY.machineDenied;
 
 /** Reasons the machine is the one awaited: it has been waited for already, the next look leaves it the same time. */
 export const awayIsSilent = (why: TAway | null): boolean =>
-  why === AWAY.silentNoCopy || why === AWAY.silentUnreadable || why === AWAY.silentStoreOff;
+  why === AWAY.silentNoCopy || why === AWAY.silentUnreadable;
 
 export const PROJECT_READ = { open: 'open', away: 'away' } as const;
 
+/** What the person's machine has said by the time the store's copy is shown (GitHub #193): nothing yet, that it has
+ *  not got the project (a role just given, its sync on the way), or nothing at all within its wait (off, hung, none). */
+export const MACHINE_SAID = { waiting: 'waiting', absent: 'absent', down: 'down' } as const;
+export type TMachineSaid = (typeof MACHINE_SAID)[keyof typeof MACHINE_SAID];
+
 export type TProjectRead =
   | { k: typeof PROJECT_READ.open; from: typeof PROJECT_FROM.machine; library: IDesignLibrary }
-  | { k: typeof PROJECT_READ.open; from: typeof PROJECT_FROM.store; design: IDesign }
+  | { k: typeof PROJECT_READ.open; from: typeof PROJECT_FROM.store; design: IDesign; machine: TMachineSaid }
   | {
       k: typeof PROJECT_READ.away;
       why: TAway;
@@ -64,14 +59,13 @@ const SIDE = {
   has: 'has',
   absent: 'absent',
   failed: 'failed',
-  off: 'off',
   denied: 'denied',
 } as const;
 type TSide = (typeof SIDE)[keyof typeof SIDE];
 
-const WHY: Record<'silent' | 'absent', Record<'absent' | 'failed' | 'off', TAway>> = {
-  silent: { absent: AWAY.silentNoCopy, failed: AWAY.silentUnreadable, off: AWAY.silentStoreOff },
-  absent: { absent: AWAY.absentNoCopy, failed: AWAY.absentUnreadable, off: AWAY.absentStoreOff },
+const WHY: Record<'silent' | 'absent', Record<'absent' | 'failed', TAway>> = {
+  silent: { absent: AWAY.silentNoCopy, failed: AWAY.silentUnreadable },
+  absent: { absent: AWAY.absentNoCopy, failed: AWAY.absentUnreadable },
 };
 
 export interface IProjectReadWaits {
@@ -84,7 +78,8 @@ export interface IProjectReadWaits {
 /**
  * Reads project `id`. `show` gets every state worth showing, in order: the store's copy while the machine is slow, the
  * machine's project when it comes (it replaces the copy), or «away» with its reason. The promise settles on the first.
- * Nothing is aborted by a wait running out: a machine that answers late still opens the project.
+ * Nothing is aborted by a wait running out: a machine that answers late still opens the project. The copy is shown
+ * again when the machine's word on it changes (it has not got the project, or it is down), so the page can say why.
  */
 export const readProject = (
   id: string,
@@ -104,9 +99,26 @@ export const readProject = (
     let patient = true;
     // The key of the one copy of this id shared with the person, for an address that names none.
     let sharedKey: string | undefined;
+    // The store's copy on screen and what the machine had said when it was shown.
+    let copyShown: { design: IDesign; said: TMachineSaid } | null = null;
     const put = (state: TProjectRead) => {
       show(state);
       resolve();
+    };
+    const machineSaid = (): TMachineSaid => {
+      if (machine === SIDE.absent) return MACHINE_SAID.absent;
+      if (machine === SIDE.pending && patient) return MACHINE_SAID.waiting;
+      return MACHINE_SAID.down;
+    };
+    const showCopy = (design: IDesign) => {
+      const said = machineSaid();
+      if (copyShown?.said === said) return;
+      copyShown = { design, said };
+      put({ k: PROJECT_READ.open, from: PROJECT_FROM.store, design, machine: said });
+    };
+    // The machine's word changed after the copy went on screen: the copy again, with it.
+    const resay = () => {
+      if (copyShown !== null && machine !== SIDE.has) showCopy(copyShown.design);
     };
     // Away is said once both sides have spoken, or the machine has been waited for long enough.
     const settle = () => {
@@ -124,7 +136,7 @@ export const readProject = (
         return;
       }
       const machineSaid = machine === SIDE.absent ? 'absent' : 'silent';
-      const storeSaid = store === SIDE.off ? 'off' : store === SIDE.absent ? 'absent' : 'failed';
+      const storeSaid = store === SIDE.absent ? 'absent' : 'failed';
       put({ k: PROJECT_READ.away, why: WHY[machineSaid][storeSaid], machineError });
     };
     const askStore = () => {
@@ -132,8 +144,9 @@ export const readProject = (
       storeAsked = true;
       read.store().then(
         (copy) => {
+          // The grants index alone: the store did not give the library itself.
           if (copy.metadataOnly) {
-            store = SIDE.off;
+            store = SIDE.failed;
             settle();
             return;
           }
@@ -144,11 +157,11 @@ export const readProject = (
           }
           store = design ? SIDE.has : SIDE.absent;
           // The machine's project, once shown, is never replaced by the copy.
-          if (design && machine !== SIDE.has) put({ k: PROJECT_READ.open, from: PROJECT_FROM.store, design });
+          if (design && machine !== SIDE.has) showCopy(design);
           settle();
         },
-        (failure: unknown) => {
-          store = storeIsOff(failure) ? SIDE.off : SIDE.failed;
+        () => {
+          store = SIDE.failed;
           settle();
         },
       );
@@ -156,6 +169,7 @@ export const readProject = (
     const storeTimer = setTimeout(askStore, waits.store);
     const patience = setTimeout(() => {
       patient = false;
+      resay();
       settle();
     }, waits.machine);
     read.machine().then(
@@ -168,6 +182,7 @@ export const readProject = (
           return;
         }
         machine = SIDE.absent;
+        resay();
         askStore();
         settle();
       },
@@ -175,6 +190,7 @@ export const readProject = (
         clearTimeout(patience);
         machine = failure instanceof WordedError && failure.status === 403 ? SIDE.denied : SIDE.failed;
         machineError = failure instanceof Error ? failure.message : String(failure);
+        resay();
         askStore();
         settle();
       },

@@ -44,6 +44,11 @@ type Access struct {
 	Writes func(path string) bool
 	// Scope names what Sees lets through and changes whenever that does, so the caller knows to read the room again.
 	Scope string
+	// Nudge, when set, gives a channel closed when what the caller may see could have changed (a role given or taken,
+	// on this replica or another); Rescope then names the scope as it is now. A held changes request that hears it and
+	// finds another scope answers at once, so a machine gets a project within a round trip of the grant (GitHub #193).
+	Nudge   func() <-chan struct{}
+	Rescope func(ctx context.Context) string
 	// Committed, when set, hears every revision the caller's commit made, before the answer goes back.
 	Committed func(ctx context.Context, e Entry)
 	// Admits, when set, judges a commit whole (its path and size) after Writes; an error refuses it with 403.
@@ -463,8 +468,17 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request, c caller) {
 	}
 	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
+	nudge := c.acc.nudge()
 	for {
 		wake := c.store.Wake()
+		if closed(nudge) {
+			if scope, moved := c.acc.rescoped(r.Context()); moved {
+				// The cursor stays: the new scope makes the caller read the room again, which brings what it may now see.
+				writeJSON(w, http.StatusOK, Changes{Rev: since, Scope: scope})
+				return
+			}
+			nudge = c.acc.nudge()
+		}
 		out, err := c.store.Changes(r.Context(), since, 2000)
 		if err != nil {
 			slog.Error("changes", "err", err)
@@ -479,6 +493,7 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request, c caller) {
 		}
 		select {
 		case <-wake:
+		case <-nudge:
 		case <-deadline.C:
 			writeJSON(w, http.StatusOK, c.acc.filter(out))
 			return
@@ -486,6 +501,36 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request, c caller) {
 			return
 		}
 	}
+}
+
+func closed(ch <-chan struct{}) bool {
+	if ch == nil {
+		return false
+	}
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+// nudge is the channel that tells a held request the caller's scope may have changed; nil (never ready) without one.
+// The first one an Access gives is the one it held when it was built, so a grant made in between is not missed.
+func (a Access) nudge() <-chan struct{} {
+	if a.Nudge == nil {
+		return nil
+	}
+	return a.Nudge()
+}
+
+// rescoped is the caller's scope now and whether it is no longer the one its request started with.
+func (a Access) rescoped(ctx context.Context) (string, bool) {
+	if a.Rescope == nil || a.Nudge == nil {
+		return a.Scope, false
+	}
+	now := a.Rescope(ctx)
+	return now, now != a.Scope
 }
 
 // filter leaves out of changes what the caller does not see; the cursor still moves past it.

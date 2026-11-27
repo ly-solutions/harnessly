@@ -105,6 +105,7 @@ func (v *View) EditAnswer(ctx context.Context, spaceID, project, author, route s
 	lib := design.New(design.Config{
 		LibraryDir: ws.base,
 		DataDir:    filepath.Join(v.o.Dir, "edit-data"),
+		KitsDir:    v.projectKits(ctx, spaceID, ws.base, project),
 		Passive:    true,
 		ShareProbe: func(string) design.ShareFSReport { return design.ShareFSReport{OK: true, At: time.Now()} },
 	})

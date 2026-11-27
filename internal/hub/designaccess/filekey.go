@@ -111,8 +111,9 @@ func (k *fileKeyer) personCard(key, project string, now time.Time) (who, card st
 	return who, card, true
 }
 
-// keyedFile is a file at a board's keyed address: …/design/store/<project>/k/<key>/f/<file>.
-var keyedFile = regexp.MustCompile(`/design/store/([^/]+)/k/([^/]+)/f/.`)
+// keyedFile is a file at a board's keyed address: …/design/store/<project>/k/<key>/f/<file>, or at a version of the
+// project, …/k/<key>/v/<version>/f/<file>.
+var keyedFile = regexp.MustCompile(`/design/store/([^/]+)/k/([^/]+)/(?:v/[0-9a-f]{1,40}/)?f/.`)
 
 // KeyedFileUser is the person whose live key a GET of a board's file at its keyed address carries, "" for any other
 // request: the proxy signs such a request in as them when it came without a session (the sandbox sends none).

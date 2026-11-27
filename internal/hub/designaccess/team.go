@@ -9,7 +9,6 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/filestore"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
-	"github.com/ly-solutions/harnessly/internal/hubproto"
 	"github.com/ly-solutions/harnessly/internal/storerev"
 )
 
@@ -24,6 +23,10 @@ import (
 //	PUT  file/<path>    commit the body as the next revision of a file of the project's folder (edit; the owner file
 //	                    only by the owner); X-Store-Base: the file's revision the edit was made on, 0 for a new file
 //	DELETE file/<path>  commit the file's deletion (edit), with X-Store-Base too
+//	GET  versions       the project's history, newest first, as the versions panel reads it (versions.go; HRN-1797)
+//	GET  v/<version>/index.json | v/<version>/f/<path> | v/<version>/diff   the project at that revision, read only
+//	POST restore        {version, base?}: commit the files of that revision as new ones on the newest (edit)
+//	GET|POST|DELETE lease   who edits the project now, on which machine, until when (lease.go; HRN-1794)
 //
 // A write on a stale base is 409 with the file's revision now; the editor reads it again and decides.
 
@@ -37,8 +40,10 @@ func (s *Service) serveStore(w http.ResponseWriter, r *http.Request, u store.Use
 }
 
 func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine, rest string) error {
-	if m.SpaceID == "" {
-		return fail("store_off", "Хранилище дизайнов не подключено")
+	// The store keeps a space's designs: a machine outside a space (the local one before an admin claims it) has none
+	// on the hub.
+	if !s.storeServes(m) {
+		return fail("not_found", "Проект не найден")
 	}
 	project, sub, _ := strings.Cut(strings.Trim(rest, "/"), "/")
 	if !projectIDRe.MatchString(project) {
@@ -52,32 +57,23 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 		key, after, _ := strings.Cut(file, "/")
 		inner, rest, _ := strings.Cut(after, "/")
 		held, ok := s.files.checkCard(key, u.ID, project, s.now())
-		if inner != "f" || !ok {
+		if inner != "f" && inner != "v" || !ok {
 			return fail("not_found", "Файл не найден")
 		}
-		// The holder rides in the key, so the files of a board come from the copy the board was opened from.
-		section, file, keyed, card = "f", rest, true, held
+		// The holder rides in the key, so the files of a board come from the copy the board was opened from; of a
+		// version of it (v/<version>/f/...), from the same copy at that version.
+		section, file, keyed, card = inner, rest, true, held
 	}
 	ctx := r.Context()
 	// A card of a project another space shared with the person (foreign.go): read from that space's store, read-only.
 	foreign := false
-	if s.view != nil && card != "" {
+	if card != "" {
 		held, ok, err := s.foreignHolder(ctx, m, u, project, card)
 		if err != nil {
 			return err
 		}
 		if ok {
 			m, foreign = held, true
-		}
-	}
-	if s.view == nil {
-		if section != "f" && section != "index.json" && section != "snapshot" {
-			return fail("store_off", "Хранилище дизайнов не подключено")
-		}
-		var err error
-		m, err = s.scopedHolder(ctx, m, u, project, "", card)
-		if err != nil {
-			return err
 		}
 	}
 	t, err := s.read(ctx, m)
@@ -102,55 +98,15 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 		return fail("not_found", "Проект не найден")
 	}
 	read := r.Method == http.MethodGet || r.Method == http.MethodHead
+	if section == "lease" && !foreign && file == "" {
+		return s.serveLease(w, r, u, m, project, f)
+	}
 	if foreign && section == "file" {
 		return fail("forbidden", "Проект другого пространства открыт только для просмотра")
 	}
 	if section != "file" {
-		if !read {
+		if !read && section != "restore" {
 			return fail("bad_request", "Метод не поддерживается")
-		}
-		if s.view == nil && section == "snapshot" {
-			return s.readSnapshot(w, r, m, project, file)
-		}
-		if s.view == nil {
-			var segs []string
-			if section == "f" {
-				var ok bool
-				segs, ok = segments(file)
-				if !ok || !servedSegment(segs[0]) {
-					return fail("not_found", "Файл не найден")
-				}
-				for _, seg := range segs {
-					if strings.Contains(seg, "/") {
-						return fail("not_found", "Файл не найден")
-					}
-				}
-				if !keyed && s.files != nil && storeNavigation(r) {
-					w.Header().Set("Cache-Control", "no-store")
-					w.Header().Set("Location", keyedLocation(segs, s.files.mintCard(u.ID, project, card, s.now()), withoutCard(r.URL.Query(), r.URL.RawQuery)))
-					w.WriteHeader(http.StatusFound)
-					return nil
-				}
-			} else if file != "" {
-				return fail("not_found", "Маршрут не найден")
-			}
-			if s.reg == nil {
-				return fail("unavailable", "Машина проекта недоступна")
-			}
-			// The record holder attested this project. Never select a runtime supplied by the caller.
-			res, err := s.machineFetch(ctx, m.ID, hubproto.DesignPublicTokenRequest{Project: project}, segs, r)
-			if err != nil {
-				return fail("unavailable", "Машина проекта недоступна")
-			}
-			if res.StatusCode != http.StatusOK {
-				res.Body.Close()
-				return fail("not_found", "Файл не найден")
-			}
-			h := w.Header()
-			h.Set("Cache-Control", "private, no-store")
-			h.Set("Content-Type", safeType(res.Header.Get("Content-Type")))
-			passEncoding(h, res)
-			return copyBody(isolated(w, r), res, maxFile, r.Method == http.MethodHead)
 		}
 		head, err := s.view.Head(ctx, m.SpaceID, project)
 		if err != nil {
@@ -218,6 +174,8 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 				return nil
 			}
 			return read(isolated(w, r), r, segs)
+		case "versions", "v", "restore":
+			return s.storeVersions(w, r, u, m, project, section, file, head, f, foreign, keyed, card)
 		}
 		return fail("not_found", "Маршрут не найден")
 	}

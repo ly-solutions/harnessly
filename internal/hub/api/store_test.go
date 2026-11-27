@@ -267,17 +267,3 @@ func TestStoreSessionAndCapability(t *testing.T) {
 		t.Fatalf("an expired session: %s", r)
 	}
 }
-
-// HUB_STORE=off: no capability, no routes; a runtime then keeps its data as before.
-func TestStoreOff(t *testing.T) {
-	s := hubtest.New(t, hubtest.Env("HUB_STORE", "off"))
-	if s.Hub.Store != nil {
-		t.Fatal("the store is open with HUB_STORE=off")
-	}
-	if r := s.Browser().Do("POST", hubproto.StorePath, nil); r.Code != http.StatusNotFound {
-		t.Fatalf("the session route: %s", r)
-	}
-	if err := storelink.HubHasStore(context.Background(), http.DefaultClient, s.URL); err == nil {
-		t.Fatal("a hub without a store says it has one")
-	}
-}

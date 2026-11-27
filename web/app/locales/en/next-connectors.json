@@ -21,6 +21,7 @@
   "next.connectors.ask.lead": "The agent asks to send in your name",
   "next.connectors.ask.yes": "Send",
   "next.connectors.ask.no": "Don't send",
+  "next.connectors.ask.trust": "Send to {who} without asking from now on",
   "next.connectors.discover": "Find",
   "next.connectors.reissue": "Reissue",
   "next.connectors.reissueSure": "Reissue the secret of “{name}”? The old one stops working at once; give the service the new one.",

@@ -11,6 +11,7 @@ import {
   saveProjectVersion,
   type IProjectHistory,
   type IProjectPoint,
+  type IVersionsVia,
 } from '@/next/features/designly/versions/versions-api';
 import { whenOf, whoOf } from '@/next/features/designly/panel/when';
 
@@ -28,6 +29,8 @@ export interface IVersionsTabProps {
   error: string | null;
   reload: () => void;
   onRestored: () => void;
+  /** Where the versions come from; the hub's store has no named versions to save. */
+  via?: IVersionsVia;
 }
 
 const VersionsTab = ({
@@ -42,6 +45,7 @@ const VersionsTab = ({
   error,
   reload,
   onRestored,
+  via,
 }: IVersionsTabProps) => {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -66,7 +70,7 @@ const VersionsTab = ({
     setRestoring(point.id);
     setFailure(null);
     try {
-      await restoreProjectVersion(machine, id, point.id);
+      await restoreProjectVersion(machine, id, point.id, via?.hub ? via : undefined);
       reload();
       onRestored();
     } catch (e) {
@@ -79,7 +83,7 @@ const VersionsTab = ({
   const named = new Set(history?.named.map((n) => n.id) ?? []);
   return (
     <div className="hx-ds__pane">
-      {mayEdit && (
+      {mayEdit && via?.hub !== true && (
         <form
           className="hx-ds-save"
           onSubmit={(e) => {
@@ -146,7 +150,7 @@ const VersionsTab = ({
               )}
             </div>
             {comparing === p.id && (
-              <Compare machine={machine} id={id} origin={origin} point={p} page={page} />
+              <Compare machine={machine} id={id} origin={origin} point={p} page={page} via={via} />
             )}
           </div>
         );

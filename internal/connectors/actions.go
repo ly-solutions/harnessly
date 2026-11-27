@@ -42,15 +42,17 @@ type Pair struct {
 
 // Proposal is an action waiting for the person's yes, as the card and the agent see it.
 type Proposal struct {
-	ID         string    `json:"id"`
-	Connection string    `json:"connection"`
-	Connector  string    `json:"connector"`
-	Name       string    `json:"name"`
-	Action     string    `json:"action"`
-	Title      Text      `json:"title"`
-	Args       []Pair    `json:"args"`
-	Why        string    `json:"why,omitempty"`
-	Conv       string    `json:"conv,omitempty"`
+	ID         string `json:"id"`
+	Connection string `json:"connection"`
+	Connector  string `json:"connector"`
+	Name       string `json:"name"`
+	Action     string `json:"action"`
+	Title      Text   `json:"title"`
+	Args       []Pair `json:"args"`
+	Why        string `json:"why,omitempty"`
+	Conv       string `json:"conv,omitempty"`
+	// Recipients are whom it reaches, as the trust keys (Action.Recipients); the card offers to trust them.
+	Recipients []string  `json:"recipients,omitempty"`
 	State      string    `json:"state"`
 	Result     string    `json:"result,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -119,9 +121,13 @@ func (s *Service) Propose(id, action string, args map[string]string, why string,
 		}
 	}
 	p := Proposal{ID: newID("ca"), Connection: conn.ID, Connector: conn.Connector, Name: conn.Name, Action: action,
-		Title: a.Title, Args: pairs, Why: oneLine(why), Conv: by.Conv, State: Waiting, CreatedAt: s.now().UTC()}
+		Title: a.Title, Args: pairs, Why: oneLine(why), Conv: by.Conv, Recipients: recipientKeys(a, kept),
+		State: Waiting, CreatedAt: s.now().UTC()}
 	if a.Direct {
-		return s.direct(p, kept), nil
+		return s.direct(p, kept, "direct"), nil
+	}
+	if s.allTrusted(conn.ID, p.Recipients) {
+		return s.direct(p, kept, "trusted"), nil
 	}
 	s.mu.Lock()
 	s.expireLocked()
@@ -129,6 +135,9 @@ func (s *Service) Propose(id, action string, args map[string]string, why string,
 	s.mu.Unlock()
 	s.changed()
 	s.relay(p, false)
+	if s.OnPropose != nil {
+		go s.OnPropose(p)
+	}
 	return p, nil
 }
 
@@ -151,8 +160,10 @@ func (s *Service) ProposeRun(name string, title Text, args []Pair, why string, b
 // only: a chat bot's one-tap «Send» does not show what is connected or what code would run.
 const OwnService = "own-service"
 
-// direct runs an Action.Direct at once (it reaches only the person themselves) and writes the journal of sends.
-func (s *Service) direct(p Proposal, args map[string]string) Proposal {
+// direct runs an action at once and writes the journal of sends: an Action.Direct (it reaches only the person
+// themselves, by "direct") or one whose every recipient the person trusted (by "trusted"). It stays settled among the
+// proposals for a while, so the agent's Wait on it answers with the result.
+func (s *Service) direct(p Proposal, args map[string]string, by string) Proposal {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	res, err := s.act(ctx, p, args)
@@ -162,10 +173,16 @@ func (s *Service) direct(p Proposal, args map[string]string) Proposal {
 		p.State, p.Result = Done, res
 	}
 	line := Sent{At: s.now().UTC(), Proposal: p.ID, Connection: p.Connection, Connector: p.Connector, Action: p.Action,
-		Args: p.Args, Why: p.Why, Conv: p.Conv, ApprovedBy: "direct", OK: err == nil, Result: p.Result}
+		Args: p.Args, Why: p.Why, Conv: p.Conv, ApprovedBy: by, OK: err == nil, Result: p.Result}
 	if jerr := s.journal(line); jerr != nil {
 		s.runner.log.Warn("journal of sends not written", "proposal", p.ID, "error", jerr)
 	}
+	done := make(chan struct{})
+	close(done)
+	s.mu.Lock()
+	s.expireLocked()
+	s.pending[p.ID] = &pending{p: p, done: done}
+	s.mu.Unlock()
 	return p
 }
 
@@ -261,6 +278,35 @@ func (s *Service) Wait(ctx context.Context, id string, d time.Duration) (Proposa
 // journal of sends. Only the page calls it, with the person's session.
 func (s *Service) Answer(ctx context.Context, id string, approve bool) (Proposal, error) {
 	return s.answer(ctx, id, approve, "person")
+}
+
+// AnswerTrusting is the person's yes that also trusts the proposal's recipients from now on: the next proposal of
+// this connection that reaches only trusted recipients runs without the card. Only the page calls it.
+func (s *Service) AnswerTrusting(ctx context.Context, id string) (Proposal, error) {
+	s.mu.Lock()
+	w := s.pending[id]
+	var p Proposal
+	if w != nil {
+		p = w.p
+	}
+	s.mu.Unlock()
+	if w == nil || p.State != Waiting {
+		return Proposal{}, ErrNotWaiting
+	}
+	if len(p.Recipients) == 0 {
+		return Proposal{}, Sayf("this action has no recipient to trust")
+	}
+	label := ""
+	for _, a := range p.Args {
+		if a.Name == "chat" || a.Name == "to" {
+			label = a.Value
+			break
+		}
+	}
+	if err := s.Trust(p.Connection, p.Recipients, label); err != nil {
+		return Proposal{}, err
+	}
+	return s.answer(ctx, id, true, "person")
 }
 
 // answer is Answer as given by: "person" on the page, "relay:<connection>" in a Relay's bound chat.

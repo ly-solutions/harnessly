@@ -62,6 +62,7 @@
   "next.ds.comments.place": "A spot or a block",
   "next.ds.comments.failed": "The comment was not saved",
   "next.ds.comments.toAgent": "The comment went to the agent",
+  "next.ds.comments.toAgentQueued": "The machine is off: the comment waits and goes to the agent once it is on",
   "next.ds.pages.search": "Find a page",
   "next.ds.pages.none": "Nothing found",
   "next.ds.pages.changed": "Changed by the agent of this chat",

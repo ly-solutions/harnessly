@@ -84,14 +84,13 @@ type Deps struct {
 	// machine: the rollout switch hub-design-home. Off, the hub answers 404 and the page asks part by part, as before;
 	// on, the request goes on to the machine. nil is off.
 	HomeOn func(ctx context.Context, email, machineID string) bool
-	// OwnerOn says whether the hub owns the design facts (the rollout switch hub-design-owner): off, the
-	// library is what the store's files say, as before. nil is off.
-	OwnerOn func(ctx context.Context, email, machineID string) bool
 	// TrustedProxies are the peers whose X-Forwarded-For names the guest (HUB_TRUSTED_PROXIES).
 	TrustedProxies []netip.Prefix
 }
 
 type Service struct {
+	// accessChanged hears every change of a space's roles (OnAccessChanged); nil hears nothing.
+	accessChanged func(spaceID string)
 	db            *store.DB
 	reg           *link.Registry
 	log           *slog.Logger
@@ -109,19 +108,32 @@ type Service struct {
 	bell          Bell
 	shared        bool
 	revs          grantedRevs
+	// spaces wakes the library's long polls held on a space when its roles change (SpaceChanged), on any replica.
+	spaces        spaceNudges
 	opens         func(ctx context.Context, userID string, m store.Machine) bool
 	homeOn        func(ctx context.Context, email, machineID string) bool
-	ownerOn       func(ctx context.Context, email, machineID string) bool
 	search        searchindex.Index
 	searchOn      func(ctx context.Context, email, machineID string) bool
 	appKinds      AppKinder
 	appsCatalogOn func(ctx context.Context, email, machineID string) bool
 	view          Viewer
+	render        RenderQueue  // the hub's render worker's queue (thumbs.go, HRN-1798); nil without a worker
+	renderChecks  renderChecks // when each board's picture was last looked at for the queue
 	folders       Folders
-	sheets        *sheetCache // the store's stylesheets with their fonts inside, by revision (sheetcache.go)
+	// records reads the apps' verdict a machine that is off left in a project's record (verdict.go).
+	records RecordReader
+	// forward sends a request to a machine as a person, the proxy's way (UseForward); the queue of comments to the
+	// agent hands them on by it.
+	forward func(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine)
+	agentQ  agentQueueState
+	// sites deploys a project published with the machine off (publish.go).
+	sites  SitePublisher
+	sheets *sheetCache // the store's stylesheets with their fonts inside, by revision (sheetcache.go)
 	// cover is the count of the recorded projects the store has (coverage.go).
 	cover     coverage
 	warm      warmState
+	sigMu     sync.Mutex
+	bus       Signaler // where the changes of access are said (UseBus, HRN-1796); nil without the hub's bus
 	kits      *resaccess.Service
 	teamLevel string
 	closed    bool
@@ -145,7 +157,7 @@ type dayCount struct {
 func New(d Deps) *Service {
 	s := &Service{
 		db: d.DB, reg: d.Reg, log: d.Log, now: d.Now, hubURL: strings.TrimRight(d.HubURL, "/"), platformAPI: d.PlatformAPI,
-		staticGuests: d.StaticGuests && d.ShareURL == "", transport: d.Transport, seal: newSealer(d.LinkKey), files: newFileKeyer(d.LinkKey), notice: d.Notice, bell: d.Bell, shared: d.Shared, opens: d.Opens, homeOn: d.HomeOn, ownerOn: d.OwnerOn, view: d.View, kits: d.Kits,
+		staticGuests: d.StaticGuests && d.ShareURL == "", transport: d.Transport, seal: newSealer(d.LinkKey), files: newFileKeyer(d.LinkKey), notice: d.Notice, bell: d.Bell, shared: d.Shared, opens: d.Opens, homeOn: d.HomeOn, view: d.View, kits: d.Kits,
 		serving: map[string]bool{}, prefixes: map[string]string{}, timers: map[string]*time.Timer{},
 		events: map[string]*dayCount{}, tokens: map[string]cachedToken{}, budget: newBudget(), trusted: d.TrustedProxies,
 		teamLevel: roleEdit, closed: d.ClosedUnrecorded, sheets: newSheetCache(sheetCacheMax),
@@ -225,6 +237,8 @@ func (s *Service) Connected(m store.Machine, features []string) {
 	if on {
 		safego.Go("designaccess push", func() { s.push(context.Background(), m.ID) })
 	}
+	// The comments to the agent that waited for the machine go to it now (agentqueue.go).
+	s.drainAgentQueue(m.ID)
 }
 
 // Event is a project made, taken or deleted on the machine.
@@ -300,6 +314,13 @@ func (s *Service) takesFolder(ctx context.Context, m store.Machine, project stri
 // kickSpace sends the new snapshot to the machine, and with a shared library to every machine of its space: the
 // project's rows count on each of them.
 func (s *Service) kickSpace(ctx context.Context, m store.Machine) {
+	s.AccessChanged(m.SpaceID, "", "")
+	if m.SpaceID != "" {
+		s.spaces.wake(m.SpaceID)
+	}
+	if s.accessChanged != nil && m.SpaceID != "" {
+		s.accessChanged(m.SpaceID)
+	}
 	if !s.shared || m.SpaceID == "" {
 		s.kick(m.ID)
 		return
@@ -308,6 +329,14 @@ func (s *Service) kickSpace(ctx context.Context, m store.Machine) {
 		s.kick(id)
 	}
 }
+
+// SpaceChanged wakes the library's long polls held on the space at once: a grant made on any replica reaches
+// the pages without their waiting for the next look at the access tables.
+func (s *Service) SpaceChanged(spaceID string) { s.spaces.wake(spaceID) }
+
+// OnAccessChanged sets who hears that a space's roles changed: the store wakes its machines with it (GitHub #193). It is
+// set once, before the hub serves.
+func (s *Service) OnAccessChanged(fn func(spaceID string)) { s.accessChanged = fn }
 
 // spaceMachines are the machines of a space that are not revoked.
 func (s *Service) spaceMachines(ctx context.Context, spaceID string) []string {
@@ -396,6 +425,9 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		for _, id := range ids {
 			s.kick(id)
+			if s.onBus() {
+				s.AccessChanged(s.spaceOf(ctx, id), "", "")
+			}
 		}
 		s.budget.sweep(s.now())
 		s.dropTokens()
@@ -431,6 +463,9 @@ const HomeSwitch = "hub-design-home"
 
 // ServeMachine answers the design access API of a machine the person may open; anything else goes to the machine.
 func (s *Service) ServeMachine(w http.ResponseWriter, r *http.Request, u store.User, m store.Machine) bool {
+	if s.serveAgentQueue(w, r, u, m) || s.serveKits(w, r, u, m) || s.servePublish(w, r, u, m) || s.serveWork(w, r, u, m) {
+		return true
+	}
 	if s.serveEdit(w, r, u, m) {
 		return true
 	}

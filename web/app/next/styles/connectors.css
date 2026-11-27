@@ -237,3 +237,12 @@
   gap: 4px;
   padding-top: 8px;
 }
+.hx-cx-trust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  color: var(--hx-fg-2);
+  font-size: var(--hx-text-sm);
+  cursor: pointer;
+}

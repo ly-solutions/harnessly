@@ -693,7 +693,7 @@ func TestStore(t *testing.T) {
 	data := t.TempDir()
 	m := map[string]string{"HUB_PUBLIC_URL": "http://localhost:8040", "HUB_DATA_DIR": data}
 	c, err := Load(env(m))
-	if err != nil || c.Store.Off || c.Store.DatabaseURL != "sqlite://"+filepath.Join(data, "store") || c.Store.S3.Endpoint != "" || c.Store.PGPrefix != "" {
+	if err != nil || c.Store.DatabaseURL != "sqlite://"+filepath.Join(data, "store") || c.Store.S3.Endpoint != "" || c.Store.PGPrefix != "" {
 		t.Fatalf("default: %v %+v", err, c.Store)
 	}
 	if c.Store.MaxUpload != 0 {
@@ -752,8 +752,8 @@ func TestStore(t *testing.T) {
 		}
 	}
 	m["HUB_STORE"] = "off"
-	if c, err = Load(env(m)); err != nil || !c.Store.Off {
-		t.Fatalf("off: %v %+v", err, c.Store)
+	if _, err = Load(env(m)); err == nil || !strings.Contains(err.Error(), "HUB_STORE=off is gone") {
+		t.Fatalf("off is taken: %v", err)
 	}
 }
 
@@ -802,10 +802,6 @@ func TestDesignAccess(t *testing.T) {
 		if _, err := Load(env(bad)); err == nil {
 			t.Fatalf("%s=%s was taken", k, v)
 		}
-	}
-	m["HUB_STORE"] = "off"
-	if _, err := Load(env(m)); err == nil {
-		t.Fatal("the registration without the store")
 	}
 }
 

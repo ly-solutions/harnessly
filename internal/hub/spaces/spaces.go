@@ -51,6 +51,9 @@ type Deps struct {
 	OrgEvents events.OrgBus
 	// OnPeople runs after a person joined or left a space or their role in it changed: what they may see is different.
 	OnPeople func(userID string)
+	// OnAccess runs after a space's members or their roles changed: what they may see of its designs is different
+	// (the bus's access.changed). userID is "" when it is not one person's.
+	OnAccess func(spaceID, userID string)
 }
 
 // Service is the spaces side of the hub.
@@ -67,6 +70,7 @@ type Service struct {
 	machineGone func(m store.Machine)
 	orgBus      events.OrgBus
 	people      func(userID string)
+	access      func(spaceID, userID string)
 
 	// linkURLs remembers, in memory only, the address of each link invitation this process made, so that the owner
 	// asking again gets the same address. The database keeps hashes only; after a restart the address is gone.
@@ -78,7 +82,7 @@ type Service struct {
 
 // New makes the service.
 func New(d Deps) *Service {
-	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, mailer: d.Mailer, events: d.Events, lim: d.Limiter, log: d.Log, now: d.Now, gone: d.OnMemberGone, machineGone: d.OnMachineGone, orgBus: d.OrgEvents, people: d.OnPeople, linkURLs: map[string]string{}, sub: http.NewServeMux()}
+	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, mailer: d.Mailer, events: d.Events, lim: d.Limiter, log: d.Log, now: d.Now, gone: d.OnMemberGone, machineGone: d.OnMachineGone, orgBus: d.OrgEvents, people: d.OnPeople, access: d.OnAccess, linkURLs: map[string]string{}, sub: http.NewServeMux()}
 	if s.now == nil {
 		s.now = time.Now
 	}

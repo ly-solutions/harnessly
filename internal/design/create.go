@@ -302,6 +302,9 @@ func (l *Library) CreateProject(title string) (CreatedProject, error) {
 	}
 	for attempt := 1; ; attempt++ {
 		p, err := l.copyInto(SlugifyArtifactID(shown, l.TakenArtifactIDs()), shown, meta, own)
+		if err == nil {
+			l.pushToStore(p.ID)
+		}
 		var ce *CreateError
 		if err == nil || !errors.As(err, &ce) || !ce.Conflict || attempt >= 3 {
 			return p, err

@@ -299,3 +299,36 @@ func TestACodexSignInProfileRunsTheCLIInItsOwnHome(t *testing.T) {
 		t.Fatal("a launch went on without its home")
 	}
 }
+
+// A Codex chat on a local model: Codex's custom provider at the server's /v1 with the Responses API, and no
+// key: no variable, no file. The window is the smallest the server's models have.
+func TestCodexOnALocalModel(t *testing.T) {
+	t.Cleanup(func() { SetCustom(nil) })
+	SetCustom([]Preset{{
+		ID: "x-ollama-codex", Label: "Локальная модель · Ollama", Vendor: wire.VendorOwn, Via: wire.ProviderCodex,
+		BaseURL: "http://127.0.0.1:11434/v1", Host: "127.0.0.1:11434", Custom: true, Local: true,
+		Models: []Model{{ID: "qwen3-coder:30b", Window: 65536}, {ID: "qwen2.5:0.5b", Window: 32768}}, Small: "qwen2.5:0.5b", Test: "qwen2.5:0.5b",
+	}})
+	l := Launcher{Store: newStore(t)}
+	if via, configured, models, ok := l.Lookup("x-ollama-codex"); !ok || via != wire.ProviderCodex || !configured || len(models) != 2 {
+		t.Fatalf("lookup: %v %v %v %v", via, configured, models, ok)
+	}
+	prof, err := l.Codex("x-ollama-codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(prof.Args, " ")
+	for _, want := range []string{
+		`model_providers.x-ollama-codex.base_url="http://127.0.0.1:11434/v1"`,
+		`model_providers.x-ollama-codex.wire_api="responses"`,
+		`model_provider="x-ollama-codex"`,
+		`model_context_window=32768`,
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("%s is not in %s", want, args)
+		}
+	}
+	if prof.KeyEnv != "" || prof.KeyFile != "" || strings.Contains(args, "env_key") {
+		t.Errorf("a local model has no key: %+v", prof)
+	}
+}

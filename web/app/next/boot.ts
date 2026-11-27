@@ -2,7 +2,8 @@
 // outbox of the confirmed person, machines and one socket per machine. A different person on this page is a clean
 // start: nothing of the previous one stays in memory, and an outbox is never sent under another's name.
 
-import { confirmOfflineOwner } from '@/next/offline/client';
+import { confirmOfflineOwner, forgetOfflinePage } from '@/next/offline/client';
+import { onBackOnline } from '@/next/offline/net';
 import { startPrefsSync } from '@/next/stores/synced-prefs';
 import { useSyncExternalStore } from 'react';
 import { pageClock } from '@/next/core/clock';
@@ -142,6 +143,7 @@ let persistence: Persistence | null = null;
 let stopOutbox: (() => void) | null = null;
 let stopDraftSync: (() => void) | null = null;
 let stopQueuedChats: (() => void) | null = null;
+let stopBackRefresh: (() => void) | null = null;
 let stopJournal: (() => void) | null = null;
 let stopPerf: (() => void) | null = null;
 let fleetWatch: FleetWatch | null = null;
@@ -166,6 +168,7 @@ const withinCacheWait = (ready: Promise<void>) =>
 
 const signOut = (me: MeState): BootState => {
   confirmOfflineOwner(null);
+  forgetOfflinePage();
   persistence?.stop();
   persistence = null;
   clearPersonData();
@@ -200,6 +203,9 @@ async function adopt(me: Extract<MeState, { k: 'ready' }>, openKV: (person: stri
   // the person's new chats that wait in the hub for a machine, on every device of theirs.
   stopQueuedChats?.();
   stopQueuedChats = watchQueuedChats();
+  // Back from offline: the hub's list is asked again at once, quietly; what is on screen stays meanwhile.
+  stopBackRefresh?.();
+  stopBackRefresh = onBackOnline(() => void refreshCentral());
 }
 
 /** me is asked again after 1, 2, 4… up to 30 s, and at once when the browser is back online. */
@@ -218,6 +224,7 @@ function retryMe(mine: number, openKV: (person: string) => KV): void {
     done = true;
     clock.clearTimeout(timer);
     if (typeof window !== 'undefined') window.removeEventListener('online', now);
+    stopBack();
     if (stopMeRetry === stop) stopMeRetry = null;
   };
   const tryOnce = async () => {
@@ -249,6 +256,7 @@ function retryMe(mine: number, openKV: (person: string) => KV): void {
     timer = clock.setTimeout(now, ms);
   };
   if (typeof window !== 'undefined') window.addEventListener('online', now);
+  const stopBack = onBackOnline(now);
   stopMeRetry = stop;
   schedule();
 }
@@ -529,6 +537,8 @@ export async function shutdownNext(): Promise<void> {
   stopDraftSync = null;
   stopQueuedChats?.();
   stopQueuedChats = null;
+  stopBackRefresh?.();
+  stopBackRefresh = null;
   queuedChatsStore.set(null);
   stopJournal?.();
   stopJournal = null;

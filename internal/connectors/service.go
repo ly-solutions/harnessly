@@ -64,10 +64,15 @@ type Service struct {
 	now     func() time.Time
 	// OnChange is told when something the page shows moved: a connection, a proposed action. May be nil.
 	OnChange func()
+	// OnPropose is told of every new proposal that waits for the person (a push to their devices). May be nil; it is
+	// called in its own goroutine.
+	OnPropose func(Proposal)
 
 	watchMu sync.Mutex
 	rev     uint64
 	moved   chan struct{}
+
+	trustMu sync.Mutex
 
 	mu      sync.Mutex
 	pending map[string]*pending

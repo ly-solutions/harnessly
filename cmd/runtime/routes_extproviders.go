@@ -25,6 +25,8 @@ import (
 //	PATCH  <platform>/ext-providers/<id>           {name?, baseUrl?, api?, key?, models?} -> {provider: View}
 //	DELETE <platform>/ext-providers/<id>           {ok: true}
 //	POST   <platform>/ext-providers/<id>/check     Check (the models it lists are kept)
+//	GET    <platform>/ext-providers/local          {servers: [{kind, name, baseUrl, api, models}], custom?}; ?address= adds one
+//	                                               more address, a local one only
 //	GET    <platform>/ext-providers/<id>/models    {models, at, check?}; ?refresh=1 asks the provider again
 //
 // A refusal is {error: <reason>, message: <words for the person>}.
@@ -110,6 +112,8 @@ func extProviderMessage(reason string) string {
 		return locale.Pick("A Higgsfield key is two parts, the key ID and the secret, written as id:secret (console.higgsfield.ai).", "Ключ Higgsfield состоит из двух частей — ID и secret, пишутся через двоеточие: id:secret (console.higgsfield.ai).")
 	case extproviders.ReasonBadURL:
 		return locale.Pick("The address must start with https:// or http:// and name a host.", "Адрес должен начинаться с https:// или http:// и содержать имя сервера.")
+	case extproviders.ReasonNotLocal:
+		return locale.Pick("A local model is on this machine or on a private network (127.0.0.1, 192.168.x.x, 10.x.x.x). This address is not.", "Локальная модель живёт на этой машине или в частной сети (127.0.0.1, 192.168.x.x, 10.x.x.x). Этот адрес не такой.")
 	case extproviders.ReasonBadAPI:
 		return locale.Pick("Choose the kind of API: OpenAI-compatible or Anthropic-compatible.", "Выберите тип API: совместимый с OpenAI или с Anthropic.")
 	case extproviders.ReasonBadKey:
@@ -218,6 +222,13 @@ func extProviderRoutes(d deps) []gate.Route {
 		rest, _ := under(r)
 		parts := strings.Split(rest, "/")
 		switch {
+		case len(parts) == 1 && parts[0] == "local" && r.Method == http.MethodGet:
+			got, err := svc.Discover(r.Context(), r.URL.Query().Get("address"))
+			if err != nil {
+				extProviderRefusal(w, err)
+				return
+			}
+			secretJSON(w, http.StatusOK, got)
 		case len(parts) == 1 && parts[0] == "check" && r.Method == http.MethodPost:
 			var draft extproviders.Draft
 			if !read(w, r, &draft) {

@@ -108,7 +108,7 @@ func (f *runtimeGate) startStore(ctx context.Context, cfg gate.Config) func() {
 	go func() {
 		defer close(recDone)
 		if f.records != nil {
-			startRecords(recCtx, f.store, f.records, f.watch, f.covers)
+			startRecords(recCtx, f.store, f.records, f.watch, f.covers, f.shareBlocked)
 		}
 	}()
 	stopApps := func() {
@@ -238,7 +238,12 @@ func keepDelivered(info delivery.Info) {
 type storePusher struct{ l *storelink.Link }
 
 func (p storePusher) PushProject(ctx context.Context, project string) error {
-	return p.l.PushNow(ctx, filestore.KindDesign, project)
+	err := p.l.PushNow(ctx, filestore.KindDesign, project)
+	if errors.Is(err, storelink.ErrNotSyncing) {
+		// The sync has not started yet, or another runtime syncs the folder: it sends the project on its own pass.
+		return nil
+	}
+	return err
 }
 
 // storeRevisions is the design collection's history in the hub's store as the Sinopia library reads it.

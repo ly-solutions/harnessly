@@ -164,6 +164,7 @@ func (v *View) fillLive(l *live, spaceID, project string, at int64) {
 	lib := design.New(design.Config{
 		LibraryDir: l.base,
 		DataDir:    filepath.Join(v.o.Dir, "data"),
+		KitsDir:    v.projectKits(ctx, spaceID, l.base, project),
 		Passive:    true,
 		ShareProbe: func(string) design.ShareFSReport { return design.ShareFSReport{OK: true, At: time.Now()} },
 	})

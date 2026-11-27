@@ -275,11 +275,11 @@ describe('what the cache writes, and when', () => {
     expect(feedsToDrop(legacy, ['mine'], now)).toEqual(['theirs']);
   });
 
-  it('takes back the six written last, the most recent one last', () => {
-    const kept = Array.from({ length: 9 }, (_, i) => ({ convId: `c${i}`, rank: 0, at: 100 + i }));
+  it('takes back the twelve written last, the most recent one last', () => {
+    const kept = Array.from({ length: 15 }, (_, i) => ({ convId: `c${i}`, rank: 0, at: 100 + i }));
     const legacy = { convId: 'old', rank: 0 };
     const back = feedsToRestore([legacy, ...kept] as never);
-    expect(back.map((f) => f.convId)).toEqual(['c3', 'c4', 'c5', 'c6', 'c7', 'c8']);
+    expect(back.map((f) => f.convId)).toEqual(Array.from({ length: 12 }, (_, i) => `c${i + 3}`));
     expect(
       feedsToRestore([
         { convId: 'r1', rank: 1 },

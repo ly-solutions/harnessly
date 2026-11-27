@@ -52,10 +52,6 @@ func runStore(ctx context.Context, args []string, lookup func(string) (string, b
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	if cfg.Store.Off {
-		fmt.Fprintln(stderr, "hub store: the store is off (HUB_STORE=off)")
-		return 2
-	}
 	meta, blobs, err := storehub.OpenDrivers(ctx, cfg)
 	if err != nil {
 		fmt.Fprintln(stderr, "hub store:", err)
@@ -164,10 +160,6 @@ func storeMigrate(ctx context.Context, meta filestore.MetaStore, blobs filestore
 // describeStore is the store's line of check-config.
 func describeStore(w io.Writer, cfg *config.Config) {
 	st := cfg.Store
-	if st.Off {
-		fmt.Fprintln(w, "store          off (HUB_STORE=off): runtimes keep their data as before")
-		return
-	}
 	db := "SQLite in " + st.Dir
 	if !strings.HasPrefix(st.DatabaseURL, "sqlite://") {
 		db = "Postgres"

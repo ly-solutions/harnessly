@@ -208,6 +208,14 @@ func (a *Agent) Scan(ctx context.Context, rel string) error {
 	return a.scan(ctx, rel)
 }
 
+// HeadUnder is the newest revision of the room the local folder holds under the folder rel: equal to the room's own
+// newest under it, the local copy is the room's.
+func (a *Agent) HeadUnder(rel string) (int64, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.state.headUnder(rel)
+}
+
 func (a *Agent) scan(ctx context.Context, rel string) error {
 	fi, err := a.root.Lstat(rel)
 	switch {

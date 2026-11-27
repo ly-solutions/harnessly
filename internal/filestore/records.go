@@ -76,6 +76,42 @@ type Record struct {
 	Machine string `json:"machine,omitempty"`
 	// At is when the facts last changed on the machine that wrote the record (Unix ms).
 	At int64 `json:"at"`
+	// Share is what the apps' checks said of sharing the project as the store holds it; nil when the
+	// machine has not checked it yet.
+	Share *ShareVerdict `json:"share,omitempty"`
+	// Check is the outcome of the project's last check on the machine: the library's card shows it with the
+	// machine off. Nil when the project was never checked.
+	Check *RecordCheck `json:"check,omitempty"`
+	// Release is the board format's release the project is on and the newer one it can move to; nil when
+	// the machine does not use releases.
+	Release *RecordRelease `json:"release,omitempty"`
+}
+
+// RecordCheck is the library's summary of a check (design.CheckSummary), as the record keeps it.
+type RecordCheck struct {
+	FinishedAt *int64  `json:"finishedAt"`
+	Done       int     `json:"done"`
+	Total      int     `json:"total"`
+	Broken     int     `json:"broken"`
+	Warnings   int     `json:"warnings"`
+	Failure    *string `json:"failure"`
+}
+
+// RecordRelease is a project's board format release (design.ProjectRelease without the machine's folder of rules).
+type RecordRelease struct {
+	Current string  `json:"current"`
+	Pinned  bool    `json:"pinned"`
+	Upgrade *string `json:"upgrade"`
+}
+
+// ShareVerdict is the answer of the apps' checks that may keep a project from being shared, at a revision of the design
+// collection. The checks run on the machine that holds the working copy; the hub reads the verdict when that
+// machine is off, and believes it only while the project's newest revision is still Rev.
+type ShareVerdict struct {
+	// Rev is the project's newest revision in the design collection when the checks ran on the copy at it.
+	Rev int64 `json:"rev"`
+	// Blocked: a check keeps the project from being shared as it is.
+	Blocked bool `json:"blocked,omitempty"`
 }
 
 // ParseRecord reads a record and checks it names the entity its path does.

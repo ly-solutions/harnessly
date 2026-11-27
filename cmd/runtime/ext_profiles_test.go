@@ -91,3 +91,45 @@ func TestExtProfileModelsCarryTheirEfforts(t *testing.T) {
 		t.Fatalf("upstreams: %+v", up)
 	}
 }
+
+// A local model: a server of the template «local» is a keyless profile; one that speaks the Anthropic API is
+// reached straight at its address, one that speaks only OpenAI's through the proxy.
+func TestExtProfileOfALocalModel(t *testing.T) {
+	p := extproviders.Provider{ID: "ollama", Name: "Локальная модель · Ollama", BaseURL: "http://127.0.0.1:11434", API: extproviders.APIAnthropic,
+		Preset: extproviders.PresetLocal, Models: []extproviders.Model{{ID: "qwen3-coder:30b"}}}
+	pr, ok := extProfile(p)
+	if !ok || !pr.Local || pr.Proxied != "" || pr.KeyRef != "" || pr.BaseURL != "http://127.0.0.1:11434" || pr.Models[0].ID != "qwen3-coder:30b" {
+		t.Fatalf("a local model that speaks the Anthropic API: %+v", pr)
+	}
+	p.API, p.BaseURL = extproviders.APIOpenAI, "http://127.0.0.1:1234/v1"
+	op, ok := extProfile(p)
+	if !ok || !op.Local || op.Proxied != "ollama" || op.Models[0].ID != "ollama--qwen3-coder:30b" {
+		t.Fatalf("a local model that speaks OpenAI's API: %+v", op)
+	}
+	if other := (extproviders.Provider{ID: "d", API: extproviders.APIAnthropic, Models: []extproviders.Model{{ID: "m"}}}); func() bool { x, _ := extProfile(other); return x.Local }() {
+		t.Fatal("a provider of another template is no local model")
+	}
+}
+
+// The Codex profile of a local model is made beside the Claude Code one, at the server's /v1 and with its
+// models under their own names; a provider of another template has none.
+func TestLocalCodexProfile(t *testing.T) {
+	p := extproviders.Provider{ID: "ollama", Name: "Локальная модель · Ollama", BaseURL: "http://127.0.0.1:11434", API: extproviders.APIAnthropic,
+		Preset: extproviders.PresetLocal, Models: []extproviders.Model{{ID: "qwen3-coder:30b", Window: 65536}, {ID: "has space"}, {ID: "tiny"}}}
+	cp, ok := localCodexProfile(p)
+	if !ok || cp.ID != "x-ollama-codex" || cp.Via != wire.ProviderCodex || !cp.Local || cp.BaseURL != "http://127.0.0.1:11434/v1" || len(cp.Models) != 2 ||
+		cp.Models[0].ID != "qwen3-coder:30b" || cp.Models[1].Window != extproviders.LocalWindow {
+		t.Fatalf("profile: %+v", cp)
+	}
+	p.API, p.BaseURL = extproviders.APIOpenAI, "http://127.0.0.1:1234/v1/"
+	if op, ok := localCodexProfile(p); !ok || op.BaseURL != "http://127.0.0.1:1234/v1" {
+		t.Fatalf("an OpenAI-compatible server: %+v", op)
+	}
+	p.Preset = "custom"
+	if _, ok := localCodexProfile(p); ok {
+		t.Fatal("a provider of another template is no local model")
+	}
+	if id := localCodexProfileID("a-provider-with-a-very-long-id-0123456789-abcdefghijklmnop"); !wire.ValidProfileID(id) {
+		t.Fatalf("the id of a long provider: %q", id)
+	}
+}

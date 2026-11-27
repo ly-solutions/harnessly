@@ -232,3 +232,57 @@ export const refreshExtModels = (machine: MachineId, id: string) =>
     })),
     CHECK_TIMEOUT_MS,
   );
+
+/** The preset a local model server is made from (extproviders.PresetLocal): the page has its own card for it. */
+export const LOCAL_PRESET = 'local';
+
+/** A model server found on this machine or its network (extproviders.LocalServer). */
+export interface ILocalServer {
+  /** ollama, lmstudio, llamacpp, vllm or custom (an address the person typed). */
+  kind: string;
+  name: string;
+  /** The address a provider is made with. */
+  baseUrl: string;
+  api: TExtApi;
+  models: readonly IExtModel[];
+  /** The context a loaded model runs with, in tokens; 0: the server did not say. */
+  context: number;
+}
+
+export interface ILocalFound {
+  servers: readonly ILocalServer[];
+  /** How the typed address went; null when none was typed. */
+  custom: { address: string; found: boolean } | null;
+}
+
+const readServer = (v: unknown): ILocalServer => {
+  const o = obj(v, 'server');
+  return {
+    kind: str(o.kind, 'kind'),
+    name: str(o.name, 'name'),
+    baseUrl: str(o.baseUrl, 'baseUrl'),
+    api: readApi(o.api),
+    models: list(o.models, 'models', readModel),
+    context: typeof o.context === 'number' && o.context > 0 ? o.context : 0,
+  };
+};
+
+/** GET <platform>/ext-providers/local: the servers that answered, and the typed address when there is one. */
+export const readLocalFound = answer((o): ILocalFound => ({
+  servers: list(o.servers, 'servers', readServer),
+  custom:
+    o.custom === undefined || o.custom === null
+      ? null
+      : {
+          address: str(obj(o.custom, 'custom').address, 'address'),
+          found: obj(o.custom, 'custom').found === true,
+        },
+}));
+
+/** Looks for the local model servers of the machine, and at `address` when the person typed one. */
+export const discoverLocal = (machine: MachineId, address = '') =>
+  getPage(
+    url(machine, `/local${address === '' ? '' : `?address=${encodeURIComponent(address)}`}`),
+    readLocalFound,
+    TIMEOUT_MS,
+  );

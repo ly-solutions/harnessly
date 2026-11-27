@@ -68,10 +68,10 @@ func (s *Service) readStore(ctx context.Context, m store.Machine, req hubproto.D
 
 // guestStoreRev is the revision of the store a guest link reads: the one it is pinned to, or the project's newest.
 // a guest is served from the hub's store and nowhere else, never from the owner's machine, so what the store
-// cannot say is an answer of its own: the store is off, the project is not in it yet, the link is pinned to a version
+// cannot say is an answer of its own: the machine is outside a space, the project is not in it yet, the link is pinned to a version
 // of git made before the library moved to the store, or the store did not answer.
 func (s *Service) guestStoreRev(ctx context.Context, g guestReq) (int64, error) {
-	if s.view == nil || g.m.SpaceID == "" {
+	if !s.storeServes(g.m) {
 		return 0, gNoStore
 	}
 	if g.l.Rev != "" {

@@ -42,6 +42,8 @@ type Options struct {
 	Rooms Rooms
 	// Covers opens a space's covers collection; nil: no covers.
 	Covers PictureRooms
+	// Kits opens a space's kits collection; nil: the kits are read from the machine only.
+	Kits Rooms
 	// Thumbs opens a space's collection of board pictures; nil: none.
 	Thumbs PictureRooms
 	// Dir holds the revisions put into folders and the contents they share (<data>/design-view).
@@ -82,6 +84,10 @@ type View struct {
 	listBuilds map[string]*listBuild
 	// listGate bounds the items built at once.
 	listGate chan struct{}
+	// kits are the sets of kits laid out from the kits collection (kits.go), kitOrder their keys, least recently read
+	// first.
+	kits     map[string]*kitSet
+	kitOrder []string
 }
 
 type snap struct {
@@ -123,6 +129,7 @@ func New(o Options) *View {
 	_ = os.RemoveAll(filepath.Join(o.Dir, "edit"))
 	_ = os.RemoveAll(filepath.Join(o.Dir, "live"))
 	_ = os.RemoveAll(filepath.Join(o.Dir, "list"))
+	_ = os.RemoveAll(filepath.Join(o.Dir, "kits"))
 	v := &View{o: o, snaps: map[string]*snap{}, lives: map[string]*live{}, listGate: make(chan struct{}, listBuildsAtOnce)}
 	safego.Go("designview pruneBlobs", func() { v.pruneBlobs() })
 	return v
@@ -281,6 +288,7 @@ func (v *View) fill(s *snap, spaceID, project string, at int64) {
 	lib := design.New(design.Config{
 		LibraryDir: s.base,
 		DataDir:    filepath.Join(v.o.Dir, "data"),
+		KitsDir:    v.projectKits(ctx, spaceID, s.base, project),
 		Passive:    true,
 		// The folder is the hub's own, written from the store's contents only: no one else's links or files in it.
 		ShareProbe: func(string) design.ShareFSReport { return design.ShareFSReport{OK: true, At: time.Now()} },

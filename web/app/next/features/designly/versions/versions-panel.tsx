@@ -3,6 +3,7 @@
 // is (the boards that changed, the page side by side) and is restored; what is there now is saved first, so a restore
 // is undone the same way. Shown in looking and in editing; saving and restoring need the right to edit.
 import { useEffect, useState } from 'react';
+import { storeBoardHref } from '@/next/features/designly/api';
 import { Button } from '@/next/ui/button';
 import Icon from '@/next/ui/icon';
 import { usePresence } from '@/next/ui/presence';
@@ -13,10 +14,12 @@ import {
   fetchProjectHistory,
   restoreProjectVersion,
   saveProjectVersion,
+  storeVersionPageHref,
   versionPageHref,
   type IProjectDiff,
   type IProjectHistory,
   type IProjectPoint,
+  type IVersionsVia,
 } from '@/next/features/designly/versions/versions-api';
 import '@/next/styles/versions.css';
 
@@ -45,7 +48,9 @@ const timeOf = (at: number) =>
     minute: '2-digit',
   });
 
-export const useHistory = (machine: MachineId, id: string, on: boolean) => {
+export const useHistory = (machine: MachineId, id: string, on: boolean, via?: IVersionsVia) => {
+  const hub = via?.hub === true;
+  const card = via?.card;
   const [history, setHistory] = useState<IProjectHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -53,7 +58,7 @@ export const useHistory = (machine: MachineId, id: string, on: boolean) => {
     if (!on) return;
     const now = new AbortController();
     const read = () =>
-      fetchProjectHistory(machine, id, now.signal).then(
+      fetchProjectHistory(machine, id, now.signal, hub ? { hub, card } : undefined).then(
         (h) => {
           setHistory(h);
           setError(null);
@@ -71,7 +76,7 @@ export const useHistory = (machine: MachineId, id: string, on: boolean) => {
       now.abort();
       clearInterval(timer);
     };
-  }, [machine, id, on, tick]);
+  }, [machine, id, on, tick, hub, card]);
   return { history, error, reload: () => setTick((n) => n + 1) };
 };
 
@@ -81,16 +86,19 @@ interface ICompareProps {
   origin: string | null;
   point: IProjectPoint;
   page: string | null;
+  via?: IVersionsVia;
 }
 
 /** A version against now: the boards that changed, and one of them side by side. */
-export const Compare = ({ machine, id, origin, point, page }: ICompareProps) => {
+export const Compare = ({ machine, id, origin, point, page, via }: ICompareProps) => {
+  const hub = via?.hub === true;
+  const card = via?.card;
   const [diff, setDiff] = useState<IProjectDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [board, setBoard] = useState<string | null>(null);
   useEffect(() => {
     const now = new AbortController();
-    fetchProjectDiff(machine, id, point.id, now.signal).then(
+    fetchProjectDiff(machine, id, point.id, now.signal, hub ? { hub, card } : undefined).then(
       (d) => {
         setDiff(d);
         setBoard(d.boards.find((b) => b.kind !== 'added')?.path ?? null);
@@ -101,7 +109,7 @@ export const Compare = ({ machine, id, origin, point, page }: ICompareProps) => 
       },
     );
     return () => now.abort();
-  }, [machine, id, point.id]);
+  }, [machine, id, point.id, hub, card]);
   if (error !== null) return <div className="hx-versions__error">{error}</div>;
   if (diff === null) return <div className="hx-versions__muted">{t('next.versions.comparing')}</div>;
   const kitMoved =
@@ -141,17 +149,28 @@ export const Compare = ({ machine, id, origin, point, page }: ICompareProps) => 
           {t('next.versions.kitThen', { version: diff.kitThen.version })}
         </div>
       )}
-      {origin !== null && shown !== null && (
+      {(hub || origin !== null) && shown !== null && (
         <div className="hx-versions__pair">
           <figure>
             <figcaption>{t('next.versions.then')}</figcaption>
-            <iframe title={t('next.versions.then')} src={versionPageHref(origin, id, diff.revision, shown)} />
+            <iframe
+              title={t('next.versions.then')}
+              src={
+                hub
+                  ? storeVersionPageHref(id, diff.revision, shown, card)
+                  : versionPageHref(origin ?? '', id, diff.revision, shown)
+              }
+            />
           </figure>
           <figure>
             <figcaption>{t('next.versions.now')}</figcaption>
             <iframe
               title={t('next.versions.now')}
-              src={`${origin.replace(/\/+$/, '')}/a/${id}/p/${shown.split('/').map(encodeURIComponent).join('/')}`}
+              src={
+                hub
+                  ? storeBoardHref(id, shown, '', card)
+                  : `${(origin ?? '').replace(/\/+$/, '')}/a/${id}/p/${shown.split('/').map(encodeURIComponent).join('/')}`
+              }
             />
           </figure>
         </div>

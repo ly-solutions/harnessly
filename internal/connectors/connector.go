@@ -128,6 +128,10 @@ type Action struct {
 	// once, without the card, and is still a line of the journal of sends. The connector must make sure it cannot
 	// reach anyone else, and limit how often it runs.
 	Direct bool `json:"direct,omitempty"`
+	// Recipients names the arguments that say whom the action reaches (a chat, "to", "cc"). The person may mark a
+	// recipient as trusted on the card; a later proposal whose every recipient is trusted runs without the card.
+	// Empty: the action is never trusted.
+	Recipients []string `json:"recipients,omitempty"`
 }
 
 // Spec describes a connector: the card of the catalog, the form, the tools and the events.

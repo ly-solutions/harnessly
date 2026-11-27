@@ -291,6 +291,7 @@ func (v *View) listProject(ctx context.Context, room Room, spaceID, id string, e
 	lib := design.New(design.Config{
 		LibraryDir: root,
 		DataDir:    filepath.Join(v.o.Dir, "data"),
+		KitsDir:    v.projectKits(ctx, spaceID, root, id),
 		Passive:    true,
 		ShareProbe: func(string) design.ShareFSReport { return design.ShareFSReport{OK: true, At: time.Now()} },
 	})
@@ -313,7 +314,11 @@ func (v *View) listProject(ctx context.Context, room Room, spaceID, id string, e
 			title = b.Path
 		}
 		if b.Path != "" {
-			item.Boards = append(item.Boards, designaccess.LibraryBoard{Title: title, Path: b.Path})
+			lb := designaccess.LibraryBoard{Title: title, Path: b.Path}
+			if b.W != nil && b.H != nil {
+				lb.W, lb.H = *b.W, *b.H
+			}
+			item.Boards = append(item.Boards, lb)
 		}
 	}
 	return item, nil

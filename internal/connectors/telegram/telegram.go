@@ -154,12 +154,13 @@ func (botConn) Spec() connectors.Spec {
 			{Name: "notify", Direct: true, Summary: "write to the person in their own Telegram chat, at once and without a card; " +
 				"buttons=\"Yes|Later\" adds buttons whose press comes back to this chat",
 				Title: connectors.T("Write to me in Telegram", "Написать мне в Telegram"),
-				Args: []connectors.Arg{{Name: "text", Required: true, Summary: "short: what happened and what you need"},
+				Args: []connectors.Arg{{Name: "text", Required: true, Summary: "short: what happened and what you need; markdown: **bold**, __italic__, `code`, [text](https://…), ||spoiler||, \"> \" quote, \">> \" quote that opens on a tap"},
 					{Name: "buttons", Summary: "up to 4 answers split by |"}}},
 			{Name: "send", Summary: "write to a group the bot is in, after the person's yes",
 				Title: connectors.T("Write to the Telegram group", "Написать в группу Telegram"),
 				Args: []connectors.Arg{{Name: "chat", Required: true, Summary: "the group's id or title (read groups)"},
-					{Name: "text", Required: true}}},
+					{Name: "text", Required: true, Summary: "markdown: **bold**, __italic__, `code`, [text](https://…), ||spoiler||, \"> \" quote, \">> \" quote that opens on a tap"}},
+				Recipients: []string{"chat"}},
 		},
 	}
 }

@@ -186,3 +186,43 @@ func TestCustomProfileRefusals(t *testing.T) {
 		t.Errorf("kimi was replaced: %+v", p.Label)
 	}
 }
+
+// A local model: a server on the person's own machine takes no key. Its profile is ready by itself, the chat
+// goes straight to the server's address with a word in place of a token, and no key helper or credential of the
+// person's is put in the file.
+func TestLocalProfileLaunchEnvironment(t *testing.T) {
+	s, hooks := customStore(t, map[string]string{})
+	SetCustom([]Preset{{
+		ID: "x-local", Label: "Локальная модель · Ollama", Vendor: wire.VendorOwn, Via: wire.ProviderClaude,
+		BaseURL: "http://127.0.0.1:11434", Host: "127.0.0.1:11434", Custom: true, Local: true,
+		Models: []Model{{ID: "qwen3-coder:30b", Label: "qwen3-coder:30b"}}, Small: "qwen3-coder:30b", Test: "qwen3-coder:30b",
+	}})
+	if !s.Ready("x-local") {
+		t.Fatal("a local model takes no key: its profile is ready as soon as it is added")
+	}
+	path, err := s.SettingsFile("x-local", "qwen3-coder:30b", hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, env := envOf(t, path)
+	want := map[string]string{
+		"ANTHROPIC_BASE_URL":                       "http://127.0.0.1:11434",
+		"ANTHROPIC_MODEL":                          "qwen3-coder:30b",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":            "qwen3-coder:30b",
+		"ANTHROPIC_AUTH_TOKEN":                     "local",
+		"ANTHROPIC_API_KEY":                        "",
+		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+		"KEPT": "1",
+	}
+	for k, v := range want {
+		if got, ok := env[k].(string); !ok || got != v {
+			t.Errorf("%s = %q (%v), want %q", k, got, ok, v)
+		}
+	}
+	if _, helper := settings["apiKeyHelper"]; helper {
+		t.Error("a local model has no key for a helper to read")
+	}
+	if _, window := env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]; window {
+		t.Error("a window the server did not tell is left to Claude Code")
+	}
+}

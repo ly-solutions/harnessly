@@ -142,6 +142,8 @@ export interface IFeedProps extends THandlers {
   failed?: boolean;
   /** Why it did not load, in words. */
   failedReason?: string | null;
+  /** The heading of a feed that could not come; «could not load» by default. */
+  failedTitle?: string;
   onRetryLoad?: () => void;
   hasOlder: boolean;
   loadingOlder: boolean;
@@ -346,6 +348,7 @@ const Feed = (props: IFeedProps) => {
     items,
     failed = false,
     failedReason = null,
+    failedTitle,
     onRetryLoad,
     hasOlder,
     loadingOlder,
@@ -943,7 +946,7 @@ const Feed = (props: IFeedProps) => {
           {items === null && failed && onRetryLoad && (
             <LoadFailed
               size={LOAD_FAILED_SIZE.page}
-              title={t('next.load.feed')}
+              title={failedTitle ?? t('next.load.feed')}
               reason={failedReason ?? t('next.feed.failed')}
               onRetry={onRetryLoad}
             />

@@ -104,4 +104,17 @@ describe('«Общий доступ»', () => {
     expect(writeText).toHaveBeenCalledWith(URL_ANYONE);
     expect(onCopyLink).not.toHaveBeenCalled();
   });
+
+  it("shows an editor the owner lets share the setting, but not the switch: it is a manager's (can.go)", async () => {
+    const editor: IResourceView = {
+      ...owner,
+      role: 'edit',
+      manager: false,
+      can: { view: true, comment: true, edit: true, share: true, general: false, transfer: false },
+    };
+    inRoot(<ResourceShare {...props(editor)} />);
+    const section = (await screen.findByText(t('next.access.general.title'))).closest('section')!;
+    expect(within(section).getByText(t('next.access.general.restricted'))).toBeTruthy();
+    expect(within(section).queryByRole('button', { name: t('next.access.general.scope') })).toBeNull();
+  });
 });

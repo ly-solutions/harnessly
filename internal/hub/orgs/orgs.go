@@ -56,6 +56,9 @@ type Deps struct {
 	EnvChanged func()
 	// PeopleChanged runs after a person's team or role changed: what they may see is different; nil: nothing.
 	PeopleChanged func(userID string)
+	// AccessChanged runs after the teams or roles of a tenant changed: what its people may see of its designs is
+	// different (the bus's access.changed).
+	AccessChanged func(spaceID, userID string)
 	// MemberGone runs after a person left a tenant (their live connections to it are ended); nil: nothing.
 	MemberGone func(spaceID, userID string)
 	// MachineGone runs for each machine revoked because its owner left; nil: nothing.
@@ -74,6 +77,7 @@ type Service struct {
 	onLimits func()
 	onEnv    func()
 	onPeople func(userID string)
+	onAccess func(spaceID, userID string)
 	gone     func(spaceID, userID string)
 	mGone    func(m store.Machine)
 	rates    *rates.Book
@@ -84,7 +88,7 @@ type Service struct {
 
 // New makes the service.
 func New(d Deps) *Service {
-	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, lim: d.Limiter, log: d.Log, now: d.Now, onLimits: d.LimitsChanged, onEnv: d.EnvChanged, onPeople: d.PeopleChanged, rates: d.Rates, features: d.Features, rollout: d.Rollout, bus: d.Events, gone: d.MemberGone, mGone: d.MachineGone}
+	s := &Service{cfg: d.Config, db: d.DB, auth: d.Auth, lim: d.Limiter, log: d.Log, now: d.Now, onLimits: d.LimitsChanged, onEnv: d.EnvChanged, onPeople: d.PeopleChanged, onAccess: d.AccessChanged, rates: d.Rates, features: d.Features, rollout: d.Rollout, bus: d.Events, gone: d.MemberGone, mGone: d.MachineGone}
 	if s.now == nil {
 		s.now = time.Now
 	}

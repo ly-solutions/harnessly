@@ -99,6 +99,10 @@ const cardOf = (
     folder: layout.placed[design.id] ?? null,
     system: layout.systems[design.id] ?? null,
     ...(design.appKind ? { appLabel: design.appKind.title } : {}),
+    ...(design.check && design.check.finishedAt !== null && design.check.broken > 0
+      ? { broken: design.check.broken }
+      : {}),
+    ...(design.release?.upgrade && !design.release.pinned ? { upgrade: design.release.upgrade } : {}),
   };
 };
 

@@ -1,6 +1,6 @@
-// What survives F5 (spec §6): composer drafts, outgoing messages the runtime has not shown yet, and the last six
-// chats (three turns each) with the sidebar's list of the active machine, so the first frame after a reload draws
-// before the network, the list together with the feed. IndexedDB, every call in
+// What survives F5 (spec §6): composer drafts, outgoing messages the runtime has not shown yet, and the last twelve
+// chats (six turns each, enough to read them offline) with the sidebar's list of the active machine, so the
+// first frame after a reload draws before the network, the list together with the feed. IndexedDB, every call in
 // try/catch: in a private window or with storage blocked the page works the same, it only forgets on reload.
 
 import { pageClock } from '@/next/core/clock';

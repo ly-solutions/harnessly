@@ -52,6 +52,7 @@ import { downloadUrl, viewUrl } from '@/next/features/pane/delivered';
 import { saveFrom } from '@/next/features/pane/download';
 import { useAutoDownload } from '@/next/features/chat/auto-download';
 import { linkReason, useConnection, useLinkRestored } from '@/next/stores/connection';
+import { checkNet, useOffline } from '@/next/offline/net';
 import { useBackground, useFeed, useGates, usePictures, useQueue } from '@/next/stores/conversation';
 import { runsByCall, WorkflowRuns } from '@/next/features/workflows/run';
 import { machineApi } from '@/next/core/net/machine';
@@ -231,9 +232,13 @@ const ChatView = ({
   const notFound = feed?.error === 'not-found';
   const wait = useDeadline(items === null && !notFound);
   const failedReason = linkReason(connection) ?? t('next.load.noAnswer');
+  // Offline, a chat this device did not keep cannot come: it says so at once, and opens by itself once the network is
+  // back.
+  const offline = useOffline();
+  const offlineMissing = offline && items === null && !notFound;
   // The feed drawn from the browser's copy until the runtime's snapshot (or the end of its replay) comes; while the
   // machine is offline the strip over the field says why nothing comes, the bar does not run for ever.
-  const catchingUp = feed?.source === 'cached' && !feed.error && connection?.k !== 'offline';
+  const catchingUp = feed?.source === 'cached' && !feed.error && connection?.k !== 'offline' && !offline;
 
   const onLoadSteps = useCallback(
     (turnId: string) => {
@@ -448,9 +453,20 @@ const ChatView = ({
                                     placeKey={conv}
                                     onCopyChatLink={() => copyLink(chatUrl(conv))}
                                     onReloadChat={() => hub.reloadConversation(machine, conv)}
-                                    failed={notFound || wait.expired}
-                                    failedReason={notFound ? null : failedReason}
+                                    failed={notFound || wait.expired || offlineMissing}
+                                    failedTitle={offlineMissing ? t('next.offline.chatTitle') : undefined}
+                                    failedReason={
+                                      offlineMissing
+                                        ? t('next.offline.chatBody')
+                                        : notFound
+                                          ? null
+                                          : failedReason
+                                    }
                                     onRetryLoad={() => {
+                                      if (offlineMissing) {
+                                        void checkNet();
+                                        return;
+                                      }
                                       onRetryLoad();
                                       wait.restart();
                                     }}

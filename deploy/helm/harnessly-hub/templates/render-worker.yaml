@@ -1,0 +1,102 @@
+{{- /*
+The render worker (renderWorker.*, HRN-1798): draws the gallery pictures of design boards whose machine is off. The hub
+holds the queue and the pictures; the worker keeps nothing, so it needs no volume and any number of replicas can run.
+*/}}
+{{- if .Values.renderWorker.enabled }}
+{{- $v := .Values.renderWorker }}
+{{- if not $v.image.tag }}
+{{- fail "renderWorker.image.tag: name a runtime release that has render-worker" }}
+{{- end }}
+{{- $name := printf "%s-render" (include "hub.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- /* Labels of their own: the hub's Service and its pod rules select by hub.selectorLabels and must not take these pods. */}}
+{{- $sel := printf "app.kubernetes.io/name: %s-render\napp.kubernetes.io/instance: %s\napp.kubernetes.io/component: render" (include "hub.name" .) .Release.Name }}
+{{- $secret := include "hub.renderSecretName" . }}
+{{- if not $v.existingSecret }}
+{{- /* Kept across upgrades, like the Postgres password: what is already there, else a new one. */}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $secret }}
+{{- $token := randAlphaNum 48 }}
+{{- if and $existing $existing.data (hasKey $existing.data "token") }}{{- $token = index $existing.data "token" | b64dec }}{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secret }}
+  labels:
+    {{- include "hub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: render
+type: Opaque
+stringData:
+  token: {{ $token | quote }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "hub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: render
+spec:
+  replicas: {{ $v.replicaCount }}
+  selector:
+    matchLabels:
+      {{- $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- $sel | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The runtime image's user agent, by number: Kubernetes checks runAsNonRoot only against a numeric user.
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: render
+          image: "{{ $v.image.repository }}:{{ $v.image.tag }}"
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          args: ["render-worker"]
+          env:
+            - name: HUB_URL
+              value: {{ default (printf "http://%s:%v" (include "hub.fullname" .) .Values.service.port) $v.hubUrl | trimSuffix "/" | quote }}
+            - name: HUB_RENDER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: token
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          {{- with $v.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        # Chrome draws in shared memory; the default 64 MiB is not enough for a large page.
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+      {{- with $v.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $v.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -172,7 +172,8 @@ func TestLibraryChangesLongPoll(t *testing.T) {
 // revision well before the wait ends; so do a revocation and the project's team level.
 func TestLibraryChangesWakeOnAccess(t *testing.T) {
 	old, oldPoll := libraryWait, grantedPoll
-	libraryWait, grantedPoll = 5*time.Second, 20*time.Millisecond
+	// the look at the access tables is an hour away, so only the event of the change can wake the poll.
+	libraryWait, grantedPoll = 5*time.Second, time.Hour
 	t.Cleanup(func() { libraryWait, grantedPoll = old, oldPoll })
 
 	ctx := context.Background()

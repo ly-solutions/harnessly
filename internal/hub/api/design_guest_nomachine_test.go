@@ -173,32 +173,3 @@ func TestDesignGuestNeverReachesTheOwnersMachine(t *testing.T) {
 		t.Fatalf("the live link with the machine off: %s", r)
 	}
 }
-
-// a hub without a store has nothing to serve a guest from: the guest page says so (503) and does not read
-// the machine, which is online and holds the project.
-func TestDesignGuestOnAHubWithoutAStoreIsToldSo(t *testing.T) {
-	s := hubtest.New(t, hubtest.Env("HUB_DESIGN_SHARE_URL", "http://"+shareHost), hubtest.Env("HUB_STORE", "off"))
-	owner := s.SignIn("owner@example.com")
-	space, _ := owner.NewSpace("Studio")
-	a, _ := designMachine(t, s, owner, space)
-	created(a, "shop", "owner@example.com")
-	s.Eventually("the project recorded", func() bool { r, ok := snapshotFor(a, "owner@example.com", "shop"); return ok && r == "owner" })
-	r := owner.Do("POST", "/m/"+a.MachineID+"/api/platform/design/access/shop/shares", map[string]any{"rights": "view"})
-	if r.Code != 201 {
-		t.Fatalf("create link: %s", r)
-	}
-	var l struct{ URL string }
-	r.JSON(&l)
-	path := strings.TrimPrefix(l.URL, "http://"+shareHost)
-	before := machineCalls(a)
-	guest := s.Browser()
-	for _, p := range []string{"/", "/index.json", "/f/Main.dc.html", "/version"} {
-		r := guest.DoAt(s.URL, shareHost, "GET", path+p, nil)
-		if r.Code != http.StatusServiceUnavailable || strings.Contains(string(r.Body), "shop main") {
-			t.Fatalf("a guest on a hub without a store, %s: %s", p, r)
-		}
-	}
-	if n := machineCalls(a) - before; n != 0 {
-		t.Fatalf("a guest reached the owner's machine %d times", n)
-	}
-}

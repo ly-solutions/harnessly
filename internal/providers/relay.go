@@ -128,7 +128,10 @@ func (rl *Relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			req.Header[http.CanonicalHeaderKey(k)] = vs
 		}
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	if token != "" {
+		// A server that takes no key (a local model) is sent none.
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	res, err := rl.client().Do(req)
 	if err != nil {
 		relayError(w, http.StatusBadGateway, "the vendor did not answer")

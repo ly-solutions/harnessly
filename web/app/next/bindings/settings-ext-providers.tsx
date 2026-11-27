@@ -9,6 +9,8 @@ import {
   checkExtDraft,
   checkExtProvider,
   createExtProvider,
+  discoverLocal,
+  LOCAL_PRESET,
   loadExtProviders,
   patchExtProvider,
   refreshExtModels,
@@ -16,12 +18,14 @@ import {
   type IExtModel,
   type IExtPreset,
   type IExtProvider,
+  type ILocalServer,
 } from '@/next/features/settings/ext-providers-api';
 import ExtProvidersSection, {
   type IExtAdd,
   type IExtEdit,
   type TExtProvidersState,
 } from '@/next/features/settings/ext-providers-section';
+import LocalModelCard, { connectedTo, type TLocalState } from '@/next/features/settings/local-model-card';
 import { isRefused } from '@/next/features/settings/platform-answer';
 import { loadSmart } from '@/next/features/settings/smart-api';
 import { t } from '@/next/i18n';
@@ -55,6 +59,67 @@ const useUsage = (machine: MachineId, stamp: number): Readonly<Record<string, re
     };
   }, [machine, stamp]);
   return read?.machine === machine ? read.usage : null;
+};
+
+/** The card of a local model: the servers of the machine, looked for when the page opens and again on «Обновить». */
+const LocalModel = ({
+  machine,
+  providers,
+  onMade,
+  onCheck,
+}: {
+  machine: MachineId;
+  providers: readonly IExtProvider[];
+  onMade: (provider: IExtProvider) => void;
+  onCheck: (id: string) => Promise<unknown>;
+}) => {
+  const [box, setBox] = useState<{ machine: MachineId; state: TLocalState }>({
+    machine,
+    state: { k: 'busy' },
+  });
+  const [attempt, setAttempt] = useState(0);
+  const [address, setAddress] = useState('');
+  // The servers are looked for again for each (machine, address, press of «Обновить»); an answer of an older one is dropped.
+  useEffect(() => {
+    let live = true;
+    void discoverLocal(machine, address).then((res) => {
+      if (!live) return;
+      const refused = refusalOf(res);
+      if (refused === null && 'ok' in res && !isRefused(res.value))
+        setBox({ machine, state: { k: 'ready', found: res.value } });
+      else setBox({ machine, state: { k: 'failed', text: refused ?? t('next.settings.failed') } });
+    });
+    return () => {
+      live = false;
+    };
+  }, [machine, address, attempt]);
+  const state: TLocalState = box.machine === machine ? box.state : { k: 'busy' };
+
+  const connected = providers.filter((p) => p.preset === LOCAL_PRESET);
+  const onScan = (typed: string) => {
+    setBox({ machine, state: { k: 'busy' } });
+    setAddress(typed);
+    setAttempt((n) => n + 1);
+    // What the person connected earlier takes the models the server has now.
+    for (const p of connected) void onCheck(p.id);
+  };
+  const onConnect = async (server: ILocalServer): Promise<string | null> => {
+    if (connectedTo(connected, server)) return null;
+    const res = await createExtProvider(machine, {
+      name: t('next.localModel.accountName', { name: server.name }),
+      baseUrl: server.baseUrl,
+      api: server.api,
+      preset: LOCAL_PRESET,
+      key: '',
+      models: server.models,
+    });
+    const refused = refusalOf(res);
+    if (refused !== null || !('ok' in res) || isRefused(res.value))
+      return refused ?? t('next.settings.failed');
+    onMade(res.value);
+    return null;
+  };
+  return <LocalModelCard state={state} connected={connected} onScan={onScan} onConnect={onConnect} />;
 };
 
 export const ExtProvidersPage = ({ machine }: { machine: MachineId }) => {
@@ -186,7 +251,8 @@ export const ExtProvidersPage = ({ machine }: { machine: MachineId }) => {
   };
 
   let state: TExtProvidersState = { k: 'loading' };
-  if (load.k === 'ready') state = load;
+  // The local model has a card of its own below: it is not offered as a provider to connect with a key.
+  if (load.k === 'ready') state = { ...load, presets: load.presets.filter((p) => p.id !== LOCAL_PRESET) };
   else if (load.k === 'failed')
     state = {
       k: 'failed',
@@ -198,17 +264,22 @@ export const ExtProvidersPage = ({ machine }: { machine: MachineId }) => {
     };
 
   return (
-    <ExtProvidersSection
-      state={state}
-      limits={limits}
-      spend={spend}
-      usage={usage}
-      onAdd={onAdd}
-      onSave={onSave}
-      onRemove={onRemove}
-      onDefault={onDefault}
-      onCheck={onCheck}
-      onRefresh={onRefresh}
-    />
+    <>
+      <ExtProvidersSection
+        state={state}
+        limits={limits}
+        spend={spend}
+        usage={usage}
+        onAdd={onAdd}
+        onSave={onSave}
+        onRemove={onRemove}
+        onDefault={onDefault}
+        onCheck={onCheck}
+        onRefresh={onRefresh}
+      />
+      {load.k === 'ready' && (
+        <LocalModel machine={machine} providers={load.providers} onMade={put} onCheck={onCheck} />
+      )}
+    </>
   );
 };

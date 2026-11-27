@@ -18,6 +18,7 @@ import type { IProjectAccess, IGuestLink } from '@/next/features/designly/access
 import { roleLabel } from '@/next/features/designly/access/labels';
 import { useGuestLinks } from '@/next/features/designly/access/use-guest-links';
 import { useHistory } from '@/next/features/designly/versions/versions-panel';
+import type { IVersionsVia } from '@/next/features/designly/versions/versions-api';
 import { goTo, ROUTE, routePath } from '@/next/routes/routes';
 import { useMe } from '@/next/stores/me';
 import { t } from '@/next/i18n';
@@ -58,6 +59,8 @@ export interface IDesignSideOptions {
   address: string | null;
   kit: { kit: string; kitTitle: string; theme: string; version: string } | null;
   origin: string | null;
+  /** Where the versions are read from: the hub's store while the page shows its copy. */
+  versions?: IVersionsVia;
   mayEdit: boolean;
   onPage: (path: string) => void;
   onShare?: () => void;
@@ -172,7 +175,7 @@ export const useDesignSide = (o: IDesignSideOptions) => {
     on: comments.placing,
     toggle: () => comments.setPlacing(!comments.placing),
   };
-  const history = useHistory(o.machine, o.id, entry?.slot != null);
+  const history = useHistory(o.machine, o.id, entry?.slot != null, o.versions);
   const guests = useGuestLinks(o.access?.canManage ? o.id : null);
   const me = useMe();
   const myName = me.k === 'ready' ? (me.me.name ?? me.me.email ?? '') : '';
@@ -300,6 +303,7 @@ export const useDesignSide = (o: IDesignSideOptions) => {
             error={history.error}
             reload={history.reload}
             onRestored={o.onRestored}
+            via={o.versions}
           />
         );
     }

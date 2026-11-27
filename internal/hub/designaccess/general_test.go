@@ -127,7 +127,8 @@ func TestGeneralAccessMatrix(t *testing.T) {
 	}
 }
 
-// The general link opens the project to anyone: an editor switches it only while the owner lets editors share.
+// The general link opens the project to anyone, so it is a manager's (resaccess/can.go, the board's table): a person
+// without a role and an editor the owner lets share are refused, a manager switches it.
 func TestGeneralAccessNeedsTheRightToShare(t *testing.T) {
 	ctx := context.Background()
 	r := newSpaceRig(t, false)
@@ -145,5 +146,25 @@ func TestGeneralAccessNeedsTheRightToShare(t *testing.T) {
 	r.svc.ServeMachine(w, req, r.mateU, r.owner)
 	if w.Code < 400 {
 		t.Fatalf("a person without the right switched general access on: %d %s", w.Code, w.Body.String())
+	}
+	put := func(role string, editorsCanShare bool) int {
+		if err := r.svc.write(ctx, r.owner, func(t *txn) error {
+			if err := t.setEditorsCanShare("site", r.ownerU.Email, editorsCanShare); err != nil {
+				return err
+			}
+			return t.grant("site", r.ownerU.Email, r.mateU.Email, role, ttl{none: true}, false)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPut, "/m/"+r.owner.ID+"/api/platform/access/design/site/general", strings.NewReader(`{"level":"view"}`))
+		w := httptest.NewRecorder()
+		r.svc.ServeMachine(w, req, r.mateU, r.owner)
+		return w.Code
+	}
+	if code := put(roleEdit, true); code != http.StatusForbidden {
+		t.Fatalf("an editor who may share switched general access on: %d", code)
+	}
+	if code := put(roleManage, false); code != http.StatusOK {
+		t.Fatalf("a manager could not switch general access on: %d", code)
 	}
 }

@@ -102,7 +102,7 @@ func TestDefaultOnUntilARowSaysOff(t *testing.T) {
 	if !g.On(ctx, "hub-design-home", "a@example.com", "m1") {
 		t.Fatal("Sinopia's home in one answer is on with no row")
 	}
-	for _, f := range []string{"hub-search", "hub-apps-catalog", "hub-notices", "hub-design-owner", "hub-stats", "hub-projects", "hub-eval", "connections-shared", "client-api", "prompt-launch", "tbot-join", "preview-slot-host", "hub-board-events"} {
+	for _, f := range []string{"hub-search", "hub-apps-catalog", "hub-notices", "hub-stats", "hub-projects", "hub-eval", "connections-shared", "client-api", "prompt-launch", "tbot-join", "preview-slot-host", "hub-board-events"} {
 		if g.On(ctx, f, "a@example.com", "m1") {
 			t.Fatalf("%s is not in DefaultOn: it stays off with no row", f)
 		}

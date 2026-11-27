@@ -57,6 +57,11 @@ func (p Preset) claudeEnv(base string, model Model) map[string]string {
 		"ANTHROPIC_API_KEY":                        "",
 		"CLAUDE_CODE_OAUTH_TOKEN":                  OAuthStub,
 	}
+	if p.Local && p.Proxied == "" {
+		// A server of the person's own takes no key, yet Claude Code asks for some token (Ollama's own guide sets
+		// one): a word that is no credential, and one that cannot be taken for a subscription's.
+		env["ANTHROPIC_AUTH_TOKEN"] = "local"
+	}
 	if p.Custom && model.Window == 0 {
 		// A provider the person added says nothing of its models' windows: Claude Code keeps its own.
 		delete(env, "CLAUDE_CODE_MAX_CONTEXT_TOKENS")

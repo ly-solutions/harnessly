@@ -13,7 +13,10 @@ package main
 //	PATCH  <platform>/connectors/<id>                     {name} → {connection}
 //	DELETE <platform>/connectors/<id>
 //	GET    <platform>/connector-actions[?rev=N]           {proposals, rev}: with rev, waits up to 25 s for a change
-//	POST   <platform>/connector-actions/<id>/<approve|decline>  → {proposal}
+//	POST   <platform>/connector-actions/<id>/<approve|decline>  → {proposal}; approve?trust=1 also trusts its recipients
+//	GET    <platform>/connector-trusted                   {trusted}: recipients the person lets the agent reach without a card
+//	DELETE <platform>/connector-trusted?connection=&key=   takes one back
+//	GET    /api/cli/connectors/trusted                    {trusted} (the agent reads, never changes it)
 //	GET    <platform>/connector-sends                     {sent} (the journal of sends, newest first)
 //	GET    /api/cli/connectors                            {catalog, connections}
 //	POST   /api/cli/connectors/read                       {connection, tool, args} → {text}
@@ -54,7 +57,6 @@ import (
 	"github.com/ly-solutions/harnessly/internal/connectors/webhook"
 	"github.com/ly-solutions/harnessly/internal/gate"
 	"github.com/ly-solutions/harnessly/internal/locale"
-	"github.com/ly-solutions/harnessly/internal/mcpconn"
 	"github.com/ly-solutions/harnessly/internal/notifybots"
 	"github.com/ly-solutions/harnessly/internal/sameorigin"
 	"github.com/ly-solutions/harnessly/internal/wire"
@@ -82,8 +84,9 @@ func connectorsFor(d deps) *connectors.Service {
 		return "connector " + strings.TrimPrefix(name, "connector-")
 	}}
 	webhook.Base = func() string { return webhookBase(d.DataDir) }
-	// The MCP connections of this runtime, for poll recipes.
-	mcprecipe.Service = mcpconn.New(d.DataDir, nil, nil)
+	// The MCP connections of this runtime, for poll recipes: the runtime's one service with the safe, so a
+	// server signed in with a key or OAuth answers the poll, and token refreshes share its locks.
+	mcprecipe.Service = recipeMCP(d)
 	s := connectors.New(filepath.Join(d.DataDir, "connectors"), sec, connections.NewHTTP(nil).Client)
 	header := os.Getenv("RUNTIME_AGENT_TOKEN_HEADER")
 	s.Start(context.Background(),
@@ -188,6 +191,7 @@ func connectorRoutes(d deps, c *core) []gate.Route {
 	}
 	base, actionsBase := platformAPI+"/connectors", platformAPI+"/connector-actions"
 	sendsBase, cliBase := platformAPI+"/connector-sends", "/api/cli/connectors"
+	trustedBase := platformAPI + "/connector-trusted"
 	under := func(r *http.Request, p string) (string, bool) {
 		for _, prefix := range []string{p + "/", "/agents" + p + "/"} {
 			if rest, ok := strings.CutPrefix(r.URL.Path, prefix); ok && rest != "" {
@@ -346,13 +350,44 @@ func connectorRoutes(d deps, c *core) []gate.Route {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), connectorCallMax)
 		defer cancel()
-		p, err := svc.Answer(ctx, id, verb == "approve")
+		var p connectors.Proposal
+		var err error
+		if verb == "approve" && r.URL.Query().Get("trust") == "1" {
+			p, err = svc.AnswerTrusting(ctx, id)
+		} else {
+			p, err = svc.Answer(ctx, id, verb == "approve")
+		}
 		if err != nil {
 			connectorRefusal(w, err)
 			return
 		}
 		agent.Log("info", "connectors: the person answered an action", agent.F{K: "proposal", V: id}, agent.F{K: "state", V: p.State})
 		secretJSON(w, http.StatusOK, map[string]any{"proposal": p})
+	}
+
+	trusted := func(w http.ResponseWriter, r *http.Request) {
+		if !pageOK(w, r) {
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+		case http.MethodDelete:
+			q := r.URL.Query()
+			if err := svc.Untrust(q.Get("connection"), q.Get("key")); err != nil {
+				connectorRefusal(w, err)
+				return
+			}
+			agent.Log("info", "connectors: the person took a trust back", agent.F{K: "connection", V: q.Get("connection")})
+		default:
+			notAllowed(w)
+			return
+		}
+		list, err := svc.TrustedList()
+		if err != nil {
+			connectorRefusal(w, err)
+			return
+		}
+		secretJSON(w, http.StatusOK, map[string]any{"trusted": list})
 	}
 
 	sends := func(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +466,13 @@ func connectorRoutes(d deps, c *core) []gate.Route {
 		switch {
 		case rest == "" && r.Method == http.MethodGet:
 			listing(w, r, false)
+		case rest == "trusted" && r.Method == http.MethodGet:
+			list, err := svc.TrustedList()
+			if err != nil {
+				connectorRefusal(w, err)
+				return
+			}
+			secretJSON(w, http.StatusOK, map[string]any{"trusted": list})
 		case rest == "read" && r.Method == http.MethodPost:
 			var b struct {
 				Connection string            `json:"connection"`
@@ -486,6 +528,7 @@ func connectorRoutes(d deps, c *core) []gate.Route {
 		{Match: func(r *http.Request) bool { _, ok := under(r, base); return pathIs(r, base) || ok }, Handler: http.HandlerFunc(page)},
 		{Match: func(r *http.Request) bool { _, ok := under(r, actionsBase); return pathIs(r, actionsBase) || ok }, Handler: http.HandlerFunc(actions)},
 		{Match: func(r *http.Request) bool { return pathIs(r, sendsBase) }, Handler: http.HandlerFunc(sends)},
+		{Match: func(r *http.Request) bool { return pathIs(r, trustedBase) }, Handler: http.HandlerFunc(trusted)},
 		{Match: func(r *http.Request) bool { return pathIs(r, platformAPI+"/connector-webhook") }, Handler: http.HandlerFunc(incoming)},
 		{Match: func(r *http.Request) bool { _, ok := under(r, cliBase); return pathIs(r, cliBase) || ok }, Handler: http.HandlerFunc(cli)},
 	}
@@ -548,3 +591,6 @@ func telegramHooks(d deps, c *core) telegram.Hooks {
 		Russian: func() bool { return locale.Pick("en", "ru") == "ru" },
 	}
 }
+
+// recipeMCP is what poll recipes call: the runtime's MCP service, credentials and all.
+func recipeMCP(d deps) mcprecipe.MCP { return mcpFor(d) }

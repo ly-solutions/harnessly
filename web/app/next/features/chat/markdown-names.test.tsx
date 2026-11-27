@@ -15,6 +15,7 @@ vi.mock('@/platform/config', () => ({
     paneHosts: [],
     defaultPins: [],
   }),
+  appBasePath: () => '/',
 }));
 
 const cards = vi.hoisted(() => ({ title: null as string | null }));

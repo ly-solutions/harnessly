@@ -481,44 +481,24 @@ func asciiFileName(name string) string {
 	return b.String()
 }
 
-// DeckExportFile is GET ?artifact=&job= (view): the finished file as an attachment named after the deck's title.
-func (a *API) DeckExportFile(w http.ResponseWriter, r *http.Request) {
-	if !a.imageGuard(w, r) {
-		return
-	}
-	artifact := QueryString(r, "artifact")
-	if !IsLibraryID(artifact) {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	if a.denyImage(w, r, artifact) {
-		return
-	}
-	j, path, ok := a.L.DeckExportJobOf(artifact, QueryString(r, "job"))
+// ExportDownload is a finished export as it is handed over: its file, its name after the deck's title, its type and
+// the Content-Disposition of the download. The hub's render worker hands an export over the same way.
+type ExportDownload struct {
+	Path, Name, Type, Disposition string
+}
+
+// DeckExportDownload is the download of a finished job; false when there is none.
+func (l *Library) DeckExportDownload(artifact, id string) (ExportDownload, bool) {
+	j, path, ok := l.DeckExportJobOf(artifact, id)
 	if !ok || j.State != DeckJobDone || path == "" {
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+		return ExportDownload{}, false
 	}
 	ext := strings.TrimPrefix(filepath.Ext(path), ".")
 	if j.Format == DeckExportPNG && j.Board == "" {
 		ext = "zip"
 	}
-
 	title := ""
-	if art := a.L.ReadArtifact(artifact); art != nil {
+	if art := l.ReadArtifact(artifact); art != nil {
 		title = art.Title
 		for _, b := range art.Boards {
 			if j.Board != "" && (b.ID == j.Board || b.Path == j.Board) && b.Title != "" {
@@ -534,10 +514,46 @@ func (a *API) DeckExportFile(w http.ResponseWriter, r *http.Request) {
 	if ctype == "" {
 		ctype = mime.TypeByExtension("." + ext)
 	}
+	return ExportDownload{Path: path, Name: name, Type: ctype,
+		Disposition: `attachment; filename="` + asciiFileName(name) + `"; filename*=UTF-8''` + rfc5987(name)}, true
+}
+
+// DeckExportFile is GET ?artifact=&job= (view): the finished file as an attachment named after the deck's title.
+func (a *API) DeckExportFile(w http.ResponseWriter, r *http.Request) {
+	if !a.imageGuard(w, r) {
+		return
+	}
+	artifact := QueryString(r, "artifact")
+	if !IsLibraryID(artifact) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if a.denyImage(w, r, artifact) {
+		return
+	}
+	d, ok := a.L.DeckExportDownload(artifact, QueryString(r, "job"))
+	if !ok {
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	f, err := os.Open(d.Path)
+	if err != nil {
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	h := w.Header()
-	h.Set("Content-Type", ctype)
+	h.Set("Content-Type", d.Type)
 	h.Set("Cache-Control", "private, no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Disposition", `attachment; filename="`+asciiFileName(name)+`"; filename*=UTF-8''`+rfc5987(name))
+	h.Set("Content-Disposition", d.Disposition)
+	name := d.Name
 	http.ServeContent(w, r, name, st.ModTime(), f)
 }

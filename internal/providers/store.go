@@ -283,6 +283,10 @@ func (s *Store) Ready(id string) bool {
 	if s.Configured(id) {
 		return true
 	}
+	if p, ok := Find(id); ok && p.Local {
+		// A server of the person's own takes no key: there is nothing to wait for.
+		return true
+	}
 	if p, ok := Find(id); ok && p.Custom && p.ownCredential() {
 		return true
 	}

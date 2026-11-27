@@ -273,3 +273,34 @@ func qrToken(t *testing.T) qrlogin.Token {
 	t.Helper()
 	return qrlogin.NewToken([]byte("0123456789abcdef0123456789abcdef"), int(time.Now().Add(time.Minute).Unix()))
 }
+
+func TestStyledHTML(t *testing.T) {
+	text, ents, err := styled("<b>Фильм</b>\n<blockquote expandable>о чём он</blockquote>", "html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "Фильм\nо чём он" {
+		t.Fatalf("text = %q", text)
+	}
+	var bold, quote bool
+	for _, e := range ents {
+		switch e := e.(type) {
+		case *tg.MessageEntityBold:
+			bold = true
+		case *tg.MessageEntityBlockquote:
+			quote = e.Collapsed
+		}
+	}
+	if !bold || !quote {
+		t.Fatalf("entities = %#v", ents)
+	}
+	if text, ents, _ := styled("**как есть**", "plain"); text != "**как есть**" || ents != nil {
+		t.Fatalf("plain = %q %v", text, ents)
+	}
+	if text, ents, _ := styled("**Фильм**\n>> о чём он", ""); text != "Фильм\nо чём он" || len(ents) != 2 {
+		t.Fatalf("markdown = %q %#v", text, ents)
+	}
+	if _, _, err := styled("x", "rtf"); err == nil {
+		t.Fatal("an unknown format must be refused")
+	}
+}

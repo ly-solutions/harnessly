@@ -1,0 +1,75 @@
+/* Settings → «Провайдеры» → «Локальная модель» (features/settings/local-model-card.tsx): the servers found on
+   this machine, each with its models and «Подключить», and the field of an address of the person's own. */
+.hx-local {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.hx-local__lead,
+.hx-local__none {
+  margin: 0;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-sm);
+  line-height: 1.5;
+}
+.hx-local__server {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hx-border);
+  border-radius: 12px;
+}
+.hx-local__server[data-on] {
+  border-color: var(--hx-border-strong);
+  background: var(--hx-bg-raised);
+}
+.hx-local__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.hx-local__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--hx-fg-1);
+  font-size: var(--hx-text-sm);
+  font-weight: 500;
+}
+.hx-local__addr {
+  color: var(--hx-fg-3);
+  font-family: var(--hx-font-mono);
+  font-size: 12px;
+  font-weight: 400;
+}
+.hx-local__models {
+  overflow-wrap: anywhere;
+  color: var(--hx-fg-3);
+  font-size: 12.5px;
+}
+.hx-local__warn {
+  color: var(--hx-warning);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.hx-local__on {
+  flex: none;
+  color: var(--hx-fg-3);
+  font-size: var(--hx-text-sm);
+}
+.hx-local__form {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 520px) {
+  .hx-local__form,
+  .hx-local__server {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

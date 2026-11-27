@@ -127,10 +127,9 @@ func runDesignSharing(t *testing.T, sub bool) {
 			t.Fatalf("trust the member's machine: %s", r)
 		}
 	}
-	// hub-design-home opens the long poll of the library; hub-design-owner lists a recorded project from the hub's own
-	// rows, which the test needs: no store holds the files of the machines here.
+	// hub-design-home opens the long poll of the library.
 	for _, p := range []*hubtest.Person{owner, member} {
-		for _, feature := range []string{"hub-design-home", "hub-design-owner"} {
+		for _, feature := range []string{"hub-design-home"} {
 			if r := owner.Do("PUT", "/api/admin/switches", map[string]any{"feature": feature, "person": p.Email, "enabled": true}); r.Code != 204 {
 				t.Fatalf("switch %s for %s: %s", feature, p.Email, r)
 			}

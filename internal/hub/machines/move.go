@@ -187,12 +187,9 @@ func (s *Service) applyMove(ctx context.Context, st store.Store, p *auth.Princip
 	if err := st.MoveMachine(ctx, m.ID, plan.To.ID, req.TeamID); err != nil {
 		return err
 	}
-	// With the store, the designs' files are the space's and their records stay with them; without it a project is the
-	// machine's and goes with it.
-	if !s.cfg.Store.Off {
-		if err := st.LeaveDesigns(ctx, m, plan.To.ID, s.now().UTC()); err != nil {
-			return err
-		}
+	// The designs' files are the space's (the store), and their records stay with them.
+	if err := st.LeaveDesigns(ctx, m, plan.To.ID, s.now().UTC()); err != nil {
+		return err
 	}
 	if len(plan.AccessRevoked) > 0 {
 		if err := st.SetMachineAccess(ctx, m.ID, nil, s.now().UTC()); err != nil {

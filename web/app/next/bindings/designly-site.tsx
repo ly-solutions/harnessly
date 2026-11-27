@@ -2,7 +2,10 @@
 // history, and the page on screen shown in a preview slot. The slot is opened once per load; switching pages inside it
 // only moves the frame to the page's plain address, which skips the ticket round trip and its redirect. Anyone taking
 // the slot meanwhile (another preview, another window) or its cookie nearing its end opens it anew on the next switch.
+import { othersLease, useEditLease } from '@/next/features/designly/use-edit-lease';
 import { preloadDesign } from '@/next/features/designly/offline-download';
+import OfflineDesign from '@/next/features/designly/offline-design';
+import { useOffline } from '@/next/offline/net';
 import { ReplyMachine } from '@/next/features/composer/reply-field';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import SiteView, {
@@ -13,7 +16,7 @@ import SiteView, {
 } from '@/next/features/designly/site-view';
 import { usePackExport } from '@/next/features/designly/pack-dialogs';
 import { ACCESS, useProjectAccess } from '@/next/features/designly/access/use-access';
-import { ROLE, claimOwnership, fetchAccess, isUnowned } from '@/next/features/designly/access/api';
+import { ROLE, claimOwnership, fetchAccess, isUnowned, mayDo } from '@/next/features/designly/access/api';
 import ShareDialog from '@/next/features/designly/access/share-dialog';
 import { guestViewOf } from '@/next/features/designly/access/guest-view';
 import { LINK_KIND, type ILinkContext } from '@/next/features/designly/access/link-form';
@@ -43,12 +46,14 @@ import {
   awayIsFinal,
   awayIsSilent,
   MACHINE_PATIENCE_MS,
+  MACHINE_SAID,
   PROJECT_FROM,
   createProjectReads,
   PROJECT_READ,
   readProject,
   useStorePush,
   type TAway,
+  type TMachineSaid,
 } from '@/next/features/designly/project-read';
 import { LIBRARY_PAGE_SLOT, LIBRARY_PANE_SLOT, slotLeases } from '@/next/features/pane/slot-lease';
 import type { IStageOptions } from '@/next/bindings/site-stage';
@@ -77,6 +82,7 @@ import {
   changeProjectKit,
   KIT_ACTION,
   KIT_DRAFT_VERSION,
+  versionsVia,
 } from '@/next/features/designly/versions/versions-api';
 import { useDesignSide } from '@/next/features/designly/panel/use-design-side';
 import DesignlyVideo from '@/next/bindings/designly-video';
@@ -112,6 +118,10 @@ const ENTER_WAIT_MS = 6000;
 const RETRY_STEPS_MS = [500, 1000, 2000, 4000, 4000, 4000];
 /** How often a project not in the store yet is looked for while its card is shown. */
 const AWAY_POLL_MS = 15_000;
+/** How often an editor's machine is read again while the hub's copy stands in for the project (GitHub #193): sooner
+ *  once the editing mode is asked for. */
+const ARRIVING_MS = 5_000;
+const ARRIVING_ASKED_MS = 1_500;
 
 interface IProject {
   design: IDesign;
@@ -211,7 +221,8 @@ const DesignlySiteInner = ({
   });
   const [project, setProject] = useState<IProject | null>(start.project);
   /** The project is shown from the hub's last snapshot, not from its machine: when it was made, ms. */
-  const [snapshot, setSnapshot] = useState<{ at: number } | null>(null);
+  // What the person's machine has said meanwhile (GitHub #193): an editor's project on its way, or the machine down.
+  const [snapshot, setSnapshot] = useState<{ at: number; machine: TMachineSaid } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // The kit the project is made from: its chip on the bar, «Из кита» on a picked element, «Показать макет».
   const kitLink = useKitLink(machine, id);
@@ -379,7 +390,18 @@ const DesignlySiteInner = ({
         setAway(null);
         loaded.current = true;
         onSnapshot.current = fromHub;
-        setSnapshot(fromHub ? { at: read.design.updatedAt } : null);
+        // A machine found down stays so while the next look waits for it again: the words do not flicker meanwhile.
+        setSnapshot((was) =>
+          state.from === PROJECT_FROM.store
+            ? {
+                at: read.design.updatedAt,
+                machine:
+                  state.machine === MACHINE_SAID.waiting && was?.machine === MACHINE_SAID.down
+                    ? MACHINE_SAID.down
+                    : state.machine,
+              }
+            : null,
+        );
         setProject(read);
         const first = seedTabs(read.design.boards);
         if (!seeded.current && first.length > 0) {
@@ -544,12 +566,24 @@ const DesignlySiteInner = ({
   const slotOrigin = opened?.origin ?? null;
   const slotError = opened?.error ?? null;
   const gated = gate.state.k === ACCESS.ready ? gate.state.access : null;
+  const roleEdits = gate.state.k === ACCESS.absent || (gated !== null && mayDo(gated, 'edit'));
   // The hub's snapshot is only looked at: a save goes to the machine, and the machine is not answering.
-  const mayEdit =
-    snapshot === null &&
-    (gate.state.k === ACCESS.absent ||
-      (gated !== null &&
-        (gated.role === ROLE.owner || gated.role === ROLE.manage || gated.role === ROLE.edit)));
+  const mayEdit = snapshot === null && roleEdits;
+  // An editor whose machine has not got the project yet (a role just given, its sync on the way: GitHub #193) sees the
+  // hub's copy. That is no reason to ask for access: «Редактировать» stays, the machine is read again until the project
+  // comes, and the editing mode asked for meanwhile opens by itself then.
+  const arriving = snapshot !== null && gated !== null && roleEdits;
+  // Editing happens on the person's own machine, never on the owner's: when theirs is off (or there is none), the page
+  // says so plainly instead of promising the project is on its way, and still opens the editing mode once it answers.
+  const machineDown = arriving && snapshot?.machine === MACHINE_SAID.down;
+  // A machine still to answer is let finish its read (its wait ends in «down» at worst) before the next one starts.
+  const machineWaiting = snapshot?.machine === MACHINE_SAID.waiting;
+  useEffect(() => {
+    if (!arriving || machineWaiting) return;
+    const wait = machineDown ? AWAY_POLL_MS : asked ? ARRIVING_ASKED_MS : ARRIVING_MS;
+    const timer = setTimeout(() => setAttempt((n) => n + 1), wait);
+    return () => clearTimeout(timer);
+  }, [arriving, machineWaiting, machineDown, asked, attempt]);
   // A design is looked at unless the editing mode is asked for (and may be): the pane of a chat always edits, one
   // opened from a chat edits as that chat last had it (design-mode).
   const editing = snapshot === null && (pane !== undefined || (asked && mayEdit) || onMode === undefined);
@@ -572,6 +606,10 @@ const DesignlySiteInner = ({
   // Editing asks the store too: its last revision is the board on screen while the machine opens the slot for editing.
   const storeAt = useStoreHead(machine, id, true);
   const storeRev = viewing && storeAt.k === STORE_AT.at ? storeAt.rev : null;
+  // Who edits the project now: this page holds the lease while it edits, the others name the holder.
+  const editLease = othersLease(
+    useEditLease(id, editing, gated !== null && card === undefined && storeAt.k === STORE_AT.at),
+  );
   const offlineTitle = project?.design.kind === 'scene3d' ? undefined : project?.design.title;
   useEffect(() => {
     if (!granted || storeRev === null || offlineTitle === undefined || snapshot !== null) return;
@@ -924,6 +962,7 @@ const DesignlySiteInner = ({
     address: shareUrl,
     kit: kitLink,
     origin: slotOrigin,
+    versions: versionsVia({ storeRev, snapshot: snapshot !== null }, card),
     mayEdit,
     onPage: navigate,
     onShare: gated !== null ? () => setShareOpen(true) : undefined,
@@ -954,18 +993,7 @@ const DesignlySiteInner = ({
     );
   }
   if (missing && project === null && granted && exhausted && away !== null) {
-    return (
-      <ProjectAway
-        key={`${id}:${away}`}
-        project={id}
-        card={card}
-        page={own?.page ?? null}
-        onPage={own ? (page) => goTo({ ...own, page }) : undefined}
-        why={away}
-        ownerName={gated?.ownerName ?? ''}
-        onBack={back}
-      />
-    );
+    return <ProjectAway key={`${id}:${away}`} why={away} ownerName={gated?.ownerName ?? ''} onBack={back} />;
   }
 
   // «Опубликовать как сайт» lives in «Поделиться», where a manager edits a site design.
@@ -1024,7 +1052,8 @@ const DesignlySiteInner = ({
     if (pane || !onMode) return undefined;
     const state = t(modeStateKey(modeKindOf(project?.design.kind), editing));
     if (editing) return { state, editing, versions, action: { onClick: () => setMode(false), ask: false } };
-    if (mayEdit) return { state, editing, versions, action: { onClick: () => setMode(true), ask: false } };
+    if (mayEdit || arriving)
+      return { state, editing, versions, action: { onClick: () => setMode(true), ask: false } };
     return {
       state,
       editing,
@@ -1259,7 +1288,26 @@ const DesignlySiteInner = ({
       {packOut.dialog}
       {snapshot !== null && (
         <div className="hx-snapshot" role="status">
-          {t('next.site.snapshot', { time: snapshotTime(snapshot.at) })}
+          {t(
+            machineDown
+              ? 'next.site.editorOffline'
+              : arriving
+                ? 'next.site.arriving'
+                : snapshot.machine === MACHINE_SAID.absent
+                  ? 'next.site.snapshotView'
+                  : 'next.site.snapshot',
+            {
+              time: snapshotTime(snapshot.at),
+            },
+          )}
+        </div>
+      )}
+      {snapshot === null && editLease !== null && (
+        <div className="hx-snapshot" role="status" data-lease="">
+          {t(editLease.machineName ? 'next.site.leaseOn' : 'next.site.lease', {
+            name: editLease.name,
+            machine: editLease.machineName,
+          })}
         </div>
       )}
       {gated !== null && (oneDialog !== null || onePending) && (
@@ -1329,7 +1377,19 @@ const useCardOf = (id: string): string | undefined => {
   return route.kind === ROUTE.site && route.id === id ? route.card : undefined;
 };
 
+/**
+ * Opened without a network, a design shows its offline copy. A live design stays live when the network
+ * goes (what is drawn stays drawn); a copy gives way to the live design as soon as the network is back.
+ */
 const DesignlySiteBody = (props: IBodyProps) => {
+  const offline = useOffline();
+  const [fromCopy, setFromCopy] = useState(offline);
+  if (fromCopy && !offline) setFromCopy(false);
+  if (fromCopy) return <OfflineDesign machine={props.machine} id={props.id} onBack={props.pane?.onBack} />;
+  return <DesignlySiteLive {...props} />;
+};
+
+const DesignlySiteLive = (props: IBodyProps) => {
   const card = useCardOf(props.id);
   const gate = useProjectAccess(props.id, card);
   const ownerSource =

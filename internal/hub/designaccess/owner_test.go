@@ -8,7 +8,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
-// with the switch hub-design-owner on, a machine that is off (or gone) does not take its projects out of the
+// a machine that is off (or gone) does not take its projects out of the
 // library: the hub lists every recorded project from its own rows, with the facts a record last gave it.
 func TestHubKeepsTheProjectsOfAMachineThatIsOff(t *testing.T) {
 	ctx := context.Background()
@@ -21,12 +21,6 @@ func TestHubKeepsTheProjectsOfAMachineThatIsOff(t *testing.T) {
 	// The store has no file of them at all: the machine never synced, and it is off.
 	r.svc.UseView(&fakeLibrary{})
 
-	// Off (the default): the library is the store's files, nothing of the rows.
-	if got := askLibrary(t, r, r.ownerU, r.owner).Artifacts; len(got) != 0 {
-		t.Fatalf("the switch is off and the hub lists %+v", got)
-	}
-
-	r.svc.ownerOn = func(context.Context, string, string) bool { return true }
 	if ok, err := r.svc.RecordMeta(ctx, r.owner, "deck-one", Meta{Title: "Питч", Kind: "deck", Preview: "cover.png", At: 1000}, MetaByMachine); err != nil || !ok {
 		t.Fatalf("RecordMeta: %v %v", ok, err)
 	}
@@ -94,9 +88,9 @@ func TestTakeWorkMovesTheWorkingCopy(t *testing.T) {
 		t.Fatal(done, err)
 	}
 	if err := r.svc.TakeWork(ctx, r.ownerU, r.owner, "deck-one"); err == nil {
-		t.Fatal("the switch is off and the working copy moved")
+		t.Fatal("the working copy moved on a hub that does not serve the store")
 	}
-	r.svc.ownerOn = func(context.Context, string, string) bool { return true }
+	r.svc.UseView(&fakeLibrary{})
 	if err := r.svc.TakeWork(ctx, r.ownerU, r.owner, "ghost"); err == nil {
 		t.Fatal("a project nobody recorded was taken")
 	}
@@ -115,7 +109,7 @@ func TestTakeWorkMovesTheWorkingCopy(t *testing.T) {
 	}
 }
 
-func TestOwnerEditorFindsPersonalSourceWithStoreOff(t *testing.T) {
+func TestOwnerEditorFindsPersonalSourceUnshared(t *testing.T) {
 	ctx := context.Background()
 	r := newSpaceRig(t, false)
 	project := "qa-two-pages"

@@ -4,6 +4,7 @@ import { WordedError } from '@/next/core/net/worded';
 import {
   AWAY,
   awayIsFinal,
+  MACHINE_SAID,
   PROJECT_FROM,
   PROJECT_READ,
   readProject,
@@ -127,7 +128,7 @@ describe('readProject (HRN-1308)', () => {
       () => after(100, { ...copy('p1'), metadataOnly: true }),
     );
     await vi.advanceTimersByTimeAsync(300);
-    expect(shown).toEqual([{ k: PROJECT_READ.away, why: AWAY.absentStoreOff, machineError: null }]);
+    expect(shown).toEqual([{ k: PROJECT_READ.away, why: AWAY.absentUnreadable, machineError: null }]);
   });
 
   it('a machine without the project sends the read to the store at once', async () => {
@@ -198,30 +199,24 @@ describe('readProject (HRN-1308)', () => {
     }
   });
 
-  // GitHub #82: a hub with no store and a machine closed to the person are not «on its way».
-  it('names a hub without a store and a machine that refuses the person', async () => {
-    const storeOff = () =>
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(Object.assign(new Error('off'), { body: { code: 'store_off' } })), 10),
-      );
+  // GitHub #82: a machine closed to the person is not «on its way».
+  it('names a machine that refuses the person', async () => {
+    const storeFails = () =>
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('down')), 10));
     const denied = () =>
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new WordedError('Forbidden', 'http', null, 403)), 10),
       );
     const cases = [
-      { machine: () => after(10, library()), store: storeOff, why: AWAY.absentStoreOff },
-      { machine: () => failAfter(10, 'off'), store: storeOff, why: AWAY.silentStoreOff },
       { machine: denied, store: () => after(10, copy()), why: AWAY.machineDenied },
-      { machine: denied, store: storeOff, why: AWAY.machineDenied },
+      { machine: denied, store: storeFails, why: AWAY.machineDenied },
     ];
     for (const c of cases) {
       const { shown } = run(c.machine, c.store);
       await vi.advanceTimersByTimeAsync(WAITS.machine + 100);
       expect(shown.map((s) => (s.k === PROJECT_READ.away ? s.why : s.k))).toEqual([c.why]);
     }
-    expect(awayIsFinal(AWAY.absentStoreOff)).toBe(true);
     expect(awayIsFinal(AWAY.machineDenied)).toBe(true);
-    expect(awayIsFinal(AWAY.silentStoreOff)).toBe(false);
     expect(awayIsFinal(AWAY.absentNoCopy)).toBe(false);
   });
 
@@ -229,7 +224,70 @@ describe('readProject (HRN-1308)', () => {
     const denied = () => Promise.reject(new WordedError('Forbidden', 'http', null, 403));
     const { shown } = run(denied, () => after(10, copy('p1')));
     await vi.advanceTimersByTimeAsync(100);
-    expect(shown).toEqual([{ k: PROJECT_READ.open, from: PROJECT_FROM.store, design: design('p1') }]);
+    expect(shown).toEqual([
+      { k: PROJECT_READ.open, from: PROJECT_FROM.store, design: design('p1'), machine: MACHINE_SAID.down },
+    ]);
+  });
+});
+
+// GitHub #193: an editor sees the hub's copy until the project is on their machine. The copy says what the machine
+// said, so the page tells «on its way» from «your machine is off» and never sends an editor to ask for access.
+describe('readProject: the machine’s word with the store’s copy (GitHub #193)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const saids = (shown: TProjectRead[]) =>
+    shown.map((s) => (s.k === PROJECT_READ.open && s.from === PROJECT_FROM.store ? s.machine : s.k));
+
+  it('a machine without the project yet: the copy says it is on its way', async () => {
+    const { shown } = run(
+      () => after(100, library('other')),
+      () => after(100, copy('p1')),
+    );
+    await vi.advanceTimersByTimeAsync(300);
+    expect(saids(shown)).toEqual([MACHINE_SAID.absent]);
+  });
+
+  it('a machine that is off: the copy says so', async () => {
+    const { shown } = run(
+      () => failAfter(100, 'machine offline'),
+      () => after(100, copy('p1')),
+    );
+    await vi.advanceTimersByTimeAsync(300);
+    expect(saids(shown)).toEqual([MACHINE_SAID.down]);
+  });
+
+  it('a slow machine: the copy first waits for it, then says what it answered', async () => {
+    const { shown } = run(
+      () => after(5000, library('other')),
+      () => after(100, copy('p1')),
+    );
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(saids(shown)).toEqual([MACHINE_SAID.waiting]);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(saids(shown)).toEqual([MACHINE_SAID.waiting, MACHINE_SAID.absent]);
+  });
+
+  it('a machine that hangs: the copy says it is down once the machine was waited for', async () => {
+    const { shown } = run(
+      () => never<IDesignLibrary>(),
+      () => after(100, copy('p1')),
+    );
+    await vi.advanceTimersByTimeAsync(WAITS.machine - 100);
+    expect(saids(shown)).toEqual([MACHINE_SAID.waiting]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(saids(shown)).toEqual([MACHINE_SAID.waiting, MACHINE_SAID.down]);
+  });
+
+  it('a slow machine that brings the project: the copy is replaced, not said again', async () => {
+    const { shown } = run(
+      () => after(5000, library('p1')),
+      () => after(100, copy('p1')),
+    );
+    await vi.advanceTimersByTimeAsync(WAITS.machine + 100);
+    expect(shown.map((s) => (s.k === PROJECT_READ.open ? s.from : s.k))).toEqual([
+      PROJECT_FROM.store,
+      PROJECT_FROM.machine,
+    ]);
   });
 });
 

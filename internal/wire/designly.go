@@ -278,6 +278,29 @@ type DesignArtifact struct {
 	// AppKind is the app's document type the project is (a type made of Sinopia's site): its label in the
 	// library and on the project; absent for a project of Sinopia's own.
 	AppKind *DesignAppKind `json:"appKind,omitempty"`
+	// Check is the last check of its boards and Release the vendor release it is on: facts of the project the
+	// machine records to the hub, so the card shows them with the machine off; absent before the first check, and
+	// Release from a runtime without releases.
+	Check   *DesignCheck   `json:"check,omitempty"`
+	Release *DesignRelease `json:"release,omitempty"`
+}
+
+// DesignCheck is the last check of a project's boards: done of total checked, broken and warnings among them; FinishedAt
+// is null while it runs, Failure why it stopped.
+type DesignCheck struct {
+	FinishedAt *int64  `json:"finishedAt"`
+	Done       int     `json:"done"`
+	Total      int     `json:"total"`
+	Broken     int     `json:"broken"`
+	Warnings   int     `json:"warnings"`
+	Failure    *string `json:"failure"`
+}
+
+// DesignRelease is the vendor release a project is on; Upgrade names a newer stable one it may move to.
+type DesignRelease struct {
+	Current string  `json:"current"`
+	Pinned  bool    `json:"pinned"`
+	Upgrade *string `json:"upgrade"`
 }
 
 // DesignAppKind is an app's document type as a project of the library carries it.

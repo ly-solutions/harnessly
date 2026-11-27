@@ -9,6 +9,8 @@ pages) to someone without an account. The hub keeps these records; the machine's
 - A stored project is open to the space at the deployment's team level (`HUB_DESIGN_DEFAULT_TEAM_LEVEL`, `none` by
   default) until its owner changes that (`view`, `comment`, `edit`, `none`). Editors may share; only the owner and
   managers change the team level and members.
+- What a role may do is the hub's one table (docs/hub/resource-access.md, `resaccess/can.go`), given to the page as
+  `can`. A steward of the home team (its lead, the admin of its organization) is a manager there: may share and edit.
 - The team level counts only for the people who may open the machine the project is recorded on: with
   `HUB_ACCESS_ENFORCE=on` a private machine (its access list, or the owner's rule `own-work` for a role) keeps its
   projects out of everyone else's library, snapshot and store reads. The owner, a grant by name and a grant to a team
@@ -84,7 +86,7 @@ opens again if they come back. Someone who is no member of a space is in none of
 «Общий доступ» in the share dialog is the client link, the way Google Docs has it: «Доступ ограничен» or «Все, у кого
 есть ссылка» with a level, view or comment. On, it is a guest link like the others (the guest reads the store, the
 owner's machine is not asked), marked `general`, never listed among the links; the dialog's «Копировать ссылку» copies
-its address. `PUT …/access/design/<project>/general {level}` sets it: `none` revokes it and keeps the row, so switching
+its address. `PUT …/access/design/<project>/general {level}` sets it, a manager or the owner only: `none` revokes it and keeps the row, so switching
 it on again opens the same address. The apps' checks stop it as any live link. Documents and boards have the same row
 (docs/hub/resource-access.md).
 
@@ -103,10 +105,6 @@ in a page of its own, never as «the machine is unavailable»:
 | the project is not in the store yet (the machine's sync has not put it there) | `404` | «Проект ещё не опубликован» |
 | a link pinned to a version of git, made before the library moved to the store | `410` | «Ссылка устарела, попросите владельца поделиться заново» |
 | the store did not answer | `503` | «Попробуйте позже» |
-| the hub has no store (`HUB_STORE=off`) | `503` | «Просмотр по ссылке сейчас недоступен на этом хабе» |
-
-With no store configured guest links cannot be served at all: the owner can still make one (the machine is asked as
-before), but every guest read answers the last line of the table.
 
 Making a link: a live link is made even when the project is not in the store yet (it opens as soon as the machine's
 sync has put the project there); a pinned link needs the project in the store, since it pins one of its revisions, and

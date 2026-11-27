@@ -392,6 +392,15 @@ func (l *Link) PushNow(ctx context.Context, collection, rel string) error {
 	return a.(*filesync.Agent).Scan(ctx, rel)
 }
 
+// HeadUnder is the newest revision of the store the synced folder holds under rel (filesync.Agent.HeadUnder).
+func (l *Link) HeadUnder(collection, rel string) (int64, error) {
+	a, ok := l.running.Load(collection)
+	if !ok {
+		return 0, ErrNotSyncing
+	}
+	return a.(*filesync.Agent).HeadUnder(rel)
+}
+
 // designRefusalGroup names the paths of the design library the store refuses together: a write is judged by the
 // role in its project (the first folder), so one refused file of a project speaks for the rest of it. The owner file
 // is judged on its own, and so is what lies outside a project; a folder whose name is not plain ASCII takes no

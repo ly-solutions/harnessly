@@ -19,10 +19,14 @@ var (
 	codeRe   = regexp.MustCompile("`([^`\n]+)`")
 	linkRe   = regexp.MustCompile(`\[([^\]\n]+)\]\((https?://[^\s)]+)\)`)
 	headerRe = regexp.MustCompile(`(?m)^#{1,6}[ \t]+(.+)$`)
+	italicRe = regexp.MustCompile(`__([^_\n]+?)__`)
+	spoilRe  = regexp.MustCompile(`\|\|([^|\n]+?)\|\|`)
 )
 
-// ToHTML is the agent's markdown-ish text as Telegram HTML: everything escaped, then **bold**, `code`, ```blocks```,
-// [links](https://…) and # headings made into the few tags Telegram takes. Whatever else is left as written.
+// ToHTML is the agent's markdown-ish text as Telegram HTML: everything escaped, then **bold**, __italic__, `code`,
+// ```blocks```, [links](https://…), ||spoilers||, # headings and quotes made into the few tags Telegram takes. Lines
+// that start with "> " are a quote; a quote whose first line starts with ">> " opens on a tap (expandable). Whatever
+// else is left as written.
 func ToHTML(text string) string {
 	var b strings.Builder
 	parts := strings.Split(text, "```")
@@ -52,12 +56,44 @@ func inline(s string) string {
 	s = codeRe.ReplaceAllString(s, "<code>$1</code>")
 	s = boldRe.ReplaceAllString(s, "<b>$1</b>")
 	s = headerRe.ReplaceAllString(s, "<b>$1</b>")
+	s = italicRe.ReplaceAllString(s, "<i>$1</i>")
+	s = spoilRe.ReplaceAllString(s, "<tg-spoiler>$1</tg-spoiler>")
 	s = linkRe.ReplaceAllStringFunc(s, func(m string) string {
 		sub := linkRe.FindStringSubmatch(m)
 		// The address was escaped with the rest; an attribute takes it as it is now.
 		return `<a href="` + strings.ReplaceAll(sub[2], `"`, "&quot;") + `">` + sub[1] + "</a>"
 	})
-	return s
+	return quotes(s)
+}
+
+// quotes makes each run of lines that start with "> " (escaped: "&gt; ") a <blockquote>; ">> " on its first line
+// makes it expandable.
+func quotes(s string) string {
+	const mark = "&gt;"
+	if !strings.Contains(s, mark) {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); {
+		if !strings.HasPrefix(lines[i], mark) {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+		open := "<blockquote>"
+		if strings.HasPrefix(lines[i], mark+mark) {
+			open = "<blockquote expandable>"
+		}
+		var q []string
+		for ; i < len(lines) && strings.HasPrefix(lines[i], mark); i++ {
+			l := strings.TrimPrefix(lines[i], mark)
+			l = strings.TrimPrefix(l, mark)
+			q = append(q, strings.TrimPrefix(l, " "))
+		}
+		out = append(out, open+strings.Join(q, "\n")+"</blockquote>")
+	}
+	return strings.Join(out, "\n")
 }
 
 // Split cuts a text into parts whose HTML stays under the limit: at blank lines, then at lines, then at spaces, and

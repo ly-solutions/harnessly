@@ -18,13 +18,10 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/storehub"
 )
 
-// newStore opens the store (docs/hub/store.md) unless HUB_STORE=off. Its sessions are signed with a key taken from the
+// newStore opens the store (docs/hub/store.md). Its sessions are signed with a key taken from the
 // hub's master key, so every replica checks the others' sessions.
 func (h *Hub) newStore(o Options) error {
 	cfg := h.cfg
-	if cfg.Store.Off {
-		return nil
-	}
 	master, err := sshinstall.MasterKey(cfg.DataDir, cfg.SecretKey)
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
@@ -69,7 +66,7 @@ func (v designView) RecordFromStore(ctx context.Context, m store.Machine, projec
 	return v.d.RecordFromStore(ctx, m, project, ownerFile)
 }
 
-// RecordMeta takes an entity record a machine wrote into the project's row, under the switch hub-design-owner.
+// RecordMeta takes an entity record a machine wrote into the project's row.
 func (v designView) RecordMeta(ctx context.Context, m store.Machine, rec filestore.Record) error {
 	if v.d == nil || !v.d.OwnerOn(ctx, m) {
 		return nil

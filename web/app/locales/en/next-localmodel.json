@@ -1,0 +1,19 @@
+{
+  "next.localModel.title": "Local model",
+  "next.localModel.lead": "A model that runs on this computer: no internet and no key. Start Ollama, LM Studio, llama.cpp or vLLM, and it shows up here.",
+  "next.localModel.none": "No server found on this computer (Ollama :11434, LM Studio :1234, llama.cpp :8080, vLLM :8000). Start one and press Refresh, or type its address below.",
+  "next.localModel.notFound": "Nothing answers at {address}. Check the address and that the server is running.",
+  "next.localModel.noModels": "No models loaded",
+  "next.localModel.more": {
+    "one": "and {n} more",
+    "other": "and {n} more"
+  },
+  "next.localModel.connect": "Connect",
+  "next.localModel.connected": "Connected",
+  "next.localModel.refresh": "Refresh",
+  "next.localModel.address": "Address of a server",
+  "next.localModel.addressPlaceholder": "Another address: http://192.168.1.20:11434",
+  "next.localModel.hint": "Only this computer and private networks (192.168.x.x, 10.x.x.x). Agent work needs a big model for code, about 30B or more (for example Qwen3-Coder); small ones lose the thread and call tools wrong. Give the model a context of at least 32k tokens: Ollama's default is smaller.",
+  "next.localModel.accountName": "Local model · {name}",
+  "next.localModel.smallContext": "The model runs with a context of {n} tokens: too small for an agent, whose instructions alone take more. Start the server with a context of 32768 or more (Ollama: OLLAMA_CONTEXT_LENGTH=32768)."
+}

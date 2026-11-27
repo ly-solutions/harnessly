@@ -126,6 +126,14 @@ func (s *state) live(prefix string) ([]string, error) {
 	return out, rows.Err()
 }
 
+// headUnder is the newest revision of the room the agent holds of a file under the folder prefix (a deleted one
+// included); 0 when it holds none.
+func (s *state) headUnder(prefix string) (int64, error) {
+	var rev int64
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(rev), 0) FROM files WHERE substr(path, 1, ?) = ?`, len(prefix)+1, prefix+"/").Scan(&rev)
+	return rev, err
+}
+
 func (s *state) cursor() (int64, error) {
 	var v string
 	err := s.db.QueryRow(`SELECT value FROM meta WHERE key = 'cursor'`).Scan(&v)

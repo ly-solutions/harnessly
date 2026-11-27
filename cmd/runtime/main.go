@@ -152,7 +152,9 @@ type runtimeGate struct {
 	records func() []filestore.Record
 	watch   func(func()) func()
 	covers  func(context.Context, *designrec.Syncer)
-	store   *storelink.Link
+	// shareBlocked runs the apps' checks of the share trigger on a project; nil checks nothing.
+	shareBlocked func(context.Context, string) bool
+	store        *storelink.Link
 }
 
 // configFileOf is the runtime's config (the pair's secret, the person's settings).
@@ -611,7 +613,11 @@ func build(cfg gate.Config) (*runtimeGate, error) {
 		kits:      func() string { return designAPI(d).L.KitsDir() },
 		revisions: func(r design.Revisions) { designAPI(d).L.UseRevisions(r) },
 		pusher:    func(p design.StorePusher) { designAPI(d).L.UseStorePusher(p) },
-		records:   func() []filestore.Record { return libraryRecords(d) }, watch: watchLibrary(d), covers: pushCovers(d)}
+		records:   func() []filestore.Record { return libraryRecords(d) }, watch: watchLibrary(d), covers: pushCovers(d),
+		shareBlocked: func(ctx context.Context, project string) bool {
+			g := designAPI(d).ShareGate
+			return g != nil && g(ctx, project) != nil
+		}}
 	rg.agentCLIs = func(ctx context.Context) { runAgentCLIs(ctx, d) }
 	if checkOn {
 		rg.update = checker

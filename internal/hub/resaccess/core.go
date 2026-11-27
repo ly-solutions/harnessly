@@ -8,7 +8,8 @@
 //	       in the home team, and a role given to another team the person is in (until it runs out); «edit and may share»
 //	       given to a team is the role manage.
 //	canManage = the owner, manage, an editor where the owner lets editors share, and — for a resource open to its home
-//	       team — the lead of that team and the administrator of its organization (the steward).
+//	       team — the lead of that team and the administrator of its organization (the steward), who is lifted to manage:
+//	       whoever may share may edit (can.go).
 //
 // A resource with no row of its own is open as it was before the model: the package asks the kind's old records (a
 // document's doc_meta, a design's design_* rows) and the first change by a manager copies them into the new tables.
@@ -187,16 +188,16 @@ func fold(r resource, m *member, grants []teamGrant, person personTeams, homeOrg
 	}
 	role := stronger(own, shared)
 	ownWins := own != "" && (shared == "" || roleRank[own] > roleRank[shared])
-	byRole := role == roleManage || (role == roleEdit && r.EditorsCanShare)
-	if r.Kind == KindKit {
-		byRole = role == roleEdit && r.EditorsCanShare // a kit's «manage» is the owner's alone
-	}
 	steward := false
 	if teamOn && r.HomeTeam != "" && r.Kind != KindKit { // no steward of a kit: its sharing is the owner's and its editors'
-
 		steward = person.teams[r.HomeTeam].lead || (homeOrg != "" && person.admin[homeOrg])
 	}
-	f := folded{Role: role, CanManage: byRole || steward, Steward: steward}
+	if steward && roleRank[role] < roleRank[roleManage] {
+		// Who runs the access may change the object (can.go): the steward is a manager, for good.
+		role, ownWins = roleManage, false
+	}
+	// A kit's role never reaches manage (its ceilings above), so its sharing is its editors' when the owner lets them.
+	f := folded{Role: role, CanManage: Can(role, r.EditorsCanShare, ActShare), Steward: steward}
 	if ownWins && m != nil {
 		f.Until = m.Expires
 	}

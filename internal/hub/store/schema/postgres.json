@@ -1763,6 +1763,80 @@
         }
       ]
     },
+    "design_agent_comments": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "project_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "comment_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "chat",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "path",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_ms",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "claimed_ms",
+          "type": "bigint"
+        },
+        {
+          "name": "tries",
+          "type": "integer",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "design_agent_comments_machine",
+          "columns": [
+            "machine_id",
+            "created_ms"
+          ]
+        },
+        {
+          "name": "design_agent_comments_once",
+          "unique": true,
+          "columns": [
+            "machine_id",
+            "project_id",
+            "comment_id"
+          ]
+        }
+      ]
+    },
     "design_derived": {
       "columns": [
         {
@@ -1828,6 +1902,49 @@
             "rev"
           ]
         }
+      ]
+    },
+    "design_edit_leases": {
+      "columns": [
+        {
+          "name": "space_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "project_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "person",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "machine_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "until_ms",
+          "type": "bigint",
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "space_id",
+        "project_id"
       ]
     },
     "design_guest_comments": {
@@ -2242,6 +2359,126 @@
           "name": "design_projects_owner",
           "columns": [
             "owner_email"
+          ]
+        }
+      ]
+    },
+    "design_render_jobs": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "space_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "project_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "board",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "machine_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "owner_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "prefix",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "board_w",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "board_h",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "attempts",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "lease_ms",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_ms",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "updated_ms",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "result",
+          "type": "text"
+        },
+        {
+          "name": "disposition",
+          "type": "text"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "indexes": [
+        {
+          "name": "design_render_jobs_queue",
+          "columns": [
+            "state",
+            "created_ms"
+          ]
+        },
+        {
+          "name": "design_render_jobs_want",
+          "unique": true,
+          "columns": [
+            "space_id",
+            "project_id",
+            "board",
+            "kind",
+            "rev"
           ]
         }
       ]

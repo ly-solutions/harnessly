@@ -1,6 +1,7 @@
 package designaccess
 
 import (
+	"context"
 	"errors"
 	"strings"
 )
@@ -39,4 +40,29 @@ func servedSegment(first string) bool {
 		return true
 	}
 	return first == "__guest" || first == "__vendor" || first == "__lib"
+}
+
+// Version is one line of a project's history in the store: a run of revisions by one author, named by its newest.
+type Version struct {
+	Rev     int64
+	At      int64 // ms
+	Author  string
+	Machine string
+	Files   []VersionFile
+}
+
+// VersionFile is a file a version changed, by its path under the project.
+type VersionFile struct{ Path, Kind string }
+
+// Change is a board changed between a version and now (Kind: added, changed, removed).
+type Change struct{ Path, Kind, Board string }
+
+// Versioner is the part of a Viewer that answers the versions panel from the store (designview.View; HRN-1797).
+type Versioner interface {
+	Versions(ctx context.Context, spaceID, project string, limit int) ([]Version, error)
+	// Compare lists the boards that differ between revision at and the newest, and how many other files do.
+	Compare(ctx context.Context, spaceID, project string, at int64) ([]Change, int, error)
+	// Restore commits the files of revision at on top of the newest revision; base (0: any) is the newest one the
+	// editor saw. ErrConflict when a write came between.
+	Restore(ctx context.Context, spaceID, project string, at, base int64, author string) (Written, error)
 }
