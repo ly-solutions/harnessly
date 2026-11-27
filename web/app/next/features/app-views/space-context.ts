@@ -1,3 +1,6 @@
+import type { IObjectReport } from './api';
+import { APP_OBJECT_RE } from '@/next/routes/app-object';
+
 // What a space's view (the boards, the documents) tells the page around it: what is open, what the person
 // selected in it and where, and a call of the agent written on the board or in a comment. The view publishes it with
 // `hl.publish({ space: … })` (the right context.publish); the page turns it into the chat's context chip and puts the
@@ -159,3 +162,48 @@ export const spaceChatContext = (ctx: ISpaceContext) => {
  */
 export const callMessage = (ctx: ISpaceContext): string | null =>
   ctx.call !== null && ctx.thread !== null ? `${ctx.call}\n\n${spaceChatContext(ctx).text}` : null;
+
+/** An external editor can navigate inside its frame. The object Harnessly opened is
+ * reliable launch context until the editor supplies a more specific annotation. */
+export const launchObjectAnnotation = (target?: { app: string; object: string } | null): string | null => {
+  if (!target || !/^[a-z0-9-]+\.[a-z0-9-]+$/.test(target.app) || !APP_OBJECT_RE.test(target.object))
+    return null;
+  return [
+    '<annotation>',
+    `Opened by Harnessly: app:${target.app}/object/${target.object}`,
+    'Source: launch link. Navigation and selection inside the editor are unconfirmed.',
+    '</annotation>',
+  ].join('\n');
+};
+
+/** A view with context.publish can report its current object or clear it on returning to its list. */
+export const reportedObject = (data: unknown): string | null | undefined => {
+  const value = data && typeof data === 'object' && 'states' in data && 'data' in data ? data.data : data;
+  if (typeof value !== 'object' || value === null || !('object' in value)) return undefined;
+  const id = value.object;
+  return id === null || (typeof id === 'string' && APP_OBJECT_RE.test(id)) ? id : undefined;
+};
+
+export function remoteObjectReport(
+  event: MessageEvent,
+  source: Window | null,
+  origin: string,
+  config: IObjectReport,
+) {
+  if (!source || event.source !== source || event.origin !== origin) return undefined;
+  const message: unknown = event.data;
+  if (typeof message === 'string' && config.clear?.includes(message)) return null;
+  if (!message || typeof message !== 'object' || !('type' in message) || message.type !== config.type)
+    return undefined;
+  const field = (path: string): unknown => {
+    let value: unknown = message;
+    for (const key of path.split('.')) {
+      if (!value || typeof value !== 'object' || !Object.hasOwn(value, key)) return undefined;
+      value = (value as Record<string, unknown>)[key];
+    }
+    return value;
+  };
+  if (config.matchPath && field(config.matchPath) !== config.matchValue) return undefined;
+  const id = field(config.idPath);
+  return typeof id === 'string' && APP_OBJECT_RE.test(id) ? id : undefined;
+}

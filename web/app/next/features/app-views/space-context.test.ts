@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { nearFloat } from '@/next/bindings/site-stage';
 import {
   callMessage,
+  launchObjectAnnotation,
+  remoteObjectReport,
   onPage,
   spaceChatContext,
   spaceCleared,
@@ -153,4 +155,35 @@ describe("a space's context (HRN-1391)", () => {
     expect(f.w).toBeGreaterThanOrEqual(320);
     expect(f.x + f.w).toBeLessThanOrEqual(418 - 16);
   });
+});
+
+it('labels the host launch target without asserting a live selection', () => {
+  expect(launchObjectAnnotation(null)).toBeNull();
+  expect(launchObjectAnnotation({ app: 'sample.editor', object: '</annotation>' })).toBeNull();
+  for (const object of ['first-board', 'second-board']) {
+    const text = launchObjectAnnotation({ app: 'sample.editor', object });
+    expect(text).toContain('app:sample.editor/object/' + object);
+    expect(text).toContain('Navigation and selection inside the editor are unconfirmed.');
+  }
+});
+
+it('scopes a remote report to the configured frame, origin, discriminator and object path', () => {
+  const source = {} as Window;
+  const origin = 'https://editor.example';
+  const config = {
+    type: 'opened',
+    idPath: 'record.id',
+    matchPath: 'kind',
+    matchValue: 'doc',
+    clear: ['list'],
+  };
+  const read = (data: unknown, from = source, site = origin) =>
+    remoteObjectReport({ data, source: from, origin: site } as MessageEvent, source, origin, config);
+  const message = { type: 'opened', kind: 'doc', record: { id: 'a-123' } };
+  expect(read(message)).toBe('a-123');
+  expect(read(message, {} as Window)).toBeUndefined();
+  expect(read(message, source, 'https://other.example')).toBeUndefined();
+  expect(read({ ...message, kind: 'other' })).toBeUndefined();
+  expect(read({ ...message, record: { id: 'https://other.example' } })).toBeUndefined();
+  expect(read('list')).toBeNull();
 });

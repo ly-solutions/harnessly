@@ -117,6 +117,14 @@ const form = (initial: Record<string, unknown>) => {
 };
 
 describe('hl.state, hl.action, hl.screen', () => {
+  it('publishes read-only state without registering a setter tool', async () => {
+    const { sdk, seen, last } = await view();
+    await sdk.connect();
+    sdk.state('record', { get: () => 'note-1' });
+    await vi.waitFor(() => expect(last()).toMatchObject({ states: { record: { value: 'note-1' } } }));
+    expect(seen.tools).toEqual([]);
+  });
+
   it('publishes the state and the screen in the context the runtime reads, and offers <name>_set', async () => {
     const { sdk, seen, last } = await view();
     await sdk.connect();
@@ -377,7 +385,7 @@ describe('hl.state, hl.action, hl.screen', () => {
     await settle();
     await expect(sdk.connect()).rejects.toMatchObject({ code: 'host_unavailable' });
     expect(() => sdk.state('1 bad', { get: f.get, set: f.patch })).toThrow(/latin letters/);
-    expect(() => sdk.state('event', { get: f.get })).toThrow();
+    expect(() => sdk.state('event', { get: f.get, set: true })).toThrow();
   });
 });
 

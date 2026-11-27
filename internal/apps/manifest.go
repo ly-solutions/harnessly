@@ -210,12 +210,24 @@ type ToolWhen struct {
 	Confirm []string `json:"confirm,omitempty"`
 }
 
+// ObjectReport selects a single object identifier from messages sent by a remote view.
+type ObjectReport struct {
+	Type       string   `json:"type"`
+	IDPath     string   `json:"idPath"`
+	MatchPath  string   `json:"matchPath,omitempty"`
+	MatchValue string   `json:"matchValue,omitempty"`
+	Clear      []string `json:"clear,omitempty"`
+}
+
+var reportPath = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*){0,7}$`)
+
 // View is a page of the app: a tab, a full screen, a card in the chat or a Sinopia panel.
 type View struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title,omitempty"`
-	Entry   string   `json:"entry"`
-	Targets []string `json:"targets"`
+	ObjectReport *ObjectReport `json:"objectReport,omitempty"`
+	ID           string        `json:"id"`
+	Title        string        `json:"title,omitempty"`
+	Entry        string        `json:"entry"`
+	Targets      []string      `json:"targets"`
 	// Height is "stage" for a view of the start page (home) that takes the whole stage under the field instead of a
 	// block there; nothing else is run.
 	Height string `json:"height,omitempty"`
@@ -823,6 +835,14 @@ func (m *Manifest) Check() Problems {
 				add(path+".chrome", "the one value is %q", ChromeNone)
 			} else if !contains(v.Targets, TargetApp) {
 				add(path+".chrome", "%q is for a view of the app's own screen (target app)", ChromeNone)
+			}
+		}
+		if r := v.ObjectReport; r != nil {
+			if !strings.HasPrefix(v.Entry, "https://") || !permissions["context.publish"] {
+				add(path+".objectReport", "requires a remote view and context.publish")
+			}
+			if r.Type == "" || !reportPath.MatchString(r.IDPath) || ((r.MatchPath == "") != (r.MatchValue == "")) || (r.MatchPath != "" && !reportPath.MatchString(r.MatchPath)) {
+				add(path+".objectReport", "provide a message type, idPath, and optional matchPath with matchValue")
 			}
 		}
 		if v.Feed != "" {

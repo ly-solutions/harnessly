@@ -109,3 +109,43 @@ func TestPickAndWhen(t *testing.T) {
 		t.Fatal("later")
 	}
 }
+
+type mentionMCP struct {
+	fakeMCP
+	reply string
+}
+
+func (f *mentionMCP) CallTool(_ context.Context, _, _ string, args json.RawMessage) (json.RawMessage, error) {
+	f.args = append(f.args, string(args))
+	return json.RawMessage(f.reply), nil
+}
+
+func TestMentionCheckpointSurvivesEmptyPageAndFailedPoll(t *testing.T) {
+	f := &mentionMCP{fakeMCP: fakeMCP{specs: []mcpconn.ToolSpec{
+		{Name: "list_events", Annotations: &mcpconn.ToolAnnotations{ReadOnlyHint: yes()}},
+	}}}
+	Service = f
+	t.Cleanup(func() { Service = nil })
+	in, _ := instance()
+	in.Config["recipe"] = `{"trigger":"sample.event","tool":"list_events","args":{"cursor":"{{cursor}}"},"items":"items","id":"id","thread":"thread_id","pageCursor":"cursor"}`
+	poll := func(reply string) ([]connectors.Event, error) {
+		f.reply = reply
+		events, _, err := (conn{}).Poll(context.Background(), in, "")
+		return events, err
+	}
+	if ev, err := poll(`{"structuredContent":{"items":[],"cursor":"75"}}`); err != nil || len(ev) != 0 {
+		t.Fatalf("initial checkpoint: %v, %v", ev, err)
+	}
+	for _, invalid := range []string{`{"structuredContent":{"cursor":"80"}}`, `{"structuredContent":{"items":[]}}`} {
+		if _, err := poll(invalid); err == nil {
+			t.Fatalf("accepted malformed page %s", invalid)
+		}
+	}
+	ev, err := poll(`{"structuredContent":{"items":[{"id":"77","thread_id":"thread"}],"cursor":"79"}}`)
+	if err != nil || len(ev) != 1 || ev[0].Thread != "thread" || f.args[len(f.args)-1] != `{"cursor":"75"}` {
+		t.Fatalf("delivery: events=%v args=%v err=%v", ev, f.args, err)
+	}
+	if ev, err := poll(`{"structuredContent":{"items":[],"cursor":"79"}}`); err != nil || len(ev) != 0 || f.args[len(f.args)-1] != `{"cursor":"79"}` {
+		t.Fatalf("continuation: events=%v args=%v err=%v", ev, f.args, err)
+	}
+}

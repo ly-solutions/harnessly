@@ -366,7 +366,7 @@ const remove = (map, entry) => {
  * takes a patch, calls set(patch), reads get() and answers { ok, value, issues }.
  */
 export function state(name, def) {
-  if (!def || typeof def.get !== 'function' || typeof def.set !== 'function')
+  if (!def || typeof def.get !== 'function' || (def.set !== undefined && typeof def.set !== 'function'))
     throw new HarnesslyError('invalid_params', 'state(name, { description, schema, get, set })');
   const entry = {
     name: nameOf(name, 'state'),
@@ -379,7 +379,7 @@ export function state(name, def) {
     detach: null,
     stop: null,
   };
-  entry.tool = stateTool(entry);
+  entry.tool = def.set ? stateTool(entry) : null;
   entry.run = runState(entry);
   if (typeof def.subscribe === 'function') {
     const off = def.subscribe(() => scheduleSurface(SURFACE_DEBOUNCE_MS));

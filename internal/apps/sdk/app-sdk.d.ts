@@ -403,7 +403,7 @@ export interface StateOptions<T extends object = Record<string, unknown>> {
   /** The current value: the form's model, not the DOM. */
   get(): T | Promise<T>;
   /** Writes a patch (only the fields to change) and answers the form's issues, all of them at once; a throw is one too. */
-  set(patch: Partial<T>): IssuesAnswer | Promise<IssuesAnswer>;
+  set?(patch: Partial<T>): IssuesAnswer | Promise<IssuesAnswer>;
   /**
    * Tells the SDK the value changed (the person typed): it republishes after 300 ms of quiet. Answers its own stop, a
    * function or a subscription with unsubscribe. Without it the value is republished after every set and on refresh().
