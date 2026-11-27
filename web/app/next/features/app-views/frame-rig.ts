@@ -11,7 +11,8 @@ export const NONCE = 'nonce-of-the-session';
 
 const here = new URL('.', import.meta.url);
 const sdkDir = new URL('../../../../../internal/apps/sdk/', here);
-export const SHIM_SRC = readFileSync(new URL('bridge-shim.js', sdkDir), 'utf8');
+const shimModule = readFileSync(new URL('bridge-shim.js', sdkDir), 'utf8');
+export const SHIM_SRC = `(function () {\n${shimModule}\ninstallBridge();\n})();`;
 const SDK_SRC = readFileSync(new URL('app-sdk.js', sdkDir), 'utf8');
 
 /** The SDK as the view server serves it to a view: a classic script that publishes window.harnessly (views.go classicSDK). */

@@ -13,6 +13,10 @@ rm -rf "$out"
 mkdir -p "$out"
 cp "$src/app-sdk.js" "$out/index.js"
 cp "$src/app-sdk.d.ts" "$out/index.d.ts"
+cp "$src/embed.js" "$src/embed.d.ts" "$out/"
+cat "$src/bridge-shim.js" > "$out/bridge-shim.js"
+echo 'export { installBridge };' >> "$out/bridge-shim.js"
+cp "$root/LICENSE" "$out/"
 cat > "$out/package.json" <<JSON
 {
   "name": "@harnessly/app-sdk",
@@ -22,9 +26,12 @@ cat > "$out/package.json" <<JSON
   "main": "index.js",
   "module": "index.js",
   "types": "index.d.ts",
-  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" } },
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    "./embed": { "types": "./embed.d.ts", "default": "./embed.js" }
+  },
   "sideEffects": false,
-  "files": ["index.js", "index.d.ts", "README.md"],
+  "files": ["index.js", "index.d.ts", "embed.js", "embed.d.ts", "bridge-shim.js", "README.md", "LICENSE"],
   "license": "Apache-2.0",
   "publishConfig": { "access": "public" }
 }
@@ -42,6 +49,15 @@ const hl = await connect({ protocol: 2 });
 const answer = await hl.chat.send('Hello');
 if (hl.refused(answer)) console.warn(answer.message);
 ```
+
+An existing website embedded in a Harnessly frame can use the origin-bound entry:
+```ts
+import { connectEmbedded } from '@harnessly/app-sdk/embed';
+
+const host = await connectEmbedded({ hostOrigin: 'https://your-harnessly.example' });
+if (host) host.screen({ title: document.title, route: location.pathname });
+```
+The entry returns null on standalone visits. The configured origin must be an exact HTTPS origin.
 
 Write an app: `harnessly app docs`. The version of the package is the version of Harnessly it was built from.
 MD

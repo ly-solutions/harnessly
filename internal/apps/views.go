@@ -31,7 +31,11 @@ var sdkJS []byte
 var sdkDTS []byte
 
 //go:embed sdk/bridge-shim.js
-var shimJS []byte
+var shimModule string
+
+// Managed views authenticate the parent's port with their nonce. External sites
+// import the same bridge and additionally pin the origin of the embedding site.
+var shimJS = []byte("(function () {\n" + shimModule + "\ninstallBridge();\n})();")
 
 // loaderJS is the loader of a site that exists already (an admin panel in a frame), and loaderInlineJS the
 // one line its shell carries: outside Harnessly it loads nothing.
