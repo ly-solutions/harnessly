@@ -44,10 +44,14 @@ type Trigger struct {
 // the transaction that writes the event.
 func touchTrigger(ctx context.Context, q store.Q, e Event, now time.Time) (string, error) {
 	ms := store.Ms(now)
+	first := ModeDigest
+	if e.StartMode == ModeNotify || e.StartMode == ModeAgent {
+		first = e.StartMode
+	}
 	if _, err := q.Exec(ctx, `INSERT INTO bus_triggers (owner_id, source, connection, type, mode, seen, first_at, last_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
 		ON CONFLICT (owner_id, source, connection, type) DO UPDATE SET seen = bus_triggers.seen + 1, last_at = excluded.last_at`,
-		e.Owner, e.Source, e.Connection, e.Type, ModeDigest, ms, ms, ms); err != nil {
+		e.Owner, e.Source, e.Connection, e.Type, first, ms, ms, ms); err != nil {
 		return "", err
 	}
 	var mode string

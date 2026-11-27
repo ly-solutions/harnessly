@@ -202,3 +202,8 @@ func SessionSubject(secret []byte, token string, now time.Time) (string, bool) {
 	sub, ok := payload["sub"].(string)
 	return sub, ok
 }
+
+// SignSession signs a page session for sub, as the hub's grant does (no audience), valid from now for ttl.
+func SignSession(secret []byte, sub string, verifiedOwner bool, ttl time.Duration) string {
+	return signClaims(secret, Claims{Sub: sub, VerifiedOwner: verifiedOwner}, ttl)
+}

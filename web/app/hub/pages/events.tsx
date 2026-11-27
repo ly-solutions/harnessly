@@ -52,7 +52,11 @@ const levelName = (l: BusLevel): string =>
       : `${t(`events.level.${l.kind}`)}: ${l.name}`;
 
 export const EventsScreen = () => {
-  const [tab, setTab] = useState<Tab>('journal');
+  // ?tab=triggers opens the catalog of triggers: a trigger made in Settings → Connections links here.
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = new URLSearchParams(window.location.search).get('tab');
+    return asked === 'triggers' || asked === 'subs' ? asked : 'journal';
+  });
   return (
     <PlainPage title={t('events.title')} wide>
       <Note>{t('events.lead')}</Note>

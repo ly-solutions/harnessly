@@ -359,5 +359,5 @@ One binary, one schema. What changes is configuration:
 | Container profile | when `HUB_CONTAINER_IMAGE` is set | when `HUB_CONTAINER_IMAGE` is set |
 
 Not in this version (named so nobody stubs them): conversation projection into the database,
-agent self-update (re-run the install command), Teleport, «Наша ВМ», signed release artefacts beyond SHA-256 over TLS,
-bubblewrap around agent launches, captcha, recovery codes, SAML/SCIM, Gemini.
+agent self-update (re-run the install command), «Наша ВМ», bubblewrap around agent launches, captcha, recovery codes, SAML/SCIM, Gemini. Since then: a Teleport machine identity ([tbot-join.md](tbot-join.md))
+and a release manifest signed with Ed25519 ([upgrade.md](upgrade.md)).

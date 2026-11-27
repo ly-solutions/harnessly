@@ -172,6 +172,9 @@ type Instance struct {
 	// Answer is the person's yes or no to a proposed action, given elsewhere than the page (a button in a bound chat);
 	// set only for a Relay. The connector must make sure the answer is the person's own.
 	Answer func(ctx context.Context, proposal string, approve bool) (Proposal, error)
+	// Warn says something the person should know while the source keeps working (a recipe that read its last allowed
+	// page with more left): kept on the connection and shown with it; "" takes it back. Nil in a check.
+	Warn func(msg string)
 	// Dir is the connection's own folder on the machine (<data>/connectors/data/<id>) for what the connector keeps
 	// beyond the cursor: a webhook's bodies, a folder's journal of changes. Made on first use by the connector, removed
 	// with the connection. Empty in a check before the connection is kept.
@@ -493,7 +496,9 @@ type polling struct{ p Poller }
 func (w polling) Watch(ctx context.Context, in Instance, from Cursor, emit Emit) error {
 	cur := from
 	for {
+		began := time.Now()
 		events, next, err := w.p.Poll(ctx, in, cur)
+		tracePoll(in, cur, next, events, time.Since(began), err)
 		if err != nil {
 			return err
 		}
@@ -512,4 +517,23 @@ func (w polling) Watch(ctx context.Context, in Instance, from Cursor, emit Emit)
 		case <-t.C:
 		}
 	}
+}
+
+// tracePoll writes one poll to the developer mode's trace: its time, how many events, their ids, the cursor before and
+// after, the error.
+func tracePoll(in Instance, before, after Cursor, events []Event, took time.Duration, err error) {
+	if !Trace.On() {
+		return
+	}
+	ids := make([]string, 0, len(events))
+	for _, ev := range events {
+		ids = append(ids, ev.ID)
+	}
+	data := map[string]any{"ms": took.Milliseconds(), "events": len(events), "ids": ids, "cursorBefore": before, "cursorAfter": after}
+	if err != nil {
+		data["error"] = sayOf(err)
+		Trace.Add(in.ID, "poll", TraceError, fmt.Sprintf("poll failed in %s: %s", took.Round(time.Millisecond), sayOf(err)), data)
+		return
+	}
+	Trace.Add(in.ID, "poll", TraceInfo, fmt.Sprintf("poll: %d new in %s", len(events), took.Round(time.Millisecond)), data)
 }

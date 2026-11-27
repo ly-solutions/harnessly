@@ -39,6 +39,22 @@ type Message struct {
 	At                int64   `json:"at"`
 	// URL is where a tap leads (a pushed design board); absent for the others.
 	URL string `json:"url,omitempty"`
+	// Actions are the notification's buttons (an action waiting for the person's yes); a browser that shows none
+	// (iOS) still opens the chat on a tap.
+	Actions []Action `json:"actions,omitempty"`
+	// Proposal and Token let the buttons answer it: the token is single-use and only for this proposal.
+	Proposal string `json:"proposal,omitempty"`
+	Token    string `json:"token,omitempty"`
+	// Machine is the ?machine= the buttons' request goes through (Subscription.Via); Send fills it.
+	Machine string `json:"machine,omitempty"`
+	// Results are the words the service worker shows after a button: {approve: «Отправлено», …}.
+	Results map[string]string `json:"results,omitempty"`
+}
+
+// Action is a button of a notification.
+type Action struct {
+	Action string `json:"action"`
+	Title  string `json:"title"`
 }
 
 // Clip flattens whitespace and cuts text to max UTF-16 units with an ellipsis.

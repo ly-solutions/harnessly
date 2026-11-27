@@ -235,3 +235,51 @@ The page of a service of one's own is the page of a catalog one with an editor o
 {input, values}` makes or changes one (`input` is `mcpconn.CustomInput`, `values` the keys typed).
 
 The scenarios `evals/agent/own-api-by-spec.yaml` and `own-mcp-by-address.yaml` check the agent's way.
+
+## The agents' servers
+
+Every MCP server Claude Code or Codex is configured with outside harnessly becomes a connection by itself, with no
+button: one registry for agents, triggers and rules. The runtime only reads the agents' files and never changes them.
+
+- **What is read** (`internal/mcpconn/agentscan.go`): `~/.claude.json` (its `mcpServers` and each
+  `projects.<path>.mcpServers`), the `.mcp.json` of those projects, the `.mcp.json` (and an inline `mcpServers` of
+  `.claude-plugin/plugin.json`) of each installed plugin at the version `~/.claude/plugins/installed_plugins.json`
+  names (a plugin turned off in `~/.claude/settings.json` is passed over), and `[mcp_servers.*]` of
+  `~/.codex/config.toml` (`$CODEX_HOME`). `${VAR}`, `${VAR:-default}` and `${CLAUDE_PLUGIN_ROOT}` in an address or a
+  command line are expanded with **the agent's environment**: a pane starts `env -i <a few variables> $SHELL -l`, so the
+  runtime runs a login shell the same way and reads its `env` (`cmd/runtime/mcp_agent_env.go`, again when a login file
+  changes; the runtime's own environment only when that shell does not answer). A default is used only when the agent's
+  environment has no such variable, and the trace says so («expanded by default»). An address that needs a variable
+  that is not set is skipped with that reason.
+- **Local servers must answer**: an address on loopback is probed (initialize, 20 s); one where nothing answers MCP is
+  not taken — a default may point at an old process or at someone else's — and is tried again at the next minute. A
+  connection made before keeps its address while its server does not answer.
+- **Another value moves the connection**: the template (`agent.template`) is kept; when the agent's environment
+  expands it to another address, the next sync moves the connection made from it (outcome «moved»; same id, checked
+  again) — harnessly's own expansion, not the person's change. Two agents writing two ports for the same local server
+  (a plugin's `${PORT:-17380}`, Codex's literal `17380`) make one connection, at the address the template expands to;
+  the other port is noted in the trace.
+- **Not taken**: harnessly's own entries — the hub, the runtime's proxy (`/api/cli/…`), anything at the runtime's own
+  address, its preview server, a `harnessly` command (`ownMCP` in `cmd/runtime/mcp_agent_sync.go`).
+- **What is made** (`SyncAgents`, `agentsync.go`): a connection per address or command line; the same server found in
+  several places (a plugin and Codex) is one connection with all of them in `agent.from` («plugin example-infra»,
+  «project <path>», «codex», «claude user»). The same address as a catalog entry, or the same npx/uvx package as a
+  local entry, gives its `catalogId`; anything else is a service of one's own (`custom-<slug>`). A server the person had
+  connected already is only marked (`agent.adopted`). New connections are checked in the background.
+- **Keys**: a value written literally in a header or `env` goes to the safe (`mcp-<id>`, as a typed header or a local
+  server's keys); `mcp-connections.json` never holds it. A value that only refers to a variable (`${TOKEN}`, `$TOKEN`,
+  Codex's `bearer_token_env_var` / `env_http_headers`) leaves the connection in «signin» with `agent.missing`, and the
+  safe asks the person for it under `mcp-agent-<slug>-<key>`; the next sync takes it from there (one reference in
+  `Bearer ${TOKEN}` is replaced by the value). The scan is never held up by it.
+- **A rescan** does not double connections and does not undo the person's changes: a server is found again by its key
+  (`agent.key`) and only its agent mark changes. One gone from the agent's config is kept, `agent.present: false` with
+  `goneAt`. One the person removed is remembered (`agentDismissed` in the file) and not made again. A sync that changes
+  nothing writes nothing.
+- **When**: at the runtime's start, once a minute when one of the files changed (or a key is awaited), and on the
+  page's «Rescan» — `POST <platform>/mcp/sync` → `{outcomes, new}`.
+- **No server twice**: the agents' configs are left as they are, so an agent that has a server directly does not get
+  it again as `mcp-<slug>` from harnessly (`Server.HasAgent`, `mcpDirect`): a server of Claude's plugins still goes to
+  Codex, one of Codex's still goes to Claude. The hub reaches all of them. The page marks such a connection «the agent
+  has it directly (plugin …)».
+- **Trace**: each outcome — taken, already there, skipped and why, waits for a key, key taken, gone — goes to the
+  developer mode's trace under `mcp-sync` (`connectors.TraceSyncSeen`, docs/connectors.md «Developer mode»).

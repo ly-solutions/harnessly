@@ -29,6 +29,9 @@ hold their passwords or tokens: the runtime does the work.
                                                         after their yes, exactly as proposed; an action marked
                                                         "to the person only" (a push to their own Telegram) runs at
                                                         once
+                                                        The person also gets a push with «Send / Don't send»
+                                                        buttons: on the phone used last by default, --notify <device
+                                                        id>|last|mobile|all|none picks (harnessly devices)
   harnessly connector trusted                           recipients the person trusted with the tick on a card: a
                                                         send whose every recipient is one of them (written the same
                                                         way, e.g. the chat id the card showed) runs at once, without
@@ -271,12 +274,12 @@ const connectorStep = 45 * time.Second
 
 func (c *cli) connectorAct(args []string) error {
 	var pos []string
-	why, id := "", ""
+	why, id, notify := "", "", ""
 	wait := 10 * time.Minute
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case a == "--why" || a == "--wait" || a == "--id":
+		case a == "--why" || a == "--wait" || a == "--id" || a == "--notify":
 			if i+1 >= len(args) {
 				return usageErr("%s needs a value", a)
 			}
@@ -286,6 +289,8 @@ func (c *cli) connectorAct(args []string) error {
 				why = args[i]
 			case "--id":
 				id = args[i]
+			case "--notify":
+				notify = args[i]
 			default:
 				n, err := strconv.Atoi(args[i])
 				if err != nil || n < 0 || n > 1800 {
@@ -295,6 +300,8 @@ func (c *cli) connectorAct(args []string) error {
 			}
 		case strings.HasPrefix(a, "--why="):
 			why = strings.TrimPrefix(a, "--why=")
+		case strings.HasPrefix(a, "--notify="):
+			notify = strings.TrimPrefix(a, "--notify=")
 		case strings.HasPrefix(a, "--id="):
 			id = strings.TrimPrefix(a, "--id=")
 		case strings.HasPrefix(a, "--wait="):
@@ -310,6 +317,9 @@ func (c *cli) connectorAct(args []string) error {
 		}
 	}
 	body := map[string]any{"session": c.session(), "why": why}
+	if notify != "" {
+		body["notify"] = notify
+	}
 	if id == "" {
 		if len(pos) < 2 || strings.TrimSpace(why) == "" {
 			return usageErr("harnessly connector act <connection id> <action> key=value… --why \"what the person asked for\"")

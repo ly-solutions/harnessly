@@ -1,0 +1,34 @@
+id: hub-agent-mcp-synced
+title: MCP из плагинов агента уже в «Подключениях» — не дублировать руками, не править конфиги агента
+tags: [connections, hub]
+timeout_s: 300
+# The runtime takes the agents' own MCP servers (Claude Code's plugins and projects, Codex) into Settings →
+# Connections by itself, and does not hand an agent a server its own config has already (mcpDirect skips it). Asked to
+# «connect my plugins' servers to harnessly», the agent looks at what is connected through the hub and does not add them
+# again by hand: no `claude mcp add` / `codex mcp add`, no edits of ~/.claude.json, .mcp.json or ~/.codex/config.toml.
+setup:
+  connections: [moex, arxiv]
+covers:
+  - 'cmd/runtime/mcp_agents.go'
+  - 'cmd/runtime/mcp_agent_sync.go'
+  - 'internal/mcpconn/agentsync.go'
+  - 'internal/mcpconn/agentscan.go'
+prompt: подключи MCP-серверы из моих плагинов Claude и из Codex в harnessly, чтобы из них можно было делать триггеры
+expect:
+  - name: looked at the connections through the hub
+    called: harnessly-hub\.(connections|search_tools|manage)
+  - name: did not add them to an agent by hand
+    not_called: Bash
+    args: {command: '(?i).*(claude|codex)\s+mcp\s+add.*'}
+  - name: did not edit the agents' configs
+    not_called: (Edit|Write)
+    args: {file_path: '(?i).*(\.claude\.json|\.mcp\.json|config\.toml)$'}
+  - name: got there in a few steps
+    max_calls: 12
+variants:
+  - id: v1
+    kind: english
+    text: "Bring the MCP servers of my Claude plugins and Codex into harnessly so I can make triggers from them"
+  - id: v2
+    kind: short
+    text: "забери mcp из плагинов в подключения"

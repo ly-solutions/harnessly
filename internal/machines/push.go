@@ -11,7 +11,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ly-solutions/harnessly/internal/journal"
 	"github.com/ly-solutions/harnessly/internal/jscompat"
 	"github.com/ly-solutions/harnessly/internal/jsvalue"
 	"github.com/ly-solutions/harnessly/internal/locale"
@@ -54,7 +56,16 @@ func (s *service) subscribe(r *http.Request, body any) (int, any, http.Header) {
 		if m, ok := getOr(body, "mobile").(bool); ok {
 			mobile = &m
 		}
-		if err := store.Add(endpoint, keys, deviceID, mobile); err != nil {
+		// The machine the page reached this runtime through: the hub drops ?machine= on its way, so the page names it.
+		via, _ := getOr(body, "machine").(string)
+		if via == "" {
+			via = r.URL.Query().Get("machine")
+		}
+		info := push.DeviceInfo{UserAgent: r.Header.Get("User-Agent"), Via: via}
+		if len(info.Via) > 128 {
+			info.Via = ""
+		}
+		if err := store.AddDevice(endpoint, keys, deviceID, mobile, info); err != nil {
 			s.log("error", "api handler failed", "path", r.URL.Path, "err", err.Error())
 			return textAnswer(500, "Internal Server Error")
 		}
@@ -109,6 +120,7 @@ func (s *service) diagnostic(r *http.Request, body any) (int, any, http.Header) 
 		return methodNotAllowed(r, "POST")
 	}
 	var kv []any
+	var parts []string
 	for _, f := range []struct {
 		k   string
 		max int
@@ -116,9 +128,16 @@ func (s *service) diagnostic(r *http.Request, body any) (int, any, http.Header) 
 		v, _ := field(body, f.k)
 		if c := clipField(v, f.max); c != nil {
 			kv = append(kv, f.k, c)
+			if f.k != "detail" {
+				parts = append(parts, f.k+"="+c.(string))
+			}
 		}
 	}
 	s.log("warn", "push subscription failed in the browser", kv...)
+	// The service's own log is not where an agent looks: the machine's journal (harnessly logs, the MCP tool
+	// harnessly_logs) gets the same line.
+	journal.Add(journal.Entry{At: time.Now().UnixMilli(), Level: journal.Warn, Source: journal.SourceWeb, Event: "push.subscribe",
+		URL: "/api/push/diagnostic", Text: "push subscription failed in the browser: " + strings.Join(parts, " · ")})
 	return http.StatusNoContent, nil, nil
 }
 

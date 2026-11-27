@@ -19,7 +19,7 @@ knows nothing, which is not «off».
 
 ## The check that keeps the page honest
 
-`node tools/web-routes-check.mjs` (CI job `web-routes`) lists every `/api/…` path the web code calls and looks each up
+`node tools/web-routes-check.mjs` (a step of the web lint job in CI) lists every `/api/…` path the web code calls and looks each up
 in the routes the hub and the runtime register. A call nothing serves fails the check unless
 `tools/web-routes-known.json` lists it with the capability it hangs on and the task that closes the gap. A listed entry
 that is served after all, no longer called, or hangs on a capability the runtime does not name also fails, so the list

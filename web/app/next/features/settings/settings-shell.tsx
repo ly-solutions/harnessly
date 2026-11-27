@@ -32,13 +32,17 @@ const SECTION_MARK: Readonly<Record<SettingsSection, { icon: string } | { agent:
   extensions: { icon: 'blocks' },
   plugins: { icon: 'blocks' },
   beta: { icon: 'sparkles' },
+  developer: { icon: 'bug' },
 };
 
 /** The groups of the list, in the order of SETTINGS_SECTIONS. */
 const NAV_GROUPS = [
   { id: 'app', sections: ['general', 'appearance', 'keys', 'notifications', 'voice', 'takes'] },
   { id: 'agents', sections: ['accounts', 'claude', 'codex', 'smart', 'skills', 'safe', 'browser'] },
-  { id: 'machine', sections: ['machines', 'apps', 'connections', 'design', 'extensions', 'plugins', 'beta'] },
+  {
+    id: 'machine',
+    sections: ['machines', 'apps', 'connections', 'design', 'extensions', 'plugins', 'beta', 'developer'],
+  },
 ] as const satisfies readonly { id: string; sections: readonly SettingsSection[] }[];
 
 interface ISettingsShellProps {

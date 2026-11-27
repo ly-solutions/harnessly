@@ -10,7 +10,8 @@ it stays with the previous runtime.
   [prompt delivery](#prompt-delivery), [folders and files](#folders-and-files), [notebook execution](#notebook-execution),
   [links and external services](#links-and-external-services), [usage and statistics](#usage-and-statistics),
   [conversation snapshots](#conversation-snapshots), [machine and web push](#machine-and-web-push),
-  [design library](#design-library), [preview proxy](#preview-proxy), [voice](#voice)
+  [design library](#design-library), [preview proxy](#preview-proxy), [voice](#voice),
+  [settings described on their own pages](#settings-described-on-their-own-pages)
 - [Standalone runtime](#standalone-runtime)
 
 ## Machine agent
@@ -29,6 +30,7 @@ it stays with the previous runtime.
 | `RUNTIME_PORT`, `FILES_PORT` | `0` | the runtime's API and the disk service on loopback; `0` — not here |
 | `AGENT_RUNTIME_API` | `/api/agent` | prefix of the runtime routes the agent calls |
 | `AGENT_RUNTIME_PLATFORM_API` | `/api/platform` | prefix of the runtime platform routes a hub's design ops go to (`design/access`, `design/guest-token`) |
+| `AGENT_RUNTIME_V2` | `<runtime base>/api/v2` | the runtime's v2 API prefix (replica and conversation turns) |
 | `AGENT_RUNTIME_STATUS`, `AGENT_RUNTIME_SYNC` | `/api/status`, `/api/sync` | the runtime's sockets |
 | `AGENT_RUNTIME_CONSOLE_API` | `$AGENT_RUNTIME_API` | prefix of the runtime console routes (`/policy`, `/terminal-tab`, `/console-state`, `/load`, `/restart`) when the runtime serves them apart from the rest |
 | `AGENT_RUNTIME_STATE_CHANGED` | `$AGENT_RUNTIME_API/state-changed` | where the runtime hears about a layout the cluster wrote |
@@ -121,6 +123,13 @@ and the kill switch are in [hub/machine.md](hub/machine.md).
 | `RUNTIME_CODEX_APPSERVER` | `1`: a new Codex chat starts beside its own `codex app-server` (the terminal attached with `codex --remote`), and its messages, the ends of its turns and its approvals go over the server instead of being typed and read off the screen. Experimental and off by default. Only a fresh chat on Codex's own account and without apps, with Codex 0.147.0 or newer; a resumed or forked chat, a chat on a backend profile, a line the terminal reads as a command (`/compact`, `! ls`) and any chat whose server does not answer are typed in the terminal as before |
 | `RUNTIME_CODEXBAR_BIN` | the codexbar binary the core polls for Claude's usage limits (unset: none) |
 | `CLAUDE_CONFIG_DIR`, `CODEX_HOME` | the agent CLIs' own folders, `~/.claude` and `~/.codex` by default |
+| `RUNTIME_TMUX_BIN` | the tmux program the runtime runs (default: the first `tmux` on an absolute `PATH` entry that is a program, not a guard script) |
+| `RUNTIME_LIVE_BROWSER_BIN`, `RUNTIME_LIVE_BROWSER_ARGS` | the browser the live browser of the right pane runs (default: `google-chrome`, `chromium` and their variants on `PATH`) and extra command-line flags for it |
+| `RUNTIME_LIVE_BROWSER_MAX_TABS`, `RUNTIME_LIVE_BROWSER_IDLE_MIN`, `RUNTIME_LIVE_BROWSER_NICE` | pages open at once (default 4), minutes without a page before the browser closes (3), and the browser's nice value (10) |
+| `RUNTIME_CODEX_MEMORY` | `off`, `0` or `false` starts Codex chats without the memory feature this runtime turns on by default; a `features.memories` in the person's own `config.toml` wins |
+| `RUNTIME_CLI_AUTOUPDATE` | `off` leaves the Claude Code and Codex programs alone: the runtime then does not install new versions beside the running one |
+| `RUNTIME_MACHINE_NAME`, `RUNTIME_FLEET_ID` | the machine's display name for messages between machines (default the host name) and the id the fleet's gateway knows it by (default the host name made of lowercase letters, digits and dashes) |
+| `RUNTIME_EVAL_NOTICE_FIRST` | `1` answers a choice the agent asks the person with its first option; for an evaluation stand where nobody answers |
 
 ### Image generation
 
@@ -291,6 +300,11 @@ Run only trusted cells. The machine agent treats notebook routes as terminal acc
 | `RUNTIME_TELEGRAM_API_URL` | Telegram's Bot API (default `https://api.telegram.org`), for a proxy or a test |
 | `RUNTIME_ORGANIZER_FILE` | the person's organizer (projects, which project a conversation belongs to, pins), a JSON file (unset: those routes stay with the previous runtime) |
 | `GITLAB_SELF_TOKEN`, `GITLAB_TOKEN`, `YOUTRACK_TOKEN` | the person's tokens the `services` slice calls with: the first of `RUNTIME_GITLAB_HOSTS`, any other GitLab, the tracker; when unset, read from a file (`gitlab-self-token`; `gitlab-token` or `glab-token`; `youtrack-token`) in one of the `RUNTIME_SECRET_CONFIG_DIRS` of the home |
+| `RUNTIME_LINK_TRACKER_URL`, `RUNTIME_TRACKER_ISSUE_URL`, `RUNTIME_LINK_GITLAB_HOSTS` | the same addresses as the three above, taken from the organization's settings on the hub: they only decide which links are tasks, merge requests and commits and where a task key leads, never where the runtime sends a token (`RUNTIME_TRACKER_ISSUE_URL` is the task address with `{key}`) |
+| `RUNTIME_APPS_CLAUDE_BIN` | the `claude` program the apps' model calls run (default `claude`) |
+| `RUNTIME_APP_MCP_STDIO` | `0` keeps the apps' MCP server of a chat on the runtime's HTTP endpoint instead of a CLI's stdio proxy |
+| `RUNTIME_CHATGPT_AUTH_URL`, `RUNTIME_CHATGPT_API_URL` | for tests: a fake ChatGPT sign-in and API on this machine instead of OpenAI's (loopback addresses only) |
+| `RUNTIME_PROJECTS_FEED` | `off` stops the runtime telling the hub the list of its projects |
 
 ### Usage and statistics
 
@@ -300,6 +314,8 @@ Run only trusted cells. The machine agent treats notebook routes as terminal acc
 | `RUNTIME_USAGE_TZ_OFFSET_MINUTES` | the zone (minutes east of UTC) whose weekend the limits forecast learns the person's usual hours by (default 0) |
 | `RUNTIME_PROJECTS_ROOT` | the folder name under which the usage report names projects by their repository (unset: by folder) |
 | `RUNTIME_STATS_CWD_REWRITES` | more home-relative project folder prefixes the statistics pages shorten, `prefix=to` comma-separated |
+| `RUNTIME_USAGE_REFRESH` | how often the usage collector passes over the transcripts in the background, a duration (default `2m`; `0` or `off`: only when the report is asked for) |
+| `AGENT_USAGE_FACTS_FILE` | the machine agent: the runtime's facts file by name, when it is not found in the runtime's `stats` folder |
 
 ### Conversation snapshots
 
@@ -350,6 +366,9 @@ Run only trusted cells. The machine agent treats notebook routes as terminal acc
 | `RUNTIME_DESIGN_HUB_URL` | the base of the center's API for the room that holds the library, e.g. `https://design-sync.example.org/v1/rooms/design` (`/v1` alone is the room the token names first) |
 | `RUNTIME_DESIGN_HUB_TOKEN`, `RUNTIME_DESIGN_HUB_TOKEN_FILE` | this machine's token for the center: the value, or a file read on each call (the token file design-sync's agent reads, `<state>/token`); the value wins when both are set. An unreachable center, a refused token or an old center without leases never stops an edit: the board is edited without a lease until it answers |
 | `RUNTIME_PEOPLE` | names a claim shows, by the local part of the owner's address: `local=Name,local2=Name2` |
+| `RUNTIME_DESIGN_HEADLESS_SHELL` | the `chrome-headless-shell` that records board videos (default: on `PATH`, then the usual cache folders) |
+| `RUNTIME_DESIGN_READER_PATH` | where the design library opens in the page, for notifications about it (default `/agents/design/`) |
+| `RUNTIME_SCENE3D_ROOTS` | more folders whose children are searched for 3D scenes, separated like `PATH` |
 
 ### Preview proxy
 
@@ -382,6 +401,29 @@ Run only trusted cells. The machine agent treats notebook routes as terminal acc
 | `RUNTIME_VOICE_THREADS` | processors the built-in engine may use (default: up to 4) |
 | `RUNTIME_VOICE_DOWNLOAD` | `off` never touches the network: only files that are already in place are used |
 | `RUNTIME_VOICE_PREFETCH` | `1` fetches the model when the runtime starts, not at the first dictation |
+| `RUNTIME_VOICE_CALL_URL`, `RUNTIME_VOICE_LIVE_URL` | for tests: a fake of the live voice endpoints on this machine; both must be loopback addresses, else OpenAI's own are used |
+| `RUNTIME_VOICE_EDIT_MODEL`, `RUNTIME_VOICE_EDIT_GPT` | the fast model of quick voice edits, and the ChatGPT model that plans them when the plan's lightest one is not wanted |
+| `RUNTIME_VOICE_ROUTER_MODEL` | the model that routes a spoken phrase (default: the ChatGPT plan's lightest) |
+
+### Settings described on their own pages
+
+| Variable | Where |
+| --- | --- |
+| `RUNTIME_V2`, `RUNTIME_V2_FAKE`, `RUNTIME_V2_FAKE_STEP_MS` | `RUNTIME_V2=off` leaves the runtime without the v2 API (a page reads that as "update the runtime"). `RUNTIME_V2_FAKE=1` serves fixtures and a scripted agent instead of the conversations, paced by `RUNTIME_V2_FAKE_STEP_MS`: for the page's development and end-to-end tests |
+| `RUNTIME_SECRETS_MODE`, `RUNTIME_SECRETS_VAULT_*`, `RUNTIME_SECRETS_EXEC`, `RUNTIME_SECRETS_EXEC_PREFIX`, `RUNTIME_SECRETS_REF_PREFIXES`, `AGENT_HUB_SAFE` | [the safe](safe.md) |
+| `RUNTIME_APPS_PROXY`, `RUNTIME_APPS_NO_PROXY`, `RUNTIME_APPS_CLIENT_CERT_FILE`, `RUNTIME_APPS_CLIENT_KEY_FILE`, `RUNTIME_APPS_REQUIRE_SIGNED`, `RUNTIME_VOICE_MODEL_HOST`, `RUNTIME_VOICE_RUNTIME_HOST` | [a closed network](self-host/closed-network.md) |
+| `RUNTIME_APPS_SYNC`, `RUNTIME_APPS_SYNC_CONSENT`, `RUNTIME_APP_OPEN_EVENT` | [the hub's set of apps](hub/apps-set.md), [apps](apps.md) |
+| `RUNTIME_OTLP_ENDPOINT`, `RUNTIME_OTLP_LOGS_ENDPOINT`, `RUNTIME_OTLP_HEADERS`, `RUNTIME_OTLP_SERVICE_NAME`, `RUNTIME_OTLP_RESOURCE_ATTRIBUTES` | [observability](self-host/observability.md) |
+| `RUNTIME_PROFILES_FILE`, `RUNTIME_PROFILES_ADAPTER_URL`, `RUNTIME_PROFILES_ADAPTER_TOKEN_FILE`, `RUNTIME_PROFILES_SECRET_CMD` | [model profiles](model-profiles.md) |
+| `RUNTIME_CONNECTION_ADAPTERS_FILE`, `RUNTIME_DOC_ADAPTERS_FILE`, `RUNTIME_DOCUMENT_READER_PACKAGES`, `RUNTIME_MEMORY_ADAPTERS_FILE` | [connection adapters](connection-adapters.md), [document adapters](doc-adapters.md), [memory adapters](memory-adapters.md) |
+| `RUNTIME_MEMORY_LOCAL_FOLDERS`, `RUNTIME_MEMORY_SYNC_URL`, `AGENT_HUB_MEMORY` | [memory sync](hub/memory-sync.md) |
+| `RUNTIME_DELEGATE_FULL_CONTEXT` | [orchestration](agents/orchestration.md) |
+| `RUNTIME_IMAGEGEN_BIN`, `AGENT_EVAL_TOOL_DIRS`, `AGENT_EVAL_WORKSPACE`, `AGENT_HUB_EVAL` | [agent evals](agent-evals.md), [hub evals](hub/eval.md) |
+| `RUNTIME_DATA_MOVE`, `RUNTIME_DATA_MOVE_DELAY` | [the data move to the hub](migrations/0001-data-to-hub.md) |
+| `RUNTIME_UPDATE_MODE`, `RUNTIME_UPDATE_INTERVAL`, `RUNTIME_UPDATE_MIN_GAP`, `RUNTIME_DISK_ROOTS`, `RUNTIME_ENV_SETUP`, `AGENT_CLI_LOGINS_FILE`, `AGENT_HUB_SETUP` | [the machine](hub/machine.md) |
+| `RUNTIME_HUB_ENV_OWN` (its earlier name `RUNTIME_HUB_ENV_SWITCH` still works), `RUNTIME_HUB_ENV_UI`, `RUNTIME_LAUNCH_ENV_RESERVED` | [the hub's environment](hub/environment.md) |
+| `RUNTIME_FLEET_*`, `RUNTIME_ROLLOUT_DRIVER`, `RUNTIME_ROLLOUT_FLEET`, `RUNTIME_ROLLOUT_SSH` | [fleet rollout](hub/fleet-rollout.md) |
+| `AGENT_HUB_AUTOMATIONS`, `AGENT_HUB_DOCS`, `AGENT_HUB_JOBS`, `AGENT_JOBS_CAPS`, `AGENT_JOBS_SLOTS`, `AGENT_JOBS_TOOLS`, `AGENT_USAGE_SKILL_METRICS` | [automations](hub/automations.md), [documents](hub/docs.md), [builders](hub/builders.md), [analytics](hub/analytics.md) |
 
 ### Environment of the process
 

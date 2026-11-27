@@ -41,6 +41,8 @@ make test
 | `make cross` | compile every package for linux and darwin, amd64 and arm64 |
 | `make hub` / `make hub-dist` | `bin/hub` with its page, and what a hub serves to its machines (`HUB_TARGETS=linux/amd64` for one system); they build the page first |
 | `tools/hub-e2e.sh` | the hub, a machine agent and its runtime run against each other on this host, without Docker (see the header of the script) |
+| `make web` / `make web-check` | build the web page into `web/dist` (needs Node.js 22 and pnpm); `web-check` also runs its lint, type check and unit tests, as CI does |
+| `make skills-check` / `make skills-sync` | fail when the vendored agent skills differ from the commits pinned in `skills/SOURCES` (needs a network) / copy them again |
 | `make clean` | remove build outputs |
 
 Before you push, run what CI runs:
@@ -48,6 +50,8 @@ Before you push, run what CI runs:
 ```sh
 make fmt-check vet lint test-race cross
 ```
+
+and, when you changed the web page, `make web-check`.
 
 and scan for secrets with [gitleaks](https://github.com/gitleaks/gitleaks): `gitleaks dir .` must report nothing.
 

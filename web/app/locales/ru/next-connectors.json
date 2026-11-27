@@ -32,5 +32,16 @@
   "next.connectors.rules": "Правила",
   "next.connectors.rulesLead": "Что делать с событиями. Агент только предлагает: письмо или сообщение уйдёт после вашего «ок» на карточке.",
   "next.connectors.ruleWords": "Слова",
-  "next.connectors.ruleWordsHint": "через запятую"
+  "next.connectors.ruleWordsHint": "через запятую",
+  "next.connectors.push.aria": "Включить уведомления",
+  "next.connectors.push.title": "Включить уведомления на этом устройстве",
+  "next.connectors.push.lead": "Чтобы подтверждать отправки с телефона и знать, когда агент закончил",
+  "next.connectors.push.forSend": "Агент ждёт вашего «да» — с уведомлениями оно придёт на телефон",
+  "next.connectors.push.enable": "Включить",
+  "next.connectors.push.notNow": "Не сейчас",
+  "next.connectors.push.install": "На iPhone уведомления работают в установленном приложении: Поделиться → На экран «Домой», затем откройте его оттуда.",
+  "next.connectors.push.denied": "Уведомления для сайта запрещены: разрешите их в настройках сайта в браузере и обновите страницу.",
+  "next.connectors.push.deniedApple": "Уведомления запрещены: Настройки → Уведомления → harnessly, разрешите.",
+  "next.connectors.push.failed": "Не получилось включить: попробуйте ещё раз через минуту",
+  "next.connectors.push.telegram": "Включить Telegram-бота"
 }

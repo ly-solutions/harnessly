@@ -2,7 +2,7 @@
 // can do with it, how to connect it step by step with the fields right there, links worth keeping, and for a connected
 // server its state with the buttons to manage it and its tools. Nothing is kept until the person presses the button of
 // the step; connecting is the same call the catalog's form always made.
-import { useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { McpGlyph } from '@/next/features/connections/glyphs';
 import {
   DEFAULT_HEADER,
@@ -36,6 +36,8 @@ import { hostOf } from '@/next/features/connections/model';
 import OwnDescribe from '@/next/features/connections/own-describe';
 import { FormError, SetButton } from '@/next/features/settings/rows';
 import { t } from '@/next/i18n';
+import TriggerPanel from '@/next/features/connections/trigger-panel';
+import type { ITriggerApi } from '@/next/features/connections/triggers-api';
 import Icon from '@/next/ui/icon';
 import SecretField from '@/next/ui/secret-field';
 import '@/next/styles/connections-page.css';
@@ -236,9 +238,24 @@ export interface IServicePageProps {
   /** The token the server asked for when it was kept, when it did. */
   ask: ITokenAsk | null;
   onBack: () => void;
+  /** The triggers of a connected server: its calls bound to the machine; none — no trigger part. */
+  triggers?: (server: IMcpServer) => ITriggerApi;
 }
 
-const ServicePage = ({ service, actions, signin, onConnect, ask, onBack }: IServicePageProps) => {
+/** The trigger part of a connected server, its calls made once per server. */
+const ServerTriggers = ({
+  server,
+  triggers,
+}: {
+  server: IMcpServer;
+  triggers: (server: IMcpServer) => ITriggerApi;
+}) => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the calls follow the server's id, not every list refresh
+  const api = useMemo(() => triggers(server), [server.id]);
+  return <TriggerPanel api={api} isApi={server.transport === 'api'} />;
+};
+
+const ServicePage = ({ service, actions, signin, onConnect, ask, onBack, triggers }: IServicePageProps) => {
   const { entry, server } = service;
   const name = server === null ? (entry?.name ?? '') : server.name;
   const catalogId = entry === null ? '' : entry.id;
@@ -277,6 +294,10 @@ const ServicePage = ({ service, actions, signin, onConnect, ask, onBack }: IServ
           signin={signin}
           onGone={onBack}
         />
+      )}
+
+      {server !== null && triggers !== undefined && server.state === 'ok' && (
+        <ServerTriggers server={server} triggers={triggers} />
       )}
 
       {server !== null && server.custom !== null && actions.onDescribe !== undefined && (

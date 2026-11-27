@@ -10,6 +10,7 @@ import {
   type IMcpAdded,
   type IMcpAuthStart,
   type IMcpList,
+  type IMcpServer,
   type IOwnServiceInput,
 } from '@/next/features/connections/mcp-api';
 import { ConnectForm, type TConnectMcp, type TProbeResult } from '@/next/features/connections/mcp-catalog';
@@ -20,6 +21,7 @@ import {
   openCatalog,
   takesToken,
 } from '@/next/features/connections/mcp-model';
+import type { ITriggerApi } from '@/next/features/connections/triggers-api';
 import OwnServiceBlock from '@/next/features/connections/own-service';
 import { useMcpSignIn } from '@/next/features/connections/mcp-signin';
 import type { IMcpActions, ITokenAsk } from '@/next/features/connections/service-manage';
@@ -54,6 +56,10 @@ export interface IMcpSectionProps extends IMcpActions {
   onSignIn: (id: string) => Promise<TSignInStart>;
   /** Reads the list again; its answer replaces the page's. */
   onRefresh: () => Promise<void>;
+  /** The triggers of a connected server. */
+  triggers?: (server: IMcpServer) => ITriggerApi;
+  /** Reads the agents' own configs again; words of why it failed, or null. */
+  onRescan?: () => Promise<string | null>;
 }
 
 /** After POST /mcp: the popup's sign-in, the token form, or nothing when the server connected at once. */
@@ -72,6 +78,31 @@ const nextStep = (added: IMcpAdded): TNext => {
   if (start.auth === MCP_AUTH.header || start.oauthUnavailable) return NEXT.token;
   if (start.auth === MCP_AUTH.oauth) return NEXT.signIn;
   return NEXT.none;
+};
+
+/** «Rescan»: the servers of Claude Code, its plugins and projects, and Codex are taken again now. */
+const Rescan = ({ onRescan }: { onRescan: () => Promise<string | null> }) => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="hx-mcp-rescan">
+      <span className="hx-mcp-rescan__text">{error ?? t('next.connections.mcp.rescan.hint')}</span>
+      <button
+        type="button"
+        className="hx-mcp-rescan__btn"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void onRescan().then((why) => {
+            setBusy(false);
+            setError(why);
+          });
+        }}
+      >
+        {busy ? t('next.connections.mcp.rescan.busy') : t('next.connections.mcp.rescan')}
+      </button>
+    </div>
+  );
 };
 
 const RowsSkeleton = () => (
@@ -102,6 +133,8 @@ const McpSection = ({
   onAddOwn,
   onSignIn,
   onRefresh,
+  onRescan,
+  triggers,
   ...actions
 }: IMcpSectionProps) => {
   const servers = mcp === null ? null : mcp.servers;
@@ -162,6 +195,7 @@ const McpSection = ({
           onConnect={connect}
           ask={ask}
           onBack={() => onOpen(null)}
+          triggers={triggers}
         />
       )}
       {item !== null && service === null && (
@@ -175,6 +209,7 @@ const McpSection = ({
       )}
       <div className="hx-mcp__list" hidden={item !== null}>
         <Head />
+        {onRescan && <Rescan onRescan={onRescan} />}
         {mcp.servers.length > 0 && (
           <section className="hx-cn-block">
             <h3 className="hx-cn-block__title">{t('next.connections.svc.connected')}</h3>

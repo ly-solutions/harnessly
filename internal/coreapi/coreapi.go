@@ -80,6 +80,11 @@ type Visibility interface {
 	MarkHidden(deviceID string)
 }
 
+// LookingVisibility also takes the chat the device shows (push.Store): an action waiting in that chat needs no push.
+type LookingVisibility interface {
+	MarkLooking(deviceID, conv string)
+}
+
 // Timings of a resume; zero values take the previous runtime's.
 type Timings struct {
 	// ShellReady: a fresh tmux session's shell needs a moment before it takes keys.
@@ -454,7 +459,10 @@ func (c *Config) visibility(r *http.Request, body any) (int, any, http.Header) {
 	}
 	if id, ok := f["deviceId"].(string); ok {
 		if c.Visibility != nil {
-			if visible {
+			conv, _ := f["conversation"].(string)
+			if lv, ok := c.Visibility.(LookingVisibility); ok && visible && len(conv) <= 128 {
+				lv.MarkLooking(id, conv)
+			} else if visible {
 				c.Visibility.MarkVisible(id)
 			} else {
 				c.Visibility.MarkHidden(id)

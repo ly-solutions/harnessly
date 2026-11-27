@@ -9,13 +9,15 @@ The settings open from your profile at the bottom of the sidebar.
 | **General**, **Appearance**, **Shortcuts** | the window: theme, text size, language, which editor opens files, what Enter does, the keys; your account |
 | **Notifications** | your Telegram, and the instruction to the agents of when to write to you |
 | **Voice input**, **Recordings** | the microphone in the message field, and the recordings you made |
-| **Models and keys** | how the agents and the models sign in, and where their requests go |
-| **Claude Code**, **Codex** | each agent's own settings on the machine: rules for commands, environment variables |
+| **Providers**, **Smart features** | whose models work for you: how the agents and the API services sign in, and where their requests go; what runs on a model for summaries and hints, and whose model it is |
+| **Claude Code**, **Codex** | each agent's own settings on the machine: sign-in, requests, rules for commands, environment variables |
 | **Skills and MCP** | what the agent finds on the machine and may use; turn a skill or a server off here |
 | **Safe** | the secrets the agents may use without seeing them |
+| **Browser** | browser profiles, project access and Chrome security on this machine |
 | **Machines** | where the agents run; new chats open on the main one |
 | **Apps**, **Connections** | the services the agents work with: your tracker, wiki, GitLab or GitHub, remote MCP servers |
-| **Designly** (or your install's name for designs), **Beta** | what designs are built on this machine; features to try before they are for everyone |
+| **Designly** (or your install's name for designs), **Extensions**, **Plugins** | what designs are built on this machine; what the installed packages add, with their settings and first steps; the built-in apps and how they show up in the chat |
+| **Beta**, **Developer mode** | features to try before they are for everyone; detailed logs of the connections and triggers, on this computer only |
 
 ## Connections
 

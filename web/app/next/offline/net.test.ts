@@ -71,6 +71,28 @@ describe('device network (HRN-1803)', () => {
     expect(netStore.get().online).toBe(true);
   });
 
+  it('leaves «offline» when the server answers though the browser still says offline (Android after a VPN switch)', async () => {
+    const d = device();
+    startNet(d.env);
+    await settle();
+    d.state.browser = false;
+    d.fire('offline');
+    flush();
+    expect(netStore.get().online).toBe(false);
+    // The flag stays false, the network is back: the next probe and «Проверить» both bring the page online.
+    await d.tick();
+    expect(netStore.get().online).toBe(true);
+    d.state.server = false;
+    d.fire('offline');
+    await checkNet();
+    await settle();
+    expect(netStore.get().online).toBe(false);
+    d.state.server = true;
+    await checkNet();
+    await settle();
+    expect(netStore.get().online).toBe(true);
+  });
+
   it('believes a browser that says «online» only once the server answers', async () => {
     const d = device({ server: false });
     startNet(d.env);

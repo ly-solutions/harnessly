@@ -32,5 +32,16 @@
   "next.connectors.rules": "Rules",
   "next.connectors.rulesLead": "What to do with events. The agent only proposes: a letter or a message goes after your «OK» on the card.",
   "next.connectors.ruleWords": "Words",
-  "next.connectors.ruleWordsHint": "comma separated"
+  "next.connectors.ruleWordsHint": "comma separated",
+  "next.connectors.push.aria": "Turn on notifications",
+  "next.connectors.push.title": "Turn on notifications on this device",
+  "next.connectors.push.lead": "To confirm sends from your phone and know when an agent is done",
+  "next.connectors.push.forSend": "The agent waits for your yes — with notifications on, it reaches your phone",
+  "next.connectors.push.enable": "Turn on",
+  "next.connectors.push.notNow": "Not now",
+  "next.connectors.push.install": "On iPhone notifications work in the installed app: Share → Add to Home Screen, then open it from there.",
+  "next.connectors.push.denied": "Notifications are blocked for this site: allow them in the browser's site settings, then reload.",
+  "next.connectors.push.deniedApple": "Notifications are blocked: Settings → Notifications → harnessly, allow them.",
+  "next.connectors.push.failed": "Could not turn them on: try again in a moment",
+  "next.connectors.push.telegram": "Turn on the Telegram bot"
 }

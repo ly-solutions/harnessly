@@ -288,6 +288,10 @@ func (c *cli) run(args []string) error {
 		return c.connectorsList(rest)
 	case "connector":
 		return c.connector(rest)
+	case "devices":
+		return c.devices(rest)
+	case "push":
+		return c.push(rest)
 	case "issues":
 		return c.issues(rest)
 	case "issue":

@@ -43,3 +43,19 @@ func TestPatchConfigUIVersion(t *testing.T) {
 		t.Fatalf("after refusals %v", got)
 	}
 }
+
+func TestPatchConfigDeveloperMode(t *testing.T) {
+	store, patch := patchConfigRoute(t)
+	if status, _ := patch(`{"developerMode":true}`); status != 200 {
+		t.Fatalf("on: %d", status)
+	}
+	if got, _ := store.ConfigObject().Get("developerMode"); got != true {
+		t.Fatalf("stored %v", got)
+	}
+	if status, body := patch(`{"developerMode":"yes"}`); status != 400 || !strings.Contains(body, "developerMode") {
+		t.Fatalf("bad: %d %s", status, body)
+	}
+	if got, _ := store.ConfigObject().Get("developerMode"); got != true {
+		t.Fatalf("after refusal %v", got)
+	}
+}

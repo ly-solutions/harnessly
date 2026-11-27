@@ -421,6 +421,7 @@ Markers (here and in the organization's series) carry what the chart draws:
 | `POST …/signals/{id}/snooze` | the addressee or above | `{ until }` (≤ 30 days) | `{ signal: Signal }`; journal `signal.snooze` |
 | `DELETE …/signals/{id}/snooze` | the addressee or above | | `{ signal: Signal }` back in the list; journal `signal.unsnooze` |
 | `GET …/spend?scope=&by=team\|person\|model\|account\|tenant&period=` | money | | `SpendResponse` — each row with its limit and forecast; sums of rows equal the total |
+| `GET …/spend/daily?scope=&period=&split=team\|model` | money | | `DailySpend` — the hourly rollup summed per day of the organization's time zone and split by team (default) or model, at API prices: `days`, `lines[{key, values}]`, and `cmpTotalUsd` when `cmpFrom`/`cmpTo` are asked |
 | `GET …/subscriptions?scope=` | money | | `SubscriptionsResponse` — each subscription's fee split between people, its windows |
 | `GET …/limit-windows?scope=&from=&to=` | money | | `LimitWindowsResponse` — the history of the windows of the subscriptions the scope reaches ([below](#limit-windows-hrn-786)) |
 | `GET …/kpis?scope=&from=&to=&cmpFrom=&cmpTo=&series=team` | view | | `KpisResponse` — all fifteen with the comparison; `series=team` adds them per team («Команды рядом») |

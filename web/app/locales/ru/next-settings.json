@@ -689,5 +689,20 @@
   "next.settings.general.folders.peek": "Живые чаты в закрытой папке",
   "next.settings.general.folders.peek.hint": "Чат в работе или ждущий вашего просмотра, открытый сегодня, виден под закрытой папкой.",
   "next.settings.general.folders.suggest": "Предлагать папку для чата",
-  "next.settings.general.folders.suggest.hint": "Через несколько промптов приложение предложит положить чат без папки в подходящую."
+  "next.settings.general.folders.suggest.hint": "Через несколько промптов приложение предложит положить чат без папки в подходящую.",
+  "next.settings.section.developer": "Режим разработчика",
+  "next.settings.lead.developer": "Подробные логи подключений и триггеров, только на этом компьютере",
+  "next.devmode.group": "Режим разработчика",
+  "next.devmode.switch": "Логи подключений и триггеров",
+  "next.devmode.switch.hint": "Внизу «Подключений» появится панель: каждая проверка и опрос, аргументы, время, новые id, курсор, отказы и ошибки, сырое событие и куда оно ушло",
+  "next.devmode.foot": "Хранится только на этой машине, в кольце последних строк; ответы сервисов в хаб не уходят. На телефоне не показывается.",
+  "next.devmode.refused": "Машина не приняла изменение. Попробуйте ещё раз.",
+  "next.devmode.panel": "Лог разработчика",
+  "next.devmode.filter": "Подключение",
+  "next.devmode.all": "Все подключения",
+  "next.devmode.clear": "Очистить",
+  "next.devmode.empty": "Пока пусто: строки появятся со следующей проверкой или опросом.",
+  "next.devmode.failed": "Лог не прочитан с машины.",
+  "next.devmode.sync": "Синхронизация MCP",
+  "next.devmode.new": "Новое подключение"
 }

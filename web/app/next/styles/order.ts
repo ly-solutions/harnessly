@@ -126,6 +126,7 @@ import '@/next/styles/project-access.css';
 import '@/next/styles/connections.css';
 import '@/next/styles/connections-page.css';
 import '@/next/styles/connectors.css';
+import '@/next/styles/dev-trace.css';
 import '@/next/styles/smart-notice.css';
 import '@/next/styles/notice-stack.css';
 import '@/next/styles/notification-center.css';

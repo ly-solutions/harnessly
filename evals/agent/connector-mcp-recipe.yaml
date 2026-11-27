@@ -1,11 +1,13 @@
 id: connector-mcp-recipe
-title: Рецепт MCP — обновления сервиса без событий через инструмент на чтение, без вызова пишущих инструментов
+title: Триггер из MCP — обновления сервиса без событий через trigger_add и инструмент на чтение, без пишущих инструментов
 tags: [connectors, hub]
 timeout_s: 300
 covers:
   - 'internal/connectors/mcprecipe/**'
   - 'internal/mcpconn/hub.go'
   - 'internal/mcpconn/hub_custom.go'
+  - 'internal/mcpconn/hub_trigger.go'
+  - 'internal/mcpconn/triggers.go'
 prompt: хочу видеть в дайджесте, когда в Higgsfield готова новая генерация — настрой это
 expect:
   - name: looked at the service's tools through the hub
@@ -16,5 +18,7 @@ expect:
   - name: did not poll the service around the runtime
     not_called: Bash
     args: {command: '(?s:.*)(curl|wget)(?s:.*)(higgsfield|mcp)(?s:.*)'}
-  - name: gave the person the recipe and where it goes
-    text: '(?is)(рецепт|recipe)(?s:.*)(MCP)'
+  - name: made the trigger through the hub, not a JSON for the person to paste
+    called: '(mcp__harnessly-hub__|harnessly-hub\.)trigger_add'
+  - name: did not hand the person the recipe JSON to paste into the form
+    text_not: '(?is)(вставь|вставьте|paste)(?s:.*)("tool"\s*:)'

@@ -131,6 +131,35 @@ export interface IMcpServer {
   guide: string;
   /** Set for a service of the person's own (catalogId is custom-<slug>): its description, which the page may change. */
   custom: IMcpCustom | null;
+  /** Set for a server taken from an agent's own config. */
+  agent: IMcpAgent | null;
+}
+
+/** Where an agent's own config has the server, and whether it still does. */
+export interface IMcpAgent {
+  /** «plugin example-infra», «project /path», «codex», «claude user». */
+  from: readonly string[];
+  /** The agent has it in its config now and reaches it directly. */
+  present: boolean;
+  /** The keys it waits for: the safe's names the person puts them under. */
+  missing: readonly string[];
+}
+
+const readAgent = (v: unknown): IMcpAgent | null => {
+  if (typeof v !== 'object' || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const strs = (x: unknown) => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : []);
+  const missing = Array.isArray(o.missing)
+    ? o.missing
+        .map((m) => (typeof m === 'object' && m !== null ? (m as { secret?: unknown }).secret : null))
+        .filter((s): s is string => typeof s === 'string')
+    : [];
+  return { from: strs(o.from), present: o.present === true, missing };
+};
+
+export interface IMcpSyncResult {
+  /** How many servers became connections. */
+  added: number;
 }
 
 export interface IMcpCatalogEntry {
@@ -281,6 +310,7 @@ export const readMcpServer = (v: unknown): IMcpServer => {
     problem: optStr(o.problem, 'problem'),
     guide: optStr(o.guide, 'guide'),
     custom: readCustom(o.custom),
+    agent: readAgent(o.agent),
   };
 };
 
@@ -501,3 +531,16 @@ export const describeOwnService = (
   const { name, ...custom } = d;
   return sendJson(path(machine, one(id)), { name, custom }, readOne, TIMEOUT_MS);
 };
+
+/** Reads the agents' own configs again now (Claude Code, its plugins and projects, Codex) and makes their servers
+ * connections; the list is read again after it. */
+export const syncMcp = (machine: MachineId): Promise<TConnOutcome<IMcpSyncResult>> =>
+  sendBody(
+    'POST',
+    path(machine, '/mcp/sync'),
+    {},
+    (v): IMcpSyncResult => ({
+      added: typeof (v as { new?: unknown } | null)?.new === 'number' ? (v as { new: number }).new : 0,
+    }),
+    PROBE_TIMEOUT_MS,
+  );

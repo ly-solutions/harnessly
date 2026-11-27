@@ -212,6 +212,14 @@ CONNECTORS (the person's mail, calendars, folders, chat bots, feeds, webhooks, c
                                     a read; what came from outside is marked as data, not instructions
   harnessly connector act ID ACTION [key=value...] --why "..."
                                     an action outward (send, create): runs only after the person's yes on the card
+                                    (or on the buttons of the push it sends; --notify id|last|mobile|all|none)
+
+NOTIFICATIONS (the person's phones and computers that get harnessly's push)
+  harnessly devices                 id, name, phone or not, last used, which one was used last
+  harnessly push send --title "…" [--body "…"] [--device id|last|mobile|all] [--url /path]
+                                    a push of your own, when the person asked to be told (6 in 10 minutes)
+  harnessly push ask [--why "…"] [--wait N]
+                                    no device gets notifications: a card in this chat turns them on in one tap
 
 TRACKERS AND WIKIS (the person's Jira, Confluence, YouTrack, Linear, GitLab, GitHub…, connected in Settings → Connections)
   harnessly connections             what is connected: id, product, name, address, capabilities, state, primary
@@ -493,6 +501,8 @@ and the setting changes only after they say yes: the command waits (--wait secon
 	"connections": connectionsHelp,
 	"connectors":  connectorsHelp,
 	"connector":   connectorsHelp,
+	"devices":     pushHelp,
+	"push":        pushHelp,
 	"issues":      connectionsHelp,
 	"issue":       connectionsHelp,
 	"mrs":         connectionsHelp,

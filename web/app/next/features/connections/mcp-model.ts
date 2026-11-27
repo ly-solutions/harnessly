@@ -84,7 +84,18 @@ const whereOf = (server: IMcpServer): string => {
 export const mcpSubLine = (server: IMcpServer): string => {
   const host = whereOf(server);
   const where = server.me === '' ? host : t('next.connections.mcp.as', { host, who: server.me });
-  return server.enabled ? where : t('next.connections.mcp.offLine', { where });
+  const line = server.enabled ? where : t('next.connections.mcp.offLine', { where });
+  const agent = agentLine(server);
+  return agent === '' ? line : `${line} · ${agent}`;
+};
+
+/** The mark of a server taken from an agent's own config: the agent has it directly, or no longer has it. */
+export const agentLine = (server: IMcpServer): string => {
+  if (server.agent === null) return '';
+  const from = server.agent.from.join(', ');
+  return server.agent.present
+    ? t('next.connections.mcp.agent.direct', { from })
+    : t('next.connections.mcp.agent.gone', { from });
 };
 
 export const toolsText = (count: number): string => plural(count, 'next.connections.mcp.tools');

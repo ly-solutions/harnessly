@@ -132,6 +132,9 @@ func (s *Sender) Send(sub Subscription, msg Message) (int, error) {
 			return 0, errors.New("push: bad subscription keys")
 		}
 	}
+	if msg.Token != "" {
+		msg.Machine = sub.Via
+	}
 	body, err := Encrypt(nodejson.Marshal(msg), uaPublic, auth)
 	if err != nil {
 		return 0, err
@@ -145,7 +148,7 @@ func (s *Sender) Send(sub Subscription, msg Message) (int, error) {
 		return 0, err
 	}
 	urgency := "normal"
-	if msg.Kind == "question" {
+	if msg.Kind == "question" || msg.Kind == "approval" {
 		urgency = "high"
 	}
 	req.Header.Set("TTL", strconv.Itoa(int(TTL/time.Second)))
@@ -259,7 +262,14 @@ func (s *Sender) summarized(msg Message, answer string) Message {
 }
 
 func (s *Sender) deliver(subs []Subscription, msg Message) {
-	for _, sub := range SelectTargets(subs, s.Store.Visible()) {
+	s.SendTo(SelectTargets(subs, s.Store.Visible()), msg)
+}
+
+// SendTo delivers msg to exactly these subscriptions, dropping the ones the push service says are gone; it answers
+// how many took it.
+func (s *Sender) SendTo(subs []Subscription, msg Message) int {
+	sent := 0
+	for _, sub := range subs {
 		code, err := s.Send(sub, msg)
 		if err != nil {
 			s.log("warn", "web push failed", "err", err.Error())
@@ -268,8 +278,13 @@ func (s *Sender) deliver(subs []Subscription, msg Message) {
 			if err := s.Store.Remove(sub.Endpoint); err != nil {
 				s.log("warn", "push subscription not removed", "err", err.Error())
 			}
+			continue
+		}
+		if err == nil && code < 300 {
+			sent++
 		}
 	}
+	return sent
 }
 
 var _ status.Pusher = (*Sender)(nil)

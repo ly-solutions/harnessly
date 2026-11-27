@@ -91,3 +91,17 @@
 .hx-brand .hx-offmark {
   margin-left: 2px;
 }
+
+/* On this computer's loopback, the way back to the hub once it answers (features/sidebar/local-mark.tsx). */
+.hx-local-back {
+  gap: 4px;
+  margin-left: 4px;
+  white-space: nowrap;
+  animation: hx-offmark-in 240ms ease-out both;
+}
+
+/* «Этот компьютер» in Settings → Machines: the buttons wrap on a phone. */
+.hx-tc__acts {
+  flex-wrap: wrap;
+  padding: 0 16px 12px;
+}

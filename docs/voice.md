@@ -75,7 +75,7 @@ from `huggingface.co/ggerganov/whisper.cpp`, checked against the SHA-256 in `int
 
 Settings → Voice input → _Model_ picks who recognizes: the machine (the default; the recording never leaves it),
 OpenAI `gpt-4o-transcribe` (Realtime API transcription) or Yandex SpeechKit (v3 streaming, gRPC). A cloud model is
-offered once its key is saved in Settings → Models and keys (OpenAI: an API key; Yandex: a service account's API key and,
+offered once its key is saved in Settings → Providers (OpenAI: an API key; Yandex: a service account's API key and,
 if the account needs it, the folder id). The keys sit beside the vendors' keys in `<data folder>/providers` (mode 0600)
 and go only to that provider. The recording is sent to a provider only while its model is the picked one; text arrives
 in the field as you speak, as with the machine's own model.

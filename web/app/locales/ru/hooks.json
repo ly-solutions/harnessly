@@ -94,5 +94,6 @@
   "hooks.useWebPush.registerHangs": "сервер не ответил на подписку за 15 секунд",
   "hooks.useWebPush.notAllowed": "браузер не разрешил подписку ({reason})",
   "hooks.useWebPush.staleSubscription": "на устройстве осталась старая подписка - нажмите «Включить» ещё раз",
-  "hooks.useWebPush.stillLoading": "приложение ещё загружалось - нажмите «Включить» ещё раз"
+  "hooks.useWebPush.stillLoading": "приложение ещё загружалось - нажмите «Включить» ещё раз",
+  "hooks.useWebPush.subscribeHangsAndroid": "телефон не ответил на подписку за 15 секунд. На Android это сервис пушей Google: на телефоне нет сервисов Google, FCM закрыт VPN или сетью, или приложение установлено не из Chrome. Если ответ придёт позже, пуши включатся сами; а пока те же уведомления может присылать Telegram-бот"
 }

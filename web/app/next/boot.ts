@@ -4,6 +4,12 @@
 
 import { confirmOfflineOwner, forgetOfflinePage } from '@/next/offline/client';
 import { onBackOnline } from '@/next/offline/net';
+import {
+  forgetThisComputer,
+  loadThisComputer,
+  pairFromAddress,
+  renewThisComputer,
+} from '@/next/offline/this-computer';
 import { startPrefsSync } from '@/next/stores/synced-prefs';
 import { useSyncExternalStore } from 'react';
 import { pageClock } from '@/next/core/clock';
@@ -169,6 +175,7 @@ const withinCacheWait = (ready: Promise<void>) =>
 const signOut = (me: MeState): BootState => {
   confirmOfflineOwner(null);
   forgetOfflinePage();
+  forgetThisComputer();
   persistence?.stop();
   persistence = null;
   clearPersonData();
@@ -182,6 +189,10 @@ const signOut = (me: MeState): BootState => {
 async function adopt(me: Extract<MeState, { k: 'ready' }>, openKV: (person: string) => KV): Promise<void> {
   const person = personKey(me.me);
   confirmOfflineOwner(person);
+  // «Этот компьютер»: what this browser keeps for the person, a pass renewed, a pairing the install asked for.
+  loadThisComputer();
+  void renewThisComputer();
+  void pairFromAddress();
   if (persistence?.person === person) {
     await persistence.enableOutbox();
   } else {

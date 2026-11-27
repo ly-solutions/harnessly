@@ -437,3 +437,27 @@ func TestTrustedRecipientsSkipTheCard(t *testing.T) {
 		t.Fatalf("untrust: %v", err)
 	}
 }
+
+// A connection's non-secret fields change after a check (a recipe's new version); a secret is not changed so.
+func TestReconfigureChecksAndKeeps(t *testing.T) {
+	reset()
+	safe := &memSafe{m: map[string]string{}}
+	s := newSvc(t, t.TempDir(), safe)
+	c, err := s.Connect(context.Background(), "test", "mine", map[string]string{"host": "example.com", "password": "right"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Reconfigure(context.Background(), c.ID, map[string]string{"host": "example.org"})
+	if err != nil || got.Config["host"] != "example.org" || got.Account != "me@example.org" || got.Name != "mine" {
+		t.Fatalf("reconfigure: %+v %v", got, err)
+	}
+	if kept, _ := s.Get(c.ID); kept.Config["host"] != "example.org" {
+		t.Fatalf("not kept: %+v", kept)
+	}
+	if _, err := s.Reconfigure(context.Background(), c.ID, map[string]string{"password": "other"}); !errors.Is(err, ErrBadArgs) {
+		t.Fatalf("a secret changed: %v", err)
+	}
+	if _, err := s.Reconfigure(context.Background(), "nope", map[string]string{"host": "x"}); err == nil {
+		t.Fatal("an unknown connection")
+	}
+}

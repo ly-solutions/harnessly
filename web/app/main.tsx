@@ -20,11 +20,14 @@ import { appFetch } from '@/lib/app-path';
 import { loadBootstrap } from '@/lib/boot-start';
 import { appConfig } from '@/platform/config';
 import { auth } from '@/runtime/endpoints';
+import { takeLocalPass } from '@/next/offline/loopback';
 import useWorkspaceStore, { type IWorkspaceInitialData } from '@/hooks/use-workspace-store';
 import useConfigStore, { type IConfigInitialData } from '@/hooks/use-config-store';
 import PushBridge from '@/components/agents/push-bridge';
 import { captureInstallPrompt } from '@/hooks/use-install-prompt';
 import { reloadOnStaleChunks } from '@/lib/stale-chunks';
+
+const localPass = takeLocalPass().catch(() => undefined);
 
 // The sign-in and the docs page are drawn with the old stylesheets, which come with them (styles/legacy.ts).
 const SignIn = lazy(() => import('@/styles/legacy').then(() => import('@/components/auth/sign-in')));
@@ -80,31 +83,36 @@ const useBootstrap = (): [TPhase, () => void] => {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
-    const stop = loadBootstrap((signal) => appFetch('/api/platform/bootstrap', { signal }), {
-      onData: (body, meanwhile) => {
-        if (!meanwhile) {
-          useWorkspaceStore.getState().hydrate(body.initialWorkspace as IWorkspaceInitialData | undefined);
-          useConfigStore.getState().hydrate(body.initialConfig as IConfigInitialData | undefined);
-        }
-        setPhase({ kind: 'ready', boot: body });
-      },
-      onSignedOut: (res) => {
-        // The hub answers a request without its session with a redirect to its sign-in page.
-        const hubUrl = appConfig().hubUrl;
-        if (hubUrl && toHubSignIn(hubUrl)) return;
-        if (res.status !== 401) return;
-        void auth
-          .state()
-          .catch(() => ({ needsSetup: false, requiresAuth: false }))
-          .then((state) => {
-            if (alive)
-              setPhase({
-                kind: 'signed-out',
-                needsSetup: state.needsSetup,
-                requiresAuth: state.requiresAuth,
-              });
-          });
-      },
+    let stop = () => {};
+    // On this computer's loopback a pass from the hub becomes the session first; elsewhere it is no wait.
+    void localPass.then(() => {
+      if (!alive) return;
+      stop = loadBootstrap((signal) => appFetch('/api/platform/bootstrap', { signal }), {
+        onData: (body, meanwhile) => {
+          if (!meanwhile) {
+            useWorkspaceStore.getState().hydrate(body.initialWorkspace as IWorkspaceInitialData | undefined);
+            useConfigStore.getState().hydrate(body.initialConfig as IConfigInitialData | undefined);
+          }
+          setPhase({ kind: 'ready', boot: body });
+        },
+        onSignedOut: (res) => {
+          // The hub answers a request without its session with a redirect to its sign-in page.
+          const hubUrl = appConfig().hubUrl;
+          if (hubUrl && toHubSignIn(hubUrl)) return;
+          if (res.status !== 401) return;
+          void auth
+            .state()
+            .catch(() => ({ needsSetup: false, requiresAuth: false }))
+            .then((state) => {
+              if (alive)
+                setPhase({
+                  kind: 'signed-out',
+                  needsSetup: state.needsSetup,
+                  requiresAuth: state.requiresAuth,
+                });
+            });
+        },
+      });
     });
     return () => {
       alive = false;

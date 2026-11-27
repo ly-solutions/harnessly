@@ -94,5 +94,6 @@
   "hooks.useWebPush.registerHangs": "the server did not answer the subscription within 15 seconds",
   "hooks.useWebPush.notAllowed": "the browser did not allow the subscription ({reason})",
   "hooks.useWebPush.staleSubscription": "an old subscription was left on this device - press Enable again",
-  "hooks.useWebPush.stillLoading": "the app was still loading - press Enable again"
+  "hooks.useWebPush.stillLoading": "the app was still loading - press Enable again",
+  "hooks.useWebPush.subscribeHangsAndroid": "the phone did not answer the subscription within 15 seconds. On Android that is Google's push service: the phone has no Google services, FCM is blocked by a VPN or the network, or the app was installed from a browser other than Chrome. If it answers later, push turns on by itself; meanwhile the Telegram bot brings the same notifications"
 }
