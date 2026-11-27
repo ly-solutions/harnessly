@@ -63,6 +63,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /dl/network.json", httpx.Handler(h.network))
 	mux.Handle("GET /dl/web.json", httpx.Handler(h.webPointer))
 	mux.Handle("GET /dl/web.tar.gz", httpx.Handler(h.webArchive))
+	mux.Handle("GET /dl/obsidian/{file}", httpx.Handler(h.obsidian))
 	mux.Handle("GET /dl/{name}", httpx.Handler(h.binary))
 }
 

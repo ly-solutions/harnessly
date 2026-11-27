@@ -48,6 +48,8 @@ created on that very instance.
   the credentials signed in as, the state of the last check, which connection is primary. No credential.
 - The credentials: in [the safe](safe.md) as the secret `conn-<id>`, encrypted with the machine's key. Each read is
   recorded in the safe as a use by «connection <name>».
+- A command gets no value of them: `harnessly secret run` and `secret file` refuse the credentials of connections,
+  connectors and MCP servers (`integration`). The runtime uses them itself.
 - Connecting the same instance with the same login again replaces the credentials: that is how a token is rotated.
 - Log lines name connection ids, kinds and reasons; never a credential or an address with a login in it.
 

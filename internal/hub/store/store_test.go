@@ -382,6 +382,9 @@ func exercise(t *testing.T, db *DB) {
 	}
 
 	// deleting a user takes their credentials with them (cascade)
+	if err := s.CreateAPIToken(ctx, APIToken{ID: "t1", UserID: u.ID, TokenHash: "th1", Client: "app", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.WipeUserCredentials(ctx, u.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -390,6 +393,9 @@ func exercise(t *testing.T, db *DB) {
 	}
 	if _, err := s.SessionByHash(ctx, "h1"); !IsNotFound(err) {
 		t.Errorf("session after wipe: %v", err)
+	}
+	if tokens, err := s.UserAPITokens(ctx, u.ID, now); err != nil || len(tokens) != 0 {
+		t.Errorf("personal tokens after wipe: %v %v", tokens, err)
 	}
 }
 

@@ -260,6 +260,9 @@ func (d *Dialer) AdmitSites(r *http.Request) (store.Machine, error) {
 	if err == nil && m.RevokedAt != nil {
 		err = errRevoked
 	}
+	if err == nil {
+		m = d.DB.S().AsPerson(r.Context(), m)
+	}
 	return m, err
 }
 
@@ -267,10 +270,47 @@ func (d *Dialer) AdmitSites(r *http.Request) (store.Machine, error) {
 // Its nonces are kept apart from the dial's. A machine switched off by an administrator gets no session.
 func (d *Dialer) AdmitStore(r *http.Request) (store.Machine, error) {
 	m, err := d.admit(r, hubproto.VerifyStore, false, "store:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
+	return d.ownerless(r, m, err)
+}
+
+var (
+	errRelink = httpx.New(http.StatusForbidden, hubproto.CodeRelinkRequired,
+		"Машину передали другому человеку или зарегистрировали чужим кодом. Чтобы она получила личные данные владельца, он должен нажать «Принять машину» в хабе или переподключить её своим кодом: команда установки с --re-register")
+	errOwnerOff = httpx.New(http.StatusForbidden, "owner_disabled", "Аккаунт владельца машины отключён")
+)
+
+// admitted is the last word on a request a machine makes in its owner's name: a switched off machine, an owner who did
+// not accept the machine's keys and an owner whose account is off are all refused (store.MachinePerson). A machine
+// nobody owns passes: the route says what it needs.
+func (d *Dialer) admitted(r *http.Request, m store.Machine, err error) (store.Machine, error) {
+	if err != nil {
+		return m, err
 	}
-	return m, err
+	if m.DisabledAt != nil {
+		return m, errDisabled
+	}
+	st, err := d.DB.S().MachinePerson(r.Context(), m)
+	switch {
+	case err != nil:
+		return m, err
+	case st == store.PersonRelink:
+		return m, errRelink
+	case st == store.PersonDisabled:
+		return m, errOwnerOff
+	}
+	return m, nil
+}
+
+// ownerless is admitted for a request that stands without a person: the machine passes, with no owner when its keys
+// may not act for them.
+func (d *Dialer) ownerless(r *http.Request, m store.Machine, err error) (store.Machine, error) {
+	if err != nil {
+		return m, err
+	}
+	if m.DisabledAt != nil {
+		return m, errDisabled
+	}
+	return d.DB.S().AsPerson(r.Context(), m), nil
 }
 
 // AdmitSecrets checks the signed request of a machine to its safe (POST /agent/secrets), signed over body, and returns
@@ -280,10 +320,7 @@ func (d *Dialer) AdmitSecrets(r *http.Request, body []byte) (store.Machine, erro
 		return hubproto.VerifySecrets(pub, a, host, now, body)
 	}
 	m, err := d.admit(r, verify, false, "secrets:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
-	}
-	return m, err
+	return d.admitted(r, m, err)
 }
 
 // AdmitAppToken checks the signed request of a machine for an app's token (POST /agent/app-token) over its body and
@@ -293,10 +330,7 @@ func (d *Dialer) AdmitAppToken(r *http.Request, body []byte) (store.Machine, err
 		return hubproto.VerifyAppToken(pub, a, host, now, body)
 	}
 	m, err := d.admit(r, verify, false, "apptoken:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
-	}
-	return m, err
+	return d.admitted(r, m, err)
 }
 
 // AdmitPeers checks the signed request of a machine about messages between machines (POST /agent/peers/send and
@@ -304,47 +338,33 @@ func (d *Dialer) AdmitAppToken(r *http.Request, body []byte) (store.Machine, err
 // fill the table its own link's dial needs.
 func (d *Dialer) AdmitPeers(r *http.Request) (store.Machine, error) {
 	m, err := d.admit(r, hubproto.VerifyPeers, false, "peers:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
-	}
-	return m, err
+	return d.ownerless(r, m, err)
 }
 
 // AdmitJobs checks the signed request of a machine about heavy jobs (POST /agent/jobs/...) and returns the machine. Its
 // nonces are kept apart from the dial's and the messages'.
 func (d *Dialer) AdmitJobs(r *http.Request) (store.Machine, error) {
 	m, err := d.admit(r, hubproto.VerifyJobs, false, "jobs:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
-	}
-	return m, err
+	return d.admitted(r, m, err)
 }
 
 // AdmitMemory checks the signed request of a machine about its person's memory (POST /agent/memory/*) and returns the
 // machine. Its nonces are kept apart from the dial's and the messages'.
+
 // AdmitRoutines checks the signed routines call of a machine (POST /agent/routines) and returns the machine.
 func (d *Dialer) AdmitRoutines(r *http.Request) (store.Machine, error) {
 	m, err := d.admit(r, hubproto.VerifyRoutines, false, "routines:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
-	}
-	return m, err
+	return d.admitted(r, m, err)
 }
 
 func (d *Dialer) AdmitMemory(r *http.Request) (store.Machine, error) {
 	m, err := d.admit(r, hubproto.VerifyMemory, false, "memory:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
-	}
-	return m, err
+	return d.admitted(r, m, err)
 }
 
 func (d *Dialer) AdmitHistory(r *http.Request) (store.Machine, error) {
 	m, err := d.admit(r, hubproto.VerifyHistory, false, "history:")
-	if err == nil && m.DisabledAt != nil {
-		err = errDisabled
-	}
-	return m, err
+	return d.admitted(r, m, err)
 }
 
 func describe(err error) string {

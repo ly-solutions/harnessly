@@ -14,6 +14,7 @@ import (
 
 	"github.com/ly-solutions/harnessly/internal/nodejson"
 	"github.com/ly-solutions/harnessly/internal/sameorigin"
+	"github.com/ly-solutions/harnessly/internal/viewonly"
 )
 
 const (
@@ -35,6 +36,8 @@ const (
 type Client struct {
 	ws    *websocket.Conn
 	Relay bool // the machine agent's socket (?relay=1)
+	// watching: the page of a person who may only watch; its messages that act are dropped (internal/viewonly).
+	watching bool
 
 	mu      sync.Mutex
 	queue   [][]byte
@@ -214,6 +217,7 @@ func (h *Hub) accept(w http.ResponseWriter, r *http.Request, onOpen func(*Client
 	ws.SetReadLimit(1 << 20)
 	c := newClient(ws, r.URL.Query().Get("relay") == "1")
 	c.resync = resync
+	c.watching = viewonly.Watching(r.Context())
 	h.add(c)
 	defer h.remove(c)
 	go c.writer()

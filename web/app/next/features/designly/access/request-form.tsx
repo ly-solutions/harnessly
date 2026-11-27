@@ -6,6 +6,7 @@ import type { TRequestLevel } from '@/next/features/designly/access/api';
 import { useAction } from '@/next/features/designly/access/use-action';
 import Segmented from '@/next/ui/segmented';
 import { t } from '@/next/i18n';
+import ActionError from './action-error';
 
 const MESSAGE_MAX = 500;
 
@@ -67,11 +68,7 @@ const RequestForm = ({ mayComment, status, onSend, initialLevel, autoFocus = fal
         disabled={action.busy !== null}
         onChange={(event) => setMessage(event.target.value)}
       />
-      {action.error && (
-        <p className="hx-create__err" role="alert">
-          {action.error}
-        </p>
-      )}
+      <ActionError message={action.error} />
       <button
         type="submit"
         className="hx-btn"

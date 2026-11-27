@@ -512,6 +512,10 @@ export const machinesMock = (ctx: MockCtx): MachinesApi => {
       put({ ...m, ownerName: to.name, ownerId: to.id, kind: 'personal' });
       return later(detail(get(id)), 500);
     },
+    acceptMachine: async (id) => {
+      put({ ...get(id), awaitsOwner: null });
+      return later(detail(get(id)), 400);
+    },
     planMoveMachine: async (id, tenantId) => later(movePlan(get(id), tenantId), 250),
     moveMachine: async (id, tenantId) => {
       const m = get(id);

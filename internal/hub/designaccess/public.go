@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ly-solutions/harnessly/internal/hub/metrics"
 	"html"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -20,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/hub/httpx"
+	"github.com/ly-solutions/harnessly/internal/hub/ratelimit"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 	"github.com/ly-solutions/harnessly/internal/storerev"
@@ -144,17 +144,6 @@ func (s *Service) guestToken(ctx context.Context, machine string, req hubproto.D
 // errRuntime is the machine answering what the hub did not ask for: a guest gets «the owner's machine is unavailable».
 var errRuntime = errors.New("machine answer out of scope")
 
-// fetch reads design-public/<project>/<sub>: from the hub's store when it has the project, else from the
-// machine with a token of the given scope.
-func (s *Service) fetch(ctx context.Context, machine string, req hubproto.DesignPublicTokenRequest, segs []string, r *http.Request, pass ...string) (*http.Response, error) {
-	if res, done, err := s.fromStore(ctx, machine, req, segs, r, pass); done {
-		metrics.CountRead(metrics.ReadDesign, metrics.FromStore)
-		return res, err
-	}
-	metrics.CountRead(metrics.ReadDesign, metrics.FromMachine)
-	return s.machineFetch(ctx, machine, req, segs, r, pass...)
-}
-
 // machineFetch reads design-public/<project>/<sub> of the machine through its tunnel.
 func (s *Service) machineFetch(ctx context.Context, machine string, req hubproto.DesignPublicTokenRequest, segs []string, r *http.Request, pass ...string) (*http.Response, error) {
 	tok, err := s.guestToken(ctx, machine, req)
@@ -226,11 +215,95 @@ func readAll(res *http.Response, max int64) ([]byte, error) {
 	return b, nil
 }
 
-// pin takes the project's current version for a link pinned to it. HRN-1755: a guest reads only the store, so with a
-// store the version is a revision of it, and a project the store has nothing of yet gets no pinned link (it would
-// open as «not published»); the machine's git version is taken only by a hub that has no store at all.
+// ---- may a link be made ------------------------------------------------------------------------------------------
+//
+// Three ways make a link: a live one (shareGate), one pinned to a version (pin) and a snapshot of its pages
+// (pinCapture). Each asks the owner's machine first, and each used to read the answer its own way: a live link let a
+// refusal of the apps' checks through, a pinned one called it «the machine did not answer», a gVisor runtime stopped
+// some of them and not others (GitHub #187, #190). askMachine reads every answer once, into one of four verdicts, and
+// the three ways differ only in what each verdict means for them (TestLinkMakingMatrix holds the whole table):
+//
+//	verdict            live link                pinned link                   page snapshot
+//	ok                 made                     made at the store's head      made from the machine's render
+//	                                            (or the machine's git rev
+//	                                            when the hub has no store)
+//	errMachineGone     made (as always)         store: made; no store:        unavailable: the machine renders
+//	                                            unavailable
+//	unsafeRuntime      store: made; no store:   store: made; no store:        refused: the machine renders, and
+//	                   refused                  refused                       it serves no guest path
+//	share_blocked      refused                  refused                       refused
+
+// errMachineGone is a machine that is off or did not answer the question about a link.
+var errMachineGone = errors.New("the owner's machine did not answer")
+
+// askMachine asks the owner's machine about a link it is about to make: sub is "__share" (may it be made) or "__rev"
+// (may it, and which version of git it holds). The answer is the body of a yes, or errMachineGone, unsafeRuntime() or
+// a share_blocked refusal.
+func (s *Service) askMachine(ctx context.Context, m store.Machine, project, sub string) ([]byte, error) {
+	res, err := s.machineFetch(ctx, m.ID, hubproto.DesignPublicTokenRequest{Project: project, Pin: true}, []string{sub}, nil)
+	if errors.Is(err, gUnsafeRuntime) {
+		return nil, unsafeRuntime()
+	}
+	if err != nil {
+		return nil, errMachineGone
+	}
+	status := res.StatusCode
+	b, err := readAll(res, 64<<10)
+	switch {
+	case status == http.StatusOK && err == nil:
+		return b, nil
+	case status == http.StatusConflict:
+		var v struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(b, &v) == nil && v.Code == shareBlocked {
+			return nil, blocked()
+		}
+	}
+	return nil, errMachineGone
+}
+
+// shareBlocked is the runtime's code when the checks of the apps keep a project from being shared (design.ShareBlocked).
+const shareBlocked = "share_blocked"
+
+// blocked is the owner's answer when the apps' checks on the machine keep the project from being shared as it is.
+func blocked() *Error {
+	return fail(shareBlocked, "Проверки приложений не дают поделиться проектом в таком виде. Откройте проект: Синопия покажет, "+
+		"что они нашли, — исправьте это и создайте ссылку снова")
+}
+
+// askChecks asks only for the apps' checks, where a machine that is off lets the link be made anyway: one the hub knows
+// to be off is not waited for.
+func (s *Service) askChecks(ctx context.Context, m store.Machine, project string) error {
+	if s.reg != nil && s.reg.Get(m.ID) == nil {
+		return errMachineGone
+	}
+	_, err := s.askMachine(ctx, m, project, "__share")
+	return err
+}
+
+// storeServes is a hub whose guests read the project from its store, never from the owner's machine.
+func (s *Service) storeServes(m store.Machine) bool { return s.view != nil && m.SpaceID != "" }
+
+// shareGate decides a link that is not pinned. With the store a guest never reads the runtime's files, so a runtime
+// that fails the share probe (gVisor, SHR-204) does not stop it (GitHub #187); a machine that does not answer gets its
+// link as before; the apps' checks stop it always.
+func (s *Service) shareGate(ctx context.Context, m store.Machine, project string) error {
+	err := s.askChecks(ctx, m, project)
+	switch {
+	case err == nil, errors.Is(err, errMachineGone):
+		return nil
+	case isCode(err, "share_unsafe_runtime") && s.storeServes(m):
+		return nil
+	}
+	return err
+}
+
+// pin takes the project's current version for a link pinned to it. With the store the version is the store's head
+// the machine is asked only for the apps' checks, and a project the store has nothing of yet gets no
+// pinned link (it would open as «not published»); the machine's git version is taken only by a hub with no store.
 func (s *Service) pin(ctx context.Context, m store.Machine, project string) (string, error) {
-	if s.view != nil && m.SpaceID != "" {
+	if s.storeServes(m) {
 		head, err := s.view.Head(ctx, m.SpaceID, project)
 		if err != nil {
 			s.log.Warn("design: the store did not answer a pin", "project", project, "error", err)
@@ -239,32 +312,50 @@ func (s *Service) pin(ctx context.Context, m store.Machine, project string) (str
 		if head <= 0 {
 			return "", fail("not_published", "Проект ещё не опубликован на хабе: дождитесь, пока он синхронизируется, и повторите")
 		}
+		if err := s.askChecks(ctx, m, project); isCode(err, shareBlocked) {
+			return "", err
+		}
+		return storerev.ID(head), nil
 	}
-	return s.pinWith(ctx, m, project, s.fetch)
+	b, err := s.askMachine(ctx, m, project, "__rev")
+	if errors.Is(err, errMachineGone) {
+		return "", fail("unavailable", "Машина владельца не ответила, версию не удалось закрепить. Попробуйте ещё раз")
+	}
+	if err != nil {
+		return "", err
+	}
+	return revOf(b, fail("unavailable", "Машина владельца не ответила, версию не удалось закрепить. Попробуйте ещё раз"))
 }
 
-// pinCapture pins the working copy whose renderer can read the revision. A store revision is not a runtime git object.
+// pinCapture pins the version of git a snapshot of the pages is drawn at. The pages are drawn by the browser of the
+// owner's machine from its working copy (a store revision is not a git object it can read), so a snapshot needs that
+// machine on and serving: a gVisor runtime serves no guest path, its render included.
 func (s *Service) pinCapture(ctx context.Context, m store.Machine, project string) (string, error) {
-	return s.pinWith(ctx, m, project, s.machineFetch)
+	b, err := s.askMachine(ctx, m, project, "__rev")
+	switch {
+	case errors.Is(err, errMachineGone):
+		return "", fail("unavailable", "Снимок страниц рисует машина владельца, а она сейчас не отвечает. Включите её и повторите")
+	case isCode(err, "share_unsafe_runtime"):
+		return "", s.snapshotUnsafe(m)
+	case err != nil:
+		return "", err
+	}
+	return revOf(b, fail("unavailable", "Машина владельца не смогла закрепить версию для снимка. Попробуйте ещё раз"))
 }
 
-func (s *Service) pinWith(ctx context.Context, m store.Machine, project string, fetch func(context.Context, string, hubproto.DesignPublicTokenRequest, []string, *http.Request, ...string) (*http.Response, error)) (string, error) {
-	failed := fail("unavailable", "Машина владельца не ответила, версию не удалось закрепить. Попробуйте ещё раз")
-	res, err := fetch(ctx, m.ID, hubproto.DesignPublicTokenRequest{Project: project, Pin: true}, []string{"__rev"}, nil)
-	if errors.Is(err, gUnsafeRuntime) {
-		return "", unsafeRuntime()
+// snapshotUnsafe is the owner's answer when a snapshot of the pages is asked of a runtime that fails the share probe.
+func (s *Service) snapshotUnsafe(m store.Machine) *Error {
+	text := "Снимок страниц рисует машина владельца, а её среда не даёт гарантий файловой системы, которые нужны гостевому " +
+		"доступу (так бывает в песочницах вроде gVisor). "
+	if s.storeServes(m) && !s.staticGuests {
+		text += "Обычная ссылка для просмотра работает и так: её отдаёт хаб из своего хранилища. "
 	}
-	if err != nil {
-		return "", failed
-	}
-	if res.StatusCode != http.StatusOK {
-		res.Body.Close()
-		return "", failed
-	}
-	b, err := readAll(res, 4096)
-	if err != nil {
-		return "", failed
-	}
+	return fail("share_unsafe_runtime", text+"Для снимка запустите рантайм прямо на Linux, в виртуальной машине или в контейнере "+
+		"с runc или crun и проверьте командой «harnessly doctor share»")
+}
+
+// revOf reads the machine's {"rev": "<git sha>"}; failed when it is not one.
+func revOf(b []byte, failed *Error) (string, error) {
 	var v struct {
 		Rev string `json:"rev"`
 	}
@@ -278,31 +369,17 @@ func (s *Service) pinWith(ctx context.Context, m store.Machine, project string, 
 	return rev, nil
 }
 
+// isCode is an *Error of that code.
+func isCode(err error, code string) bool {
+	e, ok := asError(err)
+	return ok && e.Code == code
+}
+
 // unsafeRuntime is the owner's answer when the machine refuses guest links: what is wrong and what to run instead.
 func unsafeRuntime() *Error {
 	return fail("share_unsafe_runtime", "Гостевые ссылки с этой машины выключены: среда рантайма не даёт гарантий файловой системы, "+
 		"которые нужны гостевому доступу (так бывает в песочницах вроде gVisor). Запустите рантайм прямо на Linux, в виртуальной машине "+
 		"или в контейнере с runc или crun и проверьте командой «harnessly doctor share»")
-}
-
-// shareGate asks the machine whether a link may be made before the hub makes one that is not pinned (a pinned one asks
-// through pin). With the store a guest reads only the store and never the runtime's files, so a runtime that
-// fails the share probe (gVisor, SHR-204) does not stop a link (GitHub #187): the runtime still serves no guest path
-// itself, and a project the store has nothing of yet answers its guest «not published» until it arrives. Without the
-// store the machine serves the guest, and its refusal stops the link. A machine that does not answer gets its link as
-// before.
-func (s *Service) shareGate(ctx context.Context, m store.Machine, project string) error {
-	res, err := s.fetch(ctx, m.ID, hubproto.DesignPublicTokenRequest{Project: project, Pin: true}, []string{"__share"}, nil)
-	if errors.Is(err, gUnsafeRuntime) {
-		if s.view != nil {
-			return nil
-		}
-		return unsafeRuntime()
-	}
-	if err == nil {
-		res.Body.Close()
-	}
-	return nil
 }
 
 // ---- the guest handler --------------------------------------------------------------------------------------------
@@ -367,20 +444,6 @@ func guestJSON(w http.ResponseWriter, status int, v any) {
 	writeJSON(w, status, v)
 }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
-			return ip
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
-
 // Public serves the guest links on the share host.
 func (s *Service) Public() http.Handler {
 	return http.HandlerFunc(s.serveGuest)
@@ -432,7 +495,7 @@ func (s *Service) serveGuest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.now()
-	ip := clientIP(r)
+	ip := ratelimit.IPKey(httpx.ClientIP(r, s.trusted))
 	if !s.budget.take("ip\x00"+ip, ipPerMinute, now) {
 		w.Header().Set("Retry-After", "60")
 		s.guestFail(w, g, gTooMany)

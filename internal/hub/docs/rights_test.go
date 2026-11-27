@@ -1,11 +1,15 @@
 package docs
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/ly-solutions/harnessly/internal/hub/auth"
+	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
 func askRights(t *testing.T, h http.Handler, token, body string) (int, map[string]string, http.Header) {
@@ -169,5 +173,35 @@ func TestABoardWithoutARecordIsShared(t *testing.T) {
 	rights, k := known(who["stranger"].User.ID)
 	if len(k) != 1 || rights["wall"] != RightView {
 		t.Fatalf("the person it was shared with: %v %v, want view of a known board", rights, k)
+	}
+}
+
+// A name is free text anybody sets for themselves, and an address nobody proved is whatever an account signed up with:
+// neither makes a person the owner of a board the hub keeps no record of.
+func TestABoardWithoutARecordIsNotOwnedByAName(t *testing.T) {
+	s, who, _ := circleRig(t, true, false)
+	namesake := *who["stranger"]
+	namesake.User.Name = "agent" // the author the boards service names for the board anon
+	squatter := &store.User{Email: "Author@example.com.invalid", Name: "author@example.com"}
+	if err := s.db.S().CreateUser(context.Background(), squatter); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		who  *auth.Principal
+		slug string
+	}{
+		"a display name":      {&namesake, "anon"},
+		"an unproved address": {&auth.Principal{User: *squatter}, "wall"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/platform/docs/"+c.slug+"/acl/shares", strings.NewReader(`{"rights":"view","ttl":"1d"}`))
+		req.SetPathValue("slug", c.slug)
+		req.SetPathValue("rest", "shares")
+		w := httptest.NewRecorder()
+		if err := s.aclRoute(w, req, c.who); err != nil {
+			s.answer(w, req, err)
+		}
+		if w.Code < 400 {
+			t.Errorf("%s owns the board %s: %d %s", name, c.slug, w.Code, w.Body.String())
+		}
 	}
 }

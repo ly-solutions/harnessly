@@ -336,6 +336,7 @@ export const hubMachine = obj({
   people: arr(personRef),
   access: arr(accessSubject),
   owner: opt(nullable(personRef)),
+  awaitsOwner: opt(nullable(obj({ heldBy: nullable(personRef) }))),
   problems: arr(lit('offline', 'idle_week', 'agent_old', 'disk_low', 'login_expired', 'disabled')),
   opensRuntime: opt(bool),
   canSeeDebug: opt(bool),

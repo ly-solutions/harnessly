@@ -193,7 +193,7 @@ func (s *Service) RequireTrustedOnHub(ctx context.Context, m store.Machine) erro
 //   - a provider that does not verify emails never joins an account by email: the email being taken is
 //     ErrAccountExists, and otherwise it makes a new account;
 //   - when a verified owner of an email meets an account made by an unverified provider, that account's identities,
-//     passkeys and sessions are removed first (pre-hijacking: whoever made it did not prove the email).
+//     passkeys, sessions and personal tokens are removed first (pre-hijacking: whoever made it did not prove the email).
 func (s *Service) resolve(ctx context.Context, info identityInfo, o resolveOpts) (u store.User, isNew bool, err error) {
 	info.Email = strings.ToLower(strings.TrimSpace(info.Email))
 	err = s.db.Tx(ctx, func(st store.Store) error {

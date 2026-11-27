@@ -64,6 +64,8 @@ type Access struct {
 	secret      *regexp.Regexp
 	// partial: the leading folders of the secret paths of more than one part (".config" of ".config/acme").
 	partial []string
+	// denied are places closed whatever the roots say, open the folders inside them that stay open (Deny).
+	denied, open []string
 }
 
 // NewAccess builds the rules. roots are the folders files may be in (made absolute and clean); configDirs are more
@@ -101,7 +103,7 @@ func resolveAbs(p string) string {
 }
 
 // Secret: the path looks like it holds credentials.
-func (a *Access) Secret(p string) bool { return a.secret.MatchString(p) }
+func (a *Access) Secret(p string) bool { return a.secret.MatchString(p) || a.closed(p) }
 
 // HoldsSecret: a new name or a move of the folder p would take a secret folder of several parts out of the rule
 // (p is ".config" of ".config/acme"). Such a folder keeps its name and its place.

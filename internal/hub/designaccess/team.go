@@ -192,7 +192,7 @@ func (s *Service) storeRoute(w http.ResponseWriter, r *http.Request, u store.Use
 			}
 			sourced := false
 			read := func(w http.ResponseWriter, r *http.Request, segs []string) error {
-				fell, err := s.serveOrSource(w, r, t, u, m.SpaceID, project, head, segs)
+				fell, err := s.serveOrSource(w, r, t, u, m.SpaceID, project, head, segs, foreign)
 				sourced = sourced || fell
 				return err
 			}

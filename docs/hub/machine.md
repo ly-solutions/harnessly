@@ -513,6 +513,42 @@ log (`machine_owner_changed`). The machine stays as trusted as it was: on a hub 
 rule «an administrator connected it» is asked of who connected it (`machines.connected_by`), not of the new owner. The
 machine answers `ownerId` in `GET /api/machines/{id}`.
 
+### Whose keys
+
+A transfer changes the owner, not the keys: whoever connected the machine may still hold them. So a person's own data
+reaches a machine only while its owner has accepted the keys it holds (`machines.keys_by`, else who connected it) and
+their account is on. Otherwise the hub's safe, the memory, the history copy (read and write), routines and automation
+runs, app tokens, heavy jobs, the person's rooms of the store (Claude profile, app set, resume, their design access),
+messages and sites sent in their name and their own environment items are off; the safe, memory, history, routines, app
+token and job requests answer `403 machine_relink_required` (or `owner_disabled`). The machine stays online and can be
+opened.
+
+The new owner lifts it in one of two ways:
+
+- **«Принять машину»** on the machines screen (`POST /api/machines/{id}/accept`). The screen says who registered the
+  keys and that this person may still control the machine and see what it receives. Only the machine's owner, signed in
+  as a person, can send it: not a space owner, not a personal token, not a machine's key, not a page of another origin.
+  The journal gets `machine_keys_accepted`, the link reconnects, and what waited in the machine's history queue is
+  copied then.
+- **Registering the machine again**: a code of their own and the install command with `--re-register` on the machine
+  ([below](#upgrade-move-and-remove)). It keeps its id, name and chats and gets new keys. A code of anybody else, an
+  administrator's included, leaves personal data off. Where members do not connect machines, a member who owns such a
+  machine may still ask for a code, which registers only that machine again. This is the way for a machine whose keys'
+  holder is not trusted (after reinstalling it).
+
+**What the hub's origin can do.** A page that runs on the hub's own origin is the hub's page to the browser: a machine's
+page on a hub without `HUB_RUNTIME_DOMAIN` (path mode), and what a trusted machine answers under `/agents/` in either
+mode. Its script can send any request of the signed-in person with their cookie, the accept among them (as well as the
+transfer, or a request for a registration code), and the hub cannot tell it from the person's click. Only trusted
+machines run there ([deploy.md](deploy.md#where-machines-open-path-or-subdomain)): a machine connected by somebody the
+new owner should not trust must not be trusted, and in path mode must not be handed to them at all.
+
+Removing a person from a space (or their leaving) revokes the machines they own and the machines whose keys they hold:
+one given to another member stays only after that member has accepted it or registered it again.
+
+**Upgrading** changes nothing for the machines there are: the migration records the owner each transferred machine has at
+that moment as having accepted its keys. Only transfers and registrations made afterwards ask.
+
 ### Git author on personal machines
 
 When setup is allowed, a compatible agent receives the machine owner's Git author on its authenticated Hub link. The Hub uses the account display name and its primary email only when a sign-in provider has verified that address for this owner alone. On transfer the link reconnects and receives the new owner's defaults. If the Hub cannot verify the current owner, the agent clears the previous defaults. Turning setup off also clears them. An observe link follows the local setup opt-in.

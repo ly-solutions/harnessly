@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/ly-solutions/harnessly/internal/viewonly"
 )
 
 var b64 = base64.RawURLEncoding
@@ -17,8 +19,10 @@ type Claims struct {
 	Sub           string `json:"sub,omitempty"`
 	VerifiedOwner bool   `json:"verifiedOwner,omitempty"`
 	Aud           string `json:"aud,omitempty"`
-	Iat           int64  `json:"iat"`
-	Exp           int64  `json:"exp"`
+	// Level is "view" for the session of a person who may only watch (internal/viewonly); empty: a full one.
+	Level string `json:"level,omitempty"`
+	Iat   int64  `json:"iat"`
+	Exp   int64  `json:"exp"`
 }
 
 // SignHS256 signs claims valid from now for ttl.
@@ -168,6 +172,21 @@ func SessionExpiry(secret []byte, token string, now time.Time) (float64, bool) {
 	}
 	exp, ok := payload["exp"].(float64)
 	return exp, ok
+}
+
+// SignWatcher signs a page session of a person who may only watch.
+func SignWatcher(secret []byte, sub string, ttl time.Duration) string {
+	return signClaims(secret, Claims{Sub: sub, Level: viewonly.Level}, ttl)
+}
+
+// WatcherSession says token is a page session of a person who may only watch.
+func WatcherSession(secret []byte, token string, now time.Time) bool {
+	payload, err := verifyHS256(secret, token, now)
+	if err != nil {
+		return false
+	}
+	level, _ := payload["level"].(string)
+	return level == viewonly.Level
 }
 
 // SessionSubject is the `sub` of a valid page session token (the machine agent signs its own with its name); false for

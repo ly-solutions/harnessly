@@ -37,6 +37,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
+COPY clients ./clients
 COPY evals ./evals
 COPY docs ./docs
 COPY skills ./skills

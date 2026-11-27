@@ -145,6 +145,35 @@ describe('links without sign-in in the one dialog (HRN-675, stage «г»)', () =
     expect((onNext.mock.calls.at(-1)?.[0] as IResourceView).links?.map((l) => l.id)).toEqual(['l2', 'l1']);
   });
 
+  it('a refused link says why over the button that was pressed, outside the body that scrolls (GitHub #190)', async () => {
+    const refusal =
+      'Снимок страниц рисует машина владельца, а её среда не даёт гарантий файловой системы, которые нужны гостевому доступу';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith('/links') && init?.method === 'POST')
+          return json({ code: 'share_unsafe_runtime', error: refusal }, 409);
+        return json(view());
+      }),
+    );
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    inRoot(<ResourceShare {...props(view())} />);
+    fireEvent.click(within(linksSection()).getByRole('button', { name: t('next.access.linkNew') }));
+    fireEvent.change(await screen.findByRole('textbox', { name: t('next.access.links.whoLabel') }), {
+      target: { value: 'Марина' },
+    });
+    const create = screen.getByRole('button', { name: t('next.access.links.create') });
+    fireEvent.click(create);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(refusal);
+    expect(alert.closest('.hx-modal__body')).toBeNull();
+    expect(alert.nextElementSibling?.contains(create)).toBe(true);
+    expect(scrolled).toHaveBeenCalled();
+    expect(written).not.toHaveBeenCalled();
+  });
+
   it('copies a kept address, switches a link off at once, and offers the new address where none was kept', async () => {
     const off = link({ disabledAt: '2026-11-04T10:00:00Z' });
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {

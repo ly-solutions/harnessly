@@ -59,7 +59,8 @@ A blob read by its hash is the same bytes forever: it is served with `ETag` and 
 
 The `design` collection is the space's library, but a machine gets only the projects its person — the one its runtime
 runs for — has a role in ([design access](design-access.md)): the files of a personal project never reach a machine of
-someone with no role in it. A project the hub has no row for (made before access existed, a kit) is open to all.
+someone with no role in it. A project the hub has no row for (made before access existed, a kit) is open to all, unless
+the hub keeps such projects closed (`HUB_DESIGN_UNRECORDED=closed`).
 
 - `changes`, `current`, `history` and `snapshot` leave out what the machine does not see; `changes` names that in
   `scope`. When the scope changes (a role given or taken), the machine reads the room again from the start: a project it
@@ -82,6 +83,21 @@ A hash is not a right. A machine that sees only some paths of a room gets conten
 commit, only when a revision of a path it sees has them, or after it has sent those contents itself within a day. To
 anyone else the store answers as if it did not hold them (`404`, listed as missing, `428` on a commit), so knowing a
 hash from a log or from access since revoked neither reads a file nor copies it into another project.
+
+What follows the same access:
+
+- **Leases.** A lease is listed to who sees the project of its key, taken and forced off by who may edit it
+  (`ask/…`, asking the holder to let go, needs only sight). Rooms other than `design` that filter paths take no leases.
+- **Closed unrecorded projects** take a write only while the folder holds nothing but revisions of the person's own
+  machines, or on a path whose latest revision is theirs; a record, cover or thumbnail of one is started by anyone and
+  changed by its writer's person. A writer is known by the machine's name: a name two people's machines share counts as
+  another's.
+- **Apps.** A package (`bundles/<app>/<sum>.tgz`) is put only under its own sum and never replaced or removed. A guest
+  link's area (`doc/guest-<id>.json`) is its link maker's (and its latest writer's). With closed unrecorded projects a
+  document the hub has no row for is its writer's person's.
+- **Kits.** A kit nobody recorded that holds another person's revisions is not claimed.
+- **`uploads`, `files`, `handoff`.** The space reads them by hash as before; a path is changed or removed only by the
+  person whose machine wrote it.
 
 ## Transfer
 

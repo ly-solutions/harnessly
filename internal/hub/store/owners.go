@@ -121,7 +121,7 @@ var DataKinds = []DataKind{
 		Keep:   "no term: the runs are the history the efficiency screen compares by", OwnerDeletes: "nothing: a verdict once given stays; a schedule is switched off, not deleted"},
 	{Name: "servers at a provider", Owner: OwnerOutside, Tables: []string{"provider_servers", "provider_ops"},
 		Keep: "no term", OwnerDeletes: "the hub's own operation removes a server at the provider and records it; the rows stay"},
-	{Name: "automations", Owner: OwnerHub, Tables: []string{"automation_rules", "automation_runs", "automation_timers"},
+	{Name: "automations", Owner: OwnerHub, Tables: []string{"automation_rules", "automation_runs", "automation_timers", "automation_operators"},
 		Keep: "no term; a timer lives until it fires or its stop event comes", OwnerDeletes: "deleting a rule deletes its runs and timers"},
 	{Name: "designs", Owner: OwnerHub,
 		Tables: []string{"design_projects", "design_members", "design_team_grants", "design_invites", "design_invite_acceptances", "design_requests",
@@ -142,6 +142,6 @@ var DataKinds = []DataKind{
 		Keep: "no term", OwnerDeletes: "deleting an entry deletes it and its grants; the audit stays"},
 	{Name: "passes to machines and sites", Owner: OwnerHub, Tables: []string{"entry_tickets"},
 		Keep: "a minute to trade, twelve hours as the note that the person opened the machine, then swept by time", OwnerDeletes: "nothing: a pass names a person and goes by time"},
-	{Name: "the installation", Owner: OwnerHub, Tables: []string{"schema_migrations", "rollout_switches", "job_leases", "instance_defaults"},
+	{Name: "the installation", Owner: OwnerHub, Tables: []string{"schema_migrations", "rollout_switches", "job_leases", "instance_defaults", "safe_ref_tenants"},
 		Keep: "no term", OwnerDeletes: "nothing: they describe the hub itself"},
 }

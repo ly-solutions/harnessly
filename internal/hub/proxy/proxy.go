@@ -38,6 +38,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/hub/vaultsvc"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
 	"github.com/ly-solutions/harnessly/internal/sameorigin"
+	"github.com/ly-solutions/harnessly/internal/viewonly"
 	"github.com/ly-solutions/harnessly/internal/webstatic"
 	"github.com/ly-solutions/harnessly/internal/wire"
 )
@@ -457,8 +458,11 @@ func (s *Service) servePath(w http.ResponseWriter, r *http.Request, id string) {
 	if s.serveMachineHub(w, r, p, id) {
 		return
 	}
-	if lvl < machaccess.LevelTasks && s.serveViewer(w, r, p.User, m) {
-		return
+	if lvl < machaccess.LevelTasks {
+		if s.serveViewer(w, r, p.User, m) {
+			return
+		}
+		r = r.WithContext(viewonly.With(r.Context()))
 	}
 	if s.serveHome(w, r, p.User, m, func(ctx context.Context, w http.ResponseWriter) { s.forward(w, r.Clone(ctx), p.User, m) }) {
 		return
@@ -522,8 +526,11 @@ func (s *Service) serveRuntimeHost(w http.ResponseWriter, r *http.Request, id st
 	if s.serveMachineHub(w, r, p, id) {
 		return
 	}
-	if lvl < machaccess.LevelTasks && s.serveViewer(w, r, p.User, m) {
-		return
+	if lvl < machaccess.LevelTasks {
+		if s.serveViewer(w, r, p.User, m) {
+			return
+		}
+		r = r.WithContext(viewonly.With(r.Context()))
 	}
 	if s.serveHome(w, r, p.User, m, func(ctx context.Context, w http.ResponseWriter) { s.forward(w, r.Clone(ctx), p.User, m) }) {
 		return
@@ -641,7 +648,13 @@ func (s *Service) grant(ctx context.Context, u store.User, m store.Machine) (hub
 }
 
 func (s *Service) grantFor(ctx context.Context, u store.User, m store.Machine, verifiedOwner bool) (hubproto.SessionGrant, error) {
+	// A watcher's session is another one: it says so to the runtime.
+	watching := viewonly.Watching(ctx)
 	key := u.ID + "/" + m.ID
+	if watching {
+		verifiedOwner = false
+		key = "view/" + key
+	}
 	if verifiedOwner {
 		key = "verified-owner:" + u.Email + "/" + key
 	}
@@ -667,7 +680,11 @@ func (s *Service) grantFor(ctx context.Context, u store.User, m store.Machine, v
 	gctx, cancel := context.WithTimeout(context.Background(), grantTimeout)
 	defer cancel()
 	var g hubproto.SessionGrant
-	err := s.reg.DoInto(gctx, m.ID, hubproto.OpRuntimeSess, map[string]any{"subject": u.Email, "name": u.Name, "verifiedOwner": verifiedOwner}, &g, grantTimeout)
+	params := map[string]any{"subject": u.Email, "name": u.Name, "verifiedOwner": verifiedOwner}
+	if watching {
+		params["view"] = true
+	}
+	err := s.reg.DoInto(gctx, m.ID, hubproto.OpRuntimeSess, params, &g, grantTimeout)
 	if err == nil && (g.Token == "" || g.CookieName == "" || strings.ContainsAny(g.Token+g.CookieName, "; \r\n,")) {
 		err = httpx.New(http.StatusBadGateway, "machine_error", "Машина выдала непонятный сеанс")
 	}
@@ -791,6 +808,14 @@ func (s *Service) Kick(spaceID, userID string) {
 	}
 }
 
+// dropAssertion takes the gateway's sign-in assertion (config.ProxyJWT) off a request that goes on to a machine: it
+// signs its bearer in to the hub, so it ends here, like the cookie.
+func (s *Service) dropAssertion(h http.Header) {
+	if s.cfg.ProxyJWT.On() {
+		h.Del(s.cfg.ProxyJWT.Header)
+	}
+}
+
 // runtimeCookie is the cookie header the runtime takes for a signed-in person.
 func runtimeCookie(g hubproto.SessionGrant) string { return g.CookieName + "=" + g.Token }
 
@@ -859,6 +884,7 @@ func (s *Service) forward(w http.ResponseWriter, r *http.Request, u store.User, 
 			h := pr.Out.Header
 			h.Del("Authorization")
 			h.Del("Proxy-Authorization")
+			s.dropAssertion(h)
 			h.Set("Cookie", runtimeCookie(g))
 			// The person's settings a runtime works by are the hub's word, never the browser's.
 			h.Del(wire.PersonHeader)

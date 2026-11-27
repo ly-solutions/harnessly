@@ -10,6 +10,7 @@ import type { IPublishState } from '@/next/features/designly/publish/use-publish
 import Icon from '@/next/ui/icon';
 import { useSeen } from '@/next/ui/presence';
 import { t } from '@/next/i18n';
+import ActionError from '@/next/features/designly/access/action-error';
 
 const ACCESS: readonly TSiteAccess[] = ['team', 'link'];
 
@@ -72,11 +73,7 @@ export const PublishForm = ({
       {state.pages.length > 1 && (
         <PagesPicker pages={state.pages} value={state.chosen} onChange={state.setChosen} disabled={busy} />
       )}
-      {state.error && (
-        <p className="hx-create__err" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ActionError message={state.error} />
       <div className="hx-pub-form__go">
         <button
           type="submit"

@@ -370,6 +370,21 @@ func (s *sqlRoom) CountUnder(ctx context.Context, prefix string, limit int) (int
 	return n, err
 }
 
+// WrittenByOthers: some revision under a prefix, in any ASCII case, was written by none of the members.
+func (s *sqlRoom) WrittenByOthers(ctx context.Context, prefix string, members []string) (bool, error) {
+	q := `SELECT COUNT(*) FROM (SELECT 1 FROM history WHERE lower(substr(path, 1, ?)) = ?`
+	args := []any{len(prefix), strings.ToLower(prefix)}
+	if len(members) > 0 {
+		q += ` AND machine NOT IN (` + strings.TrimSuffix(strings.Repeat("?, ", len(members)), ", ") + `)`
+		for _, m := range members {
+			args = append(args, m)
+		}
+	}
+	var n int
+	err := s.db.QueryRowContext(ctx, s.q(q+` LIMIT 1) c`), args...).Scan(&n)
+	return n > 0, err
+}
+
 // Snapshot reads the folder as it was at a revision: per path, the newest revision not newer than at.
 func (s *sqlRoom) Snapshot(ctx context.Context, prefix string, at int64) ([]Entry, error) {
 	rows, err := s.db.QueryContext(ctx, s.q(`SELECT `+entryColumns+` FROM history h WHERE substr(h.path, 1, ?) = ?

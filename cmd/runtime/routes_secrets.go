@@ -113,7 +113,7 @@ func secretRefusal(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case secrets.ReasonKeyLost, secrets.ReasonReadOnly:
 		status = http.StatusConflict
-	case secrets.ReasonDenied:
+	case secrets.ReasonDenied, secrets.ReasonIntegration:
 		status = http.StatusForbidden
 	case secrets.ReasonUnavailable:
 		status = http.StatusServiceUnavailable
@@ -486,6 +486,10 @@ func (sf *safe) routes(d deps, conv func(session string) (string, string), resol
 				secretRefusal(w, &secrets.Refusal{Reason: secrets.ReasonBadName})
 				return
 			}
+			if secrets.IntegrationCredential(n) {
+				secretRefusal(w, &secrets.Refusal{Reason: secrets.ReasonIntegration})
+				return
+			}
 		}
 		use := useOf(r, b.Session)
 		id := use.Conv
@@ -513,6 +517,10 @@ func (sf *safe) routes(d deps, conv func(session string) (string, string), resol
 		}
 		if !secrets.ValidRef(b.Name) {
 			secretRefusal(w, &secrets.Refusal{Reason: secrets.ReasonBadName})
+			return
+		}
+		if secrets.IntegrationCredential(b.Name) {
+			secretRefusal(w, &secrets.Refusal{Reason: secrets.ReasonIntegration})
 			return
 		}
 		use := useOf(r, b.Session)

@@ -162,13 +162,14 @@ func (s Store) DeleteIdentity(ctx context.Context, userID, provider string) (boo
 	return n > 0, nil
 }
 
-// WipeUserCredentials removes every identity, passkey and session of a user: what a verified owner of the email does
+// WipeUserCredentials removes every identity, passkey, session and personal token of a user: what a verified owner of the email does
 // to an account that was made with an email nobody had verified (pre-hijacking).
 func (s Store) WipeUserCredentials(ctx context.Context, userID string) error {
 	for _, q := range []string{
 		`DELETE FROM identities WHERE user_id = ?`,
 		`DELETE FROM passkeys WHERE user_id = ?`,
 		`DELETE FROM sessions WHERE user_id = ?`,
+		`DELETE FROM api_tokens WHERE user_id = ?`,
 	} {
 		if _, err := s.q.Exec(ctx, q, userID); err != nil {
 			return err

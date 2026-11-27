@@ -16,6 +16,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/agents"
 	"github.com/ly-solutions/harnessly/internal/agents/install"
 	"github.com/ly-solutions/harnessly/internal/hubproto"
+	"github.com/ly-solutions/harnessly/internal/viewonly"
 )
 
 // The operations of protocol 2. Each one is asked of the local policy first, on this machine, at this moment; what it
@@ -609,7 +610,11 @@ func (h *hub) opSession(op string, req map[string]json.RawMessage, pol hubproto.
 		// A triage grant is never a page session: an audience of its own, a minute, no owner's rights.
 		aud, ttl, verifiedOwner = hubproto.InboxTriageAudience, time.Minute, false
 	}
-	token := signClaims(secret, Claims{Sub: subject, Aud: aud, VerifiedOwner: verifiedOwner && !h.observe}, ttl)
+	level := ""
+	if watching, _ := field[bool](req, "view"); watching && op == hubproto.OpRuntimeSess {
+		level, verifiedOwner = viewonly.Level, false
+	}
+	token := signClaims(secret, Claims{Sub: subject, Aud: aud, Level: level, VerifiedOwner: verifiedOwner && !h.observe}, ttl)
 	h.audit.Record(op, true, map[string]any{"subject": subject})
 	return hubproto.SessionGrant{CookieName: h.a.cfg.RuntimeCookie, Token: token, ExpiresAt: time.Now().Add(ttl).UnixMilli()}, nil, nil
 }

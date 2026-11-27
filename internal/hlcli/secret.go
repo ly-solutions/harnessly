@@ -32,6 +32,8 @@ var secretReasons = map[string]string{
 	"empty":        "the value is empty",
 	"too-large":    "the value is too large",
 	"failed":       "the runtime could not read its safe",
+	"integration":  "this is the sign-in of an integration, which only the runtime uses: read and act through harnessly connector, or the integration's own tools",
+	"not-on":       "the app is not on in this chat: ask the person to switch it on for the chat",
 	"denied":       "the safe's server refused this machine's login or this path: tell the person, do not retry",
 	"unavailable":  "the safe's server does not answer or is not set up right: tell the person, try again later",
 	"read-only":    "a vault: reference is read only: it is changed on the server, not through the safe",

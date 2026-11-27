@@ -31,6 +31,8 @@ type Machine struct {
 	TeamID string
 	// DisabledAt is when an admin switched the machine off (its link closed, its key kept); nil while it is on.
 	DisabledAt *time.Time
+	// KeysBy is who accepted the machine's current keys, when that is somebody other than Connector.
+	KeysBy string
 	// ConnectedBy is who connected the machine when it was handed to somebody else since; "" — CreatedBy did.
 	ConnectedBy string
 }
@@ -43,18 +45,84 @@ func (m Machine) Connector() string {
 	return m.CreatedBy
 }
 
-const machineCols = `id, space_id, name, hostname, os, arch, unix_user, profile, via, key_pub, enc_pub, agent_version, created_by, created_at, last_seen_at, revoked_at, info, team_id, disabled_at, connected_by`
+// Holder is the person who accepted the keys the machine holds now: whose code registered them last, or the owner who
+// accepted them in the web (AcceptMachineKeys). It differs from the owner after the machine was handed to somebody else,
+// or re-registered with another person's code.
+func (m Machine) Holder() string {
+	if m.KeysBy != "" {
+		return m.KeysBy
+	}
+	return m.Connector()
+}
+
+// SQLOwnKeys is Holder() == CreatedBy as a condition on a row of machines.
+const SQLOwnKeys = `COALESCE(keys_by, connected_by, created_by) = created_by`
+
+// PersonState says whether a machine's keys may reach the data of its owner.
+type PersonState int
+
+const (
+	// PersonOK: the owner accepted the keys and their account works.
+	PersonOK PersonState = iota
+	// PersonNone: nobody owns the machine.
+	PersonNone
+	// PersonRelink: the owner did not accept the machine's keys; they must register it again with a code of their own.
+	PersonRelink
+	// PersonDisabled: the owner's account is switched off.
+	PersonDisabled
+)
+
+// MachinePerson is the state of the machine's owner as far as its keys are concerned. Everything a machine does in its
+// owner's name asks it.
+func (s Store) MachinePerson(ctx context.Context, m Machine) (PersonState, error) {
+	if m.CreatedBy == "" {
+		return PersonNone, nil
+	}
+	if m.Holder() != m.CreatedBy {
+		return PersonRelink, nil
+	}
+	u, err := s.UserByID(ctx, m.CreatedBy)
+	if errors.Is(err, ErrNotFound) {
+		return PersonNone, nil
+	}
+	if err != nil {
+		return PersonNone, err
+	}
+	if u.DisabledAt != nil {
+		return PersonDisabled, nil
+	}
+	return PersonOK, nil
+}
+
+// AsPerson is the machine as it may act for a person: m as it is, or m with no owner (CreatedBy "") when its keys may
+// not reach the owner's data, when the owner or the keys changed since m was read, or when that cannot be told.
+func (s Store) AsPerson(ctx context.Context, m Machine) Machine {
+	cur, err := s.MachineByID(ctx, m.ID)
+	if err == nil && cur.CreatedBy == m.CreatedBy && cur.KeyPub == m.KeyPub {
+		if st, err := s.MachinePerson(ctx, cur); err == nil && st == PersonOK {
+			return m
+		}
+	}
+	m.CreatedBy = ""
+	return m
+}
+
+// machineNewCols are what a new machine is written with; keys_by is only ever set later (RekeyMachine, SetMachineOwner).
+const machineNewCols = `id, space_id, name, hostname, os, arch, unix_user, profile, via, key_pub, enc_pub, agent_version, created_by, created_at, last_seen_at, revoked_at, info, team_id, disabled_at, connected_by`
+
+const machineCols = machineNewCols + `, keys_by`
 
 func scanMachine(row interface{ Scan(...any) error }) (Machine, error) {
 	var m Machine
-	var space, createdBy, team, connectedBy sql.NullString
+	var space, createdBy, team, connectedBy, keysBy sql.NullString
 	var created int64
 	var seen, revoked, disabled sql.NullInt64
 	if err := row.Scan(&m.ID, &space, &m.Name, &m.Hostname, &m.OS, &m.Arch, &m.UnixUser, &m.Profile, &m.Via, &m.KeyPub, &m.EncPub,
-		&m.AgentVersion, &createdBy, &created, &seen, &revoked, &m.Info, &team, &disabled, &connectedBy); err != nil {
+		&m.AgentVersion, &createdBy, &created, &seen, &revoked, &m.Info, &team, &disabled, &connectedBy, &keysBy); err != nil {
 		return Machine{}, err
 	}
 	m.SpaceID, m.CreatedBy, m.TeamID, m.ConnectedBy = space.String, createdBy.String, team.String, connectedBy.String
+	m.KeysBy = keysBy.String
 	m.CreatedAt, m.LastSeenAt, m.RevokedAt, m.DisabledAt = fromMs(created), fromNullMs(seen), fromNullMs(revoked), fromNullMs(disabled)
 	return m, nil
 }
@@ -69,7 +137,7 @@ func (s Store) CreateMachine(ctx context.Context, m *Machine) error {
 	if m.Info == "" {
 		m.Info = "{}"
 	}
-	_, err := s.q.Exec(ctx, `INSERT INTO machines (`+machineCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.q.Exec(ctx, `INSERT INTO machines (`+machineNewCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, nullStr(m.SpaceID), m.Name, m.Hostname, m.OS, m.Arch, m.UnixUser, m.Profile, m.Via, m.KeyPub, m.EncPub,
 		m.AgentVersion, nullStr(m.CreatedBy), Ms(m.CreatedAt), nullMs(m.LastSeenAt), nullMs(m.RevokedAt), m.Info, nullStr(m.TeamID), nullMs(m.DisabledAt), nullStr(m.ConnectedBy))
 	return err
@@ -82,6 +150,24 @@ func (s Store) MachineByID(ctx context.Context, id string) (Machine, error) {
 // MachinesBySpace lists the space's machines that are not revoked, oldest first.
 func (s Store) MachinesBySpace(ctx context.Context, spaceID string) ([]Machine, error) {
 	rows, err := s.q.Query(ctx, `SELECT `+machineCols+` FROM machines WHERE space_id = ? AND revoked_at IS NULL ORDER BY created_at, id`, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Machine
+	for rows.Next() {
+		m, err := scanMachine(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// AllMachinesBySpace lists every machine whose row is in the space, the revoked ones too.
+func (s Store) AllMachinesBySpace(ctx context.Context, spaceID string) ([]Machine, error) {
+	rows, err := s.q.Query(ctx, `SELECT `+machineCols+` FROM machines WHERE space_id = ? ORDER BY created_at, id`, spaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +251,10 @@ func (s Store) ClaimMachine(ctx context.Context, id, spaceID, userID string) (bo
 }
 
 // SetMachineOwner makes a person the machine's own one: its chats are theirs from now on, its id and key stay (#57).
-// Who connected it is kept: the machine stays as trusted as it was.
+// Who connected it is kept: the machine stays as trusted as it was. Who holds its keys is kept too: the new owner's own
+// data stays out of their reach until they accept the machine or register it again (MachinePerson).
 func (s Store) SetMachineOwner(ctx context.Context, id, userID string) error {
-	_, err := s.q.Exec(ctx, `UPDATE machines SET connected_by = COALESCE(connected_by, created_by), created_by = ?
+	_, err := s.q.Exec(ctx, `UPDATE machines SET keys_by = COALESCE(keys_by, connected_by, created_by, '-'), connected_by = COALESCE(connected_by, created_by), created_by = ?
 		WHERE id = ? AND revoked_at IS NULL`, userID, id)
 	return err
 }
@@ -183,6 +270,17 @@ func (s Store) SetMachineVia(ctx context.Context, id, via string) error {
 	return err
 }
 
+// AcceptMachineKeys records that the machine's owner accepts the keys it holds now, whoever registered them; false when
+// userID is not its owner (any more) or the machine is removed.
+func (s Store) AcceptMachineKeys(ctx context.Context, id, userID string) (bool, error) {
+	res, err := s.q.Exec(ctx, `UPDATE machines SET keys_by = ? WHERE id = ? AND created_by = ? AND revoked_at IS NULL`, userID, id, userID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
 // UpdateMachineHello records what the agent said about itself when it connected.
 func (s Store) UpdateMachineHello(ctx context.Context, m Machine) error {
 	_, err := s.q.Exec(ctx, `UPDATE machines SET hostname = ?, os = ?, arch = ?, unix_user = ?, agent_version = ? WHERE id = ?`,
@@ -193,9 +291,9 @@ func (s Store) UpdateMachineHello(ctx context.Context, m Machine) error {
 // RekeyMachine gives a machine that registered again its new keys and what it said of itself, under the id it had;
 // false when the machine is removed or switched off.
 func (s Store) RekeyMachine(ctx context.Context, m Machine) (bool, error) {
-	res, err := s.q.Exec(ctx, `UPDATE machines SET hostname = ?, os = ?, arch = ?, unix_user = ?, profile = ?, via = ?, key_pub = ?, enc_pub = ?, agent_version = ?
+	res, err := s.q.Exec(ctx, `UPDATE machines SET hostname = ?, os = ?, arch = ?, unix_user = ?, profile = ?, via = ?, key_pub = ?, enc_pub = ?, agent_version = ?, keys_by = ?
 		WHERE id = ? AND revoked_at IS NULL AND disabled_at IS NULL`,
-		m.Hostname, m.OS, m.Arch, m.UnixUser, m.Profile, m.Via, m.KeyPub, m.EncPub, m.AgentVersion, m.ID)
+		m.Hostname, m.OS, m.Arch, m.UnixUser, m.Profile, m.Via, m.KeyPub, m.EncPub, m.AgentVersion, nullStr(m.KeysBy), m.ID)
 	if err != nil {
 		return false, err
 	}
@@ -226,13 +324,19 @@ func (s Store) RevokeMachine(ctx context.Context, id string, at time.Time) (bool
 	return true, s.DeleteMachineSessions(ctx, id)
 }
 
-// RevokeMachinesOf revokes the machines of a space that the person registered: the machine is theirs, and a space they
-// are no longer in sends it nothing and takes nothing from it. It returns the machines it revoked, as they were. Call
-// it in a transaction.
+// RevokeMachinesOf revokes the machines of a space that are the person's: the ones they own, and the ones whose keys
+// they hold (given to somebody who has not registered them again): a space they leave keeps no key of theirs. It returns
+// them. Call it in a transaction.
 func (s Store) RevokeMachinesOf(ctx context.Context, spaceID, userID string, at time.Time) ([]Machine, error) {
-	ms, err := s.MachinesByUser(ctx, spaceID, userID)
+	all, err := s.AllMachinesBySpace(ctx, spaceID)
 	if err != nil {
 		return nil, err
+	}
+	var ms []Machine
+	for _, m := range all {
+		if m.RevokedAt == nil && (m.CreatedBy == userID || m.Holder() == userID) {
+			ms = append(ms, m)
+		}
 	}
 	out := ms[:0]
 	for _, m := range ms {

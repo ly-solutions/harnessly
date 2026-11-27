@@ -62,6 +62,8 @@ func fail(code, msg string) *Error { return &Error{Code: code, Message: msg} }
 var statusOf = map[string]int{
 	"bad_request": 400, "forbidden": 403, "not_found": 404, "conflict": 409, "gone": 410, "rate_limited": 429, "unavailable": 503,
 	"share_unsafe_runtime": 409,
+	// the apps' checks on the owner's machine keep the project from being shared as it is.
+	"share_blocked": 409,
 	// a link pinned to a version needs the project in the hub's store, which has nothing of it yet.
 	"not_published": 409,
 	// The hub runs without a design store (HUB_STORE off): nothing will ever arrive there, which a page tells apart

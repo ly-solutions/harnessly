@@ -7,6 +7,7 @@ import type { OrgMachine } from '../../../org/api/machines';
 import { plural } from '../../../org/format/machines';
 import { LoadRow } from '../../charts/spark';
 import { Btn, Drawer, Icon } from '../../ui';
+import { AcceptMachine } from './accept';
 import { AccessSection } from './access';
 import { BuilderSection } from './builder';
 import { canOpen, cardSub, cleanName, readiness, readyHeadline, statusOf } from './calc';
@@ -333,6 +334,7 @@ export const MachineDrawer = ({
           })}
         </div>
         <div style={{ height: 14 }} />
+        <AcceptMachine m={m} onAccept={card.accept} />
         {fix}
         <div className="sec">
           <h4>Готовность по частям</h4>

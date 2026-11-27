@@ -134,6 +134,7 @@ func post(s *Service, secret, body string) *httptest.ResponseRecorder {
 
 func TestHook(t *testing.T) {
 	s := newSvc(t, noon())
+	person(t, s, "u1", "u1@example.com", true, true)
 	r := rule(t, s, "a", Limits{})
 	r.Trigger.Filter = map[string]any{"severity": "critical"}
 	if err := s.saveRule(context.Background(), r); err != nil {

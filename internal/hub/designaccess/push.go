@@ -127,7 +127,7 @@ func (t *txn) projects() ([]project, error) {
 	q, args := `SELECT machine_id, `+projectCols+` FROM design_projects WHERE machine_id = ? ORDER BY project_id`, []any{t.m.ID}
 	if t.shared && t.m.SpaceID != "" {
 		q = `SELECT p.machine_id, ` + prefixed(projectCols, "p.") + ` FROM design_projects p JOIN machines m ON m.id = p.machine_id
-			WHERE m.space_id = ? AND m.revoked_at IS NULL ORDER BY p.project_id, p.updated_at DESC, p.machine_id`
+			WHERE m.space_id = ? ORDER BY p.project_id, ` + liveFirst + `, p.updated_at DESC, p.machine_id`
 		args = []any{t.m.SpaceID}
 	}
 	rows, err := t.q.Query(t.ctx, q, args...)

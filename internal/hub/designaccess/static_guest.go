@@ -51,7 +51,7 @@ func cleanStaticPage(raw []byte) (string, error) {
 
 func (s *Service) captureStatic(ctx context.Context, machine, project string, in shareInput) ([]staticPage, error) {
 	req := hubproto.DesignPublicTokenRequest{Project: project, Rev: in.Rev, Capture: true, Pages: in.Pages}
-	unavailable := fail("unavailable", "The owner machine could not capture the complete revision")
+	unavailable := fail("unavailable", "Снимок страниц не получился: машина владельца не дорисовала все страницы. Попробуйте ещё раз, а если повторится — выберите меньше страниц")
 	get := func(segments []string, limit int64) ([]byte, error) {
 		res, err := s.machineFetch(ctx, machine, req, segments, nil)
 		if err != nil {

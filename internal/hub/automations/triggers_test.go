@@ -79,6 +79,7 @@ func clocked(t *testing.T, gate Gate) (*Service, *clock) {
 	db := storetest.Open(t)
 	c := &clock{at: noon()}
 	s := New(Deps{Config: &config.Config{Automations: true, AutomationsSecret: "s3cret"}, DB: db, Gate: gate, Now: func() time.Time { return c.at }})
+	person(t, s, "u1", "u1@example.com", true, true)
 	return s, c
 }
 

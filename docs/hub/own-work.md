@@ -45,11 +45,15 @@ The owner opens their work at one of two levels, a line of the machine's access 
   of the machine always has `tasks`; without the owner's rule, so do managers, administrators and an empty list.
 - `machaccess.Checker` asks for the level each path needs: `View` opens the machine (`GET /api/machines/{id}/open`, the
   runtime's reads); `Check` and `Send` need `tasks` (`peers send` among them). A person below it gets 403 `view_only`.
-- The runtime cannot tell watchers from the owner: the hub holds its session for everyone (`internal/hub/proxy`). For a
-  watcher the proxy lets through only `GET`, `HEAD` and `OPTIONS`, and of the sockets only `/api/timeline`,
-  `/api/status` and `/api/sync`, relayed so that the page's messages reach the runtime only when they ask to be shown
-  something (`timeline:subscribe`, `status:request-sync`, the heartbeat…). `timeline:resume`, dismissing a tab, the
-  terminal, the browser, voice and the agent's own sockets stay closed (`proxy/viewonly.go`).
+- What a watcher reaches is an allow-list of what the watching page reads (`internal/viewonly`): chats, tab states,
+  layout, pictures attached to messages and looked at by the agent, Sinopia boards. Of the sockets only
+  `/api/timeline`, `/api/status` and `/api/sync` pass, relayed so that only messages that ask to be shown something
+  (`timeline:subscribe`, `status:request-sync`, the heartbeat…) reach the runtime, read by the exact key `type`.
+  Closed: files of the machine (the file pane, file preview and download — delivered files too — notebooks, the folder
+  browser, diffs), terminals, secrets, agents' settings, the preview of dev servers, every method but `GET`, `HEAD` and
+  `OPTIONS`.
+- The hub draws that line for machines of any version. It also asks the runtime for a watcher's session (`view` in
+  `runtime.session`, a `level` claim), and a runtime that knows it draws the same line again.
 - Levels come out with the owner's rule: `PATCH /api/machines/{id}` takes `{"kind", "id", "level": "view"}` only from a
   person the switch `own-work` is on for, on that machine (`machaccess.Checker.LevelsOn`); otherwise 400. A `view` line
   the list already has can stay. The machine in the list says whether the viewer may set levels (`accessLevels`).

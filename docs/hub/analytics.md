@@ -521,7 +521,8 @@ As built (machines):
   minutes), `people` from those sessions of the last 30 days, `access` from the new `machine_access` table (migration
   `0010_machines.sql`; empty means the whole tenant). `opensRuntime` is false when the machine's last policy refused
   runtime sessions (a machine the hub only watches): the page hides «Открыть» and `…/open` answers 409 `observe_only`
- .
+ . `awaitsOwner` (`{ heldBy: PersonRef | null }`) is set while the owner has not accepted the keys the
+  machine holds ([Whose keys](machine.md#whose-keys)), else null.
 - Problems: `disabled` (alone, when the machine is switched off), `offline` (seen once, no link now), `idle_week` (no
   chat for 7 days; not for a machine that never connected), `agent_old` (below `HUB_MIN_AGENT_VERSION`), `disk_low`
   (the last preflight reported less than 10% or 5 GiB free), `login_expired` (an installed agent reports

@@ -214,6 +214,11 @@ their existing defaults and launch paths. The official consumer-plan support cav
 | `RUNTIME_CHECKPOINT_NAMESPACE`, `RUNTIME_CHECKPOINT_TMP_TAG` | the turn checkpoints' git refs (`refs/<ns>/checkpoints/`, `refs/<ns>/saved/`) and author (`<ns>@localhost`), default `harnessly`; and the tag of the files a rewind stages (`<file>.<tag>-<hex>.tmp`, default `hs`) |
 | `RUNTIME_CHECKPOINT_POOL` | `on` keeps one object store per working folder (`checkpoints/pool-<folder>`), which the checkpoint repositories of its tabs borrow from through git alternates and hand their packed objects to once an hour; the repositories that exist are swept once after a start. Default `off`: a repository per tab with loose objects. A runtime without the setting still reads the repositories made with it |
 
+Whatever the workspace folder is, the file viewer and downloads never serve the machine's credentials: the data folders
+(`AGENT_DATA_DIR`, `~/.harnessly`; uploads, pictures, media and the design library inside them stay), the safe's key,
+`~/.codex` (its generated pictures stay), `~/.config/{harnessly,gh,glab-cli,gcloud,…}`, `~/.kube`, `~/.docker`,
+`~/.git-credentials`, `~/.claude.json`, shell histories (`internal/files/credentials.go`).
+
 ### Notebook execution
 
 See [Jupyter notebooks in the file pane](notebooks.md) for opening, editing, running and saving notebooks.

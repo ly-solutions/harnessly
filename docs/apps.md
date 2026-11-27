@@ -907,7 +907,8 @@ The following is under `HARNESSLY_UI_SLOTS=on`; without it nothing here is offer
 - **Secrets.** `secrets` declares names; a person sets a value on the extension's page or with
   `harnessly app secret set <id> <name>` (stdin). The value lives in the core's safe as `app/<id>/<name>`, and no
   route returns it. The app gets it only with the `secrets:<name>` permission, as an environment variable of
-  `harnessly app run <id> --secret NAME[=VAR] -- command`; the output is masked.
+  `harnessly app run <id> --secret NAME[=VAR] -- command`; the output is masked. A chat's agent (its launch token)
+  gets only the secrets of the apps that are on in that chat (`not-on` otherwise).
 - **Data and its versions.** `data: {version, migrations}`: each step names a JSON Patch file for the version it starts
   from (`"1": "migrations/1-to-2.json"`). An update brings the app's data up to date before it starts; a step that fails
   leaves the data and the old version as they were.

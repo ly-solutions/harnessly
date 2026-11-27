@@ -5,6 +5,7 @@ import (
 	"regexp"
 
 	"github.com/ly-solutions/harnessly/internal/jscompat"
+	"github.com/ly-solutions/harnessly/internal/viewonly"
 )
 
 // StatusSource is what the status socket reads and where the page's messages go.
@@ -68,6 +69,9 @@ func (s *StatusServer) sync(c *Client, withLimits bool) {
 func (s *StatusServer) message(c *Client, data []byte) {
 	m, ok := decode(data)
 	if !ok {
+		return
+	}
+	if t, _ := m["type"].(string); c.watching && !viewonly.MessageType("/api/status", t) {
 		return
 	}
 	tabID, _ := m["tabId"].(string)

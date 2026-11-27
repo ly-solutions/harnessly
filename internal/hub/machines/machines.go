@@ -249,6 +249,7 @@ func (s *Service) Mount(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/machines/{machineId}/trust", g.Machine(tenant.Owner, s.trust))
 	mux.Handle("POST /api/machines/{machineId}/preflight", g.Machine(tenant.Owner, s.rerunPreflight))
 	mux.Handle("POST /api/machines/{machineId}/owner", g.Machine(tenant.Owner, s.assignOwner))
+	mux.Handle("POST /api/machines/{machineId}/accept", g.Machine(tenant.Member, s.accept))
 
 	s.mountOrg(mux)
 	s.mountProvision(mux)

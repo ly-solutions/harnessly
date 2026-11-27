@@ -3,6 +3,7 @@
 import type { MachinesList, OrgMachine } from '../../../org/api/machines';
 import { plural } from '../../../org/format/machines';
 import { Btn, Icon } from '../../ui';
+import { AcceptMachine } from './accept';
 import { hwLine } from './calc';
 import { useOpenMachine } from './open';
 import { ErrorRow } from './parts';
@@ -26,7 +27,16 @@ export const MemberSkeleton = () => (
   </div>
 );
 
-export const MemberView = ({ list, onAdd }: { list: MachinesList; onAdd?: () => void }) => {
+export const MemberView = ({
+  list,
+  onAdd,
+  onAccept,
+}: {
+  list: MachinesList;
+  onAdd?: () => void;
+  /** Accepts a machine that waits for the viewer; true once the hub did. */
+  onAccept: (id: string) => Promise<boolean>;
+}) => {
   const { busyId, error, open } = useOpenMachine();
   const all = list.groups.flatMap((g) => g.machines);
   const mine = all.filter((m) => m.mine !== false);
@@ -71,6 +81,9 @@ export const MemberView = ({ list, onAdd }: { list: MachinesList; onAdd?: () => 
   return (
     <>
       {error && <ErrorRow text={error.text} onRetry={() => void open(error.id)} />}
+      {mine.map((m) => (
+        <AcceptMachine key={m.id} m={m} onAccept={() => onAccept(m.id)} />
+      ))}
       {group('Мои', mine)}
       {group(`Общие в тенанте ${shared[0]?.tenantName ?? ''}`.trim(), shared)}
       {all.length === 0 && (

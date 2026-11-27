@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -86,6 +87,8 @@ type Deps struct {
 	// OwnerOn says whether the hub owns the design facts (the rollout switch hub-design-owner): off, the
 	// library is what the store's files say, as before. nil is off.
 	OwnerOn func(ctx context.Context, email, machineID string) bool
+	// TrustedProxies are the peers whose X-Forwarded-For names the guest (HUB_TRUSTED_PROXIES).
+	TrustedProxies []netip.Prefix
 }
 
 type Service struct {
@@ -114,6 +117,7 @@ type Service struct {
 	appKinds      AppKinder
 	appsCatalogOn func(ctx context.Context, email, machineID string) bool
 	view          Viewer
+	folders       Folders
 	sheets        *sheetCache // the store's stylesheets with their fonts inside, by revision (sheetcache.go)
 	// cover is the count of the recorded projects the store has (coverage.go).
 	cover     coverage
@@ -130,6 +134,7 @@ type Service struct {
 	events   map[string]*dayCount
 	tokens   map[string]cachedToken
 	budget   *budget
+	trusted  []netip.Prefix
 }
 
 type dayCount struct {
@@ -142,7 +147,7 @@ func New(d Deps) *Service {
 		db: d.DB, reg: d.Reg, log: d.Log, now: d.Now, hubURL: strings.TrimRight(d.HubURL, "/"), platformAPI: d.PlatformAPI,
 		staticGuests: d.StaticGuests && d.ShareURL == "", transport: d.Transport, seal: newSealer(d.LinkKey), files: newFileKeyer(d.LinkKey), notice: d.Notice, bell: d.Bell, shared: d.Shared, opens: d.Opens, homeOn: d.HomeOn, ownerOn: d.OwnerOn, view: d.View, kits: d.Kits,
 		serving: map[string]bool{}, prefixes: map[string]string{}, timers: map[string]*time.Timer{},
-		events: map[string]*dayCount{}, tokens: map[string]cachedToken{}, budget: newBudget(),
+		events: map[string]*dayCount{}, tokens: map[string]cachedToken{}, budget: newBudget(), trusted: d.TrustedProxies,
 		teamLevel: roleEdit, closed: d.ClosedUnrecorded, sheets: newSheetCache(sheetCacheMax),
 	}
 	if l := strings.ToLower(strings.TrimSpace(d.TeamLevel)); teamLevelOK(l) {
@@ -229,10 +234,26 @@ func (s *Service) Event(m store.Machine, e hubproto.DesignEvent) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	who, err := s.eventPerson(ctx, m, e.Person)
+	// A delete is believed only from a machine of the owner: the address in the event is the machine's own
+	// word, and a runtime names nobody there anyway (the owner file went to the trash with the project).
+	person := e.Person
+	if e.Kind == "design.deleted" {
+		person = ""
+	}
+	who, err := s.eventPerson(ctx, m, person)
 	if err != nil {
 		s.log.Warn("design event person not resolved", "machine", m.ID, "error", err)
 		return
+	}
+	if e.Kind != "design.deleted" {
+		if taken, err := s.takesFolder(ctx, m, e.Project); err != nil || taken {
+			if err != nil {
+				s.log.Warn("design event: the project's folder not read", "machine", m.ID, "project", e.Project, "error", err)
+			} else {
+				s.log.Warn("design event over a folder others filled records nothing", "machine", m.ID, "kind", e.Kind, "project", e.Project)
+			}
+			return
+		}
 	}
 	switch e.Kind {
 	case "design.created":
@@ -248,6 +269,32 @@ func (s *Service) Event(m store.Machine, e hubproto.DesignEvent) {
 		s.log.Warn("design event not recorded", "machine", m.ID, "kind", e.Kind, "error", err)
 	}
 	s.kickSpace(ctx, m)
+}
+
+// Folders says what the hub's store holds of the projects (storehub).
+type Folders interface {
+	// WrittenByOthers: the project's folder holds a revision that no machine of m's person wrote.
+	WrittenByOthers(ctx context.Context, m store.Machine, project string) (bool, error)
+}
+
+// UseFolders lets the machines' events be checked against the store; it is set once, before the hub serves.
+func (s *Service) UseFolders(f Folders) { s.folders = f }
+
+// takesFolder: an event of the machine would record a project the hub has no row for over files other people's machines
+// put into the store, and so hand them to whoever sent it first. Such a folder waits for the registration an
+// administrator runs (register.go), as an owner file written into a filled folder does.
+func (s *Service) takesFolder(ctx context.Context, m store.Machine, project string) (bool, error) {
+	if s.folders == nil || m.SpaceID == "" {
+		return false, nil
+	}
+	t, err := s.read(ctx, m)
+	if err != nil {
+		return false, err
+	}
+	if p, err := t.getProject(project, false); err != nil || p != nil {
+		return false, err
+	}
+	return s.folders.WrittenByOthers(ctx, m, project)
 }
 
 // kickSpace sends the new snapshot to the machine, and with a shared library to every machine of its space: the

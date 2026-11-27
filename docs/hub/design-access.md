@@ -16,8 +16,11 @@ pages) to someone without an account. The hub keeps these records; the machine's
 - Every member of the machine's space appears in the snapshot the hub pushes to the machine
   (`hubproto.OpDesignAccess`); a person missing there gets nothing on a known project. The snapshot is pushed when the
   machine connects, after every change (debounced), when grants run out, and every five minutes.
-- The machine reports projects made, claimed and deleted with a `design` event; the hub records them under the person
-  the owner file names when that person may open the machine, otherwise under the machine's person.
+- The machine reports projects made, claimed and deleted with a `design` event; the hub records a made or claimed one
+  under the person the owner file names when that person may open the machine, otherwise under the machine's person. A
+  delete counts only from a machine whose person (who enrolled it) owns the project; the address in the event is not
+  looked at. A person who owns a project but did not enroll the machine deletes it there, and the hub's
+  record stays.
 
 The page's API stays where it was: `/m/<id><platform api>/design/access/...` answered by the hub, with the same request
 and response shapes as before. The hub checks that the person may open the machine first, as for every machine path.
@@ -32,9 +35,20 @@ its person has a role in and takes its writes only to those they may edit.
 A project the store holds but the hub has no row for (made before the hub kept access, or on a machine that never
 reported it) is closed on a new installation: the store gives it to no other machine, and the runtime leaves it only to
 the machine's own person (unless its owner file names someone else). A new folder may still be written, so a machine can
-start a project before the hub records it. An installation that had accounts before this default keeps such projects
+start a project before the hub records it; a folder that holds another person's revisions takes no new files from the
+others ([store](store.md#who-gets-which-project)). An installation that had accounts before this default keeps such projects
 open to everyone of the space until `HUB_DESIGN_UNRECORDED=closed` says otherwise; `open` or `closed` in the variable
 always wins over what the installation started with.
+
+A `design` event does not record a project whose folder in the store holds a revision written by anyone but the
+machines of the sender's person: such a folder waits for `HUB_DESIGN_REGISTER`. The store knows a writer by
+its machine's name, so a name that two people's machines of the space share counts as another's.
+
+A record belongs to the space and outlives its machine. A revoked or removed machine's rows keep counting
+(a live machine's row of the same project goes first), the library lists them, and the owner's delete from another of
+their machines takes them. When a machine moves to another space, its rows stay behind under a revoked stand-in of it
+(same name, maker and access list), with their people, requests, invitations and guest links; the moved machine takes a
+copy of each project's row and its people named by address, unless the new space has a record of that project already.
 
 ## Personal projects by default
 
@@ -53,10 +67,17 @@ A deployment where people bring their own machines and expect each project to st
 ## Guest links
 
 A link is `https://<HUB_DESIGN_SHARE_URL host>/s/<token>`. It shows the whole project or chosen pages (matched by page
-path) read-only. Revoking a link makes it answer `410` at once; restarting the hub or the machine changes nothing.
+path) read-only. With a library in the store the access dialog of any machine of the space lists, changes and revokes
+the project's links, whichever machine's page made them. Revoking a link makes it answer `410` at once; restarting the hub or the machine changes nothing.
 
 The share host is a separate origin so a guest page never runs next to the hub's session. On it the hub serves only
-`/s/...`: no hub API, no machine paths.
+`/s/...`: no hub API, no machine paths. A guest's requests are limited per address (an IPv6 one by its /64);
+`X-Forwarded-For` names it only when the connection comes from `HUB_TRUSTED_PROXIES`, so the proxy in front of the share
+host belongs in that list, or all guests share its limits.
+
+A link lives while its maker may share the project: when they are removed from the project's space or their account is
+switched off, the link answers `410` as a revoked one, even if the project still names them its owner. It
+opens again if they come back. Someone who is no member of a space is in none of its teams.
 
 **A guest is served from the hub's store and nowhere else.** The hub never reads the owner's machine for a
 guest, so a guest link works with the machine off, and a guest's request cannot reach a machine's runtime or tunnel

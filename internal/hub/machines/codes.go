@@ -74,7 +74,12 @@ func (s *Service) createCode(w http.ResponseWriter, r *http.Request, t *tenant.C
 			if off, ferr := s.memberMachinesOff(ctx, spaceID); ferr != nil {
 				return ferr
 			} else if off {
-				return err
+				// Their own machine that waits to be registered again is the one exception (register enforces it).
+				if waits, rerr := s.awaitsRelink(ctx, spaceID, p.User.ID); rerr != nil {
+					return rerr
+				} else if !waits {
+					return err
+				}
 			}
 			if ok, retry := s.lim.Allow("code-member:"+spaceID+":"+p.User.ID, maxMemberCodes, CodeTTL); !ok {
 				return httpx.RateLimited(ratelimit.RetrySeconds(retry))
@@ -104,6 +109,20 @@ func (s *Service) memberMachinesOff(ctx context.Context, spaceID string) (bool, 
 		return false, nil
 	}
 	return o.NoMemberMachines, err
+}
+
+// awaitsRelink says whether the person owns a machine of the space whose keys they have not accepted.
+func (s *Service) awaitsRelink(ctx context.Context, spaceID, userID string) (bool, error) {
+	ms, err := s.db.S().MachinesByUser(ctx, spaceID, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, m := range ms {
+		if m.Holder() != userID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // IssueCode makes a registration code for a space, under the limits on codes per person and per space. The caller has
@@ -245,6 +264,16 @@ func (s *Service) register(w http.ResponseWriter, r *http.Request) error {
 		prev.Hostname, prev.OS, prev.Arch, prev.UnixUser, prev.AgentVersion = m.Hostname, m.OS, m.Arch, m.UnixUser, m.AgentVersion
 		prev.Profile, prev.Via, prev.KeyPub, prev.EncPub = m.Profile, m.Via, m.KeyPub, m.EncPub
 		m = prev
+		// The new keys are accepted by whoever asked for this code: the owner's own data follows only when that is them.
+		m.KeysBy = code.CreatedBy
+	}
+	// Where members do not connect machines, a member's code only registers again a machine that is their own.
+	if !code.Local && !(again && m.CreatedBy == code.CreatedBy) {
+		if off, err := s.memberMachinesOff(ctx, code.SpaceID); err != nil {
+			return err
+		} else if off && s.spaces.Owner(ctx, code.CreatedBy, code.SpaceID) != nil {
+			return httpx.New(http.StatusForbidden, "member_machines_off", "Участники не подключают свои машины: этим кодом можно только переподключить свою")
+		}
 	}
 	var replaced []string
 	err = s.db.Tx(ctx, func(st store.Store) error {

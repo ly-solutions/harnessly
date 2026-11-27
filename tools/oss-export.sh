@@ -95,10 +95,18 @@ if [ -n "${OSS_FORBIDDEN_FILE:-}" ]; then
 fi
 keys=$(tr ',' '\n' <<<"$keys" | grep -E '^[A-Z][A-Z0-9]{1,9}$' | paste -sd'|' - || true)
 if [ -n "$keys" ]; then
-  # shellcheck disable=SC2016 # the perl program is perl's, not the shell's
   find "$work/tree" -type f \( -name '*.md' -o -name '*.go' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' \
-    -o -name '*.mjs' -o -name '*.css' -o -name '*.sh' -o -name '*.yml' -o -name '*.yaml' \) ! -name '*.min.js' -print0 |
-    OSS_KEYS=$keys xargs -0 perl -i -pe '
+    -o -name '*.mjs' -o -name '*.css' -o -name '*.sh' -o -name '*.yml' -o -name '*.yaml' \) ! -name '*.min.js' \
+    -print0 >"$work/stripped"
+  # A comment line that is only the tag, ending the sentence of the line above (`// … revoked too` + `// (KEY-12).`),
+  # joins that line: the sentence keeps its full stop, and no bare `//` is left before the code, which gofmt refuses.
+  # shellcheck disable=SC2016 # the perl program is perl's, not the shell's
+  OSS_KEYS=$keys xargs -0 perl -0777 -i -pe '
+    BEGIN { $k = qr/(?:$ENV{OSS_KEYS})-\d+/ }
+    s/^([ \t]*(?:\/\/|\/\*\*?|\*|#)[^\n]*?\S)[ \t]*\r?\n[ \t]*(?:\/\/|\*|#)[ \t]*\((?:$k)(?:, (?:$k))*\)([.,;:]?)[ \t]*(?=\r?\n)/$1$2/mg;
+  ' <"$work/stripped"
+  # shellcheck disable=SC2016 # the perl program is perl's, not the shell's
+  OSS_KEYS=$keys xargs -0 perl -i -pe '
       BEGIN { $k = qr/(?:$ENV{OSS_KEYS})-\d+/ }
       if ($ARGV =~ /\.md$/ || /^\s*(?:\/\/|\/\*|\*|#)/) {
         my $was = $_;
@@ -109,15 +117,16 @@ if [ -n "$keys" ]; then
         s/^(\s*(?:\/\/|\/\*\*?|\*|#)\s*)(?:$k)[:.] /$1/;
         # A comment line that was only a tag keeps its `// ` with a trailing blank, which prettier refuses.
         s/[ \t]+(\r?\n?)$/$1/ if $_ ne $was;
-      }'
+      }' <"$work/stripped"
   # The index takes the files as they are now; only the stripped ones change.
   git -C "$src" --work-tree="$work/tree" add -A -f -- .
   tree=$(git -C "$src" write-tree)
   # A tag that led a comment line must not leave the Go a gofmt check refuses (`//.`).
-  if command -v gofmt >/dev/null; then
-    bad=$(git -C "$src" diff --name-only "$commit" "$tree" -- '*.go' | (cd "$work/tree" && xargs -r gofmt -l))
-    [ -z "$bad" ] || die "stripping the tags left Go gofmt refuses: $bad"
-  fi
+  # Without gofmt the check is not skipped: GitHub's fmt-check would refuse the sync instead (#191).
+  gofmt=$(command -v gofmt || { command -v go >/dev/null && echo "$(go env GOROOT)/bin/gofmt"; } || true)
+  [ -x "$gofmt" ] || die "gofmt is not found (put Go on PATH): the stripped Go cannot be checked"
+  bad=$(git -C "$src" diff --name-only "$commit" "$tree" -- '*.go' | (cd "$work/tree" && xargs -r "$gofmt" -l))
+  [ -z "$bad" ] || die "stripping the tags left Go gofmt refuses: $bad"
 fi
 "$here/oss-leak-check.sh" "$work/tree" || die "the leak check refused the tree of $short; no branch made"
 

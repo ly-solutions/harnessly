@@ -114,6 +114,7 @@ type personTeams struct {
 	email string
 	user  string // hub user id, "" when the address never signed in
 	name  string
+	off   bool // the account is switched off
 	teams map[string]teamPlace
 	admin map[string]bool
 }
@@ -177,7 +178,7 @@ func (w *world) person(email string) (personTeams, error) {
 	if err != nil {
 		return p, err
 	}
-	p.user, p.name = u.ID, strings.TrimSpace(u.Name)
+	p.user, p.name, p.off = u.ID, strings.TrimSpace(u.Name), u.DisabledAt != nil
 	grants, err := w.s.GrantsOfUser(w.ctx, u.ID)
 	if err != nil {
 		return p, err
@@ -206,7 +207,8 @@ func (w *world) person(email string) (personTeams, error) {
 		}
 		p.teams[t.ID] = teamPlace{lead: leads[t.ID], primary: tm.IsPrimary, org: orgKey(sp), space: sp.ID}
 	}
-	if role, err := w.s.Role(w.ctx, w.space.ID, u.ID); err == nil {
+	// Role answers "" without an error for a person who is no member: they are not in the space's team.
+	if role, err := w.s.Role(w.ctx, w.space.ID, u.ID); err == nil && role != "" {
 		p.teams[w.implicitTeam()] = teamPlace{lead: role == store.RoleOwner, org: orgKey(w.space), space: w.space.ID}
 		if role == store.RoleOwner && w.space.OrgID == "" {
 			p.admin[orgKey(w.space)] = true

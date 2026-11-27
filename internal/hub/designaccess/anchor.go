@@ -47,13 +47,16 @@ func (s *Service) AnchorMachines(ctx context.Context, spaceIDs []string, rest st
 		// space after the machine that holds the row; the proxy applies admission to each.
 		query = `SELECT candidate.id FROM design_projects p JOIN machines holder ON holder.id=p.machine_id
             JOIN machines candidate ON candidate.space_id=holder.space_id
-            WHERE p.project_id=? AND holder.space_id IN (` + marks + `) AND holder.revoked_at IS NULL AND candidate.revoked_at IS NULL
+            WHERE p.project_id=? AND holder.space_id IN (` + marks + `) AND candidate.revoked_at IS NULL
             GROUP BY candidate.id ORDER BY MAX(p.updated_at) DESC, MAX(CASE WHEN candidate.id=p.machine_id THEN 1 ELSE 0 END) DESC, candidate.id`
 	}
 	if match := workspaceInvite.FindStringSubmatch(rest); match != nil {
 		args[0] = store.HashToken(match[1])
 		query = `SELECT candidate.id FROM design_invites i JOIN machines owner ON owner.id=i.machine_id JOIN machines candidate ON candidate.space_id=owner.space_id
-      WHERE i.token_hash=? AND owner.space_id IN (` + marks + `) AND owner.revoked_at IS NULL AND candidate.revoked_at IS NULL ORDER BY candidate.id`
+      WHERE i.token_hash=? AND owner.space_id IN (` + marks + `) AND candidate.revoked_at IS NULL ORDER BY candidate.id`
+		if !s.shared {
+			query = strings.Replace(query, "AND candidate.revoked_at", "AND owner.revoked_at IS NULL AND candidate.revoked_at", 1)
+		}
 	}
 	rows, err := s.db.S().Q().Query(ctx, query, args...)
 	if err != nil {

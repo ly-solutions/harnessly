@@ -1,0 +1,10 @@
+{
+  "id": "harnessly",
+  "name": "Harnessly",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Share chosen notes with your harnessly agents: pick folders, notes and tags, everything else stays private.",
+  "author": "harnessly",
+  "authorUrl": "https://github.com/ly-solutions/harnessly",
+  "isDesktopOnly": false
+}

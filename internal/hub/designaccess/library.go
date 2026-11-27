@@ -308,8 +308,16 @@ func (s *Service) grantedLibrary(ctx context.Context, u store.User, m store.Mach
 	// Shortlist rows by person, accepted invitation or team grant. The regular fold
 	// below verifies membership, current role, expiry, and revocation on each row.
 	// A slug held by two machines is two cards: each is named by its holder (cardkey.go), never by the slug alone.
+	// Which machines' rows count: the live ones, and with a shared library a revoked one's too when no live machine of
+	// the space holds the project.
+	holds := `m.disabled_at IS NULL AND m.revoked_at IS NULL`
+	if s.shared {
+		holds = `(m.disabled_at IS NULL AND m.revoked_at IS NULL OR m.revoked_at IS NOT NULL AND NOT EXISTS (
+			SELECT 1 FROM design_projects lp JOIN machines lm ON lm.id=lp.machine_id
+			WHERE lp.project_id=p.project_id AND lm.space_id=m.space_id AND lm.revoked_at IS NULL))`
+	}
 	rows, err := t.q.Query(ctx, `SELECT p.project_id, p.machine_id FROM design_projects p JOIN machines m ON m.id=p.machine_id
-		WHERE m.space_id=? AND m.disabled_at IS NULL AND m.revoked_at IS NULL AND (
+		WHERE m.space_id=? AND `+holds+` AND (
 			p.owner_email=? OR EXISTS (SELECT 1 FROM design_members g WHERE g.machine_id=p.machine_id AND g.project_id=p.project_id AND g.person_email=?)
 			OR EXISTS (SELECT 1 FROM design_invites i JOIN design_invite_acceptances a ON a.invite_id=i.id WHERE i.machine_id=p.machine_id AND i.project_id=p.project_id AND a.person_email=?)
 			OR EXISTS (SELECT 1 FROM design_team_grants g WHERE g.machine_id=p.machine_id AND g.project_id=p.project_id AND (
@@ -349,7 +357,7 @@ func (s *Service) grantedLibrary(ctx context.Context, u store.User, m store.Mach
 			if err != nil {
 				return out, err
 			}
-			if machine.SpaceID != m.SpaceID || machine.DisabledAt != nil || machine.RevokedAt != nil {
+			if machine.SpaceID != m.SpaceID || machine.RevokedAt == nil && machine.DisabledAt != nil || machine.RevokedAt != nil && !s.shared {
 				continue
 			}
 			row := *t

@@ -25,6 +25,7 @@ import (
 	"github.com/ly-solutions/harnessly/internal/jsvalue"
 	"github.com/ly-solutions/harnessly/internal/machine"
 	"github.com/ly-solutions/harnessly/internal/preflight"
+	"github.com/ly-solutions/harnessly/internal/sameorigin"
 	"github.com/ly-solutions/harnessly/internal/settings"
 	"github.com/ly-solutions/harnessly/internal/state"
 	"github.com/ly-solutions/harnessly/internal/tmux"
@@ -543,6 +544,9 @@ func authRoutes(d deps, store *settings.Store, open func(settings.Handler) func(
 			if r.Method != http.MethodPost {
 				return stateAnswer(r, http.StatusMethodNotAllowed, errBody("Method not allowed"), http.Header{"Allow": {"POST"}})
 			}
+			if sameorigin.CrossSite(r) {
+				return stateAnswer(r, http.StatusForbidden, errBody("This request comes from a page of another site."), nil)
+			}
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			const window = 15 * time.Minute
@@ -608,6 +612,12 @@ func authRoutes(d deps, store *settings.Store, open func(settings.Handler) func(
 				return stateAnswer(r, 200, jsvalue.NewObject("needsSetup", setup, "requiresAuth", setup && s.initMode && !d.SessionOK(r),
 					"hostEnvLocked", hostLocked()), nil)
 			case http.MethodPost:
+				s.setup.Lock()
+				guarded := s.initMode
+				s.setup.Unlock()
+				if why := setupRefusal(r, guarded); why != "" {
+					return stateAnswer(r, http.StatusForbidden, errBody(why), nil)
+				}
 				if body == nil {
 					body = jsvalue.NewObject()
 				}

@@ -189,6 +189,14 @@ it, so a runtime that listens beyond this machine locks the setup behind an **in
   you. If a reverse proxy on the same host exposes that port to others, set `INIT_PASSWORD` or
   `RUNTIME_GENERATE_INIT_PASSWORD=1` (the runtime cannot tell proxied clients from local ones).
 
+The setup and the sign-in take requests of the runtime's own page only (the setup as `application/json`). Without a
+one-time password the setup also answers only at `localhost`, an IP address, a name without a dot, `*.local`, `*.lan`,
+`*.internal`, `*.home.arpa`, `*.ts.net` or the machine's host name: behind a proxy with a public name, set
+`INIT_PASSWORD` or `RUNTIME_GENERATE_INIT_PASSWORD=1`.
+
+Every other write of the API that carries the session cookie must come from the runtime's own page too: the browser's
+`Sec-Fetch-Site`, or `Origin` naming the host asked (a proxy that rewrites `Host` sends `X-Forwarded-Host`).
+
 `RUNTIME_GENERATE_INIT_PASSWORD=0` turns the generation off (the first visitor chooses, as before). There is no
 password form in the page yet: to choose a new password later, stop the runtime, delete `authPassword` and `authSecret`
 from `config.json` in its data folder (`~/.harnessly`) and start it again; the setup then runs again.

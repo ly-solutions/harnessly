@@ -36,23 +36,12 @@ const (
 	peersDeliverWait = 15 * time.Second
 )
 
-// peerSender is who the hub says a machine's message comes from. The person the machine names is believed as the site
-// session believes it (siteSession): they registered the machine, or opened it through the hub lately, and are still
-// members of its space. Otherwise it is the person who registered the machine, while they are a member of its space and
-// their account works; with none, the machine cannot send.
-func (h *Hub) peerSender(ctx context.Context, m store.Machine, claimed string) (hubproto.PeerSender, string, bool) {
+// peerSender is who the hub says a machine's message comes from: the person who registered the machine, while they are
+// a member of its space and their account works; with none, the machine cannot send. The person the machine names is
+// not taken: the hub has no proof of who writes there, and a machine whose owner could name anyone who had only opened
+// it would speak as them, to their own machines too, past their inbox.
+func (h *Hub) peerSender(ctx context.Context, m store.Machine) (hubproto.PeerSender, string, bool) {
 	s := hubproto.PeerSender{Machine: hubproto.PeerRefPrefix + m.ID, MachineName: m.Name}
-	person := func(u store.User) (hubproto.PeerSender, string, bool) {
-		s.Person, s.PersonName = u.Email, u.Name
-		return s, u.ID, true
-	}
-	if email := strings.ToLower(strings.TrimSpace(claimed)); email != "" {
-		if u, err := h.db.S().UserByEmail(ctx, email); err == nil && u.DisabledAt == nil && (u.ID == m.CreatedBy || h.Tickets.OpenedRecently(u.ID, m.ID)) {
-			if role, err := h.db.S().Role(ctx, m.SpaceID, u.ID); err == nil && role != "" {
-				return person(u)
-			}
-		}
-	}
 	if m.CreatedBy == "" {
 		return s, "", false
 	}
@@ -63,7 +52,8 @@ func (h *Hub) peerSender(ctx context.Context, m store.Machine, claimed string) (
 	if role, err := h.db.S().Role(ctx, m.SpaceID, u.ID); err != nil || role == "" {
 		return s, "", false
 	}
-	return person(u)
+	s.Person, s.PersonName = u.Email, u.Name
+	return s, u.ID, true
 }
 
 // peerMayOpen says whether the person a message comes from may open the machine it goes to, by the rule the site
@@ -158,7 +148,7 @@ func (h *Hub) peersSend(w http.ResponseWriter, r *http.Request) error {
 	if ok, _ := h.limiter.Allow("peers:"+from.ID, peersPerMinute, time.Minute); !ok {
 		return answer(hubproto.PeerRefusal(msg.ID, hubproto.PeerRateLimited, ""))
 	}
-	sender, senderID, ok := h.peerSender(r.Context(), from, body.Person)
+	sender, senderID, ok := h.peerSender(r.Context(), from)
 	if !ok {
 		return answer(hubproto.PeerRefusal(msg.ID, hubproto.PeerUnverified, "the machine has no person the hub can vouch for"))
 	}
@@ -209,15 +199,11 @@ func (h *Hub) peersDirectory(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	var body struct {
-		Person string `json:"person"`
-	}
-	_ = json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body)
 	if ok, retry := h.limiter.Allow("peers:"+from.ID, peersPerMinute, time.Minute); !ok {
 		return httpx.RateLimited(int(retry / time.Second))
 	}
 	out := hubproto.PeerChats{Chats: []hubproto.PeerChat{}}
-	sender, senderID, ok := h.peerSender(r.Context(), from, body.Person)
+	sender, senderID, ok := h.peerSender(r.Context(), from)
 	if !ok {
 		httpx.WriteJSON(w, http.StatusOK, out)
 		return nil

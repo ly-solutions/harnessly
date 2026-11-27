@@ -70,6 +70,7 @@ export const orgMachineOf = (raw: HubMachine, view: OrgView): OrgMachine => {
     name: m.name,
     ownerName: owner?.label ?? null,
     ownerId: owner?.id ?? null,
+    awaitsOwner: m.awaitsOwner ? { heldBy: m.awaitsOwner.heldBy?.name ?? null } : null,
     purpose: null,
     kind: only ? 'personal' : 'shared',
     tenantId: m.tenantId,
@@ -392,6 +393,10 @@ export const liveMachines = (ctx: () => MachinesCtx): MachinesApi => {
     },
     assignMachineOwner: async (id, userId, history) => {
       await http.post(`/api/machines/${id}/owner`, { userId, history });
+      return detail(id);
+    },
+    acceptMachine: async (id) => {
+      await http.post(`/api/machines/${id}/accept`, {});
       return detail(id);
     },
     planMoveMachine: async (id, tenantId, teamId) =>
