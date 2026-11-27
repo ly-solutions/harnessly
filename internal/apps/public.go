@@ -213,7 +213,7 @@ func (r *Registry) PublishPublic(id, version, by string, now time.Time) (PublicE
 	keepSig(r.publicArchive(id, version), raw, r.versionSig(id, version))
 	m := pkg.Manifest
 	e := PublicEntry{CatalogEntry: CatalogEntry{
-		ID: id, Channel: string(ChannelStable), Version: version, Name: m.Name, Description: m.Description, Trust: m.Trust,
+		ID: id, Channel: string(ChannelStable), Version: version, Icon: pkg.Icon, Name: m.Name, Description: m.Description, Trust: m.Trust,
 		Targets: nonNil(m.Targets), Permissions: nonNil(m.Permissions), By: by, At: now.UnixMilli(), Sum: sum,
 	}, Review: ReviewApproved}
 	e.describe(m)

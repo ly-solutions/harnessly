@@ -49,6 +49,7 @@ var (
 
 // CatalogEntry is an app in the team's catalog on one channel.
 type CatalogEntry struct {
+	Icon        string   `json:"icon,omitempty"`
 	ID          string   `json:"id"`
 	Channel     string   `json:"channel"`
 	Version     string   `json:"version"`
@@ -61,8 +62,9 @@ type CatalogEntry struct {
 	By          string   `json:"by"`
 	At          int64    `json:"at"`
 	// Sum is the SHA-256 of the archive of Version; PreviousSum that of Previous.
-	Sum         string `json:"sum"`
-	PreviousSum string `json:"previousSum,omitempty"`
+	Sum          string `json:"sum"`
+	PreviousSum  string `json:"previousSum,omitempty"`
+	PreviousIcon string `json:"previousIcon,omitempty"`
 	// What a machine checks before it downloads the app: the harnessly it wants, the slash command and the
 	// document types it takes, the secrets it needs. An entry made before these were kept has none, and is checked at
 	// the install as before.
@@ -275,7 +277,7 @@ func (r *Registry) PublishToTeam(id, version string, ch Channel, by, host string
 	keepSig(r.catalogArchive(id, version), raw, r.versionSig(id, version))
 	m := pkg.Manifest
 	e := CatalogEntry{
-		ID: id, Channel: string(ch), Version: version, Name: m.Name, Description: m.Description, Trust: m.Trust,
+		ID: id, Channel: string(ch), Version: version, Icon: pkg.Icon, Name: m.Name, Description: m.Description, Trust: m.Trust,
 		Targets: m.Targets, Permissions: m.Permissions, By: by, At: now.UnixMilli(), Sum: sum,
 	}
 	e.describe(m)
@@ -292,9 +294,9 @@ func (r *Registry) PublishToTeam(id, version string, ch Channel, by, host string
 			continue
 		}
 		if old.Version != version {
-			e.Previous, e.PreviousSum = old.Version, old.Sum
+			e.Previous, e.PreviousSum, e.PreviousIcon = old.Version, old.Sum, old.Icon
 		} else {
-			e.Previous, e.PreviousSum = old.Previous, old.PreviousSum
+			e.Previous, e.PreviousSum, e.PreviousIcon = old.Previous, old.PreviousSum, old.PreviousIcon
 		}
 		t.Catalog[i], replaced = e, true
 	}
@@ -335,6 +337,7 @@ func (r *Registry) RollbackCatalog(id string, ch Channel, host string, now time.
 		if e.Previous == "" {
 			return CatalogEntry{}, fmt.Errorf("%w: %s %s in the catalog", ErrNoPrevious, id, ch)
 		}
+		e.Icon, e.PreviousIcon = e.PreviousIcon, ""
 		e.Version, e.Sum, e.Previous, e.PreviousSum = e.Previous, e.PreviousSum, "", ""
 		t.At = now.UnixMilli()
 		if _, err := r.refollowTeam(&t, host, true, now); err != nil {

@@ -8,6 +8,7 @@ manifest of ours:
 ```text
 acme-cashback/
   harnessly/app.json          # the manifest: required
+  harnessly/icon.png          # optional app icon (PNG, up to 128 × 128 pixels and 16 KiB)
   .claude-plugin/plugin.json  # written by the install from app.json
   instructions.md             # always in the agent's context while the app is on: keep it short
   skills/<name>/SKILL.md      # read by the agent on demand

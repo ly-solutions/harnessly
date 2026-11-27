@@ -30,6 +30,7 @@ export interface IPrecheck {
 }
 
 export interface ICatalogEntry {
+  icon?: string;
   id: string;
   channel: TChannel;
   version: string;
@@ -68,6 +69,7 @@ export const muteTeamApp = (m: MachineId, id: string, mute: boolean): Promise<un
 
 /** An app in the public catalog, as the runtime lists it (cmd/runtime/routes_apps_public.go). */
 export interface IPublicEntry {
+  icon?: string;
   id: string;
   version: string;
   name: string;

@@ -48,6 +48,7 @@ const AppsCatalog = ({ team, query = '', limit, onOpen }: IAppsCatalogProps) => 
         {rows.map((row) => (
           <AppTile
             key={`${row.entry.id}/${row.entry.channel}`}
+            icon={row.entry.icon}
             name={row.entry.name}
             line={row.entry.description}
             note={!row.entry.installed ? (refusalOf(row.entry.check) ?? secretsOf(row.entry.check)) : null}
