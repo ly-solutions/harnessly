@@ -71,7 +71,18 @@ export interface IResourceView {
   /** Links without sign-in, for those who run the access; absent from a gateway before stage «г». */
   links?: IAccessLink[];
   staticGuestSnapshots?: boolean;
+  /** «Общий доступ»: anyone with the address opens it without an account; absent from an older gateway. */
+  general?: IGeneralAccess;
   myRequest: { id: string; level: 'comment' | 'edit'; status: 'open' | 'allowed' | 'denied' } | null;
+}
+
+export type TGeneralLevel = 'none' | 'view' | 'comment';
+
+export interface IGeneralAccess {
+  level: TGeneralLevel;
+  /** The address anyone opens; null while it is off or the hub cannot give it again. */
+  url: string | null;
+  opens?: number;
 }
 
 export interface IDirectory {
@@ -123,6 +134,10 @@ export const putGrant = (ref: IResourceRef, type: IGrant['type'], subject: strin
 
 export const removeGrant = (ref: IResourceRef, type: IGrant['type'], subject: string) =>
   fresh(send('DELETE', `${at(ref)}/grants/${type}/${encodeURIComponent(subject)}`));
+
+/** «Общий доступ»: none restricts it again, view or comment opens it to anyone at its one address. */
+export const putGeneral = (ref: IResourceRef, level: TGeneralLevel) =>
+  fresh(send('PUT', `${at(ref)}/general`, { level }));
 
 export const putEditorsCanShare = (ref: IResourceRef, value: boolean) =>
   fresh(send('PUT', `${at(ref)}/settings`, { editorsCanShare: value }));

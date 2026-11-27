@@ -307,5 +307,12 @@
   "next.access.invites.more": "Больше",
   "next.access.invites.team": "Только для команды",
   "next.access.invites.cancel": "Отмена",
-  "next.access.invites.create": "Создать ссылку"
+  "next.access.invites.create": "Создать ссылку",
+  "next.access.general.title": "Общий доступ",
+  "next.access.general.restricted": "Доступ ограничен",
+  "next.access.general.anyone": "Все, у кого есть ссылка",
+  "next.access.general.restrictedLead": "Открыть могут только те, кому вы дали доступ",
+  "next.access.general.anyoneLead": "Любой, у кого есть ссылка, может открыть без входа",
+  "next.access.general.scope": "Кто может открыть по ссылке",
+  "next.access.general.copied": "Ссылка скопирована: открывается без входа"
 }

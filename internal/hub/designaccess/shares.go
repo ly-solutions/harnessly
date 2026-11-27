@@ -249,6 +249,7 @@ func (t *txn) listShares(id string) ([]map[string]any, error) {
 func (t *txn) shareRows(id string) ([]shareRow, error) {
 	scope, args := t.linkScope(id)
 	rows, err := t.q.Query(t.ctx, `SELECT `+shareCols+` FROM design_share_links l WHERE `+scope+` AND (l.revoked_at IS NULL OR l.revoked_at > ?)
+		AND (l.general IS NULL OR l.general = 0)
 		ORDER BY l.created_at DESC, l.id`, append(args, ms(t.now.Add(-revokedShown)))...)
 	if err != nil {
 		return nil, err

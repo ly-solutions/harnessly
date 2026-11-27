@@ -79,6 +79,15 @@ A link lives while its maker may share the project: when they are removed from t
 switched off, the link answers `410` as a revoked one, even if the project still names them its owner. It
 opens again if they come back. Someone who is no member of a space is in none of its teams.
 
+### General access
+
+«Общий доступ» in the share dialog is the client link, the way Google Docs has it: «Доступ ограничен» or «Все, у кого
+есть ссылка» with a level, view or comment. On, it is a guest link like the others (the guest reads the store, the
+owner's machine is not asked), marked `general`, never listed among the links; the dialog's «Копировать ссылку» copies
+its address. `PUT …/access/design/<project>/general {level}` sets it: `none` revokes it and keeps the row, so switching
+it on again opens the same address. The apps' checks stop it as any live link. Documents and boards have the same row
+(docs/hub/resource-access.md).
+
 **A guest is served from the hub's store and nowhere else.** The hub never reads the owner's machine for a
 guest, so a guest link works with the machine off, and a guest's request cannot reach a machine's runtime or tunnel
 (the hub asks the machine for a guest token only for the owner's own checks when a link is made). The hub puts the

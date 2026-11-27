@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ly-solutions/harnessly/internal/hub/linkseal"
 	"github.com/ly-solutions/harnessly/internal/hub/store"
 )
 
@@ -21,6 +22,8 @@ type Service struct {
 	// LinkURL is where a guest link opens when the service of what it opens serves its guests itself (a board: the
 	// boards service); "" or nil: the hub's own page, <publicURL>/d/<token>.
 	LinkURL func(ref Ref, target, token string) string
+	// Seal keeps the address of a resource's general link so the dialog can copy it again; nil keeps none.
+	Seal *linkseal.Sealer
 }
 
 // New returns the service; publicURL is the address guest links are built on (the hub's own).

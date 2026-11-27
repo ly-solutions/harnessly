@@ -23,6 +23,7 @@ import { LINK_KIND, type ILinkContext } from '@/next/features/designly/access/li
 import PersonField from '@/next/features/designly/access/person-field';
 import RequestForm from '@/next/features/designly/access/request-form';
 import ResourceAdd from '@/next/features/designly/access/resource-add';
+import ResourceGeneral from '@/next/features/designly/access/resource-general';
 import {
   askFor,
   handOver,
@@ -47,6 +48,7 @@ import { useAction } from '@/next/features/designly/access/use-action';
 import { useMe } from '@/next/stores/me';
 import Icon from '@/next/ui/icon';
 import Popover from '@/next/ui/popover';
+import { toast } from '@/next/features/designly/sdk/toast';
 import { usePresence, type TPresenceState } from '@/next/ui/presence';
 import { usePhone } from '@/next/ui/use-media';
 import PublishSection, { PublishForm } from '@/next/features/designly/publish/publish-section';
@@ -418,7 +420,8 @@ const Main = memo(
         <ResourceAdd {...props} inputRef={field} />
         <ResourceRequests {...props} />
         <ResourcePeople {...props} me={me} />
-        {ownLinks && (
+        <ResourceGeneral {...props} />
+        {ownLinks && (view.general === undefined || (view.links?.length ?? 0) > 0) && (
           <ResourceLinks
             {...props}
             ctx={linkContext}
@@ -617,6 +620,17 @@ const Loaded = ({
     [screen.start, screen.fresh],
   );
   const names = useMemo(() => logNamesOf(view), [view]);
+  // While the resource is open to anyone, «Копировать ссылку» copies the address that opens without an account.
+  const anyoneUrl = view.general?.url ?? null;
+  const copyLink = () => {
+    if (anyoneUrl === null) return onCopyLink();
+    navigator.clipboard
+      ?.writeText(anyoneUrl)
+      .then(() => toast(t('next.access.general.copied')))
+      .catch((failure: Error) =>
+        toast(t('next.site.copyFailed'), { tone: 'error', description: failure.message }),
+      );
+  };
   const covered = useCovered(sub !== null);
   const stateOf = (v: TView): TSubState => (v === shown.value ? shown.state : IDLE);
   const headOf = (v: TView): string =>
@@ -713,7 +727,7 @@ const Loaded = ({
       ) : (
         <div className="hx-modal__foot hx-acc-foot">
           <div className="hx-acc-foot__left">
-            <button type="button" className="hx-btn" data-variant="ghost" data-size="sm" onClick={onCopyLink}>
+            <button type="button" className="hx-btn" data-variant="ghost" data-size="sm" onClick={copyLink}>
               <Icon name="link" size="sm" />
               <span>{t('next.access.copyLink')}</span>
             </button>
