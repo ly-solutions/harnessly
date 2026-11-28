@@ -372,7 +372,7 @@ func (i *Instance) CloseTab(ctx context.Context, id string) error {
 	// Chrome acknowledges before destruction. Events remove the tab as soon as they arrive.
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
-	lastClose := time.Now()
+	lastClose, retryAfter := time.Now(), time.Second
 	for {
 		raw, err := c.Call(ctx, "Target.getTargets", nil, "")
 		if err != nil {
@@ -397,13 +397,15 @@ func (i *Instance) CloseTab(ctx context.Context, id string) error {
 			i.mu.Unlock()
 			return nil
 		}
-		// A close acknowledged during a pending navigation can leave the target alive.
-		// Retry the browser-side close instead of waiting out the entire call budget.
-		if time.Since(lastClose) >= 250*time.Millisecond {
+		// A close acknowledged during a pending navigation can leave the target alive: Chrome 157 keeps it
+		// until a second close. Chrome 158 finishes such a close by itself about 500 ms later, but every
+		// repeated close restarts that wait, so a fixed short retry keeps the tab open for the whole budget.
+		// Retry the browser-side close with a growing interval.
+		if time.Since(lastClose) >= retryAfter {
 			if _, err = c.Call(ctx, "Target.closeTarget", map[string]any{"targetId": id}, ""); err != nil {
 				return err
 			}
-			lastClose = time.Now()
+			lastClose, retryAfter = time.Now(), 2*retryAfter
 		}
 		select {
 		case <-ctx.Done():
